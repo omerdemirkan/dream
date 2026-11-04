@@ -171,3 +171,7 @@
   machineArch:"arm64",selectors:[{name:"macos.version",value:"26.x"}]}, deadline} → RUNNING in ~17 s.
   GetSSHConfig {instanceId} returns sshPrivateKey (base64 bytes), username, endpoint — needs the token's "ssh"
   action (first token lacked it → 403). DestroyInstance works.
+- Browserbase verified 2026-11-04: project 4f21c650-4b2a-4f5d-b890-e2c0d5b3404e ("Personal project", concurrency 3,
+  defaultTimeout 300 s — looks like the free plan). POST /v1/sessions {projectId,timeout} → connectUrl (CDP, signed,
+  no API key needed to connect); GET /v1/sessions/:id/debug → debuggerFullscreenUrl (live view);
+  playwright-core connectOverCDP works; POST /v1/sessions/:id {projectId,status:"REQUEST_RELEASE"} ends it.
