@@ -150,3 +150,14 @@
   Free plan, no DNS records). Worker upload/delete OK, D1 create/delete OK, DO namespaces list OK, routes/DNS OK.
   R2 NOT enabled (needs dashboard enable). No workers.dev subdomain yet. Universal SSL covers only first-level
   wildcard (*.omer.build), so app hosts should be first-level: <slug>-<rand>.omer.build.
+- E2B verified 2026-11-04 (account on HOBBY plan: "Timeout cannot be greater than 1 hours" → needs Pro):
+  * Node E2B SDK bypasses env proxies (own undici Agent); pass `proxy: process.env.HTTPS_PROXY` in opts when the key
+    is injected by an HTTPS proxy (dev only; production Worker has the real key).
+  * network.rules header injection WORKS: placeholder Authorization replaced, secret absent from sandbox env.
+  * Setting `network` makes public URLs require `e2b-traffic-access-token` (sbx.trafficAccessToken). Gateway adds it.
+  * HTTP to exposed port of a PAUSED sandbox (with token) auto-resumed in ~180 ms; background server process survived.
+  * Base template = 2 vCPU / 512 MB / Node 20 → npm i of CLIs OOM-killed. Custom template via
+    Template().fromNodeImage('24')...; Template.build(tpl, name, {cpuCount, memoryMB}) built in ~52 s.
+  * Claude Code 2.1.318 with placeholder CLAUDE_CODE_OAUTH_TOKEN: no local validation, reaches API → 401 "OAuth access
+    token is invalid" (so header swap on api.anthropic.com should work). Codex 0.166.0 without auth.json uses
+    api.openai.com/v1/responses; ChatGPT-auth path (chatgpt.com/backend-api/codex) still to test.
