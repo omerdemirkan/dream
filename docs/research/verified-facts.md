@@ -1,0 +1,138 @@
+# Verified facts (checked against primary sources, 2026-11-04)
+
+## Subscriptions / ToS
+- Anthropic (code.claude.com/docs/en/legal-and-compliance): a platform MAY host the unmodified Claude Code
+  binary in sandboxes, and an end user MAY sign in to it with their own Claude subscription, via Anthropic's
+  own sign-in flow. Developers may NOT offer Claude.ai login in their own apps, route requests through
+  Pro/Max credentials on users' behalf, or collect/store/intermediate Claude.ai credentials or session tokens.
+  Agent SDK products should use API keys. Hosting requires agreeing to Commercial Terms; no reselling usage.
+  => pi-durable / Agent SDK on a Claude subscription is not allowed. Claude token must not go through Dream's vault.
+- OpenAI "Sign in with ChatGPT" plan usage (DevDay 2026-09-29, limited preview, 16 partners incl. Pi, OpenCode):
+  third-party apps can spend a Plus/Pro user's plan allowance. Access token 1h, refresh 30d (rotating).
+  Per-app weekly caps set by user. Apps expected to show "Using ChatGPT plan" + Manage usage link.
+  Source: thenewstack.io/sign-in-with-chatgpt/
+- OpenAI Realtime API (voice) is API-key billed only; ChatGPT plans don't cover it.
+
+## Packages (npm, 2026-11-04)
+- effect 4.1.2 (v4 stable). @effect/atom-react 4.1.2, @effect/platform-browser 4.1.2, @effect/vitest 4.1.2.
+- alchemy 2.0.0-beta.85 (Effect-based v2 line).
+- [DROPPED by user 2026-11-04 — do not use] @earendil-works/pi-durable 1.5.0 (experimental): durable harness; SQLite/JSONL/memory storage; tasks with
+  checkpoints; durable sleep/wake; child tasks/subagents; usage+cost docs; built on pi-ai + chord.
+- @earendil-works/pi-ai 1.5.0: providers incl. OpenAI w/ Sign in with ChatGPT OAuth, Anthropic, etc.
+- ai 7.0.162; @ai-sdk/harness 1.0.173 (HarnessAgent, experimental) + @ai-sdk/harness-claude-code
+  (backed by claude-agent-sdk), @ai-sdk/harness-codex (backed by @openai/codex-sdk), @ai-sdk/harness-pi.
+  Sandbox providers: @e2b/ai-sdk-sandbox 0.3.0 (official E2B), ai-sdk-sandbox-local, @ai-sdk/sandbox-vercel.
+- durable-harness 0.0.1 (vercel-labs): runs Claude Code/Codex only in Vercel Sandbox -> not usable with E2B.
+- e2b 2.63.0; @browserbasehq/sdk 2.25.0; @browserbasehq/stagehand 4.4.0; expo 58.0.23; @infisical/sdk 5.0.2.
+
+## Infra behaviors (from research, verify again during build)
+- E2B: lifecycle onTimeout:"pause" + autoResume:true; HTTP to exposed port resumes paused sandbox.
+  Public URL https://<port>-<id>.e2b.app; allowPublicTraffic:false requires e2b-traffic-access-token header.
+  E2B network rules can transform requests at egress (header injection) — verify.
+- Infisical Agent Vault: HTTPS_PROXY forward proxy, sandbox holds session token, proxy injects real creds.
+  Header swap can't do SigV4 / HMAC-signed / JWT-assertion auth without proxy-side re-signing.
+- Namespace: macOS (M4 Pro / M5 Max) instances via API/CLI, Xcode + simulators, SSH. Billed per unit-minute.
+- Browserbase: CDP/Playwright connect, recordings, live view URL, persistent contexts.
+- APNs: collapse-id only coalesces undelivered; removing delivered notifications needs on-device code
+  (silent push -> removeDeliveredNotifications). Live Activities: push-to-start (iOS 17.2+) / update tokens,
+  direct APNs (not Expo push), 4KB payload, ~8h active / 12h lock screen.
+- Competitors: Lovable (chat + Details timeline), Replit Agent (task board kanban), Devin (progress tab),
+  Instinct (Noah Shinn; personal agent over text/phone; user sees only messages it chooses to send),
+  Meta Muse (personal agent, surfaces outcomes not steps).
+- Prompting: Claude Code system prompt cut ~80% for Fable 5 ("this new class of models want a smaller system
+  prompt; examples tend to constrain it"). Principles: context over rules, goals over procedures, explain why,
+  no conflicting rules, progressive disclosure via skills.
+
+## Decisions so far
+- v1 audience: the user + a few friends; operator pays infra. Record per-project machine time from day one
+  so credits / pass-through billing can be added later.
+- Harness: Vercel AI SDK `@ai-sdk/harness` HarnessAgent with Claude Code and Codex adapters. No pi-durable.
+- Support both Claude and ChatGPT subscriptions. Sign-in runs through each CLI's own login flow inside the
+  sandbox, with Dream relaying the link/code (Codex device code; Claude paste-back code).
+- Voice: option 1 (voice model leads, foreman listens in and can inject notes). ChatGPT users: Codex app-server
+  experimental `thread/realtime/*` (WebRTC SDP from phone, billed to ChatGPT plan, appendText for notes).
+  Claude-only users: OpenAI Realtime/GPT-Live on operator API key, Dream builds the listen-in bridge.
+- Code lives in code.storage (Pierre): repo per project via @pierre/sdk, JWT-authenticated git remotes usable
+  from E2B, ephemeral branches / forks (good for throwaway prototypes), GitHub sync for export, webhooks.
+  Docs: https://code.storage/docs/llms.txt
+- Claude sign-in: user-scoped token in Infisical, injected by egress proxy (sandbox gets a placeholder).
+  One sign-in per user via Anthropic's flow run by Dream (`claude setup-token` in a throwaway sandbox, user
+  taps Authorize + pastes code once). Plan as of 2026-11-04; friends' tokens are the residual ToS exposure.
+
+## Scope cut (2026-11-04, founder): test core assumptions, not the whole product
+- Codex / ChatGPT only. Claude Code is out for now (simplicity; voice via Codex realtime).
+- Project repo lives only in the E2B sandbox. No code.storage, no GitHub. Publishing to GitHub = agent requests
+  a GitHub integration through the normal credential flow.
+- Integrations and the ChatGPT sign-in are user-scoped: entered once, shared by all of a user's projects.
+  Note: ChatGPT refresh tokens rotate on each refresh, so a shared login must be refreshed centrally (proxy holds
+  real tokens; sandboxes get placeholders) or sandboxes will invalidate each other.
+- REVERSED same day: Claude Code is back, built upfront alongside Codex (operator already pays for sandboxes,
+  browsers, simulators, so paying for voice for Claude users is fine). Claude sign-in: user-scoped, once.
+- Proposed: one voice path for everyone — OpenAI realtime (GPT-Live / gpt-realtime) on the operator's API key,
+  with Dream's own listen-in bridge to whichever foreman (Claude Code or Codex). Avoids depending on Codex's
+  undocumented experimental realtime API.
+- v1 scope adds (founder): Namespace Mac for iOS apps; Live Activities; Google OAuth integration
+  (interpreted as: Google is the first one-tap integration — Gmail/Calendar/Drive/Sheets; everything else by
+  pasted key with header swap). Google OAuth app will show "unverified app" warning until verified (fine for
+  friends; verify 100-user cap / restricted-scope behavior during build; avoid "Testing" status because its
+  refresh tokens expire after 7 days).
+
+## Design decisions (2026-11-04)
+- Direction: Deck (dark, decisions-first home, project = roadmap with needs pinned to milestones).
+- Project screen = two tabs: Status (default, live-updating roadmap card) | Chat.
+- Chat is Instinct/Muse-style: only messages the agent explicitly chooses to send (plus the user's). Never tool
+  calls, thinking, or streamed output. Implies a `send_message`-style tool for the agent.
+- Never expose "foreman" or the orchestrator concept to the user.
+- NO live voice conversation (GPT-Live dropped entirely). Input everywhere = keyboard + dictation (speech to
+  text into the composer, then send). Rationale (founder): no foreground agent filling the air; the background
+  agent researches as much as it can and asks sharp, direct questions; long pauses are fine.
+- Dictation engine: on-device iOS speech recognition (no API key) unless quality forces otherwise.
+- iOS distribution: each person's own Apple Developer account ($99/yr), connected once as an integration
+  (App Store Connect API key: issuer ID + key ID + .p8), requested by the agent when the first iOS app is ready to
+  install. User is their own internal tester → no TestFlight review. Builds expire after 90 days → agent
+  re-uploads as maintenance. Open design issue: xcodebuild/altool need the .p8 on the Mac; either place it on the
+  ephemeral Namespace Mac only for the signing/upload step (pragmatic exception to "no secrets in sandbox"), or
+  have the proxy mint the ES256 JWT for api.appstoreconnect.apple.com and keep signing assets server-side.
+- Design LOCKED: Deck v3 (mocks/deck on origin, commit d3ba192). Change: "Something else…" (free text + dictation)
+  only in the expanded full-screen view, not inline on chat cards.
+
+## Implementation research (verified 2026-11-04)
+- @ai-sdk/harness-claude-code: backed by claude-agent-sdk; ships a bridge process inside the sandbox that talks to
+  the host over WebSocket on a loopback port. Installs its own pinned claude CLI with pnpm (~1.5 GB peak; template
+  needs pnpm + >=2 GB RAM). @ai-sdk/harness-codex: runs `codex app-server` in the sandbox over JSON-RPC.
+- HarnessAgent host can run on the same machine via a local sandbox provider (ai-sdk-sandbox-local 0.1.2,
+  ai-sandbox-local 0.1.1; "no isolation", fine inside the E2B VM). Resume: session.detach()/stop() return resume
+  state; createSession({ sessionId, resumeFrom }).
+- E2B (e2b 2.63.0): lifecycle { onTimeout: "pause", autoResume: true }; resume triggered by SDK ops AND HTTP to
+  exposed ports; after resume min 5-min timeout. Pro $150/mo: 24h max continuous runtime (pause/resume resets it),
+  paused sandboxes retained indefinitely (Hobby too), 100 concurrent. allowPublicTraffic + trafficAccessToken exist.
+- E2B egress: network.rules = per-host (exact or *.wildcard) header-injection transforms applied by E2B's egress
+  proxy (HTTPS only; headers only; values resolved client-side, never enter the VM); allowOut/denyOut;
+  egressProxy = BYO SOCKS5 tunneled on host (sandbox can't bypass). Rules updatable on a running sandbox.
+  => Credential injection can be E2B-native, with Infisical as the vault of record.
+- Namespace macOS: $0.04–$0.20/min by shape; plan gating unclear (pricing page: Team $100/mo+; limits doc lists
+  Developer too). Access: nsc ssh / native ssh with key / GetSSHConfig API short-lived creds.
+- APNs: no server-side way to remove delivered notifications; best effort = silent push -> app removes by id,
+  plus cleanup on app open. Live Activities: build widget target via @bacons/apple-targets (expo-live-activity
+  deprecated per npm — verify); APNs direct from Worker (ES256 JWT via WebCrypto).
+- Dictation: expo-speech-recognition 58.0.1.
+
+## Architecture decisions (2026-11-04, founder)
+- Global relational DB for everything above a project (users, invites, devices/push tokens, model connections,
+  integrations metadata, projects index, usage ledger, cross-project projections like open asks for Home).
+  Per-project state (chat, asks, status card, schedules, sandbox lifecycle, live activity) in one Durable Object
+  per project. No per-user DO for data. Proposed global DB: Cloudflare D1 via @effect/sql-d1 4.1.2;
+  DO SQLite via @effect/sql-sqlite-do 4.1.2.
+- Agent context (not a rule): users may later turn a project into something serving millions. Keep a clean seam
+  between product code that would survive and the single-sandbox scaffolding that would be torn out (local DB,
+  local queues/cron, process supervision, hosting from the sandbox).
+- Credential injection: E2B egress network.rules header transforms; Infisical is the vault of record; Dream backend
+  pushes values to E2B on sandbox create/resume and on token refresh. Fallback if trouble: Infisical Agent Vault
+  proxy (via E2B egressProxy/HTTPS_PROXY + CA).
+- Private apps PUNTED. Web apps are public at an unguessable URL: https://<slug>-<random>.<domain> via a small
+  gateway Worker → the project's E2B port URL (stable across sandbox re-creation; wakes the sandbox). Agent context:
+  anyone with the link can open it; protect sensitive data inside the app if needed.
+- Agent continuity: event-driven turns. The agent works within a turn as long as it wants; when it stops it sleeps
+  until something wakes it (user message/answer, a self-scheduled wake, an alert from its app via `dream wake`,
+  usage reset). Dream never auto-"continues" it. Agent reaches Dream through one `dream` CLI in the sandbox, usable
+  by apps it builds too.
