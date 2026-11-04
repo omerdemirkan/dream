@@ -161,3 +161,8 @@
   * Claude Code 2.1.318 with placeholder CLAUDE_CODE_OAUTH_TOKEN: no local validation, reaches API → 401 "OAuth access
     token is invalid" (so header swap on api.anthropic.com should work). Codex 0.166.0 without auth.json uses
     api.openai.com/v1/responses; ChatGPT-auth path (chatgpt.com/backend-api/codex) still to test.
+- INFISICAL DROPPED (founder, 2026-11-04). User credentials (Claude token, ChatGPT tokens, Google OAuth tokens,
+  pasted keys, App Store Connect keys) are stored AES-GCM encrypted in D1 (`secrets` table; envelope key held only
+  as a Worker secret). Operator keys (E2B, Browserbase, Namespace, APNs .p8, Google client secret) are Cloudflare
+  Worker secrets entered by the founder in the dashboard. Infisical Agent Vault remains the fallback only if E2B
+  egress injection falls short.

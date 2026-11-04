@@ -38,9 +38,9 @@ in the expanded view.
    ├─ dreamd: the event loop. Runs HarnessAgent locally (Claude Code or Codex),
    │          one turn at a time; serves the `dream` CLI; reports usage
    ├─ the code, the running app(s), logs
-   └─ egress: E2B network.rules inject real headers (values from Infisical)
+   └─ egress: E2B network.rules inject real headers (values decrypted by the Worker)
    │                │                   │
- Browserbase    Namespace macOS      Infisical (vault of record)
+ Browserbase    Namespace macOS
  (CDP sessions)  (SSH, short-lived)
 ```
 
@@ -50,8 +50,9 @@ in the expanded view.
 - **Event-driven turns.** Nothing wakes the agent unless the user writes or the agent arranged it. Dream never
   nudges it to "continue".
 - **Secrets never enter a sandbox.** The sandbox holds placeholders. E2B's egress proxy swaps in real headers
-  per host, and Dream pushes values from Infisical to E2B on create, on wake, and on token refresh. The fallback if
-  that doesn't work is Infisical Agent Vault.
+  per host. Dream stores user credentials AES-GCM encrypted in D1 (the key is only a Worker secret) and pushes values
+  to E2B on create, on wake, and on token refresh. Operator keys are Cloudflare Worker secrets. The fallback if
+  injection falls short is Infisical Agent Vault.
 - **Effect v4 everywhere:**
   - Workers and the DO: HttpApi/RPC, `@effect/sql-d1`, `@effect/sql-sqlite-do`
   - dreamd and the CLI
@@ -83,7 +84,6 @@ infra/alchemy.run.ts   Cloudflare resources + E2B template as a custom Alchemy r
 | @browserbasehq/stagehand | 4.4.0 |
 | expo | 58.0.23 |
 | expo-speech-recognition | 58.0.1 |
-| @infisical/sdk | 5.0.2 |
 
 ## 5. Data
 
@@ -91,8 +91,9 @@ infra/alchemy.run.ts   Cloudflare resources + E2B template as a custom Alchemy r
 - `users`
 - `invites` (allowlisted emails)
 - `devices` (APNs token, Live Activity push-to-start token)
-- `model_connections` (claude or chatgpt, status, Infisical path, last usage snapshot)
-- `integrations` (kind: google_oauth, api_key, or apple_asc; hosts; scopes; Infisical path; status)
+- `model_connections` (claude or chatgpt, status, secret id, last usage snapshot)
+- `integrations` (kind: google_oauth, api_key, or apple_asc; hosts; scopes; secret id; status)
+- `secrets` (AES-GCM ciphertext + nonce, owner, kind; decrypted only inside the Worker)
 - `projects` (owner, title, slug, harness, phase, headline, sandbox id, public URL, updated_at)
 - `open_asks` (a copy of each project's open questions and access requests, for the Home deck)
 - `usage_events` (sandbox, browser and Mac minutes per project)
@@ -137,7 +138,7 @@ dream usage                          → subscription windows, % left, reset tim
      SecureStore keeps on the phone).
 2. **Connect Claude or ChatGPT, once per person.** The API starts a short-lived "auth" sandbox:
    - **Claude:** it runs `claude setup-token` in a PTY. The phone opens Anthropic's page, the user taps Authorize and
-     pastes the code back, and the token goes to Infisical.
+     pastes the code back, and the token is stored encrypted in D1.
    - **ChatGPT:** it runs `codex login --device-auth`, and the phone shows the code and opens OpenAI's page. Dream
      keeps the tokens and refreshes them centrally, because refresh tokens rotate on each use. Fresh values are pushed
      to every live sandbox.
@@ -152,7 +153,7 @@ dream usage                          → subscription windows, % left, reset tim
      the event if a turn is already running.
 5. **Access.**
    - `dream access` creates an access message and sends a push.
-   - The user connects with OAuth, a pasted key, or an App Store Connect key. The secret goes to Infisical, and the
+   - The user connects with OAuth, a pasted key, or an App Store Connect key. The secret is stored encrypted in D1, and the
      E2B rules are updated for all of that user's live sandboxes.
    - The agent receives an event naming the placeholder to use.
 6. **Hosting and schedules.**
@@ -190,7 +191,7 @@ dream usage                          → subscription windows, % left, reset tim
   - CI (typecheck plus tests)
 - **Phase 1, three Sonnet threads in parallel, on their own branches:**
   - **A. Control plane:** Worker, D1 migrations, ProjectDO, RPC/WS, auth, gateway, APNs, R2, alarms, usage ledger,
-    Infisical client, E2B rule sync, Google OAuth, model-connect flows, Browserbase and Namespace brokers.
+    secrets encryption, E2B rule sync, Google OAuth, model-connect flows, Browserbase and Namespace brokers.
   - **B. Sandbox runtime:** dreamd, the `dream` CLI, HarnessAgent local mode for Claude Code and Codex, the event
     queue, usage parsing, and the E2B template.
   - **C. Mobile:** the Deck v3 UI in React Native, the RPC client, WS, push and deep links, dictation, and the
@@ -210,7 +211,7 @@ dream usage                          → subscription windows, % left, reset tim
 
 | When | What | Cost |
 |---|---|---|
-| Early, to allow real end-to-end testing during the build | Cloudflare account + domain; E2B (Pro) API key; Infisical project + machine identity | ~$5 + $150/mo |
+| Early, to allow real end-to-end testing during the build | Cloudflare account + domain; E2B (Pro) API key | ~$5 + $150/mo |
 | Phase 1 | Google Cloud project: iOS OAuth client (sign-in) and a web OAuth client with Gmail/Calendar/Drive/Sheets scopes, consent screen in production (unverified) | free |
 | Phase 1 | Browserbase API key + project | ~$20/mo |
 | Phase 1 | Namespace token (plan with macOS) | ~$100/mo + $0.04–$0.20/min while a Mac runs |
