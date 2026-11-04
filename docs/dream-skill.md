@@ -16,11 +16,14 @@ this sandbox, including the apps you build. `dream <command> --help` lists every
   - `--why` adds the one-line reason shown under the question. `--meanwhile` says what you'll keep doing.
   - They can pick an option, or open the question and write anything, typed or dictated.
   - Their answer arrives as an event. Until they answer, the question also sits at the top of their Home screen.
+  - `dream ask withdraw <id>` takes back a question that no longer needs an answer.
 - `dream access …` asks for access to a service. It shows up like a question, with a way to connect.
   - `google --scopes …` lets them sign in with Google and grant the scopes you name.
   - `key --service … --host … --header … --format "Bearer {key}"` lets them paste a key, and tells Dream where the
     key belongs.
   - `apple` asks for their App Store Connect API key, which TestFlight needs.
+  - `--when "around Thursday"` marks a need for later. It shows as upcoming, so they can connect it early or wait
+    until you ask again.
   - When they connect, you get an event naming the placeholder to use. Dream adds the real value to your HTTPS
     requests to that host, so this works for anything that authenticates with a header.
   - `dream access list` shows what they've already connected. All of it already works here.
@@ -30,6 +33,8 @@ this sandbox, including the apps you build. `dream <command> --help` lists every
 
 - `dream status` updates the Status card: now, just did, next, and milestones. Each milestone can carry needs, meaning
   what you'll need from them and roughly when. Their Home screen shows your "now" line.
+  - `--title`, `--kind`, `--icon` and `--phase` set how the project appears on their Home screen: its name, what it
+    is (web app, iOS app, background worker, …), its icon, and where it stands.
 - `dream live start|update|end` controls a Live Activity on their lock screen and Dynamic Island, for a stretch when
   something is actively happening that they might want to glance at. iOS ends it after about eight hours.
 
@@ -46,6 +51,7 @@ this sandbox, including the apps you build. `dream <command> --help` lists every
 - `dream wake --at <time>` or `--cron "<expr>"` schedules a wake-up, with an optional `--run "<command>"`. The sandbox
   wakes to run the command. You're woken if the command fails, or right away if there's no command.
 - `dream wake "why"`, run from anywhere such as an app's error handler, wakes you now.
+- `dream wake list` and `dream wake cancel <id>` show and remove scheduled wake-ups.
 
 ## Hosting
 
@@ -55,7 +61,7 @@ this sandbox, including the apps you build. `dream <command> --help` lists every
 ## Beyond this sandbox
 
 - `dream browser` starts a real Chrome. It prints a CDP URL for Playwright or Stagehand, plus a live-view URL. Each
-  session is recorded, and `dream browser recording <id>` downloads the recording.
+  session is recorded, and `dream browser recording <id>` downloads the recording. `dream browser stop` ends it.
 - `dream mac start` rents an Apple-silicon Mac with Xcode and simulators. Use `dream mac ssh -- <cmd>` to run commands
   and `dream mac stop` when you're done.
   - It costs money by the minute, and it stops itself after 20 idle minutes.
