@@ -146,3 +146,7 @@
   expo-api (api.expo.dev, bearer). Test each before building on it.
 - Production runtime secrets live in Infisical (operator folder); the deployed Worker gets one Infisical
   credential. ol connections are for dev/testing only and can't be read by the deployed Worker.
+- Cloudflare verified 2026-11-04: account 2d98de7c4511e98d2f774c4fcc9b9b93, zone omer.build (7607e25c5b01b03ce152488e2dffb0cc,
+  Free plan, no DNS records). Worker upload/delete OK, D1 create/delete OK, DO namespaces list OK, routes/DNS OK.
+  R2 NOT enabled (needs dashboard enable). No workers.dev subdomain yet. Universal SSL covers only first-level
+  wildcard (*.omer.build), so app hosts should be first-level: <slug>-<rand>.omer.build.
