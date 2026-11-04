@@ -183,3 +183,7 @@
   (-allowProvisioningUpdates -authenticationKey*) → upload to TestFlight. Expo the open-source framework stays.
   Open: how the ASC .p8 reaches the Mac without passing through a sandbox (candidates: Worker writes it via Namespace
   CommandService; Namespace's own vault secrets).
+- ASC key path (docs, not yet tested): Namespace Vault secrets (dashboard/`nsc vault add`/VaultService API) are
+  injected as env vars at instance creation via `env_vars: [{name, from_secret_id}]` on ContainerRequest
+  (check ApplicationRequest for macOS). Founder's ASC .p8 for Dream's own TestFlight builds → Namespace Vault; never
+  passes through a sandbox. For users' ASC keys, the Worker could create per-user Vault secrets via VaultService.
