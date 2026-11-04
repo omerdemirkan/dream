@@ -1,0 +1,19 @@
+{
+  "name": "@dream/infra",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Alchemy v2 stack: Worker, ProjectDO, D1, R2, routes and DNS.",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@alchemy.run/cloudflare": "2.0.0-beta.85",
+    "@dream/api": "workspace:*",
+    "@effect/platform-bun": "4.1.2",
+    "@effect/platform-node": "4.1.2",
+    "alchemy": "2.0.0-beta.85",
+    "effect": "4.1.2"
+  }
+}

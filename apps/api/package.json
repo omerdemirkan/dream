@@ -1,0 +1,26 @@
+{
+  "name": "@dream/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Worker: RPC + HTTP routes, ProjectDO, gateway, APNs, crons.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@alchemy.run/cloudflare": "2.0.0-beta.85",
+    "@dream/agent-context": "workspace:*",
+    "@dream/domain": "workspace:*",
+    "@effect/sql-d1": "4.1.2",
+    "@effect/sql-sqlite-do": "4.1.2",
+    "alchemy": "2.0.0-beta.85",
+    "effect": "4.1.2"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261104.1"
+  }
+}

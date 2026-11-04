@@ -1,0 +1,22 @@
+{
+  "name": "@dream/domain",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Effect Schemas and RPC contracts shared by the app, the Worker and dreamd.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./fixtures": "./src/fixtures.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.src.json && tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "effect": "4.1.2"
+  },
+  "devDependencies": {
+    "@effect/vitest": "4.1.2",
+    "vitest": "5.1.0"
+  }
+}

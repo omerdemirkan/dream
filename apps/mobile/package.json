@@ -1,0 +1,9 @@
+{
+  "name": "@dream/mobile",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Placeholder. The mobile workstream replaces this with create-expo-app (Expo SDK 58).",
+  "scripts": {
+    "typecheck": "echo 'mobile: not scaffolded yet'"
+  }
+}

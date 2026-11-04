@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.alchemy/
+.wrangler/
+.env
+.env.*
+!.env.example
+.DS_Store
+coverage/

@@ -1,0 +1,23 @@
+{
+  "name": "@dream/agent-context",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The agent's system prompt, the `dream` skill, and the turn-prompt renderer.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "sync": "bun scripts/sync-prompts.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@dream/domain": "workspace:*",
+    "effect": "4.1.2"
+  },
+  "devDependencies": {
+    "@effect/vitest": "4.1.2",
+    "vitest": "5.1.0"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "@dream/sandbox-template",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "E2B template build: Node 24, pnpm, Playwright deps, dreamd, harness prerequisites.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "e2b": "2.63.0"
+  }
+}

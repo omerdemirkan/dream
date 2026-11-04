@@ -1,0 +1,31 @@
+{
+  "name": "@dream/dreamd",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The sandbox daemon (event loop, harness turns) and the `dream` CLI.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "bin": {
+    "dream": "./src/bin/dream.ts",
+    "dreamd": "./src/bin/dreamd.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@dream/agent-context": "workspace:*",
+    "@dream/domain": "workspace:*",
+    "@effect/platform-node": "4.1.2",
+    "effect": "4.1.2"
+  },
+  "devDependencies": {
+    "@effect/vitest": "4.1.2",
+    "vitest": "5.1.0"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

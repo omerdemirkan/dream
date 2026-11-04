@@ -1,0 +1,24 @@
+/**
+ * @dream/domain — every shape that crosses a boundary between the phone, the
+ * Worker / ProjectDO, and the sandbox (dreamd and the `dream` CLI).
+ */
+export * from "./AgentEvent.ts"
+export * from "./Auth.ts"
+export * from "./Connections.ts"
+export * from "./Errors.ts"
+export * from "./Ids.ts"
+export * from "./LiveActivity.ts"
+export * from "./Machines.ts"
+export * from "./Media.ts"
+export * from "./Message.ts"
+export * from "./Project.ts"
+export * from "./Push.ts"
+export * from "./Status.ts"
+export * from "./Transport.ts"
+export * from "./Usage.ts"
+export * from "./User.ts"
+export * from "./Wake.ts"
+export * from "./rpc/AppRpcs.ts"
+export * from "./rpc/DaemonRpcs.ts"
+export * from "./rpc/ProjectLiveRpcs.ts"
+export * from "./rpc/SandboxRpcs.ts"

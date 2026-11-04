@@ -1,0 +1,31 @@
+{
+  "name": "dream",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.4.4",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "infra"
+  ],
+  "scripts": {
+    "typecheck": "bun run --filter '*' typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "bun run format:check && bun run typecheck && bun run test",
+    "sync-prompts": "bun run --filter @dream/agent-context sync",
+    "infra:plan": "infra/node_modules/.bin/alchemy plan infra/alchemy.run.ts",
+    "infra:dev": "infra/node_modules/.bin/alchemy dev infra/alchemy.run.ts",
+    "infra:deploy": "infra/node_modules/.bin/alchemy deploy infra/alchemy.run.ts",
+    "format": "biome format --write .",
+    "format:check": "biome format ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.5",
+    "@effect/vitest": "4.1.2",
+    "@types/node": "24.19.2",
+    "effect": "4.1.2",
+    "typescript": "7.0.2",
+    "vitest": "5.1.0"
+  }
+}

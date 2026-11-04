@@ -1,0 +1,6 @@
+{
+  // The domain runs on React Native, Cloudflare Workers and Node: its source
+  // gets no platform globals. Tests (tsconfig.json) may use Node's.
+  "extends": "../../tsconfig.base.json",
+  "include": ["src"]
+}
