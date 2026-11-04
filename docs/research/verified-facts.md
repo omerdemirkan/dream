@@ -175,3 +175,6 @@
   defaultTimeout 300 s — looks like the free plan). POST /v1/sessions {projectId,timeout} → connectUrl (CDP, signed,
   no API key needed to connect); GET /v1/sessions/:id/debug → debuggerFullscreenUrl (live view);
   playwright-core connectOverCDP works; POST /v1/sessions/:id {projectId,status:"REQUEST_RELEASE"} ends it.
+- Namespace SSH verified with the new token (instance actions "*"): GetSSHConfig → endpoint ssh.iad2-a.namespace.so
+  (port 22), username = instance id, sshPrivateKey base64. Plain `ssh -i key user@endpoint` works. Image
+  macos.version=26.x: macOS 26.3.1, Xcode 26.1.1, iOS/visionOS simulator runtimes present. RUNNING in ~12 s.
