@@ -166,3 +166,8 @@
   as a Worker secret). Operator keys (E2B, Browserbase, Namespace, APNs .p8, Google client secret) are Cloudflare
   Worker secrets entered by the founder in the dashboard. Infisical Agent Vault remains the fallback only if E2B
   egress injection falls short.
+- Namespace verified 2026-11-04: Connect JSON over HTTPS to us.compute.namespaceapis.com works with the bearer
+  token (Node fetch through proxy). CreateInstance {shape:{virtualCpu:4,memoryMegabytes:7168,os:"macos",
+  machineArch:"arm64",selectors:[{name:"macos.version",value:"26.x"}]}, deadline} → RUNNING in ~17 s.
+  GetSSHConfig {instanceId} returns sshPrivateKey (base64 bytes), username, endpoint — needs the token's "ssh"
+  action (first token lacked it → 403). DestroyInstance works.
