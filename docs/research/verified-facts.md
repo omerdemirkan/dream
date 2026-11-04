@@ -178,3 +178,8 @@
 - Namespace SSH verified with the new token (instance actions "*"): GetSSHConfig → endpoint ssh.iad2-a.namespace.so
   (port 22), username = instance id, sshPrivateKey base64. Plain `ssh -i key user@endpoint` works. Image
   macos.version=26.x: macOS 26.3.1, Xcode 26.1.1, iOS/visionOS simulator runtimes present. RUNNING in ~12 s.
+- NO EAS / Expo account (founder, 2026-11-04). Dream's own iOS builds use the same path as users' iOS apps:
+  `expo prebuild` → xcodebuild archive/export on a Namespace Mac with an App Store Connect API key
+  (-allowProvisioningUpdates -authenticationKey*) → upload to TestFlight. Expo the open-source framework stays.
+  Open: how the ASC .p8 reaches the Mac without passing through a sandbox (candidates: Worker writes it via Namespace
+  CommandService; Namespace's own vault secrets).
