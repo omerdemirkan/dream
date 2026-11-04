@@ -136,3 +136,13 @@
   until something wakes it (user message/answer, a self-scheduled wake, an alert from its app via `dream wake`,
   usage reset). Dream never auto-"continues" it. Agent reaches Dream through one `dream` CLI in the sandbox, usable
   by apps it builds too.
+
+## Build kickoff (2026-11-04)
+- Founder approved the plan. Implementation subagents: Opus. No per-step review / UX review rounds; target is
+  functional and matching Deck v3.
+- Credentials requested via ol connections (workspace scope): cloudflare-api (api.cloudflare.com, bearer),
+  e2b-api (api.e2b.app, X-API-KEY), infisical-api (app.infisical.com, bearer, Token Auth identity),
+  browserbase-api (api.browserbase.com, X-BB-API-Key), namespace-compute (us.compute.namespaceapis.com, bearer),
+  expo-api (api.expo.dev, bearer). Test each before building on it.
+- Production runtime secrets live in Infisical (operator folder); the deployed Worker gets one Infisical
+  credential. ol connections are for dev/testing only and can't be read by the deployed Worker.
