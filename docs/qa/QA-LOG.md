@@ -289,3 +289,6 @@ Other findings:
   can never connect (`dream access oauth` refuses in that case). Sent to the Google-refresh child.
 - Verdict: the Haiku failure modes (overclaiming, dropping stated constraints, stopping with promises, no media, no
   Status) are model capability. The prompt carried Sonnet to the right behaviour unaided, so no Haiku-specific rules.
+- Declined the Gmail card as the person: Sonnet said it wouldn't use Gmail, kept the banner, and added an "Email them"
+  button on the admin page that opens a pre-written email in the person's own mail app (only when the relative left an
+  email), offering automatic notifications "another way" later. A graceful, honest fallback without being asked.
