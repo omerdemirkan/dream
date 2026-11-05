@@ -312,3 +312,11 @@ Other findings:
   Branding page has a home page and privacy policy (child building them). QA card declined afterwards.
 - Bundle id build.omer.dream in place of the placeholder; build-ios.sh defaults to team ZY6RS9293V and Dream's Google
   iOS client.
+- Agent fleet merged (d7a9512 + prompt 5252f85): top level is Claude Code `opus` at effort high, or Codex
+  gpt-6.1-sol at high; subagents get a model and effort per call (Claude Code Agent tool: model haiku|sonnet|opus|
+  fable, effort low…max; Codex spawn_agent: model, reasoning_effort). New system-prompt paragraph on working through
+  subagents. Deployed, DREAM_AGENT_MODEL override deleted, dream-sandbox rebuilt (release 0fd41475369199d8).
+  Verified on the Sonnet-calibration Codenames project: the next message refreshed it, dreamd logged "model opus,
+  effort high", the reply came from claude-opus-5-5 in the same Claude session (70 earlier Sonnet entries, then Opus).
+  Not verified: a real Codex turn on gpt-6.1-sol through Dream's provider (no ChatGPT account connected; the child
+  flags openai/codex#31894) — check the first time one is connected.
