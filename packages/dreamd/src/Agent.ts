@@ -11,14 +11,15 @@
  *
  * The person sees only what goes through `dream`. Questions the model asks
  * through its harness go to their phone, and a turn that ends with something
- * to say, having sent them nothing, posts its final words to Chat.
+ * to say, having sent them nothing, posts its final words to Chat, unless
+ * nothing the person did is among its events (see `agentOnly`).
  *
  * After a completed turn with nothing else queued, the published URL is
  * loaded, and a new breakage there becomes an event for the agent (see
  * `Published.ts`).
  */
 import { renderSteerPrompt, renderTurnPrompt } from "@dream/agent-context"
-import type { EventId, ModelProvider, TurnState } from "@dream/domain"
+import type { AgentEvent, EventId, ModelProvider, TurnState } from "@dream/domain"
 import { Context, DateTime, Duration, Effect, Exit, Layer, Option, Ref, Stream } from "effect"
 import { Api } from "./Api.ts"
 import { Harness, type TurnResult, TurnOutcome } from "./harness/Harness.ts"
@@ -32,6 +33,13 @@ import * as Usage from "./Usage.ts"
 /** Waits after consecutive failed turns: 15 s, 30 s, 1 min, … up to 10 min. */
 export const backoff = (failures: number): Duration.Duration =>
   Duration.min(Duration.seconds(15 * 2 ** Math.max(0, failures - 1)), Duration.minutes(10))
+
+/**
+ * Events that come from the agent's own doing rather than the person: a wake whose command it ran, a `dream wake`,
+ * a check of its published URL. A turn started only by these doesn't post its final text to Chat.
+ */
+export const agentOnly = (event: AgentEvent): boolean =>
+  event._tag === "Alert" || event._tag === "PublishedUrlBroken" || (event._tag === "WakeDue" && event.run !== undefined)
 
 const hasQueued = (state: InboxState) => state.entries.some((entry) => entry.state === "queued")
 const hasQueuedReset = (state: InboxState) =>
@@ -76,7 +84,11 @@ export class Agent extends Context.Service<
       })
 
       /** Hand events that arrive mid-turn to the turn, until it can't take them. */
-      const steer = (taken: Ref.Ref<ReadonlyArray<EventId>>, timeZone: string | undefined) =>
+      const steer = (
+        taken: Ref.Ref<ReadonlyArray<EventId>>,
+        fromPerson: Ref.Ref<boolean>,
+        timeZone: string | undefined
+      ) =>
         inbox.changes.pipe(
           Stream.filter(hasQueued),
           Stream.mapEffect(() =>
@@ -87,6 +99,7 @@ export class Agent extends Context.Service<
               const text = renderSteerPrompt({ events, now: yield* DateTime.now, timeZone })
               return yield* harness.steer(text).pipe(
                 Effect.tap(() => Ref.update(taken, (all) => [...all, ...ids])),
+                Effect.tap(() => Ref.update(fromPerson, (before) => before || !events.every(agentOnly))),
                 Effect.tap(() => Effect.logInfo("Gave new events to the running turn", { events: ids })),
                 Effect.as(true),
                 Effect.catch((error) =>
@@ -114,10 +127,13 @@ export class Agent extends Context.Service<
           )
       }
 
-      /** A completed turn that sent them nothing but ended with something to say: put that in Chat. */
-      const replyIfSilent = (result: TurnResult, reachedBefore: number) =>
+      /**
+       * A completed turn that sent them nothing but ended with something to say: put that in Chat. Only when
+       * something they did is among its events; otherwise the agent was talking to itself.
+       */
+      const replyIfSilent = (result: TurnResult, reachedBefore: number, fromPerson: boolean) =>
         Effect.gen(function* () {
-          if (result.outcome._tag !== "Completed") return
+          if (result.outcome._tag !== "Completed" || !fromPerson) return
           const reply = replyFromFinalText(result.finalText ?? "")
           if (Option.isNone(reply) || (yield* outreach.count) !== reachedBefore) return
           yield* api.sendMessage(reply.value).pipe(
@@ -134,6 +150,7 @@ export class Agent extends Context.Service<
         const events = yield* inbox.take
         if (events.length === 0) return false
         const taken = yield* Ref.make<ReadonlyArray<EventId>>(events.map((event) => event.id))
+        const fromPerson = yield* Ref.make(!events.every(agentOnly))
         const { timeZone } = yield* inbox.state
         yield* Ref.set(running, true)
         yield* api.reportTurn("started", yield* Ref.get(taken))
@@ -143,11 +160,11 @@ export class Agent extends Context.Service<
         const reachedBefore = yield* outreach.count
         const exit = yield* Effect.scoped(
           Effect.gen(function* () {
-            yield* Effect.forkScoped(steer(taken, timeZone))
+            yield* Effect.forkScoped(steer(taken, fromPerson, timeZone))
             return yield* harness.turn(prompt, handlers)
           })
         ).pipe(Effect.exit)
-        if (Exit.isSuccess(exit)) yield* replyIfSilent(exit.value, reachedBefore)
+        if (Exit.isSuccess(exit)) yield* replyIfSilent(exit.value, reachedBefore, yield* Ref.get(fromPerson))
 
         const ids = yield* Ref.get(taken)
         const result = Exit.isSuccess(exit) ? exit.value : undefined

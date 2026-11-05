@@ -1,4 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
+import { AgentEvent, type EventId, type WakeId } from "@dream/domain"
 import { Clock, Context, DateTime, Deferred, Duration, Effect, Layer, Queue, Ref } from "effect"
 import { TestClock } from "effect/testing"
 import { Agent, backoff } from "../src/Agent.ts"
@@ -229,6 +230,41 @@ describe("Agent", () => {
         )
         yield* inbox.deliver([userMessage(1)])
         assert.deepStrictEqual(yield* sent, [{ _tag: "Message", text: "Here's what's scheduled." }])
+      }).pipe(Effect.scoped)
+    )
+
+    it.effect("doesn't post for turns only the agent's own doings started", () =>
+      Effect.gen(function* () {
+        const { turns, inbox, reports, sent } = yield* setup()
+        const at = DateTime.makeUnsafe("2026-11-05T10:00:00Z")
+        const agentOnly: ReadonlyArray<AgentEvent> = [
+          AgentEvent.cases.Alert.make({ id: "evt_a" as EventId, at, reason: "scraper threw" }),
+          AgentEvent.cases.PublishedUrlBroken.make({
+            id: "evt_b" as EventId,
+            at,
+            url: "https://lift-log-x7k2.omer.build",
+            port: 5173,
+            facts: "Loaded it from this sandbox in Chromium: 403 text/plain"
+          }),
+          AgentEvent.cases.WakeDue.make({
+            id: "evt_c" as EventId,
+            at,
+            wakeId: "wak_1" as WakeId,
+            why: "check the scraper",
+            run: { command: "node scrape.js", result: { exitCode: 1, outputTail: "Error" } }
+          })
+        ]
+        yield* Queue.offer(turns, () => Effect.succeed(saying("Fixed the host check; it answers 200 now.")))
+        yield* inbox.deliver(agentOnly)
+        assert.deepStrictEqual(yield* sent, [])
+        // One thing they did among them is enough to keep the safety net.
+        yield* Ref.set(reports, [])
+        yield* Queue.offer(turns, () => Effect.succeed(saying("The charts are bigger now.")))
+        yield* inbox.deliver([
+          AgentEvent.cases.Alert.make({ id: "evt_d" as EventId, at, reason: "again" }),
+          userMessage(1, "Bigger charts?")
+        ])
+        assert.deepStrictEqual(yield* sent, [{ _tag: "Message", text: "The charts are bigger now." }])
       }).pipe(Effect.scoped)
     )
 
