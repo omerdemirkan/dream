@@ -25,10 +25,10 @@ import {
   submitAppleAccessFn,
   submitKeyAccessFn
 } from "../state/atoms.ts"
-import { useAction, useGoogleAccess, useToast } from "./actions.ts"
+import { useAction, useSignInAccess, useToast } from "./actions.ts"
 import { ElseComposer } from "./Composer.tsx"
 import { accessExplainer, accessLabel, accessReach, accessScope, isKeyFile, isOAuth, whenTag } from "./describe.ts"
-import { BackPill, Button, Choices, Dot, GoogleButton, Icon, Lab, LinkButton, Tile } from "./kit.tsx"
+import { BackPill, Button, Choices, Dot, GoogleButton, Icon, Lab, LinkButton, SignInButton, Tile } from "./kit.tsx"
 import { answerText } from "./Messages.tsx"
 import { color, gutter } from "./theme.ts"
 
@@ -536,7 +536,7 @@ export function ExpandedAccess(props: {
   const keyFile = isKeyFile(m.request)
   const label = accessLabel(m.request)
   const scope = accessScope(m.request)
-  const google = useGoogleAccess(m)
+  const signIn = useSignInAccess(m)
   const disconnect = useAction(disconnectIntegrationFn)
   const titleSize = oauth ? 32 : 30
 
@@ -671,7 +671,9 @@ export function ExpandedAccess(props: {
       bottom={
         <>
           {m.request._tag === "Google" ? (
-            <GoogleButton busy={google.busy} onPress={google.start} />
+            <GoogleButton busy={signIn.busy} onPress={signIn.start} />
+          ) : m.request._tag === "OAuth" ? (
+            <SignInButton service={signIn.service} busy={signIn.busy} onPress={signIn.start} />
           ) : m.request._tag === "Key" || m.request._tag === "File" ? (
             <KeyForm message={m} onBack={props.onBack} />
           ) : (

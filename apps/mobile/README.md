@@ -8,7 +8,7 @@ expanded view.
 
 | Path | What |
 | --- | --- |
-| `src/app` | Routes: Home (`index`), `project/[id]` (Status / Chat), `new`, `sign-in`, `connect`, `settings`, `oauth/google`, `fixtures/[scenario]` |
+| `src/app` | Routes: Home (`index`), `project/[id]` (Status / Chat), `new`, `sign-in`, `connect`, `settings`, `oauth/google`, `oauth/[provider]`, `fixtures/[scenario]` |
 | `src/data` | Services (no React Native): `AppClient` (AppRpcs over HTTP), `LiveProjects` (ProjectLiveRpcs over WebSocket, re-subscribing with a fresh ticket), `ProjectStates`, `Answers` (Undo), `Session`, formatting |
 | `src/fake` | The fixtures backend: `AppRpcs` handlers and live events over the Deck v3 sample world, with a small simulated agent |
 | `src/state` | The atom runtime and the atoms screens use |
@@ -68,11 +68,13 @@ xcrun simctl launch --terminate-running-process booted com.omer.dream \
 | `/connect` · `/settings` | Subscription connect flow; settings |
 
 Message ids: `msg_cabinrule`, `msg_cabinpick`, `msg_gcal` (Cabin), `msg_apple` (Lift Log), `msg_gmail` (Morning
-Brief), `msg_recipewho` (Recipe Scaler).
+Brief), `msg_recipewho` (Recipe Scaler), and `msg_spotify` (Lift Log, after the `spotify-ask` scenario: an OAuth
+request for a provider other than Google).
 
 Scenarios (`dream://fixtures/<name>?to=/path`, or `-dreamScenario a,b`): `signed-in`, `signed-out`, `reset`,
 `paused` (Lift Log waits for a usage reset), `all-clear`, `cabin-resolved`, `withdraw-cabin`, `no-plan`,
-`live-activity`, `live-activity-needs` (start a Live Activity on the phone).
+`live-activity`, `live-activity-needs` (start a Live Activity on the phone), `spotify-ask` (Lift Log asks to connect
+Spotify).
 
 ## Checking against a deployed API
 
