@@ -2,7 +2,7 @@
  * The E2B template every project sandbox starts from (`dream-sandbox`):
  *
  * - Node 24 (Debian 12), git, build tools, Python, ripgrep, jq, ffmpeg, an SSH
- *   client, Pillow and basic fonts, and Playwright (on PATH, so `npx playwright`
+ *   client, Pillow, basic fonts (gsfonts is ImageMagick's default), and Playwright (on PATH, so `npx playwright`
  *   works offline) with its Chromium and system libraries; `chromium` and
  *   `chrome` on PATH run that browser
  * - pnpm (the harness adapters install their bridges with it) and Bun
@@ -93,7 +93,8 @@ const aptPackages = [
   "sudo",
   "python3-pil",
   "fontconfig",
-  "fonts-dejavu-core"
+  "fonts-dejavu-core",
+  "gsfonts"
 ]
 
 /** The template, built from a context made by `stageContext`. */
