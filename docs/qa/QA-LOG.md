@@ -115,3 +115,7 @@ Other findings:
 - Five Haiku QA threads: ISS map (Vite) + offline recipe PWA · Telegram bot (URL token) + Discord bot (header key) ·
   ~90-minute cabin booking site (long-running autonomy, E2B 1-hour cap) · HN clone + GitHub webhook viewer ·
   uptime monitor on an always-down URL + COVID data analysis.
+- R3 / QA3.5: COVID dashboard prj_L7kMWMUeJgg3CZ61htc5xJ — PASS (numbers spot-checked against the CSV, charts via React +
+  Recharts). Uptime monitor prj_snUUtnD2Mmjxy85sSLltF8 — the tester reported "sandbox network isolation"; wrong:
+  httpstat.us itself is down (000 from my sandbox too), while example.com and api.github.com answer 200 from the project
+  sandbox. The cron wake `*/10 * * * *` with `--run monitor.sh` is scheduled correctly; checking that it fires at 05:10.
