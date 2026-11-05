@@ -52,6 +52,8 @@ function FocusLayer(props: { readonly focus: Focus }) {
   const project = live?.project ?? summaries?.find((s) => s.project.id === focus.projectId)?.project
 
   const start: Rect = focus.origin ?? { x: 0, y: H * 0.05, width: W, height: H }
+  // The animated styles close over this rather than `focus`, whose message worklets can't copy.
+  const grows = focus.origin !== undefined
   const box = useSharedValue<Rect>(start)
   const progress = useSharedValue(0)
   const fade = useSharedValue(0)
@@ -82,6 +84,13 @@ function FocusLayer(props: { readonly focus: Focus }) {
     // Runs once per expanded message (the layer is keyed by it).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // A link or notification can name a message the project doesn't have (or one that isn't an ask):
+  // once the project has loaded, there's nothing to expand, so don't cover the screen with an empty layer.
+  const expandable = message?._tag === "Question" || message?._tag === "Access"
+  useEffect(() => {
+    if (live !== undefined && !expandable) setFocus(Option.none())
+  }, [live, expandable, setFocus])
 
   // A link or notification that goes somewhere else (another project, Home) leaves this message behind.
   useEffect(() => {
@@ -126,7 +135,7 @@ function FocusLayer(props: { readonly focus: Focus }) {
       height: b.height + (H - b.height) * p,
       borderRadius: 24 * (1 - p),
       backgroundColor: interpolateColor(p, [0, 1], [color.s1, color.bg]),
-      opacity: focus.origin ? 1 : Math.min(1, fade.value * 1.4)
+      opacity: grows ? 1 : Math.min(1, fade.value * 1.4)
     }
   })
   const inner = useAnimatedStyle(() => {

@@ -148,10 +148,12 @@ function FrontCard(props: {
   }))
   const m = props.ask.message
   const onOpen = () => open({ projectId: m.projectId, messageId: m.id, message: m, from: ref })
+  // Worklets copy what they close over, so they get the callback rather than all of props.
+  const onLeft = props.onLeft
   const onAnswer = (option: string) => {
     setTimeout(() => {
       x.value = withTiming(1, { duration: 340, easing: Easing.bezier(0.5, 0, 0.8, 0.4) }, (finished) => {
-        if (finished) scheduleOnRN(props.onLeft, option)
+        if (finished) scheduleOnRN(onLeft, option)
       })
     }, 380)
   }
