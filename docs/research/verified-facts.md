@@ -288,3 +288,11 @@
 - Codex 0.166.0 breaks harness-codex 1.0.176: every turn fails with "This chat uses agent_bridge_openai, but your
   current provider is openai" (the bridge sets `model_provider` per thread; 0.166 checks it against the global one).
   Codex stays on 0.165.0. The harness check in `template:build` catches this kind of break.
+- Sandbox resources, measured 2026-11-05 in a fresh dream-sandbox (template resources cpuCount 4, memoryMB 8192):
+  `nproc` 4; 7956 MB total, ~457 MB used at idle; no swap; no cgroup v2 memory limit visible; / is 14 GB with 11 GB
+  free; vm.overcommit_memory 0. Headless Chromium (Playwright 1.64.1) with a ~2,000-element page plus a light JS
+  timer: "used" grew ~190 MB for 1 browser, ~130 MB each for 4, ~120 MB each for 8 (8 ≈ 1 GB; summed RSS overcounts
+  shared pages); load average stayed ~0.1. A process allocating until failure was OOM-killed at ~7.4 GB RSS; the
+  kernel picked the largest process (supervisor, dreamd and user processes all have oom_score_adj 100), and dreamd
+  survived. So the risk is total memory across builds, tests, dev servers and browsers, not browsers alone.
+- Browserbase: the account moved to a paid plan on 2026-11-05; `dream browser` start/stop verified from a sandbox.
