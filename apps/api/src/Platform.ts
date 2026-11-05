@@ -65,8 +65,10 @@ export const platformLayer = (bindings: PlatformBindings, overrides: PlatformOve
     overrides.services ?? servicesLayer,
     ProjectClients.layer(bindings.fetchProject)
   ).pipe(Layer.provideMerge(FetchHttpClient.layer))
-  const credentials = CredentialStore.layer.pipe(Layer.provideMerge(base))
-  return Layer.mergeAll(SandboxCredentials.layer, KeyFiles.layer, ProjectDirectory.layer).pipe(
+  const credentials = CredentialStore.layer.pipe(
+    Layer.provideMerge(ProjectDirectory.layer.pipe(Layer.provideMerge(base)))
+  )
+  return Layer.mergeAll(SandboxCredentials.layer, KeyFiles.layer).pipe(
     Layer.provideMerge(credentials),
     Layer.provideMerge(overrides.config ?? ApiConfig.layer)
   )

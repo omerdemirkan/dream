@@ -274,6 +274,8 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
         Effect.flatMap(me, (userId) => access.decline(userId, projectId, messageId)),
 
       ListIntegrations: () => Effect.flatMap(me, access.list),
+      ReplaceKey: ({ integrationId, key }) =>
+        Effect.flatMap(me, (userId) => access.replaceKey(userId, integrationId, Redacted.value(key))),
       DisconnectIntegration: ({ integrationId }) =>
         Effect.flatMap(me, (userId) => access.disconnect(userId, integrationId)),
 

@@ -160,6 +160,9 @@ dream usage                          → subscription windows, % left, reset tim
    - The agent receives an event naming the placeholder to use.
    - A file key (`dream access file`) belongs to the asking project only. Its DO writes it into the sandbox before
      the agent hears about it, writes it again into a recreated sandbox, and deletes the file when it's removed.
+   - When a connection goes (removed in Settings, or an OAuth provider refuses the refresh token), every sandbox
+     loses it, the cards connected to it turn `Disconnected` (they can connect again from them), and the projects
+     with such a card tell their agent. Projects that never asked for it aren't woken.
 6. **Hosting and schedules.**
    - The gateway maps the host to the project's sandbox port URL. E2B auto-resumes the sandbox on traffic.
    - DO alarms fire scheduled wakes. The sandbox wakes and dreamd runs the command or starts a turn.

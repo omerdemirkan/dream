@@ -53,8 +53,8 @@ export class ProjectRpcs extends RpcGroup.make(
     success: QuestionMessage,
     error: Schema.Union([NotFound, InvalidRequest])
   }),
-  /** The access request, if it's still open (for StartGoogleAccess and the paste flows). */
-  Rpc.make("GetOpenAccess", {
+  /** An access request in whatever state it's in (for StartGoogleAccess and the paste flows, which decide). */
+  Rpc.make("GetAccess", {
     payload: { messageId: MessageId },
     success: AccessMessage,
     error: Schema.Union([NotFound, InvalidRequest])
@@ -72,8 +72,19 @@ export class ProjectRpcs extends RpcGroup.make(
   Rpc.make("RegisterLiveActivity", {
     payload: { deviceId: DeviceId, activityId: Schema.NonEmptyString, pushToken: Schema.NonEmptyString }
   }),
-  /** They removed one of this project's file keys (its row is gone): delete the file, and tell the agent. */
-  Rpc.make("KeyFileRemoved", { payload: { integration: Integration } }),
+  /**
+   * One of their integrations is gone: they removed it (its row is gone), or it stopped working (`failure` says
+   * how). Cards connected to it say so, the sandbox loses it (a file key's file, or its egress rules), and the agent
+   * hears if this project asked for it. Sent to every project of theirs, but only the file key's own for a file key.
+   */
+  Rpc.make("IntegrationGone", { payload: { integration: Integration, failure: Schema.optionalKey(Schema.String) } }),
+  /**
+   * An integration that had stopped working is connected again: cards it disconnected are connected again, and with
+   * `tell` the agent hears (the project whose card was answered hears through that card instead).
+   */
+  Rpc.make("IntegrationRestored", { payload: { integration: Integration, tell: Schema.Boolean } }),
+  /** They entered a new key for one of this project's file keys: rewrite the file, and tell the agent. */
+  Rpc.make("KeyFileReplaced", { payload: { integration: Integration } }),
   /** Their credentials or integrations changed: refresh this sandbox's egress rules. */
   Rpc.make("CredentialsChanged", {}),
   /** Their subscription hit a limit in another project; hold this one until it resets. */

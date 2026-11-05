@@ -242,6 +242,17 @@ export const declineAccessFn = appRuntime.fn(
   accessChanged
 )
 
+/** A new key for a pasted or file key, from Settings. Sending the same key again changes nothing. */
+export const replaceKeyFn = appRuntime.fn(
+  Effect.fn(function* (input: { readonly integrationId: IntegrationId; readonly key: string }) {
+    const app = yield* AppClient
+    return yield* app
+      .ReplaceKey({ integrationId: input.integrationId, key: Redacted.make(input.key) })
+      .pipe(withWriteTimeout)
+  }),
+  { reactivityKeys: ["integrations"] }
+)
+
 export const disconnectIntegrationFn = appRuntime.fn(
   Effect.fn(function* (integrationId: IntegrationId) {
     const app = yield* AppClient

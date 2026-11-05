@@ -154,10 +154,24 @@ export const keyFileNameFor = (service: string): string =>
     .slice(0, 64)
     .replace(/-+$/, "") || "key"
 
+/** Why a connected access request isn't connected anymore. */
+export const DisconnectReason = Schema.Literals([
+  /** They removed it in Settings. */
+  "removed",
+  /** The service stopped accepting it (they revoked it there, or it lapsed). */
+  "failed"
+])
+export type DisconnectReason = typeof DisconnectReason.Type
+
 export const AccessState = Schema.TaggedUnion({
   Open: {},
   Connected: { integrationId: IntegrationId, connectedAt: Schema.DateTimeUtc },
-  Declined: { declinedAt: Schema.DateTimeUtc }
+  Declined: { declinedAt: Schema.DateTimeUtc },
+  /**
+   * It was connected, and the connection is gone. Like `Declined`, they can still connect it from the card. Added
+   * after the first release: older apps show the card as one they can't display.
+   */
+  Disconnected: { integrationId: IntegrationId, disconnectedAt: Schema.DateTimeUtc, reason: DisconnectReason }
 })
 export type AccessState = typeof AccessState.Type
 

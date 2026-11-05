@@ -69,7 +69,7 @@ describe("fixtures backend through the app's services", () => {
     )
   )
 
-  it.effect("a key file goes to its project only, and removing it reopens the card", () =>
+  it.effect("a key file goes to its project only, and removing it marks the card, which takes a key again", () =>
     run(
       Effect.gen(function* () {
         yield* signIn
@@ -93,7 +93,9 @@ describe("fixtures backend through the app's services", () => {
         yield* app.DisconnectIntegration({ integrationId: file.id })
         const { messages } = yield* app.ListMessages({ projectId: brief })
         const card = messages.find((m) => m.id === messageId)
-        assert.strictEqual(card?._tag === "Access" && card.state._tag, "Open")
+        assert.strictEqual(card?._tag === "Access" && card.state._tag, "Disconnected")
+        const again = yield* app.SubmitKeyAccess({ projectId: brief, messageId, key: Redacted.make("FAKE:again") })
+        assert.strictEqual(again.state._tag, "Connected")
       })
     )
   )

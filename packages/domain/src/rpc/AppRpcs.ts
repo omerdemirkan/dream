@@ -151,6 +151,7 @@ export class AuthedAppRpcs extends RpcGroup.make(
    * Begin Google OAuth for an access request. Open `authorizeUrl` in an auth
    * session; Google returns to `Routes.googleOAuthCallback`, which finishes the
    * connection and redirects back into the app. The message updates over the live stream.
+   * Works for open, declined and disconnected requests; `InvalidRequest` for a connected one.
    */
   Rpc.make("StartGoogleAccess", {
     payload: ProjectMessage,
@@ -171,7 +172,8 @@ export class AuthedAppRpcs extends RpcGroup.make(
   /**
    * The key for a `Key` request, or for a `File` request, which Dream writes into that project's sandbox (and
    * no other) before the agent hears it's there. Submitting again for the same host, or the same project and
-   * file name, replaces the key.
+   * file name, replaces the key. Open, declined and disconnected requests take a key; one that's connected
+   * already returns as it is, so retrying a submission that went through is safe (as for `SubmitAppleAccess`).
    */
   Rpc.make("SubmitKeyAccess", {
     payload: { ...ProjectMessage, key: Schema.RedactedFromValue(Schema.NonEmptyString) },
@@ -198,6 +200,16 @@ export class AuthedAppRpcs extends RpcGroup.make(
 
   // Settings -----------------------------------------------------------------
   Rpc.make("ListIntegrations", { success: Schema.Array(Integration) }),
+  /**
+   * A new key for a pasted `Key` integration or a `File` key, from Settings (a rotated key, a new bot token).
+   * A header key changes in every sandbox's egress rules; a file key's project rewrites its file and tells the
+   * agent. `InvalidRequest` for any other kind of integration.
+   */
+  Rpc.make("ReplaceKey", {
+    payload: { integrationId: IntegrationId, key: Schema.RedactedFromValue(Schema.NonEmptyString) },
+    success: Integration,
+    error: Schema.Union([NotFound, InvalidRequest, UpstreamFailure])
+  }),
   Rpc.make("DisconnectIntegration", {
     payload: { integrationId: IntegrationId },
     error: Schema.Union([NotFound, UpstreamFailure])

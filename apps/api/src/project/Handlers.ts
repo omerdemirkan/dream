@@ -42,7 +42,7 @@ import { Machines } from "./Machines.ts"
 import { Notifier } from "./Notifier.ts"
 import { ProjectRpcs } from "./ProjectRpcs.ts"
 import { SandboxManager } from "./SandboxManager.ts"
-import { Singletons, Store } from "./Store.ts"
+import { type SandboxRecord, Singletons, Store } from "./Store.ts"
 
 const notFound = (entity: string, id: string) => new NotFound({ entity, id })
 
@@ -59,6 +59,14 @@ export const nextWakeAt = (when: WakeWhen, defaultTimeZone: string, fromMs: numb
   if (Result.isFailure(parsed)) return Option.none()
   return Option.some(Cron.next(parsed.success, new Date(fromMs)).getTime())
 }
+
+/**
+ * Whether the dreamd that will get the next delivery knows `AgentEvent.AccessRemoved`. Builds that report a release
+ * (sandbox refresh) all do; an older one is still in a ready sandbox that predates them. The next sandbox comes from
+ * the current template.
+ */
+export const knowsAccessRemoved = (record: SandboxRecord): boolean =>
+  record.status !== "ready" || record.release !== undefined
 
 export const ProjectHandlers = ProjectRpcs.toLayer(
   Effect.gen(function* () {
@@ -175,19 +183,13 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
           return answered
         }),
 
-      GetOpenAccess: ({ messageId }) =>
-        Effect.gen(function* () {
-          const message = yield* findAccess(messageId)
-          if (message.state._tag !== "Open") {
-            return yield* new InvalidRequest({ message: "This access request isn't open anymore." })
-          }
-          return message
-        }),
+      GetAccess: ({ messageId }) => findAccess(messageId),
 
       AccessConnected: ({ messageId, integration }) =>
         Effect.gen(function* () {
           const message = yield* findAccess(messageId)
-          if (message.state._tag === "Connected") return message
+          // A retry, or a second sign-in through the same card: the agent already heard.
+          if (message.state._tag === "Connected" && message.state.integrationId === integration.id) return message
           const connected = AccessMessage.make({
             ...message,
             state: AccessState.cases.Connected.make({ integrationId: integration.id, connectedAt: yield* DateTime.now })
@@ -229,13 +231,88 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
 
       RegisterLiveActivity: (device) => notifier.registerLive(device),
 
-      KeyFileRemoved: ({ integration }) =>
+      IntegrationGone: ({ integration, failure }) =>
+        Effect.gen(function* () {
+          if (Option.isSome(yield* store.getSingleton(...Singletons.archived))) return
+          const now = yield* DateTime.now
+          const cards = (yield* store.accessMessagesFor(integration.id)).filter(
+            (message) => message.state._tag === "Connected"
+          )
+          for (const card of cards) {
+            yield* core.changeMessage(
+              AccessMessage.make({
+                ...card,
+                state: AccessState.cases.Disconnected.make({
+                  integrationId: integration.id,
+                  disconnectedAt: now,
+                  reason: failure === undefined ? "removed" : "failed"
+                })
+              })
+            )
+          }
+          const removed = AgentEvent.cases.AccessRemoved.make({
+            id: yield* newEventId(),
+            at: now,
+            label: integration.label,
+            access: integration.access,
+            ...(failure === undefined ? {} : { failure })
+          })
+          if (integration.access._tag === "File") {
+            yield* sandbox.keyFilesChanged
+            return yield* core.enqueue(removed)
+          }
+          yield* sandbox.refreshRules
+          // Projects that never asked for it don't hear, and neither does a dreamd too old to know the event.
+          if (cards.length > 0 && (integration.access._tag === "OAuth" || knowsAccessRemoved(yield* core.sandbox))) {
+            yield* core.enqueue(removed)
+          }
+        }),
+
+      IntegrationRestored: ({ integration, tell }) =>
+        Effect.gen(function* () {
+          if (Option.isSome(yield* store.getSingleton(...Singletons.archived))) return
+          const now = yield* DateTime.now
+          const cards = (yield* store.accessMessagesFor(integration.id)).filter(
+            (message) => message.state._tag === "Disconnected" && message.state.reason === "failed"
+          )
+          for (const card of cards) {
+            yield* core.changeMessage(
+              AccessMessage.make({
+                ...card,
+                state: AccessState.cases.Connected.make({ integrationId: integration.id, connectedAt: now })
+              })
+            )
+          }
+          const last = cards.at(-1)
+          if (!tell || last === undefined) return
+          yield* core.enqueue(
+            AgentEvent.cases.AccessConnected.make({
+              id: yield* newEventId(),
+              at: now,
+              messageId: last.id,
+              label: integration.label,
+              access: integration.access,
+              change: "restored"
+            })
+          )
+        }),
+
+      KeyFileReplaced: ({ integration }) =>
         Effect.gen(function* () {
           if (Option.isSome(yield* store.getSingleton(...Singletons.archived))) return
           yield* sandbox.keyFilesChanged
+          // The event names the request it was connected through, which every file key has.
+          const card = (yield* store.accessMessagesFor(integration.id)).at(-1)
+          if (card === undefined) return
           yield* core.enqueue(
             yield* event((fields) =>
-              AgentEvent.cases.AccessRemoved.make({ ...fields, label: integration.label, access: integration.access })
+              AgentEvent.cases.AccessConnected.make({
+                ...fields,
+                messageId: card.id,
+                label: integration.label,
+                access: integration.access,
+                change: "replaced"
+              })
             )
           )
         }),
