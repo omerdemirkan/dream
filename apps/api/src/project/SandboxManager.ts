@@ -47,6 +47,11 @@ export const KeepaliveEvery = Duration.minutes(5)
 /** The keepalive cycles the sandbox once less than this is left before the run cap: one tick, plus slack. */
 const CycleWithin = Duration.sum(KeepaliveEvery, Duration.minutes(1))
 const HealthWait = Duration.seconds(120)
+/**
+ * A dreamd too old to report `envHash` can't say which env file it read, so after a rewrite it's trusted once
+ * this has passed: the old one notices the change within 5 s.
+ */
+const LegacyRestartWait = Duration.seconds(12)
 const BatchSize = 50
 
 /**
@@ -121,15 +126,30 @@ export class SandboxManager extends Context.Service<
       const update = (f: (record: SandboxRecord) => SandboxRecord) =>
         Effect.flatMap(core.sandbox, (r) => core.saveSandbox(f(r)))
 
-      const waitForDaemon = (access: SandboxAccess, daemonToken: string, within: Duration.Duration) =>
-        daemon.health(access, daemonToken).pipe(
-          Effect.retry(Schedule.spaced("2 seconds")),
-          Effect.timeoutOrElse({
-            duration: within,
-            orElse: () =>
-              Effect.fail(new UpstreamFailure({ service: "dreamd", message: "dreamd didn't come up in the sandbox" }))
-          })
-        )
+      /**
+       * Waits until dreamd answers. With `envHash` (after writing the env file), it waits for the dreamd that read
+       * that file: the one answering first may be the old process, which hasn't noticed the change yet.
+       */
+      const waitForDaemon = (access: SandboxAccess, daemonToken: string, within: Duration.Duration, envHash?: string) =>
+        Effect.gen(function* () {
+          const since = yield* Clock.currentTimeMillis
+          yield* daemon.health(access, daemonToken).pipe(
+            Effect.flatMap((health) =>
+              Effect.gen(function* () {
+                if (envHash === undefined || health.envHash === envHash) return
+                const waited = (yield* Clock.currentTimeMillis) - since
+                if (health.envHash === undefined && waited >= Duration.toMillis(LegacyRestartWait)) return
+                return yield* new UpstreamFailure({ service: "dreamd", message: "dreamd hasn't restarted yet" })
+              })
+            ),
+            Effect.retry(Schedule.spaced("2 seconds")),
+            Effect.timeoutOrElse({
+              duration: within,
+              orElse: () =>
+                Effect.fail(new UpstreamFailure({ service: "dreamd", message: "dreamd didn't come up in the sandbox" }))
+            })
+          )
+        })
 
       /** For a template without dreamd's supervisor: start it directly (a second copy just fails to bind its port). */
       const startDaemon = (access: SandboxAccess) =>
@@ -153,36 +173,48 @@ export class SandboxManager extends Context.Service<
           })
         }))
 
-      /** Writes dreamd's env file and records what it said (`envHash`). */
+      /** Writes dreamd's env file and records what it said (`envHash`, which dreamd reports back). */
       const writeDaemonEnv = (access: SandboxAccess, daemonToken: string) =>
         Effect.gen(function* () {
           const { project, settings } = yield* settingsFor(daemonToken)
           const projectToken = yield* tokens.project(project.id, project.ownerId)
+          const envHash = yield* hashSettings(settings)
           yield* envd.run(access, { command: `mkdir -p "$(dirname '${DaemonEnvFile}')"`, timeout: "20 seconds" })
           yield* envd.writeFile(
             access,
             DaemonEnvFile,
-            daemonEnv({ ...settings, [DaemonEnv.projectToken]: Redacted.value(projectToken) })
-          )
-          const envHash = yield* hashSettings(settings)
-          yield* update((r) => ({ ...r, envHash }))
-        })
-
-      /** Waits for dreamd; if the template didn't start it within a while, starts it and waits again. */
-      const awaitDaemon = (access: SandboxAccess, daemonToken: string) =>
-        waitForDaemon(access, daemonToken, Duration.seconds(45)).pipe(
-          Effect.catch(() =>
-            Effect.gen(function* () {
-              yield* Effect.logWarning("dreamd didn't answer; starting it directly")
-              yield* startDaemon(access)
-              yield* waitForDaemon(access, daemonToken, HealthWait)
+            daemonEnv({
+              ...settings,
+              [DaemonEnv.envHash]: envHash,
+              [DaemonEnv.projectToken]: Redacted.value(projectToken)
             })
           )
-        )
+          yield* update((r) => ({ ...r, envHash }))
+          return envHash
+        })
+
+      /**
+       * Writes dreamd's env file, then waits for the dreamd that read it; if the template didn't start one within
+       * a while, starts it and waits again.
+       */
+      const restartDaemon = (access: SandboxAccess, daemonToken: string) =>
+        Effect.gen(function* () {
+          const envHash = yield* writeDaemonEnv(access, daemonToken)
+          yield* waitForDaemon(access, daemonToken, Duration.seconds(45), envHash).pipe(
+            Effect.catch(() =>
+              Effect.gen(function* () {
+                yield* Effect.logWarning("dreamd didn't answer; starting it directly")
+                yield* startDaemon(access)
+                yield* waitForDaemon(access, daemonToken, HealthWait, envHash)
+              })
+            )
+          )
+        })
 
       /**
        * Between turns: if dreamd's settings changed since its env file was written (say, the agent model), write
-       * it again, which restarts dreamd. Its inbox is on disk, so a restart loses nothing.
+       * it again, which restarts dreamd, and deliver only once the new one is up. Its inbox is on disk, so a
+       * restart loses nothing.
        */
       const refreshDaemonEnv = (access: SandboxAccess, daemonToken: string) =>
         Effect.gen(function* () {
@@ -193,8 +225,7 @@ export class SandboxManager extends Context.Service<
           const health = yield* daemon.health(access, daemonToken)
           if (health.turn === "running") return
           yield* Effect.logInfo("dreamd's settings changed; rewriting its env file", { sandboxId: access.sandboxId })
-          yield* writeDaemonEnv(access, daemonToken)
-          yield* awaitDaemon(access, daemonToken)
+          yield* restartDaemon(access, daemonToken)
         }).pipe(Effect.catch((error) => Effect.logWarning("couldn't refresh dreamd's env file", error.message)))
 
       const create = Effect.gen(function* () {
@@ -210,10 +241,7 @@ export class SandboxManager extends Context.Service<
           metadata: { projectId: project.id, userId: project.ownerId },
           rules: setup.rules
         })
-        const ready = Effect.gen(function* () {
-          yield* writeDaemonEnv(access, daemonToken)
-          yield* awaitDaemon(access, daemonToken)
-        })
+        const ready = restartDaemon(access, daemonToken)
         // Don't leak a sandbox that never became usable.
         yield* ready.pipe(Effect.tapError(() => e2b.kill(access.sandboxId).pipe(Effect.ignore)))
         const now = yield* DateTime.now
@@ -273,8 +301,7 @@ export class SandboxManager extends Context.Service<
           Effect.catch(() =>
             Effect.gen(function* () {
               yield* Effect.logWarning("dreamd isn't answering; rewriting its env file to restart it")
-              yield* writeDaemonEnv(access, daemonToken)
-              yield* awaitDaemon(access, daemonToken)
+              yield* restartDaemon(access, daemonToken)
             })
           )
         )
@@ -314,9 +341,10 @@ export class SandboxManager extends Context.Service<
           Option.fromUndefinedOr(user.timeZone)
         )
         const events = pending as unknown as readonly [AgentEvent, ...Array<AgentEvent>]
-        const accepted = yield* daemon
-          .deliver(access, daemonToken, events, Option.getOrUndefined(timeZone))
-          .pipe(Effect.tapError(() => diagnose(access, daemonToken)))
+        const accepted = yield* daemon.deliver(access, daemonToken, events, Option.getOrUndefined(timeZone)).pipe(
+          // A restarting dreamd is fine; the retry finds the new one.
+          Effect.tapError((error) => (error._tag === "DaemonRestarting" ? Effect.void : diagnose(access, daemonToken)))
+        )
         yield* store.markDelivered(accepted as ReadonlyArray<EventId>, DateTime.formatIso(yield* DateTime.now))
         yield* update((r) => ({ ...r, failures: 0 }))
         const rest = yield* store.pendingEvents(1)

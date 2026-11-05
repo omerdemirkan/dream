@@ -35,7 +35,7 @@ const cf = async (path: string, init?: RequestInit): Promise<Json> => {
     ...init,
     headers: { "content-type": "application/json", ...(init?.headers ?? {}) }
   })
-  const body = await res.json()
+  const body: Json = await res.json()
   if (!body.success) throw new Error(`Cloudflare ${path}: ${JSON.stringify(body.errors)}`)
   return body.result
 }
@@ -104,18 +104,20 @@ const inSandbox = async (projectId: string, command: string, timeoutMs = 60_000)
   try {
     const r = await sbx.commands.run(command, { timeoutMs })
     return `${r.stdout}${r.stderr}`
-  } catch (e: Json) {
+  } catch (e: any) {
     return `exit ${e?.result?.exitCode ?? "?"}\n${e?.result?.stdout ?? ""}${e?.result?.stderr ?? ""}${e?.message ?? ""}`
   }
 }
 
-const [cmd, a, b, c] = process.argv.slice(2)
+const [cmd, a = "", b, c] = process.argv.slice(2)
 const main = async () => {
   switch (cmd) {
     case "projects": {
       for (const s of await rpc("ListProjects")) {
         const p = s.project
-        console.log(`${p.id}  ${p.phase}  "${p.title}" (${p.kind ?? "?"})  ${p.headline ?? ""}  ${p.publicUrl ?? ""}  asks=${s.openAsks}`)
+        console.log(
+          `${p.id}  ${p.phase}  "${p.title}" (${p.kind ?? "?"})  ${p.headline ?? ""}  ${p.publicUrl ?? ""}  asks=${s.openAsks}`
+        )
       }
       return
     }
@@ -134,9 +136,13 @@ const main = async () => {
       return
     }
     case "choose":
-      return console.log(text(await rpc("AnswerQuestion", { projectId: a, messageId: b, answer: { _tag: "Choice", option: c } })))
+      return console.log(
+        text(await rpc("AnswerQuestion", { projectId: a, messageId: b, answer: { _tag: "Choice", option: c } }))
+      )
     case "reply":
-      return console.log(text(await rpc("AnswerQuestion", { projectId: a, messageId: b, answer: { _tag: "Freeform", text: c } })))
+      return console.log(
+        text(await rpc("AnswerQuestion", { projectId: a, messageId: b, answer: { _tag: "Freeform", text: c } }))
+      )
     case "decline":
       return console.log(text(await rpc("DeclineAccess", { projectId: a, messageId: b })))
     case "sandbox":
@@ -144,10 +150,12 @@ const main = async () => {
     case "logs":
       return console.log(await inSandbox(a, `tail -n ${Number(b ?? 80)} /home/user/.dream/logs/dreamd.log`))
     case "exec":
-      return console.log(await inSandbox(a, b, 300_000))
+      return console.log(await inSandbox(a, b ?? "", 300_000))
     case "wait": {
       const deadline = Date.now() + Number(b ?? 15) * 60_000
-      const before = new Set(((await rpc("ListMessages", { projectId: a, limit: 50 })).messages as Json[]).map((m) => m.id))
+      const before = new Set(
+        ((await rpc("ListMessages", { projectId: a, limit: 50 })).messages as Json[]).map((m) => m.id)
+      )
       let idleChecks = 0
       while (Date.now() < deadline) {
         await new Promise((r) => setTimeout(r, 20_000))

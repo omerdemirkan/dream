@@ -14,7 +14,7 @@
 import { timingSafeEqual } from "node:crypto"
 import { chmod, rm } from "node:fs/promises"
 import { createServer } from "node:http"
-import { DaemonAuth, DaemonRpcs, HttpRpcSerialization, Routes, Unauthorized } from "@dream/domain"
+import { DaemonAuth, DaemonRestarting, DaemonRpcs, HttpRpcSerialization, Routes, Unauthorized } from "@dream/domain"
 import { NodeHttpServer } from "@effect/platform-node"
 import { Effect, Layer, Option, Redacted, Schema } from "effect"
 import {
@@ -30,6 +30,7 @@ import { RpcServer } from "effect/rpc"
 import { Agent } from "./Agent.ts"
 import { DreamdConfig } from "./Config.ts"
 import { Inbox } from "./Inbox.ts"
+import { Shutdown } from "./Shutdown.ts"
 import { version } from "./version.ts"
 
 // ---------------------------------------------------------------------------
@@ -40,14 +41,21 @@ const DaemonHandlers = DaemonRpcs.toLayer(
   Effect.gen(function* () {
     const inbox = yield* Inbox
     const agent = yield* Agent
+    const shutdown = yield* Shutdown
+    const config = yield* DreamdConfig
+    const envHash = Option.match(config.envHash, { onNone: () => ({}), onSome: (envHash) => ({ envHash }) })
     return {
       Deliver: ({ events, timeZone }) =>
-        inbox.deliver(events, timeZone).pipe(
-          Effect.map((accepted) => ({ accepted })),
-          Effect.tap(({ accepted }) => Effect.logInfo("Delivered", { events: accepted })),
-          Effect.orDie
-        ),
-      Health: () => agent.status.pipe(Effect.map((status) => ({ version, ...status })))
+        Effect.gen(function* () {
+          // Accepting now would start a turn the restart is about to interrupt.
+          if (yield* shutdown.pending) {
+            return yield* new DaemonRestarting({ message: "dreamd is restarting; deliver again once it's back" })
+          }
+          const accepted = yield* inbox.deliver(events, timeZone).pipe(Effect.orDie)
+          yield* Effect.logInfo("Delivered", { events: accepted })
+          return { accepted }
+        }),
+      Health: () => agent.status.pipe(Effect.map((status) => ({ version, ...status, ...envHash })))
     }
   })
 )

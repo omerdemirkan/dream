@@ -8,6 +8,10 @@
  * place dreamd spawns harness processes. Every child gets `env` (see
  * `HarnessEnv.ts`), never dreamd's own environment, so the project and daemon
  * tokens don't leak into the agent's shell or the apps it starts.
+ *
+ * Each child leads its own process group, and stopping one signals the whole
+ * group, so the CLI a bridge started, and whatever that started, stop with it.
+ * Sessions share a `Spawned` registry, which dreamd stops when it exits.
  */
 import { type ChildProcess, spawn as nodeSpawn } from "node:child_process"
 import { createReadStream } from "node:fs"
@@ -26,7 +30,12 @@ import {
 type SpawnOptions = Parameters<SandboxSession["run"]>[0] & { readonly stdin?: boolean }
 type WritableProcess = SandboxProcess & { readonly stdin: WritableStream<Uint8Array> }
 
-const makeSession = (cwd: string, env: Readonly<Record<string, string>>, children: Set<ChildProcess>) => {
+/** The processes a set of sessions started that are still running. */
+export type Spawned = Set<ChildProcess>
+
+export const makeSpawned = (): Spawned => new Set()
+
+const makeSession = (cwd: string, env: Readonly<Record<string, string>>, registries: ReadonlyArray<Spawned>) => {
   const resolvePath = (path: string) => (isAbsolute(path) ? path : resolve(cwd, path))
 
   const spawnChild = (options: SpawnOptions) => {
@@ -36,10 +45,15 @@ const makeSession = (cwd: string, env: Readonly<Record<string, string>>, childre
       cwd: options.workingDirectory === undefined ? cwd : resolvePath(options.workingDirectory),
       env: { ...env, ...options.env },
       stdio: [options.stdin === true ? "pipe" : "ignore", "pipe", "pipe"],
-      ...(options.abortSignal === undefined ? {} : { signal: options.abortSignal })
+      detached: true
     })
-    children.add(child)
-    child.once("exit", () => children.delete(child))
+    for (const registry of registries) registry.add(child)
+    const onAbort = () => signalGroup(child, "SIGTERM")
+    options.abortSignal?.addEventListener("abort", onAbort, { once: true })
+    child.once("exit", () => {
+      for (const registry of registries) registry.delete(child)
+      options.abortSignal?.removeEventListener("abort", onAbort)
+    })
     return child
   }
 
@@ -52,11 +66,13 @@ const makeSession = (cwd: string, env: Readonly<Record<string, string>>, childre
       child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk))
       child.once("error", reject)
       child.once("close", (code, signal) =>
-        resolvePromise({
-          exitCode: exitCodeOf(code, signal),
-          stdout: Buffer.concat(stdout).toString(),
-          stderr: Buffer.concat(stderr).toString()
-        })
+        options.abortSignal?.aborted
+          ? reject(options.abortSignal.reason)
+          : resolvePromise({
+              exitCode: exitCodeOf(code, signal),
+              stdout: Buffer.concat(stdout).toString(),
+              stderr: Buffer.concat(stderr).toString()
+            })
       )
     })
 
@@ -88,7 +104,7 @@ const makeSession = (cwd: string, env: Readonly<Record<string, string>>, childre
       stderr: Readable.toWeb(child.stderr!) as ReadableStream<Uint8Array>,
       wait: () => exited,
       kill: async () => {
-        child.kill()
+        signalGroup(child, "SIGTERM")
       }
     }
     return child.stdin === null
@@ -187,20 +203,23 @@ export const makeLocalSandboxSession = async (options: {
   readonly id: string
   readonly cwd: string
   readonly env: Readonly<Record<string, string>>
+  /** Where to record what this session starts, so it can be stopped from outside it. */
+  readonly spawned?: Spawned
 }): Promise<HarnessV1NetworkSandboxSession> => {
   const cwd = resolve(options.cwd)
   await fs.mkdir(cwd, { recursive: true })
-  const children = new Set<ChildProcess>()
-  const session = makeSession(cwd, options.env, children)
+  const children: Spawned = new Set()
+  // `stop` ends this session's processes; `stopAll(spawned)` everyone's.
+  const session = makeSession(
+    cwd,
+    options.env,
+    options.spawned === undefined ? [children] : [children, options.spawned]
+  )
   let ports: ReadonlyArray<number> = [await freePort()]
   const getPortEndpoint = async (port: { port: number; protocol?: "http" | "https" | "ws" }) =>
     ({ url: `${port.protocol ?? "http"}://127.0.0.1:${port.port}` }) satisfies HarnessV1PortEndpoint
   /** Stops only what this session spawned; the sandbox itself belongs to E2B. */
-  const stop = async () => {
-    const running = [...children]
-    children.clear()
-    await Promise.all(running.map(terminate))
-  }
+  const stop = () => stopAll(children)
   return {
     ...session,
     id: options.id,
@@ -236,14 +255,41 @@ const isNotFound = (error: unknown): boolean =>
 const exitCodeOf = (code: number | null, signal: NodeJS.Signals | null): number =>
   code ?? (signal === null ? 0 : 128 + (constants.signals[signal] ?? 0))
 
+/** Signals the child's process group (it leads one; see `spawnChild`), or the child alone if that fails. */
+const signalGroup = (child: ChildProcess, signal: NodeJS.Signals) => {
+  if (child.pid === undefined) return
+  try {
+    process.kill(-child.pid, signal)
+  } catch {
+    child.kill(signal)
+  }
+}
+
+/** SIGTERM to the child's group, then SIGKILL if the child is still there 2 s later. */
 const terminate = (child: ChildProcess): Promise<void> =>
   child.exitCode !== null || child.signalCode !== null
     ? Promise.resolve()
     : new Promise((resolvePromise) => {
-        const kill = setTimeout(() => child.kill("SIGKILL"), 2_000)
+        const kill = setTimeout(() => {
+          signalGroup(child, "SIGKILL")
+          resolvePromise()
+        }, 2_000)
         child.once("exit", () => {
           clearTimeout(kill)
           resolvePromise()
         })
-        child.kill("SIGTERM")
+        signalGroup(child, "SIGTERM")
       })
+
+/** Stops every process in `spawned`, with their process groups; resolves within about 2 s. */
+export const stopAll = async (spawned: Spawned): Promise<void> => {
+  const running = [...spawned]
+  spawned.clear()
+  await Promise.all(running.map(terminate))
+}
+
+/** For a process that's exiting: SIGKILL every group in `spawned`, synchronously. */
+export const killAllNow = (spawned: Spawned): void => {
+  for (const child of spawned) signalGroup(child, "SIGKILL")
+  spawned.clear()
+}

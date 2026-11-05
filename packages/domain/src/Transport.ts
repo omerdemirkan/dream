@@ -54,7 +54,12 @@ export const DaemonEnv = {
   port: "DREAM_DAEMON_PORT",
   socket: "DREAM_SOCKET",
   /** Optional: the model dreamd asks the harness for instead of its default. */
-  model: "DREAM_MODEL"
+  model: "DREAM_MODEL",
+  /**
+   * Optional: what the ProjectDO calls this file's settings (a hash). dreamd reports it back in `Health`, so the
+   * DO knows the dreamd answering is the one that read this file.
+   */
+  envHash: "DREAM_ENV_HASH"
 } as const
 
 export const DefaultDaemonPort = 4747
