@@ -3,7 +3,9 @@
 # xcodebuild. Run it from anywhere in the repo.
 #
 #   scripts/build-ios.sh simulator
-#       Release build for the iOS Simulator, unsigned. Prints the .app path.
+#       Build for the iOS Simulator, unsigned. Prints the .app path. Release embeds
+#       the JavaScript; CONFIGURATION=Debug makes a development build that loads it
+#       from Metro (expo-dev-client).
 #
 #   scripts/build-ios.sh testflight --asc-key-path AuthKey_ABC123.p8 --asc-key-id ABC123 --asc-issuer-id <uuid>
 #       Archives with automatic signing (Xcode creates or updates the App IDs and
@@ -63,13 +65,14 @@ scheme="$(basename "$workspace" .xcworkspace)"
 mkdir -p "$build_dir"
 
 if [[ "$mode" == "simulator" ]]; then
-  echo "› Building $scheme for the iOS Simulator"
-  xcodebuild -workspace "$workspace" -scheme "$scheme" -configuration Release \
+  configuration="${CONFIGURATION:-Release}"
+  echo "› Building $scheme ($configuration) for the iOS Simulator"
+  xcodebuild -workspace "$workspace" -scheme "$scheme" -configuration "$configuration" \
     -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
     -derivedDataPath "$build_dir/derived" \
     CODE_SIGNING_ALLOWED=NO CURRENT_PROJECT_VERSION="$build_number" \
     build | (command -v xcbeautify >/dev/null && xcbeautify || cat)
-  app="$(ls -d "$build_dir"/derived/Build/Products/Release-iphonesimulator/*.app | head -n1)"
+  app="$(ls -d "$build_dir"/derived/Build/Products/"$configuration"-iphonesimulator/*.app | head -n1)"
   echo "› Built $app"
   exit 0
 fi

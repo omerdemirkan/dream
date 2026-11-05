@@ -19,7 +19,7 @@ contracts in `packages/domain`. If those stay the single source of truth, the pi
 | `infra/alchemy.run.ts` | The Stack: zone, DNS, the Worker and everything it binds | control plane |
 | `packages/dreamd` | Sandbox daemon (event loop, harness turns) and the `dream` CLI (Node 24) | sandbox runtime |
 | `packages/sandbox-template` | E2B template build | sandbox runtime |
-| `apps/mobile` | Expo SDK 58 app (placeholder until `create-expo-app`) | mobile |
+| `apps/mobile` | Expo SDK 58 iPhone app, its Live Activity widget, and `scripts/build-ios.sh` (see its README) | mobile |
 
 Workspace packages export their TypeScript source (`"exports": { ".": "./src/index.ts" }`); there is no build step.
 Bundlers (alchemy's rolldown, Metro, Vitest) and Node 24's type stripping consume `.ts` directly.
@@ -166,8 +166,11 @@ the other workstreams to agree first.
   sandbox, so the ProjectDO starts dreamd by writing `DaemonEnvFile` (rewriting it restarts dreamd). Both harness
   CLIs are pre-installed. `packages/sandbox-template/scripts/smoke.ts` checks a fresh sandbox, and with
   `packages/dreamd/scripts/fake-api.ts` and `fake-responses.ts` (exposed publicly) it runs a Codex turn there.
-- **Mobile.** Run `create-expo-app` inside `apps/mobile` with bun, keep the package name `@dream/mobile`, and depend on
-  `@dream/domain` (`workspace:*`). Domain source uses explicit `.ts` import extensions and `exports` maps, so confirm
-  Metro resolves both. Confirm where expo-notifications exposes custom APNs keys and adjust `PushDataKey` if needed.
-  The Swift widget decodes `LiveActivityContent` and `LiveActivityAttributes` (`DreamActivityAttributes`). Mobile tests
-  aren't in the root Vitest config yet; add a project there when they exist.
+- **Mobile.** `apps/mobile` is an Expo SDK 58 development-build app (native modules, so not Expo Go). Metro resolves
+  the domain's `.ts` imports and `exports` maps with no extra config. The services in `src/data` are plain Effect and
+  tested in Node (`apps/mobile/test`); screens are checked in the iOS Simulator. `DREAM_BACKEND=fixtures` runs the
+  whole app against an in-app fake of `AppRpcs`/`ProjectLiveRpcs`, and every screen state has a link or launch
+  argument (see `apps/mobile/README.md`). `PushDataKey` ("dream") works as is: expo-notifications exposes the full
+  APNs payload as `trigger.payload` (taps) and `data` (background task). The Swift widget and `modules/dream-native`
+  both define `DreamActivityAttributes` matching `LiveActivityAttributes`/`LiveActivityContent`; keep the two copies
+  identical. iOS builds: `apps/mobile/scripts/build-ios.sh` (expo prebuild + xcodebuild, Simulator or TestFlight).
