@@ -5,7 +5,7 @@
  * the new values. Where dreamd keeps its state, and where the agent works,
  * are properties of the sandbox template and come from the environment.
  */
-import { DaemonConfig, DaemonEnv, DaemonEnvFile } from "@dream/domain"
+import { DaemonConfig, DaemonEnv, DaemonEnvFile, ReasoningEffort } from "@dream/domain"
 import { Config, ConfigProvider, Context, Duration, Effect, FileSystem, Layer, Option, Schedule } from "effect"
 
 export interface DreamdConfigShape extends Config.Success<typeof DaemonConfig> {
@@ -16,8 +16,10 @@ export interface DreamdConfigShape extends Config.Success<typeof DaemonConfig> {
   readonly home: string
   /** The env file this config was read from, watched for changes. */
   readonly envFile: string
-  /** A model to ask the harness for instead of its default. */
+  /** The operator's override of the top-level agent's model (see `harness/Fleet.ts`). */
   readonly model: Option.Option<string>
+  /** The operator's override of the top-level agent's reasoning effort. */
+  readonly effort: Option.Option<ReasoningEffort>
   /** What the ProjectDO called the env file's settings; `Health` reports it. */
   readonly envHash: Option.Option<string>
   /** For testing: where Codex sends model requests instead of the ChatGPT backend. */
@@ -29,6 +31,7 @@ const LocalConfig = Config.all({
   stateDir: Config.option(Config.NonEmptyString("DREAM_STATE_DIR")),
   workDir: Config.option(Config.NonEmptyString("DREAM_WORKDIR")),
   model: Config.option(Config.NonEmptyString(DaemonEnv.model)),
+  effort: Config.option(Config.schema(ReasoningEffort, DaemonEnv.effort)),
   envHash: Config.option(Config.NonEmptyString(DaemonEnv.envHash)),
   codexBaseUrl: Config.option(Config.NonEmptyString("DREAM_CODEX_BASE_URL"))
 })
@@ -68,6 +71,7 @@ const load = (provider: ConfigProvider.ConfigProvider, envFile: string) =>
       workDir: Option.getOrElse(local.workDir, () => `${local.home}/project`),
       envFile,
       model: local.model,
+      effort: local.effort,
       envHash: local.envHash,
       codexBaseUrl: local.codexBaseUrl
     })

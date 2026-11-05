@@ -156,15 +156,23 @@ describe("Connect envelopes", () => {
 })
 
 describe("small rules", () => {
-  it("gives the agent model to Claude Code only", () => {
-    const base = { apiUrl: "https://api.dream.test", projectId: "prj_1" as any, daemonToken: "t" }
-    const haiku = Option.some("claude-haiku-4-5-20251001")
-    assert.strictEqual(
-      daemonSettings({ ...base, harness: "claude-code", agentModel: haiku }).DREAM_MODEL,
-      "claude-haiku-4-5-20251001"
-    )
-    assert.notProperty(daemonSettings({ ...base, harness: "codex", agentModel: haiku }), "DREAM_MODEL")
+  it("gives each harness only its own model override, and the effort override to both", () => {
+    const base = {
+      apiUrl: "https://api.dream.test",
+      projectId: "prj_1" as any,
+      daemonToken: "t",
+      agentModel: Option.some("haiku"),
+      codexAgentModel: Option.some("gpt-6-luna"),
+      agentEffort: Option.none()
+    }
+    assert.strictEqual(daemonSettings({ ...base, harness: "claude-code" }).DREAM_MODEL, "haiku")
+    assert.strictEqual(daemonSettings({ ...base, harness: "codex" }).DREAM_MODEL, "gpt-6-luna")
+    assert.notProperty(daemonSettings({ ...base, harness: "codex", codexAgentModel: Option.none() }), "DREAM_MODEL")
     assert.notProperty(daemonSettings({ ...base, harness: "claude-code", agentModel: Option.none() }), "DREAM_MODEL")
+    assert.notProperty(daemonSettings({ ...base, harness: "claude-code" }), "DREAM_EFFORT")
+    for (const harness of ["claude-code", "codex"] as const) {
+      assert.strictEqual(daemonSettings({ ...base, harness, agentEffort: Option.some("low") }).DREAM_EFFORT, "low")
+    }
   })
 
   it("slugs ideas into short DNS-safe names", () => {

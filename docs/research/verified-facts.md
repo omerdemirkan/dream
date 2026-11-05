@@ -302,3 +302,65 @@
   archives for devices unsigned (~4 min) with no patches. The `26.x` image stops at Xcode 26.3. Outerloop's own
   simulator (`ol simulator`) has only Expo Go and no app install, so Dream's screens are checked on the Namespace Mac
   (simctl, `axe` from Homebrew for taps and typing; type in short chunks, fast input drops characters).
+
+## Agent fleet (2026-11-05, feat/agent-fleet; Claude Code 2.1.318 / agent SDK 0.3.318, Codex 0.165.0)
+Checked against the CLIs' own requests (fake Messages/Responses servers that log them), through the adapters in a
+test template (`dream-sandbox-fleet`, whose `harness-check` now asserts all of this), and on the founder's Claude
+subscription with real models. No ChatGPT account is connected, so nothing on Codex ran against a real model.
+- Top level, as dreamd sets it (`packages/dreamd/src/harness/Fleet.ts`): `HarnessAgent({ model })` plus
+  `createClaudeCode({ effort })` / `createCodex({ reasoningEffort })`. Both adapters take low|medium|high|xhigh|max.
+  - Claude Code: model `opus`, effort `high`. Aliases in 2.1.318: `opus` → claude-opus-5-5, `fable` →
+    claude-fable-5-1, `sonnet` → claude-sonnet-5-5, `haiku` → claude-haiku-5-5; all four ran on the founder's
+    subscription (Opus 5.5 reports a 1M context window). An alias moves when the CLI does, so no model pin to bump.
+    Without a model or effort the CLI defaults to claude-sonnet-5-5 at effort medium. The requests carry
+    `output_config.effort` and `thinking: {type: "adaptive"}`. Fable 5.1 is a tier above Opus (newest model in the
+    CLI); the founder's rule says Opus.
+  - Codex: model `gpt-6.1-sol`, effort `high`. There is no alias that tracks a model family, so it is a pin.
+    Codex 0.165.0's bundled catalog (`codex debug models --bundled`; the live one comes from
+    chatgpt.com/backend-api/codex/models): gpt-6.1-sol "Latest workhorse model for coding and everyday work"
+    (priority 1, Codex's own default; default effort low), gpt-6-astra "Frontier intelligence for the most demanding
+    work" (priority 2), gpt-6.1-terra, gpt-6-sol "Previous generation workhorse", gpt-6-luna "Fast and affordable",
+    gpt-5.6-sol/terra/luna (older), gpt-5.5 "Legacy coding model", plus hidden cyber and auto-review models. So
+    "the latest Sol" is gpt-6.1-sol, but the frontier flagship is gpt-6-astra.
+  - Before this branch Codex ran harness-codex's hard-coded default, gpt-5.5, because "GPT-5.6 models use Responses
+    Lite, which does not expose their code-mode tools ... through the custom model provider"
+    (github.com/openai/codex/issues/31894, open). Newer models (`use_responses_lite`, `tool_mode: code_mode_only`)
+    get their tools in an `additional_tools` input item, not top-level `tools`; Codex's built-in `openai` provider
+    sends the same shape as the bridge's custom provider. Whether the real ChatGPT backend exposes them to
+    gpt-6.1-sol through Dream's route is UNVERIFIED (no ChatGPT account); check one real Codex turn that runs a
+    command before deploying.
+- Operator overrides (Worker secrets → dreamd env): `DREAM_AGENT_MODEL` (Claude Code projects) and
+  `DREAM_CODEX_AGENT_MODEL` (Codex projects) → `DREAM_MODEL`; `DREAM_AGENT_EFFORT` (both) → `DREAM_EFFORT`.
+  Unset = the fleet. A set `DREAM_AGENT_MODEL` keeps overriding Opus after a deploy until it is deleted.
+- Claude Code subagents: the `Agent` tool. Per call: `model` ∈ {"sonnet","opus","haiku","fable"} (aliases only, no
+  ids), `effort` ∈ {"low","medium","high","xhigh","max"}, plus `description` and `prompt` (required),
+  `subagent_type`, `run_in_background` (boolean), `isolation` ("worktree"|"remote"). Per-call values beat a
+  definition's frontmatter. Omitted, the subagent inherits the parent's model and effort (opus/high). Verified:
+  `{model:"haiku", effort:"low"}` → the subagent's requests are claude-haiku-5-5 at effort low (also on the real
+  subscription: Opus 5.5 called Agent with haiku/low and Haiku 5.5 answered). The schema's own text tells the model
+  to set `effort` "ONLY when the user, or instructions such as CLAUDE.md or a skill, explicitly ask", so Dream's
+  prompt has to say explicitly that choosing effort per subagent is expected. Subagents get the Agent tool too.
+  - Definitions in `~/.claude/agents/<name>.md` (frontmatter `name`, `description`, `model` alias or id,
+    `effort` named level or integer, `tools`, …) load in the harness and are picked with `subagent_type`; built-in
+    types are claude, Explore, general-purpose, Plan, statusline-setup. Not needed for model/effort choice, so dreamd
+    writes none. (The SDK's `agents` option isn't passed through by harness-claude-code.)
+  - `run_in_background` defaults to true. A background subagent still running when the turn's last reply is sent
+    is killed with the CLI (checked: a 40 s subagent never finished, the turn ended after 3 s); with
+    `run_in_background: false` the turn waited 42 s for it. Quick background agents whose completion notice arrives
+    before the final reply are fine.
+  - Side requests (no tools) also go to the top-level model, at effort medium.
+- Codex subagents: the `collaboration` namespace (multi-agent v2): `spawn_agent`, `wait_agent`, `send_message`,
+  `followup_task`, `interrupt_agent`, `list_agents`. `spawn_agent` params: `task_name` (required; lowercase,
+  digits, underscores), `message` (required), `model` (optional catalog slug), `reasoning_effort` (optional;
+  omitted inherits the parent's), `fork_turns` ("all" default | "none"). Its description lists the models it
+  accepts with their efforts: gpt-6.1-sol, gpt-6-astra, gpt-6-sol and gpt-5.6-sol take low|medium|high|xhigh|max|
+  ultra; gpt-6-luna low…max. "ultra" = "Maximum reasoning with automatic task delegation". Codex validates:
+  "Reasoning effort `ultra` is not supported for model `gpt-6-luna`. Supported reasoning efforts: …", "Unknown model
+  `gpt-9` for spawn_agent. Available models: …". Verified: model gpt-6-luna + effort low → the child's requests are
+  gpt-6-luna at low. Spawning is asynchronous; the parent collects results with `wait_agent` (timeout_ms 10 s–1 h,
+  default 30 s). Whether a child outlives the parent's turn wasn't checked.
+  - Only models whose catalog entry has multi-agent v2 get these tools; gpt-5.5 gets none. A thread keeps the tool
+    set it started with: a thread begun on gpt-5.5 and switched to gpt-6.1-sol has no `collaboration` tools
+    ("unsupported call"). Production has no Codex projects (2026-11-05), so nothing needs migrating.
+  - Codex v2 has no predefined roles in `spawn_agent` (no `agent_type`), so per-call `model` + `reasoning_effort`
+    is the only way to choose.

@@ -6,6 +6,13 @@ export const Harness = Schema.Literals(["claude-code", "codex"])
 export type Harness = typeof Harness.Type
 
 /**
+ * How hard the top-level agent reasons: the levels both harnesses take for a session (Claude Code's `effort`,
+ * Codex's `model_reasoning_effort`). Each model may accept more (Codex's `ultra`) or fewer.
+ */
+export const ReasoningEffort = Schema.Literals(["low", "medium", "high", "xhigh", "max"])
+export type ReasoningEffort = typeof ReasoningEffort.Type
+
+/**
  * Where the project is, as the agent describes it (`dream status --phase`).
  * Starts at "new" (shown as "Looking into this"). If the agent hasn't set one
  * when its first turn starts, the platform moves it to "exploring".

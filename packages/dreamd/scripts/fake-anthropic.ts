@@ -3,13 +3,16 @@
  *
  *   - a prompt containing `RUN: <command>` gets a Bash tool call running it (`RUN_BG: <command>` runs it with
  *     `run_in_background`), then, once the result comes back, a reply saying so;
+ *   - a prompt containing `AGENT: <json>` gets an Agent tool call with that input (say
+ *     `{"description":"check","prompt":"say hi","model":"haiku","effort":"low"}`), to start a subagent;
  *   - any other prompt gets a reply listing every `REMEMBER: <word>` the conversation holds, and how many user
  *     messages it has, so a resumed session shows its history.
  *
  *   node packages/dreamd/scripts/fake-anthropic.ts [port]     (default 18789)
  *
  * Point Claude Code at it with ANTHROPIC_BASE_URL=http://127.0.0.1:<port> (in dreamd's sandbox, through the `env`
- * of ~/.claude/settings.json). It prints one JSON line per request, never the Authorization header.
+ * of ~/.claude/settings.json). It prints one JSON line per request, with the model and effort asked for, never the
+ * Authorization header.
  * Node built-ins only, so it runs from anywhere.
  */
 import { createServer } from "node:http"
@@ -62,6 +65,11 @@ const render = (model: string, { block, stop }: Reply, stream: boolean) => {
 
 const text = (body: string): Reply => ({ block: { type: "text", text: body }, stop: "end_turn" })
 
+const agent = (input: unknown): Reply => ({
+  block: { type: "tool_use", id: `toolu_fake_${counter + 1}`, name: "Agent", input },
+  stop: "tool_use"
+})
+
 const bash = (command: string, background: boolean): Reply => ({
   block: {
     type: "tool_use",
@@ -77,8 +85,13 @@ createServer((request, response) => {
   request.on("data", (chunk: Buffer) => chunks.push(chunk))
   request.on("end", () => {
     const path = (request.url ?? "").split("?")[0] ?? ""
-    let body: { model?: string; messages?: ReadonlyArray<Message>; tools?: ReadonlyArray<unknown>; stream?: boolean } =
-      {}
+    let body: {
+      model?: string
+      messages?: ReadonlyArray<Message>
+      tools?: ReadonlyArray<unknown>
+      stream?: boolean
+      output_config?: { effort?: string }
+    } = {}
     try {
       body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}")
     } catch {
@@ -104,26 +117,37 @@ createServer((request, response) => {
     const toolResult =
       last !== undefined && typeof last.content !== "string" && last.content.some((b) => b.type === "tool_result")
     // Only the agent's own requests carry tools; Claude Code's side requests (titles, summaries) get plain text.
-    const run = (body.tools?.length ?? 0) > 0 ? /RUN(_BG)?: (.+)$/m.exec(lastText) : null
+    const withTools = (body.tools?.length ?? 0) > 0
+    const run = withTools ? /RUN(_BG)?: (.+)$/m.exec(lastText) : null
+    const spawn = withTools ? /AGENT: (\{.+\})$/m.exec(lastText) : null
     const remembered = userTexts.flatMap((t) => [...t.matchAll(/REMEMBER: (\w+)/g)].map((m) => m[1]))
     const answer = toolResult
       ? text("The command ran.")
-      : run !== null
-        ? bash(run[2]!.trim(), run[1] !== undefined)
-        : text(`I remember: ${remembered.join(", ") || "nothing"}. User messages so far: ${userTexts.length}.`)
+      : spawn !== null
+        ? agent(JSON.parse(spawn[1]!))
+        : run !== null
+          ? bash(run[2]!.trim(), run[1] !== undefined)
+          : text(`I remember: ${remembered.join(", ") || "nothing"}. User messages so far: ${userTexts.length}.`)
     console.log(
       JSON.stringify({
         at: new Date().toISOString(),
         path,
         client: request.headers["user-agent"],
         model,
+        effort: body.output_config?.effort,
         messages: messages.length,
         roles: messages.map((m) => m.role[0]).join(""),
         tools: body.tools?.length ?? 0,
         stream: body.stream === true,
         userMessages: userTexts.length,
         remembered,
-        did: toolResult ? "after-tool" : run !== null ? `bash${run[1] ?? ""}: ${run[2]}` : "reply"
+        did: toolResult
+          ? "after-tool"
+          : spawn !== null
+            ? `agent: ${spawn[1]}`
+            : run !== null
+              ? `bash${run[1] ?? ""}: ${run[2]}`
+              : "reply"
       })
     )
     const stream = body.stream === true

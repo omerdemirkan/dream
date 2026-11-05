@@ -1,8 +1,10 @@
 /**
  * Runs one turn on each harness in a sandbox of a template build, against fakes for the Worker and both models
  * (packages/dreamd/scripts/fake-api.ts, fake-anthropic.ts and fake-responses.ts, as shipped in the build), so a
- * Claude Code or Codex release that breaks its adapter is caught before any project gets it. `build.ts` runs it on
- * every build before tagging the build `default`; on its own:
+ * Claude Code or Codex release that breaks its adapter is caught before any project gets it. The turn also checks
+ * the fleet: the top-level agent asks for the model and effort dreamd says it runs on, and starts a subagent on a
+ * model and effort of its choosing (Claude Code's `Agent` tool, Codex's `spawn_agent`), which the subagent's own
+ * requests carry. `build.ts` runs it on every build before tagging the build `default`; on its own:
  *
  *   node scripts/harness-check.ts [template[:tag]]     (default: the current dream-sandbox build)
  */
@@ -59,19 +61,84 @@ const turn = async (sandbox: Sandbox, harness: HarnessResult["harness"]): Promis
   )
   if (up.exitCode !== 0) return { harness, ok: false, detail: "dreamd didn't start" }
   const lines = Number((await sh(sandbox, `wc -l < ${log}`)).output)
+  const fake = harness === "claude-code" ? "/tmp/fakes/anthropic.log" : "/tmp/fakes/responses.log"
+  const fakeLines = Number((await sh(sandbox, `wc -l < ${fake}`)).output)
   const deliver = `node --disable-warning=ExperimentalWarning ${scripts}/deliver.ts http://127.0.0.1:${DefaultDaemonPort} ${daemonToken}`
-  const sent = await sh(sandbox, `${deliver} message "Harness check: say hello."`)
+  const sent = await sh(sandbox, `${deliver} message ${shellQuote(checkMessage)}`)
   if (sent.exitCode !== 0) return { harness, ok: false, detail: `delivery failed: ${sent.output}` }
   const ended = await sh(
     sandbox,
     `for i in $(seq 1 150); do tail -n +${lines + 1} ${log} | grep -qE "Turn finished|The turn failed" && break; sleep 2; done; tail -n +${lines + 1} ${log} | grep -E "Turn |turn failed|harness:.*error" | cut -c1-300 | head -12`,
     330_000
   )
-  // And the turn reached the fake model (not, say, the real API with a placeholder token).
-  const fake = harness === "claude-code" ? "/tmp/fakes/anthropic.log" : "/tmp/fakes/responses.log"
-  const asked = Number((await sh(sandbox, `grep -cE '"/v1/messages"|/responses' ${fake} || true`)).output)
-  const ok = ended.output.includes("Turn finished") && !ended.output.includes("The turn failed") && asked > 0
-  return { harness, ok, detail: `${ended.output}\n(${asked} requests reached the fake model)` }
+  // And the turn reached the fake model (not, say, the real API with a placeholder token), on the fleet's models.
+  const requests = (await sh(sandbox, `tail -n +${fakeLines + 1} ${fake}`)).output
+    .split("\n")
+    .flatMap((line): ReadonlyArray<FakeRequest> => {
+      try {
+        const request = JSON.parse(line) as FakeRequest
+        return request.model === undefined ? [] : [request]
+      } catch {
+        return []
+      }
+    })
+  // Logged when the harness starts, before the turn.
+  const runsOn = (await sh(sandbox, `grep "The agent runs on" ${log} | tail -1 | cut -c1-300`)).output
+  const fleet = fleetProblems(harness, runsOn, requests)
+  const ok = ended.output.includes("Turn finished") && !ended.output.includes("The turn failed") && fleet.length === 0
+  const asked = requests.map(
+    (r) => `${r.model}/${r.effort ?? "-"}${r.did?.startsWith("reply") === false ? ` ${r.did}` : ""}`
+  )
+  return {
+    harness,
+    ok,
+    detail: [
+      runsOn,
+      ended.output,
+      `(${requests.length} requests reached the fake model: ${asked.join(", ")})`,
+      ...fleet
+    ].join("\n")
+  }
+}
+
+/** One line for each fake: Claude Code's subagent runs on Haiku at low effort, Codex's on its own model at low. */
+const checkMessage = [
+  "Harness check: say hello.",
+  'AGENT: {"description":"harness check","prompt":"say hi","model":"haiku","effort":"low","run_in_background":false}',
+  'SPAWN: {"task_name":"harness_check","message":"say hi","reasoning_effort":"low","fork_turns":"none"}'
+].join("\n")
+
+const shellQuote = (text: string) => `'${text.replaceAll("'", "'\\''")}'`
+
+interface FakeRequest {
+  readonly model?: string
+  readonly effort?: string
+  readonly did?: string
+}
+
+/** What's wrong with the models and efforts the turn asked for; nothing if it's the fleet. */
+const fleetProblems = (
+  harness: HarnessResult["harness"],
+  dreamdLog: string,
+  requests: ReadonlyArray<FakeRequest>
+): ReadonlyArray<string> => {
+  const runsOn = /The agent runs on \S+, model (\S+), effort (\S+)/.exec(dreamdLog)
+  if (runsOn === null) return ["dreamd didn't say which model the agent runs on"]
+  const [, model, effort] = runsOn as unknown as [string, string, string]
+  const top = requests.filter((r) => r.did?.startsWith(harness === "claude-code" ? "agent:" : "spawn:"))
+  // Claude Code resolves an alias (`opus`) to an id of that family.
+  const isTop = (r: FakeRequest) =>
+    harness === "claude-code" && !model.startsWith("claude-") ? r.model?.includes(`-${model}-`) : r.model === model
+  const problems: Array<string> = []
+  if (top.length === 0) problems.push("the agent didn't start a subagent")
+  if (!top.every((r) => isTop(r) && r.effort === effort))
+    problems.push(`the top-level agent didn't ask for ${model}/${effort}`)
+  const sub =
+    harness === "claude-code"
+      ? requests.filter((r) => r.model?.includes("-haiku-") && r.effort === "low")
+      : requests.filter((r) => r.model === model && r.effort === "low")
+  if (sub.length === 0) problems.push("no request from a subagent on the model and effort it was given")
+  return problems
 }
 
 /** Both harnesses' turns in `sandbox`, which must be a fresh sandbox of the build (its dreamd waits for an env file). */
