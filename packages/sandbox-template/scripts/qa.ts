@@ -175,6 +175,6 @@ const main = async () => {
   }
 }
 main().catch((e: any) => {
-  console.error(String(e?.message ?? e))
+  console.error(String(e?.message ?? e), e?.cause ? `(cause: ${String(e.cause?.message ?? e.cause)})` : "")
   process.exit(1)
 })

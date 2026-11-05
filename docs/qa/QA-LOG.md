@@ -143,3 +143,16 @@ Other findings:
   text rather than question cards (still delivered; cards would also reach Home and send a notification).
 - 05:20 cron run: monitor.sh exited 0 (state unchanged), so the agent wasn't woken and no repeat alert was sent — the
   agent designed its script to exit non-zero only on a change. No spam.
+- R3 / QA3.3: cabin booking site prj_AfAC2cpCmnGEKnRLzH6iLQ — the tester rated it "excellent", but it kept prompting the
+  agent every few minutes, so autonomy and the 1-hour cap were never exercised, and it took the agent's claims at face
+  value. Reading the code: magic-link and approve/decline emails go to an Ethereal test inbox (nobody receives them;
+  the agent's first message said "requesters get notified"), so the only way in is the four login links posted in
+  Chat, which expire after 24 hours; approve/decline have no server-side admin check; "screenshots captured" were
+  never sent (no `--media` attempt; R2 is off anyway). The agent never mentioned needing an email service, which the
+  prompt already asks for ("what you'll need from them along the way") — model capability, no prompt change.
+  Lesson for the QA method: Haiku testers echo the agent; I verify claims myself (code, URL, data).
+- Mid-turn pause VERIFIED (05:41–05:48): asked the cabin agent to run a foreground `sleep 240`, then paused its sandbox
+  through E2B's API at 05:44:10, two minutes in. The ProjectDO's next keepalive tick (05:46:47) found it paused and
+  resumed it; the sleep and the Claude Code session carried on, and the turn finished at 05:48:32 with both timestamps
+  (6m36s wall clock = 4 min of sleep + ~2.6 min paused). The proactive cycle before E2B's 1-hour cap uses the same
+  pause → connect → revive path. (The agent replied in final text; the safety net posted it.)
