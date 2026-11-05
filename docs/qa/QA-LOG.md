@@ -91,3 +91,15 @@ Other findings:
   said "live" without loading its own URL. It asked 4 good questions in plain text; the safety net delivered them.
   Fix (skill facts, model-agnostic): published servers see Host = the e2b name (Vite must allow it), and the public URL
   is reachable from inside the sandbox, so it can load exactly what they'll see. Ships with the next template build.
+- R2 / QA2.2: HN digest prj_bg5PZZbmQ5sa6XUYplhiri — PASS: asked about email, got declined, pivoted to a web page,
+  `dream wake --cron "0 8 * * *"` scheduled, published, status live. Discord bot prj_K4rmAMnEMDnMdEBfjuhvpG — SECURITY
+  ISSUE: `dream access key` without --host → CLI dumped help text → agent fell back to `dream ask` for the token, and
+  the (fake) token was typed into Chat. Fix dispatched (`fix/secret-asks`): errors lead with the problem; `dream ask`
+  refuses credential requests (with an escape hatch); skill facts on header-only swapping (Telegram URL tokens and
+  Discord gateway can't be swapped; Discord REST can). Known limitation logged: services that put tokens in the URL or
+  body can't use Dream's header swap yet (possible v2: a URL-template credential proxy in the Worker).
+- R2 / QA2.5: weather + AQI dashboard prj_YjVF570gj2z5ia6bRLNaBn — FAIL: React runtime error (pm2_5 of undefined);
+  agent said "live" without loading it. Finance tracker prj_yc1yyU1wakbqPG1PVvywZd — multi-turn and Status card worked
+  well (question card with options, two follow-ups, status updated each time), but Vite dev server Host block again.
+  Fix dispatched (`feat/publish-check`): `dream publish` loads the public URL in the local headless Chromium and prints
+  status, title and page errors, so the facts are in front of the agent at the moment it publishes.
