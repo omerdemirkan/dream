@@ -141,6 +141,24 @@ export const fakeE2B = (world: FakeWorld) =>
     })
   )
 
+/**
+ * Just enough of the shell for the key files SandboxManager writes: `find <dir> -mindepth 1 -maxdepth 1
+ * [! -name <n>]… -exec rm -rf {} +` and `mv -f <from> <to>`.
+ */
+const emulateFileCommands = (files: Map<string, string>, command: string) => {
+  const find = /find (\S+) -mindepth 1 -maxdepth 1 (.*?)-exec rm -rf \{\} \+/.exec(command)
+  if (find !== null) {
+    const dir = find[1]!
+    const keep = new Set([...find[2]!.matchAll(/! -name (\S+)/g)].map((match) => `${dir}/${match[1]}`))
+    for (const path of [...files.keys()]) if (path.startsWith(`${dir}/`) && !keep.has(path)) files.delete(path)
+  }
+  const move = /mv -f (\S+) (\S+)/.exec(command)
+  if (move !== null && files.has(move[1]!)) {
+    files.set(move[2]!, files.get(move[1]!)!)
+    files.delete(move[1]!)
+  }
+}
+
 export const fakeEnvd = (world: FakeWorld) => {
   const outputFor = (command: string): ReadonlyArray<ProcessOutput> => {
     for (const [key, output] of world.scripts) if (command.includes(key)) return output
@@ -162,6 +180,8 @@ export const fakeEnvd = (world: FakeWorld) => {
       run: (sandbox, options) =>
         Effect.sync(() => {
           world.processes.push({ sandboxId: sandbox.sandboxId, command: options.command, pty: false })
+          const files = world.sandboxes.get(sandbox.sandboxId)?.files
+          if (files !== undefined) emulateFileCommands(files, options.command)
           return { exitCode: 0, output: "" }
         }),
       sendInput: (sandbox, pid, text) =>

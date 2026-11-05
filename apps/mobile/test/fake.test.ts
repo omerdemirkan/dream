@@ -63,8 +63,37 @@ describe("fixtures backend through the app's services", () => {
         const asks = yield* (yield* AppClient).ListOpenAsks()
         assert.deepStrictEqual(
           asks.map((a) => a.message.id),
-          ["msg_apple", "msg_cabinrule", "msg_cabinpick", "msg_gcal", "msg_recipewho"]
+          ["msg_apple", "msg_brieftelegram", "msg_cabinrule", "msg_cabinpick", "msg_gcal", "msg_recipewho"]
         )
+      })
+    )
+  )
+
+  it.effect("a key file goes to its project only, and removing it reopens the card", () =>
+    run(
+      Effect.gen(function* () {
+        yield* signIn
+        const app = yield* AppClient
+        const brief = "prj_morningbrief" as ProjectId
+        const messageId = "msg_brieftelegram" as MessageId
+        const connected = yield* app.SubmitKeyAccess({
+          projectId: brief,
+          messageId,
+          key: Redacted.make("FAKE:telegram")
+        })
+        assert.strictEqual(connected.state._tag, "Connected")
+        const file = (yield* app.ListIntegrations()).find((i) => i.access._tag === "File")!
+        assert.deepStrictEqual(file.access, {
+          _tag: "File",
+          service: "Telegram",
+          name: "telegram-bot-token",
+          path: "/home/user/.dream/keys/telegram-bot-token",
+          projectId: brief
+        })
+        yield* app.DisconnectIntegration({ integrationId: file.id })
+        const { messages } = yield* app.ListMessages({ projectId: brief })
+        const card = messages.find((m) => m.id === messageId)
+        assert.strictEqual(card?._tag === "Access" && card.state._tag, "Open")
       })
     )
   )

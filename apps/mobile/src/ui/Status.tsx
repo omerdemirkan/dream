@@ -28,7 +28,7 @@ import Animated, {
 import Svg, { Circle, Text as SvgText } from "react-native-svg"
 import { dayOfPhase, milestoneDate, phaseLabel, shortDuration, timeLabel } from "../data/format.ts"
 import type { ProjectState } from "../data/projectState.ts"
-import { accessLabel, accessScope } from "./describe.ts"
+import { accessLabel, accessReach, accessScope } from "./describe.ts"
 import { useNow, useOpenMessage } from "./hooks.ts"
 import { Dot, Icon, Lab } from "./kit.tsx"
 import { MediaStrip } from "./Media.tsx"
@@ -604,7 +604,7 @@ function Meta(props: { readonly connected: ReadonlyArray<AccessMessage>; readonl
           key={message.id}
           icon="lock"
           title={accessLabel(message.request)}
-          subtitle={`${accessScope(message.request) ? `${accessScope(message.request)} ` : ""}Shared by all your projects`}
+          subtitle={`${accessScope(message.request) ? `${accessScope(message.request)} ` : ""}${accessReach(message.request)}`}
           onPress={() => open({ projectId: message.projectId, messageId: message.id, message })}
           trailing="chev"
           divider={published || i > 0}

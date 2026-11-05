@@ -7,6 +7,10 @@
  *
  * Each RPC notes the command it backs. Commands print their result as text by
  * default and as JSON with `--json`.
+ *
+ * The calls that put text in front of them (messages, questions, access
+ * requests, the Status card, Live Activities) and scheduled wakes fail with
+ * `InvalidRequest` when the text contains one of the project's file keys.
  */
 import { Schema } from "effect"
 import { Rpc, RpcGroup } from "effect/rpc"
@@ -46,7 +50,8 @@ export class SandboxRpcs extends RpcGroup.make(
       why: Schema.optionalKey(Schema.String),
       meanwhile: Schema.optionalKey(Schema.String)
     },
-    success: QuestionMessage
+    success: QuestionMessage,
+    error: InvalidRequest
   }),
   /** `dream ask withdraw <message-id>`: the answer is no longer needed. Also withdraws its notification. */
   Rpc.make("WithdrawQuestion", {
@@ -55,8 +60,9 @@ export class SandboxRpcs extends RpcGroup.make(
     error: Schema.Union([NotFound, InvalidRequest])
   }),
   /**
-   * `dream access google|key|apple … --why "…" [--when "…"]`. Notifies unless `when` is set.
-   * `InvalidRequest` when a key's host can't be an egress target (`accessHostProblem`).
+   * `dream access google|key|file|apple … --why "…" [--when "…"]`. Notifies unless `when` is set.
+   * `InvalidRequest` when a key's host can't be an egress target (`accessHostProblem`) or a file key's name isn't
+   * a plain file name (`keyFileNameProblem`).
    */
   Rpc.make("RequestAccess", {
     payload: {
@@ -67,7 +73,7 @@ export class SandboxRpcs extends RpcGroup.make(
     success: AccessMessage,
     error: InvalidRequest
   }),
-  /** `dream access list`: everything they've connected, usable from every project. */
+  /** `dream access list`: what works here, meaning their shared integrations and this project's file keys. */
   Rpc.make("ListAccess", { success: Schema.Array(Integration) }),
   /** `dream notify withdraw <notification-id>`. */
   Rpc.make("WithdrawNotification", {
@@ -102,7 +108,7 @@ export class SandboxRpcs extends RpcGroup.make(
   /** `dream live start` (replaces any running activity), on their devices that support it. */
   Rpc.make("StartLiveActivity", {
     payload: { content: LiveActivityContent },
-    error: UpstreamFailure
+    error: Schema.Union([InvalidRequest, UpstreamFailure])
   }),
   /** `dream live update`. */
   Rpc.make("UpdateLiveActivity", {
@@ -112,7 +118,7 @@ export class SandboxRpcs extends RpcGroup.make(
   /** `dream live end`, optionally showing final content until iOS dismisses it. */
   Rpc.make("EndLiveActivity", {
     payload: { content: Schema.optionalKey(LiveActivityContent) },
-    error: UpstreamFailure
+    error: Schema.Union([InvalidRequest, UpstreamFailure])
   }),
 
   // Waking -----------------------------------------------------------------------

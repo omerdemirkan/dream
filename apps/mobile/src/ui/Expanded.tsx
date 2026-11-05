@@ -27,7 +27,7 @@ import {
 } from "../state/atoms.ts"
 import { useAction, useGoogleAccess, useToast } from "./actions.ts"
 import { ElseComposer } from "./Composer.tsx"
-import { accessExplainer, accessLabel, accessScope, isOAuth, whenTag } from "./describe.ts"
+import { accessExplainer, accessLabel, accessReach, accessScope, isKeyFile, isOAuth, whenTag } from "./describe.ts"
 import { BackPill, Button, Choices, Dot, GoogleButton, Icon, Lab, LinkButton, Tile } from "./kit.tsx"
 import { answerText } from "./Messages.tsx"
 import { color, gutter } from "./theme.ts"
@@ -294,14 +294,43 @@ function Vault() {
   )
 }
 
-function Fine(props: { readonly scope: string | undefined }) {
+function Fine(props: { readonly scope: string | undefined; readonly keyFile?: boolean }) {
   return (
     <View style={{ flexDirection: "row", gap: 10, marginTop: 16, marginHorizontal: 4 }}>
       <Icon name="lock" size={15} style={{ marginTop: 2 }} />
       <Text style={{ flex: 1, fontSize: 13.5, lineHeight: 19.5, color: color.t2 }}>
-        {props.scope ? `${props.scope} ` : ""}The key stays in Dream’s vault; the agent’s computer only gets temporary
-        access.
+        {props.keyFile
+          ? "Only this project gets it, and it never appears in Chat. Removing it deletes the file."
+          : `${props.scope ? `${props.scope} ` : ""}The key stays in Dream’s vault; the agent’s computer only gets temporary access.`}
       </Text>
+    </View>
+  )
+}
+
+/** What a key file means, said before they enter it: the card's warning, in full. */
+function KeyFileWarning() {
+  return (
+    <View
+      style={{
+        flexDirection: "row",
+        gap: 12,
+        alignItems: "flex-start",
+        marginTop: 20,
+        padding: 14,
+        borderRadius: 18,
+        backgroundColor: color.needBg,
+        borderWidth: 1,
+        borderColor: color.needLine
+      }}
+    >
+      <Icon name="warn" size={18} color={color.need} style={{ marginTop: 1 }} />
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontSize: 15, fontWeight: "700", color: color.t1 }}>Last resort</Text>
+        <Text style={{ fontSize: 13.5, lineHeight: 19.5, color: color.t1, marginTop: 3 }}>
+          This key will live in a file on this project’s computer. Any code that runs there can read it, including code
+          the agent writes or installs. Other keys stay in Dream’s vault.
+        </Text>
+      </View>
     </View>
   )
 }
@@ -406,7 +435,7 @@ function KeyForm(props: { readonly message: AccessMessage; readonly onBack: () =
     <>
       <SecretField value={key} onChange={setKey} placeholder="Paste key" />
       <Button
-        title="Save to vault"
+        title={isKeyFile(m.request) ? "Save to this project" : "Save to vault"}
         disabled={!key}
         busy={submit.busy}
         onPress={() => submit.run({ projectId: m.projectId, messageId: m.id, key })}
@@ -504,6 +533,7 @@ export function ExpandedAccess(props: {
 }) {
   const m = props.message
   const oauth = isOAuth(m.request)
+  const keyFile = isKeyFile(m.request)
   const label = accessLabel(m.request)
   const scope = accessScope(m.request)
   const google = useGoogleAccess(m)
@@ -548,27 +578,36 @@ export function ExpandedAccess(props: {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 16, fontWeight: "700", color: color.t1 }}>
-                  {m.request._tag === "Apple" ? "Apple Developer key saved" : `${label} connected`}
+                  {m.request._tag === "Apple"
+                    ? "Apple Developer key saved"
+                    : isKeyFile(m.request)
+                      ? `${label} key saved`
+                      : `${label} connected`}
                 </Text>
                 <Text style={{ fontSize: 13.5, color: color.t2, marginTop: 2 }}>
-                  {scope ? `${scope} ` : ""}Shared with all your projects
+                  {scope ? `${scope} ` : ""}
+                  {accessReach(m.request)}
                 </Text>
               </View>
             </View>
             <Lead style={{ marginTop: 18 }}>
-              {m.when ? `I’ll use it ${m.when}.` : `Every project can use ${label} now, without asking again.`}
+              {m.when
+                ? `I’ll use it ${m.when}.`
+                : keyFile
+                  ? `It’s in a file on this project’s computer, where any code running there can read it.`
+                  : `Every project can use ${label} now, without asking again.`}
             </Lead>
-            <Vault />
+            {keyFile ? null : <Vault />}
           </>
         }
         bottom={
           <>
             <Button title="Back to chat" onPress={props.onBack} />
             <LinkButton
-              title={disconnect.busy ? "Disconnecting…" : "Disconnect"}
+              title={disconnect.busy ? (keyFile ? "Removing…" : "Disconnecting…") : keyFile ? "Remove" : "Disconnect"}
               onPress={() => disconnect.run(integrationId)}
             />
-            <Fine scope={scope} />
+            <Fine scope={scope} keyFile={keyFile} />
           </>
         }
       />
@@ -612,7 +651,7 @@ export function ExpandedAccess(props: {
       body={
         <>
           <Lead>{accessExplainer(m)}</Lead>
-          <Shared oauth={oauth} />
+          {keyFile ? <KeyFileWarning /> : <Shared oauth={oauth} />}
           {oauth ? <Vault /> : null}
           {m.request._tag === "Apple" ? (
             <Text
@@ -633,12 +672,12 @@ export function ExpandedAccess(props: {
         <>
           {m.request._tag === "Google" ? (
             <GoogleButton busy={google.busy} onPress={google.start} />
-          ) : m.request._tag === "Key" ? (
+          ) : m.request._tag === "Key" || m.request._tag === "File" ? (
             <KeyForm message={m} onBack={props.onBack} />
           ) : (
             <AppleForm message={m} onBack={props.onBack} />
           )}
-          <Fine scope={scope} />
+          <Fine scope={scope} keyFile={keyFile} />
         </>
       }
     />

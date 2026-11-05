@@ -18,6 +18,7 @@ export const SecretKind = Schema.Literals([
   "google_oauth",
   "api_key",
   "apple_asc",
+  "sandbox_file",
   "auth_session"
 ])
 export type SecretKind = typeof SecretKind.Type

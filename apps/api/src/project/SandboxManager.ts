@@ -1,9 +1,10 @@
 /**
  * The project's E2B sandbox and the agent's inbox: create the sandbox from
- * the template on first need (rules carrying the person's credentials,
- * DaemonEnv for dreamd, then start dreamd), deliver events to dreamd at least
- * once, keep egress rules current, and keep the sandbox awake while a turn
- * runs. Paused sandboxes resume on traffic, so delivery just sends.
+ * the template on first need (rules carrying the person's credentials, the
+ * project's file keys, DaemonEnv for dreamd, then start dreamd), deliver
+ * events to dreamd at least once, keep egress rules and file keys current,
+ * and keep the sandbox awake while a turn runs. Paused sandboxes resume on
+ * traffic, so delivery just sends.
  *
  * E2B pauses any sandbox that has run for `sandboxMaxRun` (1 hour on Hobby),
  * and a turn doesn't make traffic that would resume it. So while a turn runs,
@@ -21,6 +22,8 @@ import {
   type Harness,
   NotFound,
   type ProjectId,
+  SandboxKeyDir,
+  sandboxKeyPath,
   UpstreamFailure
 } from "@dream/domain"
 import { Cause, Clock, Context, DateTime, Duration, Effect, Layer, Option, Redacted, Schedule, Semaphore } from "effect"
@@ -31,6 +34,7 @@ import { Users } from "../db/Users.ts"
 import { Daemon } from "../e2b/Daemon.ts"
 import { E2B, type SandboxAccess } from "../e2b/E2B.ts"
 import { Envd } from "../e2b/Envd.ts"
+import { KeyFiles } from "../integrations/KeyFiles.ts"
 import { SandboxCredentials } from "../integrations/SandboxCredentials.ts"
 import { toHex, utf8 } from "../lib/Bytes.ts"
 import { randomToken } from "../lib/Ids.ts"
@@ -99,6 +103,8 @@ export class SandboxManager extends Context.Service<
     >
     /** Recomputes the egress rules and pushes them if they changed (or marks them for the next resume). */
     readonly refreshRules: Effect.Effect<void>
+    /** The project's file keys changed: they're rewritten before the next delivery, so before the agent hears. */
+    readonly keyFilesChanged: Effect.Effect<void>
     readonly gatewayTarget: Effect.Effect<GatewayTarget, NotFound | UpstreamFailure>
     readonly turnStarted: Effect.Effect<void>
     readonly turnFinished: Effect.Effect<void>
@@ -119,6 +125,7 @@ export class SandboxManager extends Context.Service<
       const daemon = yield* Daemon
       const tokens = yield* Tokens
       const credentials = yield* SandboxCredentials
+      const keyFiles = yield* KeyFiles
       const projects = yield* Projects
       const users = yield* Users
       const busy = yield* Semaphore.make(1)
@@ -228,6 +235,37 @@ export class SandboxManager extends Context.Service<
           yield* restartDaemon(access, daemonToken)
         }).pipe(Effect.catch((error) => Effect.logWarning("couldn't refresh dreamd's env file", error.message)))
 
+      const runChecked = (access: SandboxAccess, what: string, command: string) =>
+        Effect.flatMap(envd.run(access, { command, timeout: "20 seconds" }), (result) =>
+          result.exitCode === 0
+            ? Effect.void
+            : Effect.fail(new UpstreamFailure({ service: "E2B", message: `${what} failed (exit ${result.exitCode})` }))
+        )
+
+      /**
+       * Makes `SandboxKeyDir` hold exactly the project's file keys: the directory 0700, each file 0600, all owned
+       * by the sandbox's user. A value goes only into a file body through envd, never into a command line or a
+       * log; it's written beside its target and renamed, so a reader never sees a partial key. Names passed
+       * `keyFileNameProblem`, so they need no quoting.
+       */
+      const writeKeyFiles = (access: SandboxAccess) =>
+        Effect.gen(function* () {
+          const project = yield* core.project.pipe(Effect.orDie)
+          const files = yield* keyFiles.forProject(project.ownerId, project.id)
+          const keep = files.map((file) => `! -name ${file.name}`).join(" ")
+          yield* runChecked(
+            access,
+            "Preparing the key folder",
+            `install -d -m 700 ${SandboxKeyDir} && find ${SandboxKeyDir} -mindepth 1 -maxdepth 1 ${keep} -exec rm -rf {} +`
+          )
+          for (const file of files) {
+            const target = sandboxKeyPath(file.name)
+            const partial = `${SandboxKeyDir}/.${file.name}.partial`
+            yield* envd.writeFile(access, partial, file.value)
+            yield* runChecked(access, `Writing ${target}`, `chmod 600 ${partial} && mv -f ${partial} ${target}`)
+          }
+        }).pipe(Effect.withSpan("SandboxManager.writeKeyFiles"))
+
       const create = Effect.gen(function* () {
         const project = yield* core.project.pipe(Effect.orDie)
         const daemonToken = randomToken(40)
@@ -241,7 +279,8 @@ export class SandboxManager extends Context.Service<
           metadata: { projectId: project.id, userId: project.ownerId },
           rules: setup.rules
         })
-        const ready = restartDaemon(access, daemonToken)
+        // The keys are in place before the agent's first turn.
+        const ready = Effect.andThen(writeKeyFiles(access), restartDaemon(access, daemonToken))
         // Don't leak a sandbox that never became usable.
         yield* ready.pipe(Effect.tapError(() => e2b.kill(access.sandboxId).pipe(Effect.ignore)))
         const now = yield* DateTime.now
@@ -253,6 +292,7 @@ export class SandboxManager extends Context.Service<
           createdAt: now,
           rulesHash: setup.rulesHash,
           rulesDirty: false,
+          keyFilesDirty: false,
           failures: 0
         }))
         yield* Effect.logInfo("sandbox ready", { sandboxId: access.sandboxId })
@@ -336,6 +376,22 @@ export class SandboxManager extends Context.Service<
         const { access, daemonToken } = yield* ensureReady
         const record = yield* core.sandbox
         if (record.rulesDirty) yield* pushRules(record, true)
+        if (record.keyFilesDirty === true) {
+          // Cleared first, so a change made while writing marks them again. A failure leaves the events queued.
+          yield* update((r) => ({ ...r, keyFilesDirty: false }))
+          const timeout = Duration.toSeconds(record.working ? WorkingTimeout : IdleTimeout)
+          yield* e2b.connect(access.sandboxId, timeout).pipe(
+            Effect.flatMap(writeKeyFiles),
+            Effect.tapError((error) =>
+              // A sandbox that's gone is created again, and creating one writes the keys.
+              update((r) => ({
+                ...r,
+                keyFilesDirty: true,
+                ...(error._tag === "SandboxGone" ? { status: "none" as const } : {})
+              }))
+            )
+          )
+        }
         yield* refreshDaemonEnv(access, daemonToken)
         const timeZone = Option.flatMap(yield* users.find(project.ownerId), (user) =>
           Option.fromUndefinedOr(user.timeZone)
@@ -486,10 +542,13 @@ export class SandboxManager extends Context.Service<
         })
       })
 
+      const keyFilesChanged = update((r) => ({ ...r, keyFilesDirty: true }))
+
       return SandboxManager.of({
         deliver,
         ensureReady,
         refreshRules,
+        keyFilesChanged,
         gatewayTarget,
         turnStarted,
         turnFinished,

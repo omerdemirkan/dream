@@ -24,10 +24,12 @@ import {
   TextMessage,
   type Wake,
   type WakeWhen,
-  DefaultDaemonPort
+  DefaultDaemonPort,
+  keyFileNameProblem
 } from "@dream/domain"
 import { Clock, Cron, DateTime, Effect, Layer, Option, Result } from "effect"
 import { Connections } from "../db/Connections.ts"
+import { Secrets } from "../db/Secrets.ts"
 import { Projects } from "../db/Projects.ts"
 import { Users } from "../db/Users.ts"
 import { CredentialStore } from "../integrations/CredentialStore.ts"
@@ -66,6 +68,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
     const sandbox = yield* SandboxManager
     const credentials = yield* CredentialStore
     const connections = yield* Connections
+    const secrets = yield* Secrets
     const directory = yield* ProjectDirectory
     const alarm = yield* Alarm
     const projects = yield* Projects
@@ -190,6 +193,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
             state: AccessState.cases.Connected.make({ integrationId: integration.id, connectedAt: yield* DateTime.now })
           })
           yield* core.changeMessage(connected)
+          if (integration.access._tag === "File") yield* sandbox.keyFilesChanged
           yield* core.enqueue(
             yield* event((fields) =>
               AgentEvent.cases.AccessConnected.make({
@@ -225,6 +229,17 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
 
       RegisterLiveActivity: (device) => notifier.registerLive(device),
 
+      KeyFileRemoved: ({ integration }) =>
+        Effect.gen(function* () {
+          if (Option.isSome(yield* store.getSingleton(...Singletons.archived))) return
+          yield* sandbox.keyFilesChanged
+          yield* core.enqueue(
+            yield* event((fields) =>
+              AgentEvent.cases.AccessRemoved.make({ ...fields, label: integration.label, access: integration.access })
+            )
+          )
+        }),
+
       CredentialsChanged: () => sandbox.refreshRules,
 
       UsageLimited: ({ window, until }) =>
@@ -246,7 +261,15 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
           yield* sandbox.archive
           yield* alarm.reschedule
           const current = yield* core.projectOption
-          if (Option.isSome(current)) yield* projects.remove(current.value.id)
+          if (Option.isSome(current)) {
+            // Its file keys were for this project alone, and the sandbox that held them is gone.
+            for (const row of yield* connections.integrations(current.value.ownerId)) {
+              if (row.access_json._tag !== "File" || row.access_json.projectId !== current.value.id) continue
+              yield* connections.deleteIntegration(row.id)
+              yield* secrets.remove(row.secret_id)
+            }
+            yield* projects.remove(current.value.id)
+          }
         }),
 
       RefreshModelCredential: () =>
@@ -392,8 +415,13 @@ export const AgentHandlers = SandboxRpcs.toLayer(
       RequestAccess: ({ request, why, when }) =>
         Effect.gen(function* () {
           // An old dreamd doesn't check the host, and a card for a host no request goes to can never work.
-          const hostProblem = request._tag === "Key" ? accessHostProblem(request.host) : undefined
-          if (hostProblem !== undefined) return yield* new InvalidRequest({ message: hostProblem })
+          const problem =
+            request._tag === "Key"
+              ? accessHostProblem(request.host)
+              : request._tag === "File"
+                ? keyFileNameProblem(request.name)
+                : undefined
+          if (problem !== undefined) return yield* new InvalidRequest({ message: problem })
           const current = yield* project
           const notificationId = when === undefined ? yield* newNotificationId() : undefined
           const message = AccessMessage.make({

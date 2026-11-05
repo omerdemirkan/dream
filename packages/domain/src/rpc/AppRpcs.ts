@@ -157,6 +157,11 @@ export class AuthedAppRpcs extends RpcGroup.make(
     success: Schema.Struct({ authorizeUrl: Schema.String }),
     error: Schema.Union([NotFound, InvalidRequest])
   }),
+  /**
+   * The key for a `Key` request, or for a `File` request, which Dream writes into that project's sandbox (and
+   * no other) before the agent hears it's there. Submitting again for the same host, or the same project and
+   * file name, replaces the key.
+   */
   Rpc.make("SubmitKeyAccess", {
     payload: { ...ProjectMessage, key: Schema.RedactedFromValue(Schema.NonEmptyString) },
     success: AccessMessage,

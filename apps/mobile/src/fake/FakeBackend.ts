@@ -31,6 +31,7 @@ import {
   type ProjectId,
   type ProjectSummary,
   type PushData,
+  sandboxKeyPath,
   type QuestionMessage,
   type StatusCard,
   type TextMessage,
@@ -465,6 +466,23 @@ export class FakeBackend extends Context.Service<
         SubmitKeyAccess: ({ projectId, messageId }) =>
           Effect.gen(function* () {
             const { record, message } = yield* findMessage(projectId, messageId)
+            if (message._tag === "Access" && message.request._tag === "File") {
+              const { service, name } = message.request
+              const connected = yield* connectIntegration(record, message, service, {
+                _tag: "File",
+                service,
+                name,
+                path: sandboxKeyPath(name),
+                projectId
+              })
+              yield* later(
+                2,
+                agentText(record, `Got the ${service} key. Only the bot reads it, from its file here.`).pipe(
+                  Effect.asVoid
+                )
+              )
+              return connected
+            }
             if (message._tag !== "Access" || message.request._tag !== "Key")
               return yield* new InvalidRequest({ message: "That request isn't for a key." })
             const request = message.request

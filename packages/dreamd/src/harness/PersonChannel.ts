@@ -9,10 +9,13 @@
  *   final text to Chat (`replyFromFinalText`).
  * - Claude Code's bundled tools and skills that assume claude.ai or someone at
  *   a terminal are turned off in its user settings (`claudeSettings`).
+ * - Claude Code is denied reading the key files Dream writes for the person
+ *   (`keyFileDenials`), since everything the model sees reaches its provider.
  *
  * Codex has no user-input tool outside plan mode (which Dream never starts),
  * so only the final-text rule applies to it.
  */
+import { SandboxKeyDir } from "@dream/domain"
 import { Option, Schema } from "effect"
 
 // ---------------------------------------------------------------------------
@@ -172,6 +175,19 @@ export const disabledClaudeSkills: ReadonlyArray<string> = [
   "plugin-authoring"
 ]
 
+/**
+ * The person's file keys (`dream access file`) are for the agent's code to read at run time, not for the model:
+ * what it reads lands in the transcript, which goes to the model provider. `Read(…)` denials also cover Grep and
+ * Glob (`//` starts an absolute path). The Bash pattern refuses any command that names the folder, like
+ * `cat ~/.dream/keys/x`, though not one that reaches it indirectly; code the agent runs can read the files,
+ * which is how the keys get used. Codex has no equivalent, so there only the skill's instructions apply.
+ */
+export const keyFileDenials: ReadonlyArray<string> = [
+  `Read(/${SandboxKeyDir}/**)`,
+  `Edit(/${SandboxKeyDir}/**)`,
+  `Bash(*${SandboxKeyDir.replace(/^\/home\/[^/]+\//, "")}*)`
+]
+
 const JsonObject = Schema.Record(Schema.String, Schema.Json)
 type JsonObject = typeof JsonObject.Type
 const asObject = (value: unknown): JsonObject =>
@@ -189,7 +205,7 @@ export const claudeSettings = (existing: unknown): JsonObject => {
   )
   return {
     ...settings,
-    permissions: { ...permissions, deny: [...new Set([...deny, ...deniedClaudeTools])] },
+    permissions: { ...permissions, deny: [...new Set([...deny, ...deniedClaudeTools, ...keyFileDenials])] },
     skillOverrides: {
       ...asObject(settings.skillOverrides),
       ...Object.fromEntries(disabledClaudeSkills.map((skill) => [skill, "off"]))

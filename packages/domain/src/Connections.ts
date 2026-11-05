@@ -3,10 +3,11 @@
  * their model subscription, and integrations with other services.
  * Secrets never appear here: they are stored AES-GCM encrypted in D1, are
  * decrypted only inside the Worker, and reach outbound requests through E2B
- * egress rules. These are the public records.
+ * egress rules, except a `File` key, which Dream writes into one project's
+ * sandbox when they agree to it. These are the public records.
  */
 import { Schema } from "effect"
-import { IntegrationId, ModelConnectionId } from "./Ids.ts"
+import { IntegrationId, ModelConnectionId, ProjectId } from "./Ids.ts"
 import { ModelProvider, UsageSnapshot } from "./Usage.ts"
 
 // ---------------------------------------------------------------------------
@@ -58,8 +59,17 @@ export const ConnectLink = Schema.Struct({
 export type ConnectLink = typeof ConnectLink.Type
 
 // ---------------------------------------------------------------------------
-// Integrations (Google, pasted API keys, App Store Connect)
+// Integrations (Google, pasted API keys, keys in a sandbox file, App Store Connect)
 // ---------------------------------------------------------------------------
+
+/**
+ * Where Dream writes `File` keys in a project's sandbox: outside the project's repo (`~/project`), in a directory
+ * of mode 0700 with each file 0600, owned by the sandbox's user. Every process in the sandbox runs as that user, so
+ * the mode keeps out no code that runs there, only other users; being outside the repo keeps the files out of git.
+ */
+export const SandboxKeyDir = "/home/user/.dream/keys"
+
+export const sandboxKeyPath = (name: string): string => `${SandboxKeyDir}/${name}`
 
 /**
  * How the agent uses a connected integration. Dream's egress rules add the real
@@ -81,6 +91,19 @@ export const IntegrationAccess = Schema.TaggedUnion({
     /** How the key is written into the header, e.g. "Bearer {key}". */
     format: Schema.String,
     placeholder: Schema.String
+  },
+  /**
+   * A key Dream keeps as a file in one project's sandbox, for a service that can't take it in a header. Unlike the
+   * other integrations it belongs to that project alone: Dream writes it into `projectId`'s sandbox (again whenever
+   * the sandbox is recreated) and nowhere else, and deletes the file when they remove it.
+   */
+  File: {
+    service: Schema.String,
+    /** The file's name in `SandboxKeyDir`. */
+    name: Schema.String,
+    /** Its absolute path in the sandbox (`sandboxKeyPath(name)`). */
+    path: Schema.String,
+    projectId: ProjectId
   },
   Apple: {
     /** App Store Connect API key identifiers. The .p8 private key stays encrypted with Dream. */

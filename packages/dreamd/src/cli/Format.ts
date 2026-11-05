@@ -16,6 +16,7 @@ import type {
   UsageWindow,
   Wake
 } from "@dream/domain"
+import { sandboxKeyPath } from "@dream/domain"
 import { DateTime } from "effect"
 import type { PageLoad } from "./PageCheck.ts"
 
@@ -53,6 +54,8 @@ const accessLabel = (message: AccessMessage): string => {
       return `Google (${message.request.scopes.join(", ")})`
     case "Key":
       return `a ${message.request.service} key for ${message.request.host}`
+    case "File":
+      return `a ${message.request.service} key in ${sandboxKeyPath(message.request.name)}`
     case "Apple":
       return "an App Store Connect API key"
   }
@@ -73,7 +76,9 @@ export const integrations = (list: ReadonlyArray<Integration>): string => {
           ? `Google ${access.email ?? ""} (${access.scopes.join(", ")}); hosts ${access.hosts.join(", ")}; placeholder "${access.placeholder}"`
           : access._tag === "Key"
             ? `${access.host}, header "${access.header}: ${access.format}"; placeholder "${access.placeholder}"`
-            : `App Store Connect key ${access.keyId} (issuer ${access.issuerId})`
+            : access._tag === "File"
+              ? `key file ${access.path} (this project only; read it from your code, never print it)`
+              : `App Store Connect key ${access.keyId} (issuer ${access.issuerId})`
       return `${integration.label} [${integration.status}] ${detail.replace(/\s+/g, " ")}`
     })
     .join("\n")

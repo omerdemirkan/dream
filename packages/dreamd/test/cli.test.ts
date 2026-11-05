@@ -196,6 +196,17 @@ describe("dream usage errors", () => {
     })
   )
 
+  it.effect("refuse a key file name that isn't one plain file name, and default it from the service", () =>
+    Effect.gen(function* () {
+      const file = (...flags: Array<string>) =>
+        run(["access", "file", "--service", "Telegram", ...flags, "--why", "Run your bot"])
+      assert.include(yield* file("--name", "../dreamd.env"), '--name "../dreamd.env" should be a short file name')
+      // A good name, or none, gets past the check, to the socket (absent here).
+      assert.notInclude(yield* file("--name", "telegram-bot-token"), "--name")
+      assert.notInclude(yield* file(), "--name")
+    })
+  )
+
   it.effect("name missing arguments and bad values the same way", () =>
     Effect.gen(function* () {
       assert.isTrue((yield* run(["wake", "cancel"])).startsWith("<wake-id> is missing.\nExample: dream wake cancel"))

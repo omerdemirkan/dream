@@ -170,6 +170,14 @@ const liftMessages: ReadonlyArray<Message> = [
   )
 ]
 
+/** The last-resort key card (`dream access file`): Telegram takes the bot token in its URLs, not a header. */
+export const telegramKey: AccessMessage = {
+  ...Fx.telegramKey,
+  id: msg("msg_brieftelegram"),
+  createdAt: at("2026-11-04T15:06:00Z"),
+  notificationId: "2d4f6a8c-1b3e-4f5a-9c7d-0e1f2a3b4c5d" as NotificationId
+}
+
 const briefMessages: ReadonlyArray<Message> = [
   text(morningBrief.id, "msg_briefidea", "2026-10-20T17:50:00Z", "user", morningBrief.idea),
   Fx.gmailAccess,
@@ -194,7 +202,8 @@ const briefMessages: ReadonlyArray<Message> = [
     "2026-11-04T15:02:00Z",
     "agent",
     "Substack changed its layout; an alert woke me at 6:12 and the parser was updated before 7. Nothing for you to do."
-  )
+  ),
+  telegramKey
 ]
 
 export const cabinPick: QuestionMessage = {
@@ -257,7 +266,12 @@ const briefStatus: StatusCard = {
   phaseSince: at("2026-10-22T15:00:00Z"),
   media: [media.digest],
   milestones: [
-    { title: "Next run", state: "upcoming", date: at("2026-11-05T15:00:00Z"), needs: [] },
+    {
+      title: "Next run",
+      state: "upcoming",
+      date: at("2026-11-05T15:00:00Z"),
+      needs: [{ what: "Your Telegram bot token", messageId: telegramKey.id }]
+    },
     {
       title: "Sent today’s digest at 7:00",
       state: "done",

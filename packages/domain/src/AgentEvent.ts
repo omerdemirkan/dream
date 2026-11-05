@@ -41,6 +41,11 @@ export const AgentEvent = Schema.TaggedUnion({
     access: IntegrationAccess
   },
   AccessDeclined: { ...EventFields, messageId: MessageId },
+  /**
+   * They removed something they had connected. Sent for `File` keys, whose file Dream deleted from this sandbox;
+   * only dreamd builds that can request one ever receive it.
+   */
+  AccessRemoved: { ...EventFields, label: Schema.String, access: IntegrationAccess },
   /** A wake the agent scheduled came due. With `run`, the agent only sees it if the command failed. */
   WakeDue: {
     ...EventFields,
@@ -106,9 +111,19 @@ const renderAccess = (label: string, access: IntegrationAccess): string =>
     Key: ({ service, host, header, format, placeholder }) =>
       `They connected ${service}. HTTPS requests to ${host} get the header "${header}: ${format}" with ` +
       `their real key. Where a library needs a key configured, use the placeholder "${placeholder}".`,
+    File: ({ service, path }) =>
+      `They entered their ${service} key, and Dream wrote it to ${path}. Have your code read the file when it ` +
+      `runs. Don't print it, put it in a command or the project's files, or send it anywhere but ${service}: ` +
+      "whatever you see in this session goes to the model provider.",
     Apple: ({ issuerId, keyId }) =>
       `They connected their App Store Connect API key (issuer id ${issuerId}, key id ${keyId}).`
   })
+
+const renderRemoved = (label: string, access: IntegrationAccess): string =>
+  access._tag === "File"
+    ? `They removed their ${access.service} key, and Dream deleted ${access.path}. Code that reads it fails until ` +
+      "they enter one again."
+    : `They disconnected ${label}.`
 
 /** One event as a paragraph of the turn prompt. Message and wake ids are included so the agent can refer to them. */
 export const renderAgentEvent = (event: AgentEvent, options: RenderOptions = {}): string => {
@@ -121,6 +136,7 @@ export const renderAgentEvent = (event: AgentEvent, options: RenderOptions = {})
     AccessConnected: ({ messageId, label, access }) =>
       `${renderAccess(label, access)} This answers your request ${messageId}.`,
     AccessDeclined: ({ messageId }) => `They declined your access request ${messageId}.`,
+    AccessRemoved: ({ label, access }) => renderRemoved(label, access),
     WakeDue: ({ wakeId, why, run }) => {
       const head = `A wake-up you scheduled came due (${wakeId}): "${why}".`
       if (run === undefined) return head

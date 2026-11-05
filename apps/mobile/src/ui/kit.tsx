@@ -55,6 +55,7 @@ const glyphs = {
   paste: "doc.on.clipboard",
   copy: "doc.on.doc",
   wrench: "wrench.adjustable",
+  warn: "exclamationmark.triangle",
   arrowOut: "arrow.up.right"
 } as const satisfies Record<string, SymbolViewProps["name"]>
 

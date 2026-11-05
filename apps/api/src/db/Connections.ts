@@ -25,7 +25,8 @@ import { SqlClient } from "effect/sql"
 import { newIntegrationId, newModelConnectionId } from "../lib/Ids.ts"
 import { decodeFirst, decodeRows, encodeJson, exec, IsoDate, JsonColumn, nowIso, orNull } from "./Sql.ts"
 
-export const IntegrationKind = Schema.Literals(["google_oauth", "api_key", "apple_asc"])
+/** `sandbox_file`: a `File` key, which belongs to the one project in its `access_json` rather than to all of theirs. */
+export const IntegrationKind = Schema.Literals(["google_oauth", "api_key", "apple_asc", "sandbox_file"])
 export type IntegrationKind = typeof IntegrationKind.Type
 
 const ModelConnectionRow = Schema.Struct({

@@ -52,7 +52,9 @@ in the expanded view.
 - **Secrets never enter a sandbox.** The sandbox holds placeholders. E2B's egress proxy swaps in real headers
   per host. Dream stores user credentials AES-GCM encrypted in D1 (the key is only a Worker secret) and pushes values
   to E2B on create, on wake, and on token refresh. Operator keys are Cloudflare Worker secrets. The fallback if
-  injection falls short is Infisical Agent Vault.
+  injection falls short is Infisical Agent Vault. The one exception is a key that no header can carry (a Telegram bot
+  token, an SMTP password): as a last resort, and with a warning on its card, Dream writes it into that one
+  project's sandbox as a file under `~/.dream/keys` (`dream access file`).
 - **Effect v4 everywhere:**
   - Workers and the DO: HttpApi/RPC, `@effect/sql-d1`, `@effect/sql-sqlite-do`
   - dreamd and the CLI
@@ -156,6 +158,8 @@ dream usage                          → subscription windows, % left, reset tim
    - The user connects with OAuth, a pasted key, or an App Store Connect key. The secret is stored encrypted in D1, and the
      E2B rules are updated for all of that user's live sandboxes.
    - The agent receives an event naming the placeholder to use.
+   - A file key (`dream access file`) belongs to the asking project only. Its DO writes it into the sandbox before
+     the agent hears about it, writes it again into a recreated sandbox, and deletes the file when it's removed.
 6. **Hosting and schedules.**
    - The gateway maps the host to the project's sandbox port URL. E2B auto-resumes the sandbox on traffic.
    - DO alarms fire scheduled wakes. The sandbox wakes and dreamd runs the command or starts a turn.

@@ -68,7 +68,7 @@ export type QuestionMessage = typeof QuestionMessage.Type
 // Access request
 // ---------------------------------------------------------------------------
 
-/** What the agent asks to be connected. Mirrors `dream access google|key|apple`. */
+/** What the agent asks to be connected. Mirrors `dream access google|key|file|apple`. */
 export const AccessRequest = Schema.TaggedUnion({
   /** Sign in with Google and grant these scopes (short names, e.g. "gmail.readonly"). */
   Google: { scopes: Schema.NonEmptyArray(Schema.NonEmptyString) },
@@ -79,6 +79,12 @@ export const AccessRequest = Schema.TaggedUnion({
     header: Schema.NonEmptyString,
     format: Schema.String.check(Schema.makeFilter((format) => format.includes("{key}") || "format must contain {key}"))
   },
+  /**
+   * The last resort, for a secret that can't travel in a header (Telegram's bot URLs, Discord's gateway login, SMTP):
+   * they enter it in a secure field and Dream writes it into this project's sandbox as the file `name` in
+   * `SandboxKeyDir`, readable by any code that runs there. The card says so.
+   */
+  File: { service: Schema.NonEmptyString, name: Schema.NonEmptyString },
   /** An App Store Connect API key (issuer id, key id, .p8), which TestFlight uploads need. */
   Apple: {}
 })
@@ -119,6 +125,24 @@ export const accessHostProblem = (host: string): string | undefined => {
   }
   return `--host "${host}" isn't a valid hostname; it should be ${example}.`
 }
+
+/**
+ * Why `name` can't be a `File` request's file name, or `undefined` if it can: lowercase letters, digits, `.`, `_`
+ * and `-`, starting with a letter or digit, so it is one path segment that needs no quoting in a shell.
+ */
+export const keyFileNameProblem = (name: string): string | undefined =>
+  /^[a-z0-9][a-z0-9._-]{0,63}$/.test(name)
+    ? undefined
+    : `--name "${name}" should be a short file name like telegram-bot-token: lowercase letters, digits, ".", "_" and "-".`
+
+/** The file name a `File` request uses when the agent doesn't pick one, e.g. "Telegram bot" → "telegram-bot". */
+export const keyFileNameFor = (service: string): string =>
+  service
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64)
+    .replace(/-+$/, "") || "key"
 
 export const AccessState = Schema.TaggedUnion({
   Open: {},

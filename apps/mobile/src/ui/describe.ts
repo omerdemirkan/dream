@@ -2,7 +2,7 @@
  * Words for access requests and integrations, derived from what the agent
  * asked for: which Google product, what the scopes allow, when it's needed.
  */
-import type { AccessMessage, AccessRequest, Integration } from "@dream/domain"
+import type { AccessMessage, AccessRequest, Integration, ProjectId } from "@dream/domain"
 
 const googleProducts: ReadonlyArray<readonly [string, string]> = [
   ["gmail", "Gmail"],
@@ -54,6 +54,7 @@ export const accessLabel = (request: AccessRequest) => {
     case "Google":
       return googleLabel(request.scopes)
     case "Key":
+    case "File":
       return request.service
     case "Apple":
       return "Apple Developer"
@@ -68,6 +69,8 @@ export const accessExplainer = (message: AccessMessage) => {
       return `You'll sign in with Google and approve ${googleLabel(request.scopes)}.`
     case "Key":
       return `${request.service} has no sign-in for this, so it takes an API key. Dream adds it to requests to ${request.host}.`
+    case "File":
+      return `${request.service} needs the key itself, in a way Dream can’t add for it, so Dream puts it in a file on this project’s computer.`
     case "Apple":
       return message.when
         ? `Apple has no sign-in for this, so it takes an App Store Connect key. Add it now, or I'll ask again ${message.when}.`
@@ -79,6 +82,16 @@ export const accessScope = (request: AccessRequest) =>
   request._tag === "Google" ? scopeSummary(request.scopes) : undefined
 
 export const isOAuth = (request: AccessRequest) => request._tag === "Google"
+
+/** A key Dream writes into the project's sandbox (`dream access file`): the last resort, which the card warns about. */
+export const isKeyFile = (request: AccessRequest) => request._tag === "File"
+
+export const keyFileWarning =
+  "Last resort: the key will live on this project’s computer, where any code running there can read it."
+
+/** Who gets what they connected: everyone, or for a key file, only the project that asked. */
+export const accessReach = (request: AccessRequest) =>
+  isKeyFile(request) ? "Only on this project’s computer" : "Shared with all your projects"
 
 /** "around Thursday" → "Needed ~Thursday", short enough for a tag. */
 export const whenTag = (when: string) => {
@@ -93,7 +106,15 @@ export const integrationSummary = (integration: Integration) => {
       return [scopeSummary(access.scopes), access.email].filter(Boolean).join(" ") || "Google account"
     case "Key":
       return `Key for ${access.host}`
+    case "File":
+      return "Key file on one project’s computer"
     case "Apple":
       return `App Store Connect key ${access.keyId}`
   }
 }
+
+/** Settings' second line for an integration: what it is, and which projects have it. */
+export const integrationReach = (integration: Integration, projectTitle: (id: ProjectId) => string | undefined) =>
+  integration.access._tag === "File"
+    ? `Key file on ${projectTitle(integration.access.projectId) ?? "one project"}’s computer · only that project`
+    : `${integrationSummary(integration)} · shared by all your projects`

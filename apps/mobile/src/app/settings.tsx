@@ -2,7 +2,7 @@
  * Settings: the subscription Dream runs on, the services connected for every
  * project, and the account.
  */
-import type { Integration, ModelConnection } from "@dream/domain"
+import type { Integration, ModelConnection, ProjectId, ProjectSummary } from "@dream/domain"
 import { useAtomValue } from "@effect/atom-react"
 import * as Application from "expo-application"
 import { Option } from "effect"
@@ -17,12 +17,13 @@ import {
   disconnectModelConnectionFn,
   integrationsAtom,
   modelConnectionsAtom,
+  projectsAtom,
   sessionAtom,
   signOutFn
 } from "../state/atoms.ts"
 import { appConfig } from "../state/runtime.ts"
 import { useAction } from "../ui/actions.ts"
-import { integrationSummary } from "../ui/describe.ts"
+import { integrationReach } from "../ui/describe.ts"
 import { Button, Icon, IconButton, Lab } from "../ui/kit.tsx"
 import { color, gutter } from "../ui/theme.ts"
 
@@ -38,6 +39,11 @@ export default function Settings() {
     AsyncResult.value(useAtomValue(integrationsAtom)),
     (): ReadonlyArray<Integration> => []
   )
+  const projects = Option.getOrElse(
+    AsyncResult.value(useAtomValue(projectsAtom)),
+    (): ReadonlyArray<ProjectSummary> => []
+  )
+  const projectTitle = (id: ProjectId) => projects.find((summary) => summary.project.id === id)?.project.title
   const signOut = useAction(signOutFn)
   return (
     <ScrollView
@@ -73,7 +79,9 @@ export default function Settings() {
             Nothing yet. When a project needs a service, it asks, and what you connect works for every project.
           </Text>
         ) : (
-          integrations.map((integration) => <IntegrationRow key={integration.id} integration={integration} />)
+          integrations.map((integration) => (
+            <IntegrationRow key={integration.id} integration={integration} projectTitle={projectTitle} />
+          ))
         )}
       </Section>
 
@@ -187,15 +195,18 @@ function ConnectionRow(props: { readonly connection: ModelConnection }) {
   )
 }
 
-function IntegrationRow(props: { readonly integration: Integration }) {
+function IntegrationRow(props: {
+  readonly integration: Integration
+  readonly projectTitle: (id: ProjectId) => string | undefined
+}) {
   const disconnect = useAction(disconnectIntegrationFn)
   const i = props.integration
   return (
     <Row
       icon={i.access._tag === "Google" ? "lock" : "key"}
       title={i.label}
-      subtitle={`${integrationSummary(i)} · shared by all your projects`}
-      action="Disconnect"
+      subtitle={integrationReach(i, props.projectTitle)}
+      action={i.access._tag === "File" ? "Remove" : "Disconnect"}
       busy={disconnect.busy}
       onAction={() => disconnect.run(i.id)}
     />

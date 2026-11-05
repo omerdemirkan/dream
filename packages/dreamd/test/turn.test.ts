@@ -9,6 +9,7 @@ import {
   claudeSettings,
   type DreamQuestion,
   deniedClaudeTools,
+  keyFileDenials,
   disabledClaudeSkills,
   type QuestionOutcome,
   replyFromFinalText
@@ -210,7 +211,7 @@ describe("Claude Code's built-ins", () => {
     })
     assert.strictEqual(settings.model, "opus")
     assert.deepStrictEqual(settings.permissions, {
-      deny: ["WebFetch", ...deniedClaudeTools],
+      deny: ["WebFetch", ...deniedClaudeTools, ...keyFileDenials],
       allow: ["Bash"]
     })
     const overrides = settings.skillOverrides as Record<string, string>
@@ -222,6 +223,14 @@ describe("Claude Code's built-ins", () => {
       assert.include(deniedClaudeTools, tool)
     }
     assert.notInclude(deniedClaudeTools, "AskUserQuestion")
+  })
+
+  it("keep the person's key files out of the transcript", () => {
+    assert.deepStrictEqual(keyFileDenials, [
+      "Read(//home/user/.dream/keys/**)",
+      "Edit(//home/user/.dream/keys/**)",
+      "Bash(*.dream/keys*)"
+    ])
   })
 
   it("starts from nothing when the settings aren't an object", () => {

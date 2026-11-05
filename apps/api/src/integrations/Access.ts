@@ -3,6 +3,10 @@
  * a pasted key, or an App Store Connect key. Each becomes an encrypted secret,
  * an integration record, an `AccessConnected` event for the agent, and new
  * egress rules in every one of their sandboxes.
+ *
+ * A `File` key is the exception: it belongs to the project that asked for it,
+ * whose DO writes it into that sandbox as a file (and deletes the file when
+ * it's removed). No other project sees it, and it changes no egress rules.
  */
 import {
   type AccessMessage,
@@ -12,6 +16,7 @@ import {
   type MessageId,
   NotFound,
   type ProjectId,
+  sandboxKeyPath,
   UpstreamFailure,
   type UserId
 } from "@dream/domain"
@@ -100,13 +105,13 @@ export class Access extends Context.Service<
           return yield* clients.use(projectId, (client) => client.GetOpenAccess({ messageId }))
         })
 
-      /** Tells the project, and refreshes every sandbox of theirs. */
+      /** Tells the project, and refreshes every sandbox of theirs (a file key concerns only the project). */
       const announce = (userId: UserId, projectId: ProjectId, messageId: MessageId, row: IntegrationRow) =>
         Effect.gen(function* () {
           const message = yield* clients.use(projectId, (client) =>
             client.AccessConnected({ messageId, integration: toIntegration(row) })
           )
-          yield* directory.credentialsChanged(userId)
+          if (row.kind !== "sandbox_file") yield* directory.credentialsChanged(userId)
           return message
         })
 
@@ -187,6 +192,47 @@ export class Access extends Context.Service<
         return { projectId, messageId }
       })
 
+      /** One file key per project and file name: entering it again replaces the file's contents. */
+      const submitFileKey = Effect.fn("Access.submitFileKey")(function* (
+        userId: UserId,
+        projectId: ProjectId,
+        messageId: MessageId,
+        request: { readonly service: string; readonly name: string },
+        key: string
+      ) {
+        const access = IntegrationAccess.cases.File.make({
+          service: request.service,
+          name: request.name,
+          path: sandboxKeyPath(request.name),
+          projectId
+        })
+        const credential = { key: key.trim() }
+        if (credential.key.length === 0) return yield* new InvalidRequest({ message: "The key is empty." })
+        const existing = (yield* connections.integrations(userId)).find(
+          (row) =>
+            row.kind === "sandbox_file" &&
+            row.access_json._tag === "File" &&
+            row.access_json.projectId === projectId &&
+            row.access_json.name === request.name
+        )
+        let row: IntegrationRow
+        if (existing !== undefined) {
+          yield* secrets.replace(existing.secret_id, ApiKeyCredential, credential)
+          yield* connections.updateIntegration(existing.id, { status: "connected", label: request.service, access })
+          row = (yield* connections.integration(userId, existing.id)).pipe(Option.getOrThrow)
+        } else {
+          const secretId = yield* secrets.put(userId, "sandbox_file", ApiKeyCredential, credential)
+          row = yield* connections.createIntegration({
+            userId,
+            kind: "sandbox_file",
+            label: request.service,
+            access,
+            secretId
+          })
+        }
+        return yield* announce(userId, projectId, messageId, row)
+      })
+
       const submitKey = Effect.fn("Access.submitKey")(function* (
         userId: UserId,
         projectId: ProjectId,
@@ -194,6 +240,9 @@ export class Access extends Context.Service<
         key: string
       ) {
         const message = yield* openAccess(userId, projectId, messageId)
+        if (message.request._tag === "File") {
+          return yield* submitFileKey(userId, projectId, messageId, message.request, key)
+        }
         if (message.request._tag !== "Key")
           return yield* new InvalidRequest({ message: "This access request isn't for a key." })
         const request = message.request
@@ -306,7 +355,15 @@ export class Access extends Context.Service<
         }
         yield* connections.deleteIntegration(id)
         yield* secrets.remove(row.value.secret_id)
-        yield* directory.credentialsChanged(userId)
+        const access = row.value.access_json
+        if (access._tag === "File") {
+          // Its project deletes the file and tells the agent. An archived project's sandbox is already gone.
+          yield* clients
+            .use(access.projectId, (client) => client.KeyFileRemoved({ integration: toIntegration(row.value) }))
+            .pipe(Effect.catchCause((cause) => Effect.logWarning("couldn't tell the project a key file went", cause)))
+        } else {
+          yield* directory.credentialsChanged(userId)
+        }
       })
 
       return Access.of({ startGoogle, finishGoogle, submitKey, submitApple, decline, list, disconnect })

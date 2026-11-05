@@ -12,6 +12,7 @@ import { decodeEnvelopes, encodeEnvelope } from "../src/e2b/Envd.ts"
 import { parseRange } from "../src/http/Media.ts"
 import { keyPlaceholder } from "../src/integrations/Access.ts"
 import { mintAppleJwt } from "../src/integrations/CredentialStore.ts"
+import { type KeyFile, leakedKey } from "../src/integrations/KeyFiles.ts"
 import { hostsForScopes, labelForScopes, scopeUrl } from "../src/integrations/Google.ts"
 import { fromBase64Url, fromUtf8, toBase64, type WebCryptoKey } from "../src/lib/Bytes.ts"
 import { decodeUnverified, importEs256Pem, signEs256 } from "../src/lib/Jwt.ts"
@@ -229,5 +230,29 @@ describe("small rules", () => {
 
   it("backs off delivery retries up to 15 minutes", () => {
     assert.deepStrictEqual([1, 2, 3, 4, 10].map(backoffMs), [5_000, 15_000, 45_000, 135_000, 900_000])
+  })
+})
+
+describe("leakedKey", () => {
+  const key = (value: string): KeyFile => ({
+    row: {} as KeyFile["row"],
+    service: "SMTP",
+    name: "smtp",
+    path: "/p",
+    value
+  })
+
+  it("finds a key anywhere in a payload, even one JSON escapes", () => {
+    const quoted = key('FAKE"pass\\word')
+    assert.strictEqual(leakedKey({ text: `the password is ${quoted.value}!` }, [quoted]), quoted)
+    assert.strictEqual(
+      leakedKey({ milestones: [{ needs: [{ what: "FAKE-abcdef" }] }] }, [key("FAKE-abcdef")])?.value,
+      "FAKE-abcdef"
+    )
+    assert.isUndefined(leakedKey({ text: "nothing secret here" }, [key("FAKE-abcdef")]))
+  })
+
+  it("ignores values too short to tell from ordinary text", () => {
+    assert.isUndefined(leakedKey({ text: "abc" }, [key("abc")]))
   })
 })

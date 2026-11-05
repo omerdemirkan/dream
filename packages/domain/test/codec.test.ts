@@ -8,6 +8,10 @@ import {
   AccessRequest,
   accessHostProblem,
   AgentEvent,
+  keyFileNameFor,
+  keyFileNameProblem,
+  renderAgentEvent,
+  sandboxKeyPath,
   AuthedAppRpcs,
   ConnectLink,
   IntegrationAccess,
@@ -66,6 +70,33 @@ describe("JSON codecs", () => {
     }
     assert.deepStrictEqual(roundTrip(UsageSnapshot, Fixtures.usage).decoded, Fixtures.usage)
     assert.deepStrictEqual(roundTrip(IntegrationAccess, Fixtures.google.access).decoded, Fixtures.google.access)
+  })
+
+  it("round-trips a file key request, its integration, and the events about it", () => {
+    assert.deepStrictEqual(roundTrip(Message, Fixtures.telegramKey).decoded, Fixtures.telegramKey)
+    assert.deepStrictEqual(
+      roundTrip(IntegrationAccess, Fixtures.telegramKeyFile.access).decoded,
+      Fixtures.telegramKeyFile.access
+    )
+    const fields = { id: "evt_k" as AgentEvent["id"], at: DateTime.makeUnsafe("2026-10-21T09:04:00Z") }
+    const connected = AgentEvent.cases.AccessConnected.make({
+      ...fields,
+      messageId: Fixtures.telegramKey.id,
+      label: "Telegram",
+      access: Fixtures.telegramKeyFile.access
+    })
+    const removed = AgentEvent.cases.AccessRemoved.make({
+      ...fields,
+      label: "Telegram",
+      access: Fixtures.telegramKeyFile.access
+    })
+    for (const event of [connected, removed]) assert.deepStrictEqual(roundTrip(AgentEvent, event).decoded, event)
+    assert.include(renderAgentEvent(connected), "Dream wrote it to /home/user/.dream/keys/telegram-bot-token")
+    assert.include(renderAgentEvent(removed), "Dream deleted /home/user/.dream/keys/telegram-bot-token")
+    assert.strictEqual(
+      sandboxKeyPath("telegram-bot-token"),
+      Fixtures.telegramKeyFile.access._tag === "File" ? Fixtures.telegramKeyFile.access.path : ""
+    )
   })
 
   it("keeps Live Activity content flat for Swift Codable", () => {
@@ -146,6 +177,19 @@ describe("validation", () => {
   it("still decodes a stored key card whose host is no hostname", () => {
     const stored = { _tag: "Key", service: "Spotify", host: "spotify-oauth", header: "X", format: "{key}" }
     assert.isTrue(Exit.isSuccess(decodeAccess(stored)))
+  })
+
+  it("takes file key names that are one plain path segment", () => {
+    for (const name of ["telegram-bot-token", "smtp.password", "discord_bot", "a"]) {
+      assert.isUndefined(keyFileNameProblem(name), name)
+    }
+    for (const name of ["", "../env", ".hidden", "Telegram", "a b", "a/b", "x".repeat(65), "$(id)"]) {
+      assert.isDefined(keyFileNameProblem(name), name)
+    }
+    assert.strictEqual(keyFileNameFor("Telegram bot"), "telegram-bot")
+    assert.strictEqual(keyFileNameFor("  SMTP (Fastmail) "), "smtp-fastmail")
+    assert.strictEqual(keyFileNameFor("日本"), "key")
+    assert.isUndefined(keyFileNameProblem(keyFileNameFor("x".repeat(80) + " y")))
   })
 
   it("requires at least one Google scope", () => {

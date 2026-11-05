@@ -21,6 +21,7 @@ import { E2B } from "./e2b/E2B.ts"
 import { Envd } from "./e2b/Envd.ts"
 import { CredentialStore } from "./integrations/CredentialStore.ts"
 import { Google } from "./integrations/Google.ts"
+import { KeyFiles } from "./integrations/KeyFiles.ts"
 import { SandboxCredentials } from "./integrations/SandboxCredentials.ts"
 import { ProjectClients, ProjectDirectory, type ProjectFetch } from "./project/Client.ts"
 import { Apns } from "./push/Apns.ts"
@@ -62,7 +63,7 @@ export const platformLayer = (bindings: PlatformBindings, overrides: PlatformOve
     ProjectClients.layer(bindings.fetchProject)
   ).pipe(Layer.provideMerge(FetchHttpClient.layer))
   const credentials = CredentialStore.layer.pipe(Layer.provideMerge(base))
-  return Layer.mergeAll(SandboxCredentials.layer, ProjectDirectory.layer).pipe(
+  return Layer.mergeAll(SandboxCredentials.layer, KeyFiles.layer, ProjectDirectory.layer).pipe(
     Layer.provideMerge(credentials),
     Layer.provideMerge(overrides.config ?? ApiConfig.layer)
   )

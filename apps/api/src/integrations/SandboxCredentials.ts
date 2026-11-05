@@ -72,7 +72,9 @@ export class SandboxCredentials extends Context.Service<
                     rules[AppStoreConnectHost] = header({ Authorization: `Bearer ${credential.jwt}` })
                 }),
                 Effect.catch((error) => Effect.logWarning("App Store Connect credential unavailable", error.message))
-              )
+              ),
+            // Written into its project's sandbox as a file (SandboxManager), never sent in a header.
+            File: () => Effect.void
           })
         }
 

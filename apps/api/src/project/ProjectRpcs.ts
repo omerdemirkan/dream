@@ -72,6 +72,8 @@ export class ProjectRpcs extends RpcGroup.make(
   Rpc.make("RegisterLiveActivity", {
     payload: { deviceId: DeviceId, activityId: Schema.NonEmptyString, pushToken: Schema.NonEmptyString }
   }),
+  /** They removed one of this project's file keys (its row is gone): delete the file, and tell the agent. */
+  Rpc.make("KeyFileRemoved", { payload: { integration: Integration } }),
   /** Their credentials or integrations changed: refresh this sandbox's egress rules. */
   Rpc.make("CredentialsChanged", {}),
   /** Their subscription hit a limit in another project; hold this one until it resets. */

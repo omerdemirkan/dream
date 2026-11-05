@@ -1,7 +1,8 @@
 /**
  * `SandboxRpcs` in the Worker (dreamd → `Routes.sandbox`, project token).
  * Calls that need only D1 or R2 are answered here; everything else goes to
- * the project's DO unchanged.
+ * the project's DO unchanged, but for calls that would show one of the
+ * project's file keys to the person, which are refused here.
  */
 import {
   CurrentProject,
@@ -18,6 +19,7 @@ import { Tokens } from "../auth/Tokens.ts"
 import { ApiConfig } from "../Config.ts"
 import { Connections, toIntegration } from "../db/Connections.ts"
 import { Projects } from "../db/Projects.ts"
+import { KeyFiles } from "../integrations/KeyFiles.ts"
 import { newMediaId } from "../lib/Ids.ts"
 import { type ProjectClient, ProjectClients } from "../project/Client.ts"
 import { bearer } from "./AppHandlers.ts"
@@ -50,6 +52,7 @@ export const WorkerSandboxHandlers = SandboxRpcs.toLayer(
     const projects = yield* Projects
     const tokens = yield* Tokens
     const media = yield* MediaStore
+    const keyFiles = yield* KeyFiles
 
     const current = Effect.gen(function* () {
       return yield* CurrentProject
@@ -60,25 +63,35 @@ export const WorkerSandboxHandlers = SandboxRpcs.toLayer(
         const { projectId } = yield* current
         return yield* clients.use(projectId, call)
       }) as Effect.Effect<A, Exclude<E, Unauthorized | RpcClientError.RpcClientError>, CurrentProject>
+    /** `forward`, unless `payload` contains one of the project's file keys. */
+    const forwardUnlessLeaking = <A, E>(payload: unknown, call: (client: ProjectClient) => Effect.Effect<A, E>) =>
+      Effect.gen(function* () {
+        const { projectId, userId } = yield* current
+        yield* keyFiles.refuseLeak(userId, projectId, payload)
+        return yield* forward(call)
+      })
 
     return {
-      SendMessage: (payload) => forward((c) => c.SendMessage(payload)),
-      AskQuestion: (payload) => forward((c) => c.AskQuestion(payload)),
+      SendMessage: (payload) => forwardUnlessLeaking(payload, (c) => c.SendMessage(payload)),
+      AskQuestion: (payload) => forwardUnlessLeaking(payload, (c) => c.AskQuestion(payload)),
       WithdrawQuestion: (payload) => forward((c) => c.WithdrawQuestion(payload)),
-      RequestAccess: (payload) => forward((c) => c.RequestAccess(payload)),
+      RequestAccess: (payload) => forwardUnlessLeaking(payload, (c) => c.RequestAccess(payload)),
       ListAccess: () =>
         Effect.gen(function* () {
-          const { userId } = yield* current
+          const { projectId, userId } = yield* current
           const rows = yield* connections.integrations(userId)
-          return rows.filter((row) => row.status === "connected").map(toIntegration)
+          return rows
+            .filter((row) => row.status === "connected")
+            .filter((row) => row.access_json._tag !== "File" || row.access_json.projectId === projectId)
+            .map(toIntegration)
         }),
       WithdrawNotification: (payload) => forward((c) => c.WithdrawNotification(payload)),
       GetStatus: () => forward((c) => c.GetStatus()),
-      UpdateStatus: (payload) => forward((c) => c.UpdateStatus(payload)),
-      StartLiveActivity: (payload) => forward((c) => c.StartLiveActivity(payload)),
-      UpdateLiveActivity: (payload) => forward((c) => c.UpdateLiveActivity(payload)),
-      EndLiveActivity: (payload) => forward((c) => c.EndLiveActivity(payload)),
-      ScheduleWake: (payload) => forward((c) => c.ScheduleWake(payload)),
+      UpdateStatus: (payload) => forwardUnlessLeaking(payload, (c) => c.UpdateStatus(payload)),
+      StartLiveActivity: (payload) => forwardUnlessLeaking(payload, (c) => c.StartLiveActivity(payload)),
+      UpdateLiveActivity: (payload) => forwardUnlessLeaking(payload, (c) => c.UpdateLiveActivity(payload)),
+      EndLiveActivity: (payload) => forwardUnlessLeaking(payload, (c) => c.EndLiveActivity(payload)),
+      ScheduleWake: (payload) => forwardUnlessLeaking(payload, (c) => c.ScheduleWake(payload)),
       ListWakes: () => forward((c) => c.ListWakes()),
       CancelWake: (payload) => forward((c) => c.CancelWake(payload)),
       WakeNow: (payload) => forward((c) => c.WakeNow(payload)),

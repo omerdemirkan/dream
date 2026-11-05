@@ -453,6 +453,141 @@ describe("a project, end to end", () => {
     })
   )
 
+  it.live("access requests: a file key goes into its project's sandbox only, and nowhere it could be shown", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project } = yield* setup(cloud)
+      yield* cloud.alarm(project.id)
+      const dreamd = yield* cloud.sandbox(envFileOf(cloud, project.id).env.DREAM_PROJECT_TOKEN)
+      const fakeKey = "123456:FAKE-telegram-token-for-tests"
+      const path = "/home/user/.dream/keys/telegram-bot-token"
+
+      const badName = yield* dreamd
+        .RequestAccess({ request: { _tag: "File", service: "Telegram", name: "../env" }, why: "Run the bot." })
+        .pipe(Effect.flip)
+      assert.strictEqual(badName._tag, "InvalidRequest")
+
+      const request = yield* dreamd.RequestAccess({
+        request: { _tag: "File", service: "Telegram", name: "telegram-bot-token" },
+        why: "Your bot token, so the brief arrives in Telegram."
+      })
+      const connected = yield* cloud.phone.SubmitKeyAccess({
+        projectId: project.id,
+        messageId: request.id,
+        key: Redacted.make(` ${fakeKey}\n`)
+      })
+      assert.strictEqual(connected.state._tag, "Connected")
+      const { sandbox } = envFileOf(cloud, project.id)
+      assert.notInclude(JSON.stringify(sandbox.rules), fakeKey)
+
+      // Written before the agent hears about it: mode 0600 in a 0700 folder, and never in a command line.
+      yield* cloud.alarm(project.id)
+      assert.strictEqual(sandbox.files.get(path), fakeKey)
+      const commands = cloud.world.processes.filter((p) => p.sandboxId === sandbox.access.sandboxId)
+      assert.isTrue(commands.some((p) => p.command.includes("install -d -m 700 /home/user/.dream/keys")))
+      assert.isTrue(
+        commands.some((p) => p.command.includes(`chmod 600 /home/user/.dream/keys/.telegram-bot-token.partial`))
+      )
+      assert.isFalse(cloud.world.processes.some((p) => p.command.includes(fakeKey)))
+      const event: any = cloud.world.delivered.at(-1)!.events[0]
+      assert.strictEqual(event._tag, "AccessConnected")
+      assert.deepStrictEqual(event.access, {
+        _tag: "File",
+        service: "Telegram",
+        name: "telegram-bot-token",
+        path,
+        projectId: project.id
+      })
+
+      // Nothing that reaches the person may carry it.
+      const leak = yield* dreamd
+        .SendMessage({ text: `Token is ${fakeKey}`, media: [], notify: false })
+        .pipe(Effect.flip)
+      assert.strictEqual(leak._tag, "InvalidRequest")
+      const asked = yield* dreamd.AskQuestion({ question: `Is ${fakeKey} right?`, options: [] }).pipe(Effect.flip)
+      assert.strictEqual(asked._tag, "InvalidRequest")
+      const status = yield* dreamd.UpdateStatus({ now: `Using ${fakeKey}` }).pipe(Effect.flip)
+      assert.strictEqual(status._tag, "InvalidRequest")
+      yield* dreamd.SendMessage({ text: "The bot is live.", media: [], notify: false })
+      const history = yield* cloud.phone.ListMessages({ projectId: project.id })
+      assert.notInclude(JSON.stringify(history), fakeKey)
+
+      // It's this project's alone: listed here, not in another project of theirs, and kept out of its sandbox.
+      assert.deepStrictEqual(
+        (yield* dreamd.ListAccess()).map((i) => i.access._tag),
+        ["File"]
+      )
+      const other = yield* cloud.phone.CreateProject({ idea: "A second idea." })
+      yield* cloud.alarm(other.id)
+      const otherEnv = envFileOf(cloud, other.id)
+      const otherDreamd = yield* cloud.sandbox(otherEnv.env.DREAM_PROJECT_TOKEN)
+      assert.deepStrictEqual(yield* otherDreamd.ListAccess(), [])
+      assert.isUndefined(otherEnv.sandbox.files.get(path))
+      yield* otherDreamd.SendMessage({ text: `Unrelated ${fakeKey}`, media: [], notify: false })
+
+      // Entering it again replaces the file.
+      const again = yield* dreamd.RequestAccess({
+        request: { _tag: "File", service: "Telegram", name: "telegram-bot-token" },
+        why: "The old token stopped working."
+      })
+      yield* cloud.phone.SubmitKeyAccess({
+        projectId: project.id,
+        messageId: again.id,
+        key: Redacted.make("654321:FAKE-rotated")
+      })
+      yield* cloud.alarm(project.id)
+      assert.strictEqual(sandbox.files.get(path), "654321:FAKE-rotated")
+      assert.strictEqual((yield* cloud.phone.ListIntegrations()).filter((i) => i.access._tag === "File").length, 1)
+
+      // A new sandbox gets it too.
+      sandbox.state = "killed"
+      cloud.world.deliverFails = true
+      yield* cloud.phone.SendMessage({ projectId: project.id, text: "Still there?" })
+      yield* cloud.alarm(project.id)
+      cloud.world.deliverFails = false
+      const { storage } = yield* Effect.promise(() => cloud.project(project.id))
+      storage.db.exec("UPDATE timers SET due_ms = 0 WHERE name = 'deliver'")
+      yield* cloud.alarm(project.id)
+      const recreated = [...cloud.world.sandboxes.values()].filter((s) => s.metadata.projectId === project.id).at(-1)!
+      assert.notStrictEqual(recreated.access.sandboxId, sandbox.access.sandboxId)
+      assert.strictEqual(recreated.files.get(path), "654321:FAKE-rotated")
+
+      // Removing it in Settings deletes the file and tells the agent.
+      const integration = (yield* cloud.phone.ListIntegrations()).find((i) => i.access._tag === "File")!
+      yield* cloud.phone.DisconnectIntegration({ integrationId: integration.id })
+      yield* cloud.alarm(project.id)
+      assert.isUndefined(recreated.files.get(path))
+      const removed: any = cloud.world.delivered.at(-1)!.events.at(-1)
+      assert.strictEqual(removed._tag, "AccessRemoved")
+      assert.strictEqual(removed.access.path, path)
+      assert.deepStrictEqual(yield* dreamd.ListAccess(), [])
+      yield* cloud.close
+    })
+  )
+
+  it.live("archiving a project deletes its file keys", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project } = yield* setup(cloud)
+      yield* cloud.alarm(project.id)
+      const dreamd = yield* cloud.sandbox(envFileOf(cloud, project.id).env.DREAM_PROJECT_TOKEN)
+      const request = yield* dreamd.RequestAccess({
+        request: { _tag: "File", service: "SMTP", name: "smtp-password" },
+        why: "Send the digest by email."
+      })
+      yield* cloud.phone.SubmitKeyAccess({
+        projectId: project.id,
+        messageId: request.id,
+        key: Redacted.make("FAKE-smtp-pass")
+      })
+      assert.strictEqual((yield* cloud.phone.ListIntegrations()).length, 1)
+      const clients = Context.get(cloud.workerContext, ProjectClients)
+      yield* clients.use(project.id, (client) => client.Archive())
+      assert.deepStrictEqual(yield* cloud.phone.ListIntegrations(), [])
+      yield* cloud.close
+    })
+  )
+
   it.live("status updates feed Home", () =>
     Effect.gen(function* () {
       const cloud = yield* makeCloud()

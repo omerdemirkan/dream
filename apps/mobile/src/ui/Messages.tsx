@@ -8,7 +8,16 @@ import * as Clipboard from "expo-clipboard"
 import { forwardRef, type ReactNode, useState } from "react"
 import { type HostInstance, Pressable, Text, View, useWindowDimensions } from "react-native"
 import { answerNowFn, submitKeyAccessFn } from "../state/atoms.ts"
-import { accessExplainer, accessLabel, accessScope, isOAuth, whenTag } from "./describe.ts"
+import {
+  accessExplainer,
+  accessLabel,
+  accessReach,
+  accessScope,
+  isKeyFile,
+  isOAuth,
+  keyFileWarning,
+  whenTag
+} from "./describe.ts"
 import { useAction, useGoogleAccess, useToast } from "./actions.ts"
 import { GoogleButton, Choices, Icon } from "./kit.tsx"
 import { Markdown } from "./Markdown.tsx"
@@ -361,7 +370,7 @@ function InlineKey(props: { readonly message: AccessMessage }) {
         })}
       >
         <Text style={{ fontSize: 14, fontWeight: "600", color: key ? color.black : color.t1 }}>
-          {key ? "Save to vault" : "Paste"}
+          {key ? (isKeyFile(m.request) ? "Save" : "Save to vault") : "Paste"}
         </Text>
       </Pressable>
     </View>
@@ -375,6 +384,7 @@ function OpenAccessBody(props: { readonly message: AccessMessage; readonly onOpe
     case "Google":
       return <GoogleButton compact busy={google.busy} onPress={google.start} />
     case "Key":
+    case "File":
       return <InlineKey message={m} />
     case "Apple":
       return (
@@ -412,10 +422,16 @@ export const AccessCard = forwardRef<HostInstance, { readonly message: AccessMes
         <Card ref={ref} tone="done" onOpen={props.onOpen}>
           <ResolvedRow
             label="Access · connected"
-            title={m.request._tag === "Apple" ? "Apple Developer key saved" : `${label} connected`}
+            title={
+              m.request._tag === "Apple"
+                ? "Apple Developer key saved"
+                : isKeyFile(m.request)
+                  ? `${label} key saved`
+                  : `${label} connected`
+            }
             strong
             check
-            detail={`${scope ? `${scope} ` : ""}Shared with all your projects`}
+            detail={`${scope ? `${scope} ` : ""}${accessReach(m.request)}`}
           />
         </Card>
       )
@@ -444,14 +460,21 @@ export const AccessCard = forwardRef<HostInstance, { readonly message: AccessMes
         <CardTitle>{m.why}</CardTitle>
         <CardText>{accessExplainer(m)}</CardText>
         <OpenAccessBody message={m} onOpen={props.onOpen} />
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 13, marginHorizontal: 2 }}>
-          <Icon name="layers" size={14} color={color.t2} />
-          <Text style={{ fontSize: 13, color: color.t2 }}>
-            {isOAuth(m.request)
-              ? "Connect once — every project can use it."
-              : "Add it once — every project can use it."}
-          </Text>
-        </View>
+        {isKeyFile(m.request) ? (
+          <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, marginTop: 13, marginHorizontal: 2 }}>
+            <Icon name="warn" size={14} color={color.need} style={{ marginTop: 2 }} />
+            <Text style={{ flex: 1, fontSize: 13, lineHeight: 18, color: color.t1 }}>{keyFileWarning}</Text>
+          </View>
+        ) : (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 13, marginHorizontal: 2 }}>
+            <Icon name="layers" size={14} color={color.t2} />
+            <Text style={{ fontSize: 13, color: color.t2 }}>
+              {isOAuth(m.request)
+                ? "Connect once — every project can use it."
+                : "Add it once — every project can use it."}
+            </Text>
+          </View>
+        )}
       </Card>
     )
   }

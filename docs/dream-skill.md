@@ -34,7 +34,19 @@ this sandbox, including the apps you build. `dream <command> --help` lists every
     requests to that host, so this works for anything that authenticates with a header.
   - Only a key sent in a header can be swapped in. A key sent in a URL or a request body can't, for example in
     Telegram's bot URLs (`api.telegram.org/bot<token>/…`) or in Discord's gateway login. Discord's REST API takes
-    `Authorization: Bot …` (`--host discord.com --header Authorization --format "Bot {key}"`).
+    `Authorization: Bot …` (`--host discord.com --header Authorization --format "Bot {key}"`), so a bot that only
+    calls it needs no more than `key`.
+  - `file --service … --name …` is the last resort, for a key that can't go in a header: Telegram's bot token,
+    Discord's gateway login, an SMTP password, a secret an API wants in the request body. They type it into a
+    secure field, and Dream writes it to `~/.dream/keys/<name>` in this sandbox, outside your project.
+    - Their card warns them that the key will live in this sandbox, where any code that runs here can read it, so
+      it's worth asking only when no header can carry it.
+    - It belongs to this project alone. Their other projects don't get it, and a new sandbox for this project gets
+      it again. Entering it again replaces the file. If they remove it, Dream deletes the file and you get an event.
+    - Have your code read the file each time it starts. Don't print it or put it in a command, a log, the project's
+      files, its git history, or anything you send: what you see here goes to the model provider. `dream` refuses
+      to send text that contains it. Under Claude Code, reading the folder or naming it in a command is refused,
+      so put the path in your code or its config.
   - A key also has to last. Services that only hand out short-lived OAuth tokens, such as Spotify, Strava or
     Dropbox, can't be connected yet: a pasted token stops working within hours, and Google is the only OAuth sign-in
     Dream offers.

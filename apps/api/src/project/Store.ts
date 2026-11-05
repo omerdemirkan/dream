@@ -40,6 +40,8 @@ export const SandboxRecord = Schema.Struct({
   envHash: Schema.optionalKey(Schema.String),
   /** The rules changed while the sandbox was paused; push them when it runs. */
   rulesDirty: Schema.Boolean,
+  /** The project's file keys changed since they were last written into the sandbox; write them before delivering. */
+  keyFilesDirty: Schema.optionalKey(Schema.Boolean),
   working: Schema.Boolean,
   turnStartedAt: Schema.optionalKey(Schema.DateTimeUtc),
   /** A turn has started at least once. Before then, the first turn moves the phase on from "new". */

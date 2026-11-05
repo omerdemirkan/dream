@@ -8,6 +8,8 @@ import {
   AccessMessage,
   AccessRequest,
   accessHostProblem,
+  keyFileNameFor,
+  keyFileNameProblem,
   BrowserSession,
   type BrowserSessionId,
   Integration,
@@ -270,7 +272,9 @@ const requestAccess = (
   })
 
 const access = Command.make("access").pipe(
-  Command.withDescription("Ask for access to a service. They connect it once; it works in all their projects."),
+  Command.withDescription(
+    "Ask for access to a service. They connect it once; it works in all their projects (a key file, in this one)."
+  ),
   Command.withExamples([
     {
       command:
@@ -344,6 +348,38 @@ const access = Command.make("access").pipe(
         {
           command:
             'dream access key --service Stripe --host api.stripe.com --header Authorization --format "Bearer {key}" --why "Take payments"'
+        }
+      ])
+    ),
+    Command.make(
+      "file",
+      {
+        service: Flag.String("service").pipe(
+          Flag.withDescription("The service's name, as they know it, like Telegram")
+        ),
+        name: Flag.String("name").pipe(
+          Flag.withDescription(
+            "The key file's name in ~/.dream/keys, like telegram-bot-token (default: from --service)"
+          ),
+          Flag.optional
+        ),
+        ...accessFlags
+      },
+      (input) => {
+        const name = Option.getOrElse(input.name, () => keyFileNameFor(input.service))
+        const nameProblem = keyFileNameProblem(name)
+        return nameProblem === undefined
+          ? requestAccess(AccessRequest.cases.File.make({ service: input.service, name }), input)
+          : fail(nameProblem)
+      }
+    ).pipe(
+      Command.withDescription(
+        "Last resort, for a key that can't go in a header: they enter it, and Dream writes it to ~/.dream/keys/<name> here, readable by any code in this sandbox."
+      ),
+      Command.withExamples([
+        {
+          command:
+            'dream access file --service Telegram --name telegram-bot-token --why "Your bot token, so the bot can post to you"'
         }
       ])
     ),

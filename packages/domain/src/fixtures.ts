@@ -190,6 +190,31 @@ export const google: Integration = {
   connectedAt: at("2026-10-20T18:05:00Z")
 }
 
+/** A last-resort file key (`dream access file`), still open: Telegram's bot token goes in the URL, not a header. */
+export const telegramKey: AccessMessage = {
+  _tag: "Access",
+  id: "msg_telegram" as MessageId,
+  projectId: ids.brief,
+  createdAt: at("2026-10-21T09:00:00Z"),
+  request: { _tag: "File", service: "Telegram", name: "telegram-bot-token" },
+  why: "Your bot token, so the brief can arrive in Telegram every morning.",
+  state: { _tag: "Open" }
+}
+
+export const telegramKeyFile: Integration = {
+  id: "int_telegram" as IntegrationId,
+  label: "Telegram",
+  status: "connected",
+  access: {
+    _tag: "File",
+    service: "Telegram",
+    name: "telegram-bot-token",
+    path: "/home/user/.dream/keys/telegram-bot-token",
+    projectId: ids.brief
+  },
+  connectedAt: at("2026-10-21T09:04:00Z")
+}
+
 export const usage: UsageSnapshot = {
   provider: "chatgpt",
   plan: "ChatGPT Pro",
