@@ -48,12 +48,20 @@ const duration = (seconds: number) => {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`
 }
 
-function VideoPoster(props: { readonly source: Source }) {
+/** A still from the recording: its last moment, which usually shows what it proves. */
+function VideoPoster(props: { readonly source: Source; readonly duration: number | undefined }) {
   const player = useVideoPlayer(props.source, (p) => {
     p.muted = true
+    if (props.duration !== undefined) p.currentTime = Math.max(0, props.duration - 0.5)
   })
   return (
-    <VideoView player={player} nativeControls={false} contentFit="cover" style={{ width: "100%", height: "100%" }} />
+    <VideoView
+      player={player}
+      nativeControls={false}
+      allowsVideoFrameAnalysis={false}
+      contentFit="cover"
+      style={{ width: "100%", height: "100%" }}
+    />
   )
 }
 
@@ -86,7 +94,7 @@ export function MediaTile(props: {
       >
         {source === undefined ? null : media.kind === "video" ? (
           <>
-            <VideoPoster source={source} />
+            <VideoPoster source={source} duration={media.durationSeconds} />
             <View
               style={{
                 position: "absolute",
@@ -180,7 +188,15 @@ function FullVideo(props: { readonly source: Source }) {
     p.play()
   })
   useEffect(() => () => player.pause(), [player])
-  return <VideoView player={player} nativeControls contentFit="contain" style={{ flex: 1 }} />
+  return (
+    <VideoView
+      player={player}
+      nativeControls
+      allowsVideoFrameAnalysis={false}
+      contentFit="contain"
+      style={{ flex: 1 }}
+    />
+  )
 }
 
 /** Full-screen media, opened from any tile. */

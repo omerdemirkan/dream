@@ -15,7 +15,7 @@ export interface DreamNativeModule {
   /** A `-key value` launch argument (the Simulator's `simctl launch … -key value`). */
   launchArgument(key: string): string | null
   areActivitiesEnabled(): boolean
-  startObserving(): void
+  observeActivities(): void
   /** Starts an activity on this phone (fixtures mode); returns its id. Arguments are JSON. */
   startLocal(attributes: string, content: string): Promise<string>
   endAll(): Promise<void>

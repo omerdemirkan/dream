@@ -20,6 +20,9 @@
 #   DREAM_GOOGLE_IOS_CLIENT_ID  enables Google sign-in
 #   DREAM_APS_ENVIRONMENT       default "production" for testflight, "development" otherwise
 #   BUILD_NUMBER                default: seconds since 2026-01-01, so every upload is unique
+#   DEVELOPER_DIR               Xcode to use. Expo SDK 58 needs Xcode 26.4 or newer (older ones fail compiling
+#                               expo-modules-jsi under Swift 6); by default the newest /Applications/Xcode_26.* that
+#                               qualifies is picked, else the selected Xcode.
 set -euo pipefail
 
 mode="${1:-}"
@@ -51,6 +54,14 @@ if [[ "$mode" == "testflight" ]]; then
   key_path="$(cd "$(dirname "$key_path")" && pwd)/$(basename "$key_path")"
 fi
 
+if [[ -z "${DEVELOPER_DIR:-}" ]]; then
+  for xcode in $(ls -d /Applications/Xcode_26.*.app 2>/dev/null | sort -t. -k2 -n -r); do
+    minor="$(basename "$xcode" .app | sed -E 's/Xcode_26\.([0-9]+).*/\1/')"
+    if [[ "$minor" =~ ^[0-9]+$ && "$minor" -ge 4 ]]; then export DEVELOPER_DIR="$xcode/Contents/Developer"; break; fi
+  done
+fi
+echo "› Using $(xcodebuild -version | head -n1)"
+
 echo "› Installing dependencies"
 (cd "$repo_root" && bun install --frozen-lockfile)
 
@@ -67,10 +78,12 @@ mkdir -p "$build_dir"
 if [[ "$mode" == "simulator" ]]; then
   configuration="${CONFIGURATION:-Release}"
   echo "› Building $scheme ($configuration) for the iOS Simulator"
+  # Signed ad hoc ("Sign to Run Locally"), so entitlements like the keychain apply in the Simulator.
   xcodebuild -workspace "$workspace" -scheme "$scheme" -configuration "$configuration" \
     -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
     -derivedDataPath "$build_dir/derived" \
-    CODE_SIGNING_ALLOWED=NO CURRENT_PROJECT_VERSION="$build_number" \
+    CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=YES DEVELOPMENT_TEAM= \
+    CURRENT_PROJECT_VERSION="$build_number" \
     build | (command -v xcbeautify >/dev/null && xcbeautify || cat)
   app="$(ls -d "$build_dir"/derived/Build/Products/"$configuration"-iphonesimulator/*.app | head -n1)"
   echo "› Built $app"

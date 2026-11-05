@@ -80,9 +80,9 @@ export const accessScope = (request: AccessRequest) =>
 
 export const isOAuth = (request: AccessRequest) => request._tag === "Google"
 
-/** "around Thursday" → "Needed around Thursday". */
+/** "around Thursday" → "Needed ~Thursday", short enough for a tag. */
 export const whenTag = (when: string) => {
-  const trimmed = when.trim()
+  const trimmed = when.trim().replace(/^(around|about|roughly)\s+/i, "~")
   return /^needed\b/i.test(trimmed) ? trimmed : `Needed ${trimmed}`
 }
 

@@ -11,7 +11,7 @@ import { useRouter } from "expo-router"
 import type { ReactNode } from "react"
 import { Pressable, ScrollView, Text, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
-import { providerName, timeLabel, usageLine } from "../data/format.ts"
+import { providerName, resetLabel, usageLine } from "../data/format.ts"
 import {
   disconnectIntegrationFn,
   disconnectModelConnectionFn,
@@ -155,7 +155,7 @@ function ConnectionRow(props: { readonly connection: ModelConnection }) {
   const disconnect = useAction(disconnectModelConnectionFn)
   const c = props.connection
   const usage = c.usage ? usageLine(c.usage) : undefined
-  const resets = c.usage?.weekly?.resetsAt ? ` · resets ${timeLabel(c.usage.weekly.resetsAt)}` : ""
+  const resets = c.usage?.weekly?.resetsAt ? ` · resets ${resetLabel(c.usage.weekly.resetsAt)}` : ""
   const subtitle =
     c.status === "connected"
       ? `${usage ?? "Connected"}${usage ? resets : ""}`

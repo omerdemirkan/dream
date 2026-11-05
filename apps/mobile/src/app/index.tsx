@@ -205,7 +205,7 @@ function ProjectRow(props: {
           <Dot kind="need" />
         ) : project.phase === "live" ? (
           <Text style={{ fontSize: 13, color: color.t3 }}>Live</Text>
-        ) : progress && progress.total > 0 ? (
+        ) : progress && progress.total > 0 && project.phase === "building" ? (
           <Progress done={progress.done} total={progress.total} current={project.phase === "building"} />
         ) : null}
       </View>

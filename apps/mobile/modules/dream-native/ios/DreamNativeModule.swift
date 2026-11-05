@@ -23,7 +23,8 @@ public class DreamNativeModule: Module {
       ActivityAuthorizationInfo().areActivitiesEnabled
     }
 
-    Function("startObserving") {
+    // Not "startObserving": Expo calls that on the module when JS adds its first event listener.
+    Function("observeActivities") {
       self.startObserving()
     }
 

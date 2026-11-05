@@ -54,6 +54,7 @@ function Shell() {
           <Stack.Screen
             name="project/[id]"
             options={({ route }) => ({
+              presentation: "card",
               animation:
                 typeof route.params === "object" && route.params !== null && "instant" in route.params
                   ? "none"

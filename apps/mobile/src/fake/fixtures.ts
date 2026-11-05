@@ -3,9 +3,9 @@
  * projects, their Status cards and Chats, a connected ChatGPT plan and Gmail.
  * Builds on `@dream/domain/fixtures` and fills in what the mock shows beyond it.
  *
- * Every timestamp is shifted so the mock's "now" (Wednesday 2:12 PM in Los
- * Angeles) lands on the real current time: "Today", "day 3" and "7:00 AM"
- * read the same whenever the app runs.
+ * Every timestamp is shifted by whole days so the mock's "now" (Wednesday
+ * 2:12 PM in Los Angeles) lands within the last day: "Today", "day 3" and
+ * "7:00 AM" read as in the mock, in that time zone, whenever the app runs.
  */
 import type {
   AccessMessage,
@@ -50,7 +50,8 @@ const image = (id: string, caption: string, width = 408, height = 720): MediaRef
 })
 
 export const media = {
-  healthImport: Fx.healthImportRecording,
+  // The bundled recording is 408×720.
+  healthImport: { ...Fx.healthImportRecording, width: 408, height: 720 },
   squatChart: image("med_squatchart", "Squat chart · draft"),
   today: image("med_todayview", "Today view"),
   calendarFirst: image("med_cabincal", "Calendar first", 600, 643),
@@ -148,7 +149,11 @@ const liftMessages: ReadonlyArray<Message> = [
     "Starting the real build. I’ll only write when I need something from you or have something worth seeing."
   ),
   Fx.appleAccess,
-  { ...Fx.liftLogUpdate, text: "Apple Health import works in the simulator — 214 workouts from a sample export." },
+  {
+    ...Fx.liftLogUpdate,
+    text: "Apple Health import works in the simulator — 214 workouts from a sample export.",
+    media: [media.healthImport]
+  },
   text(
     liftLog.id,
     "msg_lift1rm",
@@ -354,9 +359,14 @@ const shift = <A>(value: A, millis: number): A => {
   return visit(value) as A
 }
 
-/** The fixture world with its clock set so that the mock's "now" is `now`. */
+const day = 86_400_000
+
+/**
+ * The fixture world moved forward by whole days, so the mock's "now" falls on
+ * today (or within the last day) and times of day read as in the mock.
+ */
 export const makeWorld = (now: DateTime.Utc): FixtureWorld =>
-  shift(world, DateTime.toEpochMillis(now) - DateTime.toEpochMillis(mockNow))
+  shift(world, Math.floor((DateTime.toEpochMillis(now) - DateTime.toEpochMillis(mockNow)) / day) * day)
 
 /** An integration id for something connected during a fixtures session. */
 export const newIntegrationId = (n: number) => `int_fake${n}` as IntegrationId

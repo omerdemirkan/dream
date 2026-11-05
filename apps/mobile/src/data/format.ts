@@ -92,3 +92,9 @@ export const usageLeft = (usage: UsageSnapshot) =>
   usage.weekly ? 1 - usage.weekly.usedPercent / 100 : usage.fiveHour ? 1 - usage.fiveHour.usedPercent / 100 : 1
 
 export const providerName = (provider: ModelConnection["provider"]) => (provider === "chatgpt" ? "ChatGPT" : "Claude")
+
+/** When a usage window resets: "3:40 PM" today, else "Mon 12:00 AM". */
+export const resetLabel = (dt: DateTime.Utc, now: DateTime.Utc = DateTime.nowUnsafe(), timeZone?: string) =>
+  sameDay(dt, now, timeZone)
+    ? timeLabel(dt, timeZone)
+    : `${fmt({ weekday: "short" }, timeZone).format(DateTime.toDateUtc(dt))} ${timeLabel(dt, timeZone)}`

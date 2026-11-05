@@ -75,6 +75,9 @@ export function Icon(props: {
       tintColor={props.color ?? color.t1}
       weight={props.weight ?? "medium"}
       resizeMode="scaleAspectFit"
+      accessible={false}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
       style={[{ width: size, height: size }, props.style]}
     />
   )
@@ -117,6 +120,9 @@ export function Tile(props: { readonly icon: string | undefined; readonly size?:
         size={s.glyph}
         tintColor={color.t2}
         weight="medium"
+        accessible={false}
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
         style={{ width: s.glyph, height: s.glyph }}
       />
     </View>

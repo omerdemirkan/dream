@@ -143,7 +143,7 @@ function Project(props: {
             position: "absolute",
             left: 0,
             right: 0,
-            top: "100%",
+            bottom: -18,
             height: 18,
             experimental_backgroundImage: `linear-gradient(${color.bg}, rgba(10,10,12,0))`
           }}

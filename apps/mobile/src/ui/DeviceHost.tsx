@@ -77,7 +77,7 @@ export function DeviceHost() {
           })
         ]
       : []
-    live?.startObserving()
+    live?.observeActivities()
     return () => {
       tokenListener.remove()
       for (const s of subscriptions) s.remove()

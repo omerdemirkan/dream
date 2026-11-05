@@ -54,8 +54,8 @@ export default function NewIdea() {
       onSuccess: (project) => {
         // Its first question can take minutes: now is when notifications make sense.
         askPush((n) => n + 1)
-        router.dismissAll()
-        router.push({ pathname: "/project/[id]", params: { id: project.id, tab: "chat" } })
+        // The composer gives way to the new project's Chat, with Home behind it.
+        router.replace({ pathname: "/project/[id]", params: { id: project.id, tab: "chat" } })
       },
       onFailure: (_, error) => {
         if (typeof error === "object" && error !== null && "_tag" in error && error._tag === "NoModelConnection") {

@@ -7,6 +7,7 @@
  */
 import { type Href, useRouter } from "expo-router"
 import { useEffect, useRef } from "react"
+import { LogBox } from "react-native"
 import { DreamNative } from "../../modules/dream-native/index.ts"
 import { appConfig } from "../state/runtime.ts"
 import { parseScenarios, useScenarios } from "./useScenarios.ts"
@@ -18,6 +19,8 @@ export function FixturesLaunch() {
   useEffect(() => {
     if (done.current || appConfig.backend !== "fixtures" || !DreamNative) return
     done.current = true
+    // `-dreamQuiet YES`: no LogBox toasts over the screen while taking screenshots (Metro still logs).
+    if (DreamNative.launchArgument("dreamQuiet") === "YES") LogBox.ignoreAllLogs(true)
     const route = DreamNative.launchArgument("dreamRoute")
     void scenarios(parseScenarios(DreamNative.launchArgument("dreamScenario"))).then(() => {
       // A path inside this app, typed by whoever launched the Simulator.

@@ -576,8 +576,10 @@ export function ExpandedAccess(props: {
           />
           {m.when ? (
             <Text
+              numberOfLines={1}
               style={{
                 marginLeft: "auto",
+                flexShrink: 1,
                 fontSize: 12.5,
                 color: color.t2,
                 paddingVertical: 4,
