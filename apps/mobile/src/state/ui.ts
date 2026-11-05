@@ -26,11 +26,11 @@ export interface Focus {
 
 export const focusAtom = Atom.make<Option.Option<Focus>>(Option.none()).pipe(Atom.keepAlive)
 
-/** Chat should scroll to this message and highlight it briefly (or hold the highlight). */
+/** Chat should scroll to this message, and highlight it briefly once it's in view. */
 export interface Landing {
   readonly projectId: ProjectId
   readonly messageId: MessageId
-  readonly hold: boolean
+  readonly highlight: boolean
   readonly at: number
 }
 

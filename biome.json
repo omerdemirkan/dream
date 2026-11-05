@@ -9,7 +9,10 @@
       "!**/dist",
       "!**/.alchemy",
       "!**/generated",
-      "!apps/mobile"
+      "!**/.expo",
+      "!apps/mobile/ios",
+      "!apps/mobile/android",
+      "!apps/mobile/build"
     ]
   },
   "formatter": {

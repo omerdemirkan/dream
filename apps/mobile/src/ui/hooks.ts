@@ -69,9 +69,7 @@ export function useOpenMessage() {
     (open: OpenMessage) => {
       const node = open.from?.current
       const focus = (origin: { x: number; y: number; width: number; height: number } | undefined) =>
-        setFocus(
-          Option.some({ projectId: open.projectId, messageId: open.messageId, origin, message: open.message })
-        )
+        setFocus(Option.some({ projectId: open.projectId, messageId: open.messageId, origin, message: open.message }))
       if (node) node.measureInWindow((x, y, width, height) => focus(width > 0 ? { x, y, width, height } : undefined))
       else focus(undefined)
     },

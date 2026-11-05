@@ -10,6 +10,7 @@ export default defineConfig({
       "packages/dreamd",
       "packages/sandbox-template",
       "apps/api",
+      "apps/mobile",
       "infra"
     ],
     passWithNoTests: true

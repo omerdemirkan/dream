@@ -1,21 +1,20 @@
 import type { ConfigContext, ExpoConfig } from "expo/config"
 
 /**
- * Build-time settings come from the environment (EAS env vars, or a local
+ * Build-time settings come from the environment (the build script, or a local
  * `.env`), so nothing account-specific is checked in:
  *
  * - DREAM_BUNDLE_ID             iOS bundle id (placeholder until the founder confirms)
  * - DREAM_APPLE_TEAM_ID         Apple team, needed to sign the app and its widget extension
- * - DREAM_EAS_PROJECT_ID        EAS project id, set once `eas init` has linked the project
  * - DREAM_API_URL               the API, e.g. https://dream.omer.build
  * - DREAM_BACKEND               "fixtures" (in-app fake backend) or "live"
  * - DREAM_GOOGLE_IOS_CLIENT_ID  iOS OAuth client for Google Sign-In
+ * - DREAM_GOOGLE_WEB_CLIENT_ID  optional: makes Google's ID token audience the web client
  * - DREAM_APS_ENVIRONMENT       "development" or "production" (APNs entitlement)
  */
 const env = process.env
 const bundleId = env.DREAM_BUNDLE_ID ?? "com.omer.dream"
 const googleIosClientId = env.DREAM_GOOGLE_IOS_CLIENT_ID
-const easProjectId = env.DREAM_EAS_PROJECT_ID
 
 /** Google Sign-In returns to the reversed client id as a URL scheme. */
 const reversedClientId = (clientId: string) => clientId.split(".").reverse().join(".")
@@ -58,15 +57,16 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       "expo-speech-recognition",
       {
         microphonePermission: "Dream uses the microphone so you can dictate instead of typing.",
-        speechRecognitionPermission: "Dream turns what you say into text in the field. Nothing is sent until you tap send."
+        speechRecognitionPermission:
+          "Dream turns what you say into text in the field. Nothing is sent until you tap send."
       }
     ],
     ...(googleIosClientId
       ? [
-          [
-            "@react-native-google-signin/google-signin",
-            { iosUrlScheme: reversedClientId(googleIosClientId) }
-          ] as [string, unknown]
+          ["@react-native-google-signin/google-signin", { iosUrlScheme: reversedClientId(googleIosClientId) }] as [
+            string,
+            unknown
+          ]
         ]
       : []),
     "@bacons/apple-targets"
@@ -79,6 +79,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     apiUrl: env.DREAM_API_URL ?? "https://dream.omer.build",
     backend: env.DREAM_BACKEND ?? "fixtures",
     ...(googleIosClientId ? { googleIosClientId } : {}),
-    ...(easProjectId ? { eas: { projectId: easProjectId } } : {})
+    ...(env.DREAM_GOOGLE_WEB_CLIENT_ID ? { googleWebClientId: env.DREAM_GOOGLE_WEB_CLIENT_ID } : {})
   }
 })

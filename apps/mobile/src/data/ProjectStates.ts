@@ -37,13 +37,15 @@ export class ProjectStates extends Context.Service<
             const handle = yield* FiberHandle.make()
             const restart = FiberHandle.run(
               handle,
-              live.subscribe(projectId).pipe(
-                Stream.runForEach((event) =>
-                  SubscriptionRef.update(ref, (state) =>
-                    Option.fromUndefinedOr(applyEvent(Option.getOrUndefined(state), event))
+              live
+                .subscribe(projectId)
+                .pipe(
+                  Stream.runForEach((event) =>
+                    SubscriptionRef.update(ref, (state) =>
+                      Option.fromUndefinedOr(applyEvent(Option.getOrUndefined(state), event))
+                    )
                   )
                 )
-              )
             ).pipe(Effect.asVoid)
             yield* restart
             return { ref, restart }
@@ -72,7 +74,10 @@ export class ProjectStates extends Context.Service<
                 limit: 50,
                 ...(oldest ? { before: oldest.id } : {})
               })
-              yield* SubscriptionRef.update(ref, Option.map((state) => addEarlier(state, page)))
+              yield* SubscriptionRef.update(
+                ref,
+                Option.map((state) => addEarlier(state, page))
+              )
             }).pipe(Effect.ignore)
           )
         }),
@@ -81,7 +86,10 @@ export class ProjectStates extends Context.Service<
             Effect.flatMap((open) =>
               open
                 ? withState(message.projectId, (ref) =>
-                    SubscriptionRef.update(ref, Option.map((state) => replaceMessage(state, message)))
+                    SubscriptionRef.update(
+                      ref,
+                      Option.map((state) => replaceMessage(state, message))
+                    )
                   )
                 : Effect.void
             )

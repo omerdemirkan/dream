@@ -40,7 +40,7 @@ export const googleLabel = (scopes: ReadonlyArray<string>) => {
     const product = googleProducts.find(([prefix]) => scope.toLowerCase().startsWith(prefix))
     if (product) products.add(product[1])
   }
-  return products.size === 1 ? Array.from(products)[0] ?? "Google" : "Google"
+  return products.size === 1 ? (Array.from(products)[0] ?? "Google") : "Google"
 }
 
 /** "Calendar events only." / "Read-only." — absent when the scopes say nothing a person cares about. */

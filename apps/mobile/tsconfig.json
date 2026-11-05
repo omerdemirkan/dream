@@ -11,6 +11,6 @@
     "types": ["node"],
     "paths": { "@/*": ["./src/*"] }
   },
-  "include": ["src", "test", "app.config.ts", "targets/**/*.ts"],
+  "include": ["src", "test", "modules", "app.config.ts", "targets/**/*.ts"],
   "exclude": ["node_modules", "ios", "android", ".expo"]
 }

@@ -40,17 +40,12 @@ export function StatusLine(props: { readonly state: ProjectState }) {
   let dot: "need" | "live" | "quiet" = "quiet"
   let detail: string | undefined
   if (status.pausedUntil && DateTime.isGreaterThan(status.pausedUntil, now)) {
-    return (
-      <Line dot="quiet" lead="Paused" detail={`back at ${timeLabel(status.pausedUntil)}`} />
-    )
+    return <Line dot="quiet" lead="Paused" detail={`back at ${timeLabel(status.pausedUntil)}`} />
   }
   if (phase === "new") return <Line dot="quiet" lead="Looking into this" />
   if (asks.length > 0) {
     dot = "need"
-    detail =
-      phase === "interviewing"
-        ? `${asks.length} question${asks.length > 1 ? "s" : ""} for you`
-        : "needs you"
+    detail = phase === "interviewing" ? `${asks.length} question${asks.length > 1 ? "s" : ""} for you` : "needs you"
   } else if (phase === "live") {
     dot = "live"
     detail = "maintained · needs nothing from you"
@@ -66,7 +61,11 @@ export function StatusLine(props: { readonly state: ProjectState }) {
   return <Line dot={dot} lead={phaseLabel(phase)} detail={detail} />
 }
 
-function Line(props: { readonly dot: "need" | "live" | "quiet"; readonly lead: string; readonly detail?: string | undefined }) {
+function Line(props: {
+  readonly dot: "need" | "live" | "quiet"
+  readonly lead: string
+  readonly detail?: string | undefined
+}) {
   return (
     <View style={{ marginTop: 14, flexDirection: "row", alignItems: "center", gap: 9 }}>
       <Dot kind={props.dot} />
@@ -82,7 +81,12 @@ function Line(props: { readonly dot: "need" | "live" | "quiet"; readonly lead: s
 // Pieces of the current milestone
 // ---------------------------------------------------------------------------
 
-function Block(props: { readonly label: string; readonly text: string; readonly hero?: boolean; readonly live?: boolean }) {
+function Block(props: {
+  readonly label: string
+  readonly text: string
+  readonly hero?: boolean
+  readonly live?: boolean
+}) {
   return (
     <View style={{ marginTop: 16 }}>
       <Lab>{props.label}</Lab>
@@ -109,7 +113,15 @@ function LiveBar() {
   }, [x])
   const style = useAnimatedStyle(() => ({ left: `${-40 + x.value * 144}%` }))
   return (
-    <View style={{ marginTop: 12, height: 2, borderRadius: 1, backgroundColor: "rgba(255,255,255,0.1)", overflow: "hidden" }}>
+    <View
+      style={{
+        marginTop: 12,
+        height: 2,
+        borderRadius: 1,
+        backgroundColor: "rgba(255,255,255,0.1)",
+        overflow: "hidden"
+      }}
+    >
       <Animated.View
         style={[
           {
@@ -203,10 +215,21 @@ function NeedRow(props: { readonly message: AskMessage }) {
     >
       <Dot kind="need" />
       <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: 11, fontWeight: "600", letterSpacing: 1, textTransform: "uppercase", color: color.need }}>
+        <Text
+          style={{ fontSize: 11, fontWeight: "600", letterSpacing: 1, textTransform: "uppercase", color: color.need }}
+        >
           {m._tag === "Access" ? "Access" : "Question"} · in Chat
         </Text>
-        <Text style={{ fontSize: 15.5, lineHeight: 20, fontWeight: "600", letterSpacing: -0.15, color: color.t1, marginTop: 3 }}>
+        <Text
+          style={{
+            fontSize: 15.5,
+            lineHeight: 20,
+            fontWeight: "600",
+            letterSpacing: -0.15,
+            color: color.t1,
+            marginTop: 3
+          }}
+        >
           {m._tag === "Access" ? m.why : m.question}
         </Text>
       </View>
@@ -296,7 +319,8 @@ const focusIndex = (milestones: ReadonlyArray<Milestone>) => {
   milestones.forEach((m, i) => {
     if (m.state !== "done") return
     const prev = milestones[best]
-    if (best === -1 || (m.date && prev?.date && DateTime.isGreaterThan(m.date, prev.date)) || (m.date && !prev?.date)) best = i
+    if (best === -1 || (m.date && prev?.date && DateTime.isGreaterThan(m.date, prev.date)) || (m.date && !prev?.date))
+      best = i
   })
   return best
 }
@@ -323,10 +347,25 @@ function Node(props: { readonly state: Milestone["state"]; readonly paused: bool
   }
   if (props.state === "current") {
     return (
-      <View style={[base, { borderWidth: 2, borderColor: props.paused ? color.t2 : color.t1, alignItems: "center", justifyContent: "center" }]}>
+      <View
+        style={[
+          base,
+          {
+            borderWidth: 2,
+            borderColor: props.paused ? color.t2 : color.t1,
+            alignItems: "center",
+            justifyContent: "center"
+          }
+        ]}
+      >
         {isNow ? (
           <>
-            <Animated.View style={[{ position: "absolute", width: 24, height: 24, borderRadius: 12, backgroundColor: color.white }, ring]} />
+            <Animated.View
+              style={[
+                { position: "absolute", width: 24, height: 24, borderRadius: 12, backgroundColor: color.white },
+                ring
+              ]}
+            />
             <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color.t1 }} />
           </>
         ) : (
@@ -343,7 +382,11 @@ function Connector(props: { readonly state: Milestone["state"] }) {
     props.state === "upcoming"
       ? { borderLeftWidth: 2, borderStyle: "dashed" as const, borderColor: "rgba(255,255,255,0.2)" }
       : props.state === "current"
-        ? { experimental_backgroundImage: "linear-gradient(#F5F5F7 0px, rgba(255,255,255,0.5) 40px, rgba(255,255,255,0.14) 160px)", width: 2 }
+        ? {
+            experimental_backgroundImage:
+              "linear-gradient(#F5F5F7 0px, rgba(255,255,255,0.5) 40px, rgba(255,255,255,0.14) 160px)",
+            width: 2
+          }
         : { backgroundColor: "rgba(255,255,255,0.5)", width: 2 }
   return <View style={[{ position: "absolute", left: 11, top: 30, bottom: 2, borderRadius: 1 }, style]} />
 }
@@ -366,8 +409,20 @@ function MilestoneView(props: {
   const titleStyle = isCurrent
     ? { fontSize: 22, lineHeight: 28, fontWeight: "700" as const, letterSpacing: -0.66, color: color.t1 }
     : m.state === "done"
-      ? { fontSize: 17, lineHeight: 28, fontWeight: (doneFocus || m.detail ? "600" : "500") as "600" | "500", letterSpacing: -0.25, color: doneFocus || m.detail ? color.t1 : color.t2 }
-      : { fontSize: 17, lineHeight: 28, fontWeight: "600" as const, letterSpacing: -0.25, color: props.far ? color.t3 : color.t2 }
+      ? {
+          fontSize: 17,
+          lineHeight: 28,
+          fontWeight: (doneFocus || m.detail ? "600" : "500") as "600" | "500",
+          letterSpacing: -0.25,
+          color: doneFocus || m.detail ? color.t1 : color.t2
+        }
+      : {
+          fontSize: 17,
+          lineHeight: 28,
+          fontWeight: "600" as const,
+          letterSpacing: -0.25,
+          color: props.far ? color.t3 : color.t2
+        }
   const when = m.date ? milestoneDate(m.date, now) : undefined
   return (
     <View style={{ paddingLeft: 44, paddingBottom: props.last ? 4 : 22 }}>
@@ -375,15 +430,17 @@ function MilestoneView(props: {
       <Node state={m.state} paused={paused} />
       <Text style={titleStyle}>
         {m.title}
-        {m.state === "done" && when ? <Text style={{ fontSize: 13, color: color.t3, fontWeight: "400" }}>{`  ${when}`}</Text> : null}
+        {m.state === "done" && when ? (
+          <Text style={{ fontSize: 13, color: color.t3, fontWeight: "400" }}>{`  ${when}`}</Text>
+        ) : null}
       </Text>
       {m.state !== "done" && when ? <Text style={{ fontSize: 14, color: color.t3, marginTop: -2 }}>{when}</Text> : null}
       {m.detail ? (
-        <Text style={{ fontSize: m.state === "done" ? 15 : 14, lineHeight: 21, color: color.t2, marginTop: 2 }}>{m.detail}</Text>
+        <Text style={{ fontSize: m.state === "done" ? 15 : 14, lineHeight: 21, color: color.t2, marginTop: 2 }}>
+          {m.detail}
+        </Text>
       ) : null}
-      {props.focus ? (
-        <FocusBlocks card={card} working={props.working} paused={paused} current={isCurrent} />
-      ) : null}
+      {props.focus ? <FocusBlocks card={card} working={props.working} paused={paused} current={isCurrent} /> : null}
       {m.needs.map((need, i) => (
         <NeedView key={`${need.what}-${i}`} need={need} messages={props.messages} />
       ))}
@@ -398,13 +455,23 @@ function MilestoneView(props: {
   )
 }
 
-function FocusBlocks(props: { readonly card: StatusCard; readonly working: boolean; readonly paused: boolean; readonly current: boolean }) {
+function FocusBlocks(props: {
+  readonly card: StatusCard
+  readonly working: boolean
+  readonly paused: boolean
+  readonly current: boolean
+}) {
   const { card } = props
   return (
     <>
       {props.paused && card.pausedUntil ? <PauseCard until={card.pausedUntil} since={card.updatedAt} /> : null}
       {card.now ? (
-        <Block label={props.paused ? "Was doing" : "Now"} text={card.now} hero={!props.paused} live={props.working && !props.paused} />
+        <Block
+          label={props.paused ? "Was doing" : "Now"}
+          text={card.now}
+          hero={!props.paused}
+          live={props.working && !props.paused}
+        />
       ) : null}
       {card.justDid && props.current ? <Block label="Just did" text={card.justDid} /> : null}
       <MediaStrip media={card.media} inset={44} />
@@ -429,9 +496,7 @@ export function StatusTab(props: { readonly state: ProjectState }) {
   const unpinned = openAsksOf(messages).filter((m) => !pinned.has(m.id))
   const focus = focusIndex(status.milestones)
   const firstUpcoming = status.milestones.findIndex((m) => m.state === "upcoming")
-  const connected = messages.filter(
-    (m): m is AccessMessage => m._tag === "Access" && m.state._tag === "Connected"
-  )
+  const connected = messages.filter((m): m is AccessMessage => m._tag === "Access" && m.state._tag === "Connected")
   return (
     <View>
       <Text style={{ marginTop: 2, fontSize: 16, lineHeight: 23, color: color.t2 }}>{project.idea}</Text>

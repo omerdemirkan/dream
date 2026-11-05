@@ -14,7 +14,9 @@ export const AppConfigSchema = Schema.Struct({
   /** "fixtures" runs the whole app against an in-memory fake of the API. */
   backend: Backend,
   /** iOS OAuth client id for native Google Sign-In; absent hides the button. */
-  googleIosClientId: Schema.optionalKey(Schema.String)
+  googleIosClientId: Schema.optionalKey(Schema.String),
+  /** Web OAuth client id; when set, Google's ID token is issued for it instead of the iOS client. */
+  googleWebClientId: Schema.optionalKey(Schema.String)
 })
 export type AppConfigShape = typeof AppConfigSchema.Type
 

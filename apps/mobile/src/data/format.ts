@@ -32,14 +32,16 @@ export const dayLabel = (dt: DateTime.Utc, now: DateTime.Utc, timeZone?: string)
   return fmt({ weekday: "short", month: "short", day: "numeric" }, timeZone).format(DateTime.toDateUtc(dt))
 }
 
-export const sameDay = (a: DateTime.Utc, b: DateTime.Utc, timeZone?: string) => dayKey(a, timeZone) === dayKey(b, timeZone)
+export const sameDay = (a: DateTime.Utc, b: DateTime.Utc, timeZone?: string) =>
+  dayKey(a, timeZone) === dayKey(b, timeZone)
 
 /** Milestone dates: "Today", "Oct 14", or for what's ahead "Tomorrow, 7:00". */
 export const milestoneDate = (dt: DateTime.Utc, now: DateTime.Utc, timeZone?: string) => {
   const offset = dayOffset(dt, now, timeZone)
   if (offset === 0) return DateTime.isGreaterThan(dt, now) ? `Today, ${clock(dt, timeZone)}` : "Today"
   if (offset === 1) return `Tomorrow, ${clock(dt, timeZone)}`
-  if (offset > 1 && offset < 7) return `${fmt({ weekday: "long" }, timeZone).format(DateTime.toDateUtc(dt))}, ${clock(dt, timeZone)}`
+  if (offset > 1 && offset < 7)
+    return `${fmt({ weekday: "long" }, timeZone).format(DateTime.toDateUtc(dt))}, ${clock(dt, timeZone)}`
   return fmt({ month: "short", day: "numeric" }, timeZone).format(DateTime.toDateUtc(dt))
 }
 

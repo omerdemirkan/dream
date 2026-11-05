@@ -51,7 +51,15 @@ export interface FakePush {
 }
 
 /** Named states to jump to with `dream://fixtures/<name>` when checking screens. */
-export const Scenario = ["reset", "paused", "all-clear", "withdraw-cabin"] as const
+export const Scenario = [
+  "reset",
+  "paused",
+  "all-clear",
+  "cabin-resolved",
+  "withdraw-cabin",
+  "no-plan",
+  "signed-out"
+] as const
 export type Scenario = (typeof Scenario)[number]
 
 interface ProjectRecord {
@@ -215,7 +223,12 @@ export class FakeBackend extends Context.Service<
         }
       }
 
-      const connectIntegration = (record: ProjectRecord, access: AccessMessage, label: string, how: IntegrationAccess) =>
+      const connectIntegration = (
+        record: ProjectRecord,
+        access: AccessMessage,
+        label: string,
+        how: IntegrationAccess
+      ) =>
         Effect.gen(function* () {
           const now = yield* DateTime.now
           const integration: Integration = {
@@ -325,7 +338,15 @@ export class FakeBackend extends Context.Service<
               project,
               status: { phase: "new", phaseSince: now, media: [], milestones: [], updatedAt: now },
               messages: [
-                { _tag: "Text", id: nextId("msg") as MessageId, projectId: id, createdAt: now, from: "user", text: idea, media: [] }
+                {
+                  _tag: "Text",
+                  id: nextId("msg") as MessageId,
+                  projectId: id,
+                  createdAt: now,
+                  from: "user",
+                  text: idea,
+                  media: []
+                }
               ],
               working: true,
               events: yield* PubSub.unbounded<ProjectEvent>()
@@ -335,7 +356,12 @@ export class FakeBackend extends Context.Service<
               6,
               Effect.gen(function* () {
                 const title = titleFrom(idea)
-                yield* setProject(record, { title, kind: "Just started", phase: "interviewing", headline: "One question for you" })
+                yield* setProject(record, {
+                  title,
+                  kind: "Just started",
+                  phase: "interviewing",
+                  headline: "One question for you"
+                })
                 yield* setStatus(record, { phase: "interviewing", phaseSince: yield* DateTime.now })
                 const question: QuestionMessage = {
                   _tag: "Question",
@@ -357,7 +383,9 @@ export class FakeBackend extends Context.Service<
             return project
           }),
         GetLiveUrl: ({ projectId }) =>
-          find(projectId).pipe(Effect.as({ url: `wss://fixtures.invalid/projects/${projectId}/live?ticket=fake` })),
+          find(projectId).pipe(
+            Effect.map(() => ({ url: `wss://fixtures.invalid/projects/${projectId}/live?ticket=${nextId("tkt")}` }))
+          ),
         ListMessages: ({ projectId, before, limit }) =>
           Effect.gen(function* () {
             const record = yield* find(projectId)
@@ -392,9 +420,12 @@ export class FakeBackend extends Context.Service<
         AnswerQuestion: ({ projectId, messageId, answer }) =>
           Effect.gen(function* () {
             const { record, message } = yield* findMessage(projectId, messageId)
-            if (message._tag !== "Question") return yield* new InvalidRequest({ message: "That message isn't a question." })
+            if (message._tag !== "Question")
+              return yield* new InvalidRequest({ message: "That message isn't a question." })
             if (message.state._tag === "Withdrawn")
-              return yield* new InvalidRequest({ message: "This question was withdrawn; it no longer needs an answer." })
+              return yield* new InvalidRequest({
+                message: "This question was withdrawn; it no longer needs an answer."
+              })
             if (answer._tag === "Choice" && !message.options.includes(answer.option))
               return yield* new InvalidRequest({ message: `“${answer.option}” isn't one of the options.` })
             const updated: QuestionMessage = {
@@ -455,7 +486,8 @@ export class FakeBackend extends Context.Service<
         DeclineAccess: ({ projectId, messageId }) =>
           Effect.gen(function* () {
             const { record, message } = yield* findMessage(projectId, messageId)
-            if (message._tag !== "Access") return yield* new InvalidRequest({ message: "That message isn't an access request." })
+            if (message._tag !== "Access")
+              return yield* new InvalidRequest({ message: "That message isn't an access request." })
             const declined: AccessMessage = { ...message, state: { _tag: "Declined", declinedAt: yield* DateTime.now } }
             yield* setMessage(record, declined)
             return declined
@@ -524,7 +556,9 @@ export class FakeBackend extends Context.Service<
         Effect.gen(function* () {
           const now = yield* DateTime.now
           connections = connections.map((c) =>
-            c.id === connectionId ? { ...c, status: "connected" as const, connectedAt: now, usage: usageFor(c.provider, now) } : c
+            c.id === connectionId
+              ? { ...c, status: "connected" as const, connectedAt: now, usage: usageFor(c.provider, now) }
+              : c
           )
         })
 
@@ -555,12 +589,41 @@ export class FakeBackend extends Context.Service<
                 if (isOpenAsk(message) && message._tag === "Question")
                   yield* setMessage(record, {
                     ...message,
-                    state: { _tag: "Answered", answer: { _tag: "Choice", option: message.options[0] ?? "" }, answeredAt: now }
+                    state: {
+                      _tag: "Answered",
+                      answer: { _tag: "Choice", option: message.options[0] ?? "" },
+                      answeredAt: now
+                    }
                   })
                 else if (isOpenAsk(message) && message._tag === "Access" && !message.when)
                   yield* setMessage(record, { ...message, state: { _tag: "Declined", declinedAt: now } })
             return
           }
+          case "cabin-resolved": {
+            const cabin = Array.from(records.values()).find((r) => r.project.slug === "cabin")
+            if (!cabin) return
+            for (const message of cabin.messages) {
+              if (message._tag === "Question" && message.question.startsWith("When two relatives"))
+                yield* setMessage(cabin, {
+                  ...message,
+                  state: { _tag: "Answered", answer: { _tag: "Choice", option: "First to ask" }, answeredAt: now }
+                })
+              if (message._tag === "Access" && message.state._tag === "Open")
+                yield* connectIntegration(cabin, message, "Google Calendar", {
+                  _tag: "Google",
+                  email: user.email,
+                  scopes: message.request._tag === "Google" ? [...message.request.scopes] : [],
+                  hosts: ["www.googleapis.com"],
+                  placeholder: "dream-placeholder-google"
+                })
+            }
+            return
+          }
+          case "no-plan":
+            connections = []
+            return
+          case "signed-out":
+            return
           case "withdraw-cabin": {
             const cabin = Array.from(records.values()).find((r) => r.project.slug === "cabin")
             const rule = cabin?.messages.find((m) => m._tag === "Question" && m.state._tag === "Open")
@@ -582,21 +645,21 @@ export class FakeBackend extends Context.Service<
       const handlerServices = yield* Layer.build(handlers)
 
       return FakeBackend.of({
-          handlers: handlerServices,
-          subscribe: (projectId) =>
-            Stream.unwrap(
-              Effect.gen(function* () {
-                const record = records.get(projectId)
-                if (!record) return Stream.never
-                // Subscribe before taking the snapshot so no change falls between them.
-                const subscription = yield* PubSub.subscribe(record.events)
-                return Stream.make(snapshotOf(record)).pipe(Stream.concat(Stream.fromSubscription(subscription)))
-              })
-            ),
-          pushes: Stream.fromPubSub(pushes),
-          scenario,
-          setPace: (input) => Effect.sync(() => void (pace = Duration.fromInputUnsafe(input)))
-        })
+        handlers: handlerServices,
+        subscribe: (projectId) =>
+          Stream.unwrap(
+            Effect.gen(function* () {
+              const record = records.get(projectId)
+              if (!record) return Stream.never
+              // Subscribe before taking the snapshot so no change falls between them.
+              const subscription = yield* PubSub.subscribe(record.events)
+              return Stream.make(snapshotOf(record)).pipe(Stream.concat(Stream.fromSubscription(subscription)))
+            })
+          ),
+        pushes: Stream.fromPubSub(pushes),
+        scenario,
+        setPace: (input) => Effect.sync(() => void (pace = Duration.fromInputUnsafe(input)))
+      })
     })
   )
 }

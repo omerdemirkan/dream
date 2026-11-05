@@ -92,7 +92,10 @@ export function useDictation(onText: (text: string) => void, sample = "Can it al
         Alert.alert(
           "Dictation needs the microphone",
           "Allow Microphone and Speech Recognition for Dream in Settings to dictate.",
-          [{ text: "Not now", style: "cancel" }, { text: "Settings", onPress: () => void Linking.openSettings() }]
+          [
+            { text: "Not now", style: "cancel" },
+            { text: "Settings", onPress: () => void Linking.openSettings() }
+          ]
         )
         return
       }

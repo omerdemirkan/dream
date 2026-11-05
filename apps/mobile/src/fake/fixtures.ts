@@ -11,6 +11,8 @@ import type {
   AccessMessage,
   Integration,
   IntegrationId,
+  LiveActivityAttributes,
+  LiveActivityContent,
   MediaId,
   MediaRef,
   Message,
@@ -166,7 +168,13 @@ const liftMessages: ReadonlyArray<Message> = [
 const briefMessages: ReadonlyArray<Message> = [
   text(morningBrief.id, "msg_briefidea", "2026-10-20T17:50:00Z", "user", morningBrief.idea),
   Fx.gmailAccess,
-  text(morningBrief.id, "msg_brieffirst", "2026-10-21T19:00:00Z", "agent", "Your first digest arrives tomorrow at 7:00."),
+  text(
+    morningBrief.id,
+    "msg_brieffirst",
+    "2026-10-21T19:00:00Z",
+    "agent",
+    "Your first digest arrives tomorrow at 7:00."
+  ),
   text(
     morningBrief.id,
     "msg_briefsent",
@@ -352,3 +360,28 @@ export const makeWorld = (now: DateTime.Utc): FixtureWorld =>
 
 /** An integration id for something connected during a fixtures session. */
 export const newIntegrationId = (n: number) => `int_fake${n}` as IntegrationId
+
+/** Live Activities as the agent would start them with `dream live` (shown with dream://fixtures/live-activity). */
+export const liveActivitySamples: Record<
+  string,
+  { readonly attributes: LiveActivityAttributes; readonly content: LiveActivityContent }
+> = {
+  "live-activity": {
+    attributes: { projectId: liftLog.id, projectName: "Lift Log", icon: "dumbbell" },
+    content: {
+      title: "Building progress charts",
+      detail: "Squat, bench and deadlift",
+      next: "Rest timer",
+      step: { current: 3, total: 5 },
+      badge: "Day 3"
+    }
+  },
+  "live-activity-needs": {
+    attributes: { projectId: cabin.id, projectName: "Cabin", icon: "house" },
+    content: {
+      title: "Building the calendar",
+      badge: "Needs you",
+      needsYou: { prompt: "Who gets a weekend two relatives want?" }
+    }
+  }
+}

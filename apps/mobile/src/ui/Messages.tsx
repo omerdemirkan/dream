@@ -106,7 +106,13 @@ export const Card = forwardRef<HostInstance, CardProps>(function Card(props, ref
               borderColor: color.needLine
             }
           : props.tone === "later"
-            ? { padding: 14, backgroundColor: color.s1, borderWidth: 1, borderStyle: "dashed", borderColor: color.line2 }
+            ? {
+                padding: 14,
+                backgroundColor: color.s1,
+                borderWidth: 1,
+                borderStyle: "dashed",
+                borderColor: color.line2
+              }
             : {
                 flexDirection: "row",
                 gap: 12,
@@ -162,7 +168,16 @@ function CardHead(props: { readonly label: string; readonly later?: boolean; rea
 
 function CardTitle(props: { readonly children: string }) {
   return (
-    <Text style={{ fontSize: 19, lineHeight: 23, fontWeight: "600", letterSpacing: -0.48, color: color.t1, paddingHorizontal: 2 }}>
+    <Text
+      style={{
+        fontSize: 19,
+        lineHeight: 23,
+        fontWeight: "600",
+        letterSpacing: -0.48,
+        color: color.t1,
+        paddingHorizontal: 2
+      }}
+    >
       {props.children}
     </Text>
   )
@@ -170,7 +185,9 @@ function CardTitle(props: { readonly children: string }) {
 
 function CardText(props: { readonly children: string }) {
   return (
-    <Text style={{ fontSize: 14, lineHeight: 20, color: color.t2, marginTop: 6, marginHorizontal: 2 }}>{props.children}</Text>
+    <Text style={{ fontSize: 14, lineHeight: 20, color: color.t2, marginTop: 6, marginHorizontal: 2 }}>
+      {props.children}
+    </Text>
   )
 }
 
@@ -195,10 +212,17 @@ function ResolvedRow(props: {
           justifyContent: "center"
         }}
       >
-        <Icon name={props.check ? "check" : "close"} size={11} color={props.check ? color.black : color.t2} weight="bold" />
+        <Icon
+          name={props.check ? "check" : "close"}
+          size={11}
+          color={props.check ? color.black : color.t2}
+          weight="bold"
+        />
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: 11, fontWeight: "600", letterSpacing: 1, textTransform: "uppercase", color: color.t3 }}>
+        <Text
+          style={{ fontSize: 11, fontWeight: "600", letterSpacing: 1, textTransform: "uppercase", color: color.t3 }}
+        >
           {props.label}
         </Text>
         <Text
@@ -225,58 +249,64 @@ export const answerText = (message: QuestionMessage) =>
       : message.state.answer.text
     : undefined
 
-export const QuestionCard = forwardRef<HostInstance, { readonly message: QuestionMessage; readonly onOpen: () => void }>(
-  function QuestionCard(props, ref) {
-    const m = props.message
-    const answer = useAction(answerNowFn)
-    const [picked, setPicked] = useState<string | undefined>(undefined)
-    if (m.state._tag === "Answered") {
-      const said = m.state.answer._tag === "Choice" ? "You chose" : "You said"
-      return (
-        <Card ref={ref} tone="done" onOpen={props.onOpen}>
-          <ResolvedRow
-            label="Question · answered"
-            title={m.question}
-            check
-            detail={
-              <>
-                {`${said} · `}
-                <Text style={{ color: color.t1, fontWeight: "600" }}>{answerText(m)}</Text>
-              </>
-            }
-          />
-        </Card>
-      )
-    }
-    if (m.state._tag === "Withdrawn") {
-      return (
-        <Card ref={ref} tone="done" onOpen={props.onOpen}>
-          <ResolvedRow label="Question · no longer needed" title={m.question} check={false} detail="Dream doesn’t need this anymore." />
-        </Card>
-      )
-    }
+export const QuestionCard = forwardRef<
+  HostInstance,
+  { readonly message: QuestionMessage; readonly onOpen: () => void }
+>(function QuestionCard(props, ref) {
+  const m = props.message
+  const answer = useAction(answerNowFn)
+  const [picked, setPicked] = useState<string | undefined>(undefined)
+  if (m.state._tag === "Answered") {
+    const said = m.state.answer._tag === "Choice" ? "You chose" : "You said"
     return (
-      <Card ref={ref} tone="need" onOpen={props.onOpen}>
-        <CardHead label="Question" />
-        <CardTitle>{m.question}</CardTitle>
-        {m.why ? <CardText>{m.why}</CardText> : null}
-        <Choices
-          options={m.options}
-          selected={picked}
-          size="sm"
-          style={{ marginTop: 14 }}
-          onPick={(option) => {
-            setPicked(option)
-            answer.run(
-              { projectId: m.projectId, messageId: m.id, answer: { _tag: "Choice", option } },
-              { onFailure: () => setPicked(undefined) }
-            )
-          }}
+      <Card ref={ref} tone="done" onOpen={props.onOpen}>
+        <ResolvedRow
+          label="Question · answered"
+          title={m.question}
+          check
+          detail={
+            <>
+              {`${said} · `}
+              <Text style={{ color: color.t1, fontWeight: "600" }}>{answerText(m)}</Text>
+            </>
+          }
         />
       </Card>
     )
   }
-)
+  if (m.state._tag === "Withdrawn") {
+    return (
+      <Card ref={ref} tone="done" onOpen={props.onOpen}>
+        <ResolvedRow
+          label="Question · no longer needed"
+          title={m.question}
+          check={false}
+          detail="Dream doesn’t need this anymore."
+        />
+      </Card>
+    )
+  }
+  return (
+    <Card ref={ref} tone="need" onOpen={props.onOpen}>
+      <CardHead label="Question" />
+      <CardTitle>{m.question}</CardTitle>
+      {m.why ? <CardText>{m.why}</CardText> : null}
+      <Choices
+        options={m.options}
+        selected={picked}
+        size="sm"
+        style={{ marginTop: 14 }}
+        onPick={(option) => {
+          setPicked(option)
+          answer.run(
+            { projectId: m.projectId, messageId: m.id, answer: { _tag: "Choice", option } },
+            { onFailure: () => setPicked(undefined) }
+          )
+        }}
+      />
+    </Card>
+  )
+})
 
 /** The inline paste field on a key request (`.secure.sm`). */
 function InlineKey(props: { readonly message: AccessMessage }) {
@@ -300,7 +330,13 @@ function InlineKey(props: { readonly message: AccessMessage }) {
       }}
     >
       <Icon name="key" size={17} color={color.t2} />
-      <Text style={key ? { flex: 1, color: color.t1, letterSpacing: 2, fontSize: 14 } : { flex: 1, color: color.t3, fontSize: 15 }}>
+      <Text
+        style={
+          key
+            ? { flex: 1, color: color.t1, letterSpacing: 2, fontSize: 14 }
+            : { flex: 1, color: color.t3, fontSize: 15 }
+        }
+      >
         {key ? "••••••••••••" : "Paste key"}
       </Text>
       <Pressable
@@ -394,14 +430,20 @@ export const AccessCard = forwardRef<HostInstance, { readonly message: AccessMes
     const later = m.when !== undefined
     return (
       <Card ref={ref} tone={later ? "later" : "need"} onOpen={props.onOpen}>
-        <CardHead label={later ? "Access · later" : "Access"} later={later} tag={m.when ? whenTag(m.when) : undefined} />
+        <CardHead
+          label={later ? "Access · later" : "Access"}
+          later={later}
+          tag={m.when ? whenTag(m.when) : undefined}
+        />
         <CardTitle>{m.why}</CardTitle>
         <CardText>{accessExplainer(m)}</CardText>
         <OpenAccessBody message={m} onOpen={props.onOpen} />
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 13, marginHorizontal: 2 }}>
           <Icon name="layers" size={14} color={color.t2} />
           <Text style={{ fontSize: 13, color: color.t2 }}>
-            {isOAuth(m.request) ? "Connect once — every project can use it." : "Add it once — every project can use it."}
+            {isOAuth(m.request)
+              ? "Connect once — every project can use it."
+              : "Add it once — every project can use it."}
           </Text>
         </View>
       </Card>

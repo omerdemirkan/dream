@@ -15,17 +15,17 @@ import { toastAtom } from "../state/ui.ts"
 
 export function useToast() {
   const set = useAtomSet(toastAtom)
-  return useCallback(
-    (message: string, undo?: MessageId) => set(Option.some({ message, undo, at: Date.now() })),
-    [set]
-  )
+  return useCallback((message: string, undo?: MessageId) => set(Option.some({ message, undo, at: Date.now() })), [set])
 }
 
 export interface Action<Arg, A> {
   readonly busy: boolean
   readonly run: (
     arg: Arg,
-    handlers?: { readonly onSuccess?: (value: A) => void; readonly onFailure?: (message: string) => void }
+    handlers?: {
+      readonly onSuccess?: (value: A) => void
+      readonly onFailure?: (message: string, error: unknown) => void
+    }
   ) => void
 }
 
@@ -45,8 +45,9 @@ export function useAction<Arg, A, E>(fn: Atom.AtomResultFn<Arg, A, E>): Action<A
         if (inFlight.current === 0) setBusy(false)
         if (Exit.isSuccess(exit)) return handlers?.onSuccess?.(exit.value)
         if (Cause.hasInterruptsOnly(exit.cause)) return
-        const message = describeError(Option.getOrUndefined(Cause.findErrorOption(exit.cause)))
-        if (handlers?.onFailure) handlers.onFailure(message)
+        const error = Option.getOrUndefined(Cause.findErrorOption(exit.cause))
+        const message = describeError(error)
+        if (handlers?.onFailure) handlers.onFailure(message, error)
         else toast(message)
       })
     }

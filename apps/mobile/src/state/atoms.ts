@@ -5,22 +5,29 @@
  * show ("projects", "asks", "connections", "integrations"), and when the app
  * comes back to the foreground.
  */
-import type {
-  AccessMessage,
-  IntegrationId,
-  Message,
-  MessageId,
-  ModelConnectionId,
-  ModelProvider,
-  ProjectId,
-  QuestionAnswer
+import {
+  type AccessMessage,
+  type IntegrationId,
+  type Message,
+  type MessageId,
+  type ModelConnectionId,
+  type ModelProvider,
+  NotificationId,
+  type ProjectId,
+  type QuestionAnswer,
+  type User
 } from "@dream/domain"
-import { Effect, Option, Redacted, Stream } from "effect"
+import * as Application from "expo-application"
+import { getCalendars } from "expo-localization"
+import { Effect, Option, Redacted, Schema, Stream } from "effect"
 import { Atom } from "effect/reactivity"
 import { AppClient } from "../data/AppClient.ts"
 import { type AnswerInput, Answers, asksChanged } from "../data/Answers.ts"
 import { ProjectStates } from "../data/ProjectStates.ts"
 import { Session } from "../data/Session.ts"
+import { FakeBackend, type Scenario } from "../fake/FakeBackend.ts"
+import { googleIdToken } from "../platform/google.ts"
+import * as Push from "../platform/push.ts"
 import { appRuntime } from "./runtime.ts"
 
 // ---------------------------------------------------------------------------
@@ -29,13 +36,16 @@ import { appRuntime } from "./runtime.ts"
 
 export const sessionAtom = appRuntime.subscriptionRef(Session.useSync((session) => session.current))
 
+/** Google's sign-in sheet, then the API's `SignIn`. Succeeds with none if they cancelled. */
 export const signInWithGoogleFn = appRuntime.fn(
-  Effect.fn(function* (googleIdToken: string) {
+  Effect.fn(function* () {
+    const token = yield* googleIdToken
+    if (Option.isNone(token)) return Option.none<User>()
     const app = yield* AppClient
     const session = yield* Session
-    const result = yield* app.SignIn({ googleIdToken })
+    const result = yield* app.SignIn({ googleIdToken: token.value })
     yield* session.signIn({ token: result.sessionToken, user: result.user })
-    return result.user
+    return Option.some(result.user)
   })
 )
 
@@ -167,9 +177,7 @@ export const flushAnswersFn = appRuntime.fn(
 )
 
 /** Failures of answers sent after their undo window, for the toast. */
-export const answerFailuresAtom = appRuntime.atom(
-  Stream.unwrap(Answers.useSync((answers) => answers.failures))
-)
+export const answerFailuresAtom = appRuntime.atom(Stream.unwrap(Answers.useSync((answers) => answers.failures)))
 
 export type { QuestionAnswer }
 
@@ -270,4 +278,86 @@ export const disconnectModelConnectionFn = appRuntime.fn(
   { reactivityKeys: ["connections"] }
 )
 
-export const unwrapOption = Option.getOrUndefined
+// ---------------------------------------------------------------------------
+// Fixtures
+// ---------------------------------------------------------------------------
+
+/** Puts the fixtures world in a named state (no-op against the real API). */
+export const scenarioFn = appRuntime.fn(
+  Effect.fn(function* (name: Scenario) {
+    const backend = yield* Effect.serviceOption(FakeBackend)
+    if (Option.isNone(backend)) return
+    yield* backend.value.scenario(name)
+    if (name === "signed-out") {
+      const session = yield* Session
+      yield* session.signOut
+    }
+  }),
+  { reactivityKeys: ["projects", "asks", "connections", "integrations"] }
+)
+
+// ---------------------------------------------------------------------------
+// This device: push tokens, Live Activities, delivered notifications
+// ---------------------------------------------------------------------------
+
+const timeZone = () => getCalendars()[0]?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC"
+
+/** Upserts this install with every token known so far. */
+export const registerDeviceFn = appRuntime.fn(
+  Effect.fn(function* (tokens: {
+    readonly apnsToken?: string | undefined
+    readonly pushToStartToken?: string | undefined
+  }) {
+    const app = yield* AppClient
+    const session = yield* Session
+    return yield* app.RegisterDevice({
+      deviceId: session.deviceId,
+      timeZone: timeZone(),
+      ...(Application.nativeApplicationVersion ? { appVersion: Application.nativeApplicationVersion } : {}),
+      ...(tokens.apnsToken ? { apnsToken: tokens.apnsToken } : {}),
+      ...(tokens.pushToStartToken ? { pushToStartToken: tokens.pushToStartToken } : {})
+    })
+  })
+)
+
+export const registerLiveActivityFn = appRuntime.fn(
+  Effect.fn(function* (input: {
+    readonly projectId: ProjectId
+    readonly activityId: string
+    readonly pushToken: string
+  }) {
+    const app = yield* AppClient
+    const session = yield* Session
+    yield* app.RegisterLiveActivity({ ...input, deviceId: session.deviceId })
+  })
+)
+
+/** Asks the API which delivered notifications were withdrawn, and removes them. */
+export const cleanUpNotificationsFn = appRuntime.fn(
+  Effect.fn(function* () {
+    const delivered = yield* Push.deliveredIds
+    const ids = delivered.flatMap((id) => Option.toArray(Schema.decodeUnknownOption(NotificationId)(id.toLowerCase())))
+    if (ids.length === 0) return
+    const app = yield* AppClient
+    const { stale } = yield* app.FilterStaleNotifications({ notificationIds: ids })
+    if (stale.length > 0) yield* Push.removeDelivered(stale)
+  })
+)
+
+/**
+ * Fixtures mode: what the fake backend would have pushed through APNs, shown
+ * as local notifications with the same payload shape. Runs while mounted.
+ */
+export const fixturePushesAtom = appRuntime.atom(
+  Effect.gen(function* () {
+    const backend = yield* Effect.serviceOption(FakeBackend)
+    if (Option.isNone(backend)) return
+    yield* backend.value.pushes.pipe(
+      Stream.runForEach((push) =>
+        push.data._tag === "Withdraw"
+          ? Push.removeDelivered(push.data.notificationIds).pipe(Effect.ignore)
+          : Push.presentLocal(push).pipe(Effect.ignore)
+      )
+    )
+  })
+)
