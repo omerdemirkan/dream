@@ -24,7 +24,8 @@ console.cloud.google.com → project picker → **New project** → name "Dream"
 5. **Publishing status**: in **Testing**, Google expires refresh tokens after **7 days**, so Gmail and Calendar
    connections would die weekly. Click **Publish app** to move to **In production**. Google won't review it unless
    you submit it. People then see a "Google hasn't verified this app" screen once (Advanced → Go to Dream), and the
-   100-user cap stays. That's fine for you and friends.
+   100-user cap stays. That's fine for you and friends. Google first wants a home page, a privacy policy and a
+   verified domain on the Branding page: [google-publish.md](google-publish.md) walks through it.
 
 **3. The web client (integrations)**
 

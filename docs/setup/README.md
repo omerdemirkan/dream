@@ -9,6 +9,7 @@ One file per item. They're in the order I'd do them. Each one ends with what to 
 | 3 | [apns.md](apns.md) | Push notifications and Live Activities | 10 min |
 | 4 | [testflight.md](testflight.md) | Dream on your phone (and your friends') | 30–60 min, on your Mac (Xcode 26.4+) or on a Namespace Mac |
 | 5 | [google-oauth.md](google-oauth.md) | Sign in with Google; agents using Gmail, Calendar, Drive | 20 min |
+| 5b | [google-publish.md](google-publish.md) | Google connections that don't expire after 7 days | 15 min, plus a DNS handoff to me |
 | 6 | [oauth-providers.md](oauth-providers.md) | Agents connecting Spotify, GitHub, Strava, Dropbox, Slack, Notion, Microsoft, Oura | 5 min per provider |
 | 7 | [browserbase.md](browserbase.md) | The cloud browser (`dream browser`) — **done 2026-11-05** | 5 min |
 | 8 | [claude-token.md](claude-token.md) | Optional: rotating the Claude token I partly printed into my log | 5 min |
