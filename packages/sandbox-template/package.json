@@ -3,14 +3,18 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "E2B template build: Node 24, pnpm, Playwright deps, dreamd, harness prerequisites.",
+  "description": "E2B template build: Node 24, pnpm, Playwright's Chromium, dreamd, and both harnesses pre-installed.",
   "exports": {
     ".": "./src/index.ts"
   },
   "scripts": {
+    "build": "node scripts/build.ts",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "e2b": "2.63.0"
+    "@dream/domain": "workspace:*",
+    "@effect/platform-node": "4.1.2",
+    "e2b": "2.63.0",
+    "effect": "4.1.2"
   }
 }
