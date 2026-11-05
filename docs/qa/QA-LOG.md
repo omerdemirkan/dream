@@ -134,3 +134,10 @@ Other findings:
   page goes blank after login (app bug, not platform); the agent claimed all features worked. The post-turn URL check
   only loads the landing page, so bugs behind a login are beyond it — that verification is on the agent (model
   capability; not adding Haiku-specific prompting).
+- R3 / scheduled path VERIFIED end to end: at 05:10:00 the ProjectDO alarm woke the paused sandbox, dreamd ran the
+  `--run` command (monitor.sh, exit 1 because the site is down), that woke the agent, and it messaged "🚨
+  https://httpstat.us/503 is now DOWN" at 05:10:13. Watching 05:20 for repeat alerts.
+- R3 / QA3.1: ISS tracker prj_3ZUroKEzkWGgWC0lms8KxP — PASS (React + Leaflet, live position, agent wrote Playwright
+  checks, claims matched reality). Offline recipe PWA prj_ggrXh3fBSF1BD5GsGjCtDv — PASS (manifest, service worker
+  registered, cache populated, IndexedDB); minor form-validation bug. Both agents asked clarifying questions as chat
+  text rather than question cards (still delivered; cards would also reach Home and send a notification).
