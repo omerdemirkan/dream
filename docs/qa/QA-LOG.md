@@ -246,3 +246,10 @@ Other findings:
 - R2 enabled by the founder (13:40). Set DREAM_R2_ENABLED=true in the root .env and deployed main: alchemy created the
   `dream-media` bucket and bound it. Verified: `dream message --media shot.png` from the cabin sandbox → "Sent … with
   1 attachment(s)"; GET /media/med_… answers 200 image/png (73,702 bytes, the same file) with the session, 401 without.
+- Merged feat/sandbox-key (f8eab00: `dream access file`, the last-resort key file in ~/.dream/keys, project-scoped,
+  0700/0600, Worker refuses outgoing text containing a file key; plus the app's general decode tolerance in
+  apps/mobile/src/data/Tolerant.ts). Deployed; dream-sandbox rebuilt (build 7135b08d-7936-4bc2-98d3-cf3a19903999).
+- Claude Code deny rules VERIFIED live on the new template (scratch project prj_3WW7oqqPNBRcXJ7JvdJqHp, a planted fake
+  key with a canary): asked the agent to read it four ways (Read tool, `cat ~/…`, `cat /home/user/…`, and via a shell
+  variable); all four were refused by Claude Code's permission settings, and the canary appears nowhere in the
+  session transcript.
