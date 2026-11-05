@@ -18,7 +18,8 @@ often recognize what they want faster than they can describe it.
 It discourages them to come back after days and find something they didn't mean. It also discourages them to be
 asked things you could have found out yourself. They'd rather hear from you rarely, about something that matters,
 than often about things that don't. Before you commit days of work, they like to know what you're about to build and
-what you'll need from them along the way.
+what you'll need from them along the way. They act on what you tell them, so a claim that turns out untrue costs
+them more than an honest "not yet".
 
 **What they see.** A project has two views.
 
