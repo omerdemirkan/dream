@@ -10,7 +10,9 @@
 #   scripts/build-ios.sh testflight --asc-key-path AuthKey_ABC123.p8 --asc-key-id ABC123 --asc-issuer-id <uuid>
 #       Archives with automatic signing (Xcode creates or updates the App IDs and
 #       profiles through the App Store Connect API key) and uploads the build to
-#       App Store Connect for TestFlight.
+#       App Store Connect for TestFlight. ASC_EXPORT_ONLY=1 stops at a signed .ipa in build/export.
+#
+#   On a Namespace Mac, with the key from the founder's Namespace Vault: scripts/testflight-namespace.ts.
 #
 # Environment (app.config.ts reads the DREAM_* values at prebuild):
 #   DREAM_APPLE_TEAM_ID         default ZY6RS9293V (Dream's team)
@@ -37,7 +39,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 if [[ "$mode" != "simulator" && "$mode" != "testflight" ]]; then
-  sed -n '2,25p' "$0"; exit 2
+  sed -n '2,28p' "$0"; exit 2
 fi
 
 app_dir="$(cd "$(dirname "$0")/.." && pwd)"
@@ -111,7 +113,7 @@ cat > "$build_dir/ExportOptions.plist" <<PLIST
 <plist version="1.0">
 <dict>
   <key>method</key><string>app-store-connect</string>
-  <key>destination</key><string>upload</string>
+  <key>destination</key><string>$([[ -n "${ASC_EXPORT_ONLY:-}" ]] && echo export || echo upload)</string>
   <key>teamID</key><string>$DREAM_APPLE_TEAM_ID</string>
   <key>signingStyle</key><string>automatic</string>
   <key>uploadSymbols</key><true/>
@@ -120,9 +122,13 @@ cat > "$build_dir/ExportOptions.plist" <<PLIST
 </plist>
 PLIST
 
-echo "› Exporting and uploading to App Store Connect"
+echo "› Exporting$([[ -n "${ASC_EXPORT_ONLY:-}" ]] || echo " and uploading to App Store Connect")"
 xcodebuild -exportArchive -archivePath "$build_dir/$scheme.xcarchive" \
   -exportOptionsPlist "$build_dir/ExportOptions.plist" -exportPath "$build_dir/export" \
   "${auth[@]}"
+
+if [[ -n "${ASC_EXPORT_ONLY:-}" ]]; then
+  echo "› Exported $(ls "$build_dir"/export/*.ipa | head -n1) (not uploaded)"; exit 0
+fi
 
 echo "› Uploaded build $build_number. It shows in TestFlight once App Store Connect finishes processing."

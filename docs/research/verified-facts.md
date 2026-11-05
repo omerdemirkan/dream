@@ -302,3 +302,14 @@
   archives for devices unsigned (~4 min) with no patches. The `26.x` image stops at Xcode 26.3. Outerloop's own
   simulator (`ol simulator`) has only Expo Go and no app install, so Dream's screens are checked on the Namespace Mac
   (simctl, `axe` from Homebrew for taps and typing; type in short chunks, fast input drops characters).
+- Namespace vault → macOS (2026-11-05): `CreateInstance.applications[].envVars[{name, fromSecretId}]`
+  (ApplicationRequest) is how a Mac receives a vault secret; `containers` (ContainerRequest) are Linux-only. A macOS
+  application needs an `imageRef` ("no support disk selectors specified" without one). A Docker Hub multi-arch
+  image (busybox) left the Mac PENDING; a one-layer darwin/arm64 OCI image on ttl.sh, pinned by digest, worked
+  (RUNNING in ~15 s). The app runs as `su -l runner -c 'VAR=value … cmd'` with HOME=/Users/runner, so the value is
+  in that root process's argv and in /var/log/so.namespace.vmguest.log (0644) on the Mac for its lifetime. When the
+  application exits, the Mac is DESTROYED, so it has to keep running (`exec sleep`). A multi-line PEM value arrived
+  byte-exact. An unknown `fromSecretId` gives no error: the Mac stays PENDING. VaultService is at
+  global.namespaceapis.com and also answers on us.compute.namespaceapis.com, where the namespace-compute token gets
+  permission_denied (it can't list, read or create vault objects). Every SSH command run on the Mac is logged in
+  that vmguest.log. `apps/mobile/scripts/testflight-namespace.ts` builds on this.
