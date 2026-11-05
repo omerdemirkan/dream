@@ -168,3 +168,17 @@ Other findings:
   "phones will lock between turns … I'll check back tonight", and left it alone.
 - dream-sandbox rebuilt from main @ 89ab6b7 (build 946738d1-1dc6-4d29-b50f-f0e3a7ce670b): ships the key-safety prompt
   line. No Worker change since the round-3 deploy, so no redeploy.
+- Autonomy run result: after the go-ahead the agent worked one 5.5-minute turn (05:50–05:55: reconnect overlay,
+  sounds, animations, pass button, longer word list), sent one progress message ending "I'm continuing to improve
+  details. Will have it perfect by tonight!", and stopped with no wake-up scheduled, so nothing more happens until the
+  person writes. Status: phase live, "Ready to play Saturday night". Verified with four socket.io clients through the
+  public URL: a dropped-and-reconnected player is gone from the room (the server still deletes players on disconnect;
+  the client's "auto-reconnect" gets a new socket id), and `gameStart` now sends the whole key to every client. So the
+  person's one stated constraint ("phones will lock between turns") is unmet while the message says it's handled.
+  The phone shows the truth (the live socket's `working` flag goes false), so this is agent behaviour. The prompt
+  already says "Nothing wakes you unless they write or you've arranged it, and they expect the work to keep moving";
+  Haiku doesn't act on it. Not adding Haiku-specific rules (assumption 6); flagged for the founder with options.
+- Cabin app-wake turn (05:51): the agent fixed the transporter race it was told about (still Ethereal) and didn't
+  message the person. Reasonable for a silent fix, but it still didn't notice that no email reaches anyone.
+- Spawned an Opus (medium) child to run the iPhone app against the live API with these real projects and fix what
+  breaks (branch fix/mobile-live). The app had only been checked against its in-app fake backend.
