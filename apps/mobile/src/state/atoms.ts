@@ -26,6 +26,7 @@ import { AppClient } from "../data/AppClient.ts"
 import { type AnswerInput, Answers, asksChanged } from "../data/Answers.ts"
 import { withWriteTimeout } from "../data/errors.ts"
 import { ProjectStates } from "../data/ProjectStates.ts"
+import { Replies, type Reply, type ReplyTarget } from "../data/Replies.ts"
 import { Session } from "../data/Session.ts"
 import { FakeBackend, type Scenario } from "../fake/FakeBackend.ts"
 import { googleIdToken } from "../platform/google.ts"
@@ -141,6 +142,30 @@ export const sendMessageFn = appRuntime.fn(
     return message
   }),
   { reactivityKeys: ["projects"] }
+)
+
+/** A reply typed into a notification (see `Replies`): retried, and kept as a draft if it still fails. */
+export const replyFn = appRuntime.fn(
+  Effect.fn(function* (reply: Reply) {
+    const replies = yield* Replies
+    const message = yield* replies.send(reply)
+    yield* received(message)
+    return message
+  }),
+  { reactivityKeys: [...asksChanged, "drafts"] }
+)
+
+/** The text of a reply that didn't send, by `draftKey`; read when the composer it belongs in appears. */
+export const draftAtom = Atom.family((key: string) =>
+  appRuntime.atom(Replies.use((replies) => replies.draft(key))).pipe(Atom.withReactivity(["drafts"]))
+)
+
+export const clearDraftFn = appRuntime.fn(
+  Effect.fn(function* (target: ReplyTarget) {
+    const replies = yield* Replies
+    yield* replies.clearDraft(target)
+  }),
+  { reactivityKeys: ["drafts"] }
 )
 
 // ---------------------------------------------------------------------------

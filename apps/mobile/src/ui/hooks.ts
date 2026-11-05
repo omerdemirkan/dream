@@ -86,6 +86,10 @@ export function useOpenMessage() {
 export function useRequestId() {
   const current = useRef<{ readonly key: string; readonly id: RequestId } | undefined>(undefined)
   return {
+    /** Sending `key` uses `id`, e.g. the id a kept draft was first sent with. */
+    adopt: (key: string, id: RequestId) => {
+      current.current = { key, id }
+    },
     for: (key: string): RequestId => {
       if (current.current?.key !== key) current.current = { key, id: RequestId.make(randomUuid()) }
       return current.current.id

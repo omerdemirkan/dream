@@ -4,6 +4,9 @@
  * fastest ways to answer. "Something else…" (typed or dictated) lives only here.
  */
 import type { AccessMessage, Project, QuestionMessage } from "@dream/domain"
+import { useAtomSet, useAtomValue } from "@effect/atom-react"
+import { Option } from "effect"
+import { AsyncResult } from "effect/reactivity"
 import * as Clipboard from "expo-clipboard"
 import * as DocumentPicker from "expo-document-picker"
 import { File } from "expo-file-system"
@@ -18,9 +21,12 @@ import Animated, {
   withTiming
 } from "react-native-reanimated"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
+import { draftKey } from "../data/Replies.ts"
 import {
   answerNowFn,
+  clearDraftFn,
   declineAccessFn,
+  draftAtom,
   disconnectIntegrationFn,
   submitAppleAccessFn,
   submitKeyAccessFn
@@ -118,6 +124,10 @@ export function ExpandedQuestion(props: {
   const [changing, setChanging] = useState(false)
   const [picked, setPicked] = useState<string | undefined>(undefined)
   useEffect(() => setChanging(false), [m.state._tag])
+  // An answer typed into the notification that didn't send waits in "Something else…".
+  const target = { _tag: "Answer", projectId: m.projectId, messageId: m.id } as const
+  const draft = Option.getOrUndefined(Option.flatten(AsyncResult.value(useAtomValue(draftAtom(draftKey(target))))))
+  const clearDraft = useAtomSet(clearDraftFn)
   // The API ignores an answer the question already has, so retrying after a failure can't answer twice.
   const send = (
     input: { readonly _tag: "Choice"; readonly option: string } | { readonly _tag: "Freeform"; readonly text: string },
@@ -129,6 +139,7 @@ export function ExpandedQuestion(props: {
       {
         onSuccess: () => {
           setChanging(false)
+          if (draft) clearDraft(target)
           sent?.()
         },
         onFailure: (message) => {
@@ -243,7 +254,12 @@ export function ExpandedQuestion(props: {
             onPick={(option) => send({ _tag: "Choice", option })}
           />
           <View style={{ height: 10 }} />
-          <ElseComposer large busy={answer.busy} onSend={(text, sent) => send({ _tag: "Freeform", text }, sent)} />
+          <ElseComposer
+            large
+            busy={answer.busy}
+            draft={draft?.text}
+            onSend={(text, sent) => send({ _tag: "Freeform", text }, sent)}
+          />
         </>
       }
     />

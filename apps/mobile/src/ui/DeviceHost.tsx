@@ -15,7 +15,6 @@ import { DreamNative } from "../../modules/dream-native/index.ts"
 import { randomUuid } from "../data/Session.ts"
 import * as Push from "../platform/push.ts"
 import {
-  answerNowFn,
   cleanUpNotificationsFn,
   fixturePushesAtom,
   flushAnswersFn,
@@ -23,10 +22,10 @@ import {
   refreshHomeFn,
   registerDeviceFn,
   registerLiveActivityFn,
-  sendMessageFn
+  replyFn
 } from "../state/atoms.ts"
 import { askPushAtom, landingAtom } from "../state/ui.ts"
-import { useAction } from "./actions.ts"
+import { useAction, useToast } from "./actions.ts"
 import { useOpenMessage } from "./hooks.ts"
 
 Notifications.setNotificationHandler({
@@ -47,9 +46,9 @@ export function DeviceHost() {
   const refreshHome = useAtomSet(refreshHomeFn)
   const reconnect = useAtomSet(reconnectProjectsFn)
   const flush = useAtomSet(flushAnswersFn)
-  // Replies typed into a notification: a failure shows as a toast once the app is open.
-  const answer = useAction(answerNowFn).run
-  const send = useAction(sendMessageFn).run
+  // Replies typed into a notification: retried, and if they still fail, kept as a draft where they belong.
+  const reply = useAction(replyFn).run
+  const toast = useToast()
   const tokens = useRef<{ apnsToken?: string; pushToStartToken?: string }>({})
   useAtomMount(fixturePushesAtom)
 
@@ -113,9 +112,30 @@ export function DeviceHost() {
     const category = lastResponse.notification.request.content.categoryIdentifier
     const text = lastResponse.userText?.trim()
     if (lastResponse.actionIdentifier === Push.ReplyAction && text) {
-      if (category === Push.Category.question) {
-        answer({ projectId, messageId, answer: { _tag: "Freeform", text } })
-      } else send({ projectId, text, requestId: RequestId.make(randomUuid()) })
+      const question = category === Push.Category.question
+      const target = question
+        ? ({ _tag: "Answer", projectId, messageId } as const)
+        : ({ _tag: "Chat", projectId } as const)
+      reply(
+        { ...target, text, requestId: RequestId.make(randomUuid()) },
+        {
+          onFailure: () => {
+            const where = question ? "It’s waiting in the question." : "It’s waiting in Chat."
+            toast(`${question ? "Your answer" : "Your reply"} didn’t send. ${where}`)
+            // Typed on the lock screen, so the app may not be open to show the toast: say so where they'll see it.
+            if (AppState.currentState !== "active") {
+              void Effect.runPromise(
+                Push.presentLocal({
+                  title: question ? "Your answer didn’t send" : "Your reply didn’t send",
+                  body: `“${text}” Tap to send it.`,
+                  category: question ? "question" : "message",
+                  data: data.value
+                }).pipe(Effect.ignore)
+              )
+            }
+          }
+        }
+      )
       return
     }
     if (category === Push.Category.question || category === Push.Category.access) {
@@ -124,7 +144,7 @@ export function DeviceHost() {
       setLanding(Option.some({ projectId, messageId, highlight: true, at: Date.now() }))
       router.push({ pathname: "/project/[id]", params: { id: projectId, tab: "chat" } })
     }
-  }, [lastResponse, answer, send, open, router, setLanding])
+  }, [lastResponse, reply, toast, open, router, setLanding])
 
   // Pushes that arrive while the app is open: withdrawals, and fresh asks for Home.
   useEffect(() => {
