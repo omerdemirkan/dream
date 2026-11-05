@@ -41,6 +41,16 @@ const sections: ReadonlyArray<{ readonly title: string; readonly jumps: Readonly
         scenarios: ["reset", "withdraw-cabin"],
         to: "/project/prj_cabin?tab=chat"
       },
+      {
+        title: "Cabin · message this app can’t show",
+        scenarios: ["reset", "unsupported-message"],
+        to: "/project/prj_cabin?tab=chat"
+      },
+      {
+        title: "Cabin · next write times out",
+        scenarios: ["reset", "stall-next-write"],
+        to: "/project/prj_cabin?tab=chat"
+      },
       { title: "Recipe Scaler · Status", scenarios: ["reset"], to: "/project/prj_recipescaler" },
       { title: "Recipe Scaler · Chat", scenarios: ["reset"], to: "/project/prj_recipescaler?tab=chat" }
     ]
@@ -60,6 +70,11 @@ const sections: ReadonlyArray<{ readonly title: string; readonly jumps: Readonly
         title: "Access · Spotify (OAuth)",
         scenarios: ["reset", "spotify-ask"],
         to: "/project/prj_liftlog?tab=chat&focus=msg_spotify"
+      },
+      {
+        title: "Access · Telegram (key file)",
+        scenarios: ["reset"],
+        to: "/project/prj_morningbrief?tab=chat&focus=msg_brieftelegram"
       },
       {
         title: "Access · connected",

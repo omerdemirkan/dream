@@ -12,10 +12,12 @@ import { Socket } from "effect/socket"
 import { TestClock } from "effect/testing"
 import { AppClient } from "../src/data/AppClient.ts"
 import { Answers } from "../src/data/Answers.ts"
+import { withWriteTimeout, writeTimeout } from "../src/data/errors.ts"
 import { makeAppLayer } from "../src/data/AppLayer.ts"
 import { ProjectStates } from "../src/data/ProjectStates.ts"
 import { SecureStorage } from "../src/data/SecureStorage.ts"
 import { Session } from "../src/data/Session.ts"
+import { unsupportedText } from "../src/data/Tolerant.ts"
 import { FakeBackend } from "../src/fake/FakeBackend.ts"
 
 const cabin = "prj_cabin" as ProjectId
@@ -119,6 +121,37 @@ describe("fixtures backend through the app's services", () => {
         assert.isFalse((yield* app.ListOpenAsks()).some((a) => a.message.id === "msg_spotify"))
         const notOAuth = yield* Effect.flip(app.StartOAuthAccess({ projectId, messageId: "msg_apple" as MessageId }))
         assert.strictEqual(notOAuth._tag, "InvalidRequest")
+      })
+    )
+  )
+
+  it.effect("shows a message this build can't decode as the neutral row", () =>
+    run(
+      Effect.gen(function* () {
+        yield* signIn
+        const app = yield* AppClient
+        yield* (yield* FakeBackend).scenario("unsupported-message")
+        const { messages } = yield* app.ListMessages({ projectId: cabin })
+        const row = messages.find((m) => m.id === "msg_unsupported")
+        assert.strictEqual(row?._tag, "Text")
+        assert.strictEqual(row?._tag === "Text" ? row.text : undefined, unsupportedText)
+      })
+    )
+  )
+
+  it.effect("stalls the next write past the timeout, then lets the retry through", () =>
+    run(
+      Effect.gen(function* () {
+        yield* signIn
+        const app = yield* AppClient
+        yield* (yield* FakeBackend).scenario("stall-next-write")
+        const send = app.SendMessage({ projectId: cabin, text: "Weekends only" }).pipe(withWriteTimeout)
+        const stalled = yield* Effect.forkChild(send)
+        yield* TestClock.adjust(writeTimeout)
+        const failure = yield* Effect.flip(Fiber.join(stalled))
+        assert.strictEqual(failure._tag, "RequestTimedOut")
+        const sent = yield* send
+        assert.strictEqual(sent._tag === "Text" ? sent.text : undefined, "Weekends only")
       })
     )
   )

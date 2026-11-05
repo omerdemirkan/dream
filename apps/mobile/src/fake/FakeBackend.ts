@@ -38,9 +38,10 @@ import {
   Unauthorized,
   type User
 } from "@dream/domain"
-import { Context, DateTime, Duration, Effect, Layer, Option, PubSub, Redacted, Stream } from "effect"
+import { Context, DateTime, Duration, Effect, Layer, Option, PubSub, Redacted, Schema, Stream } from "effect"
 import { Headers } from "effect/http"
 import type { Rpc, RpcGroup } from "effect/rpc"
+import { TolerantMessage } from "../data/Tolerant.ts"
 import { type FixtureWorld, makeWorld, newIntegrationId } from "./fixtures.ts"
 
 /** A notification the fake would have sent through APNs. The app shows it as a local notification. */
@@ -62,7 +63,9 @@ export const Scenario = [
   "signed-in",
   "signed-out",
   "spotify-ask",
-  "spotify-stopped"
+  "spotify-stopped",
+  "unsupported-message",
+  "stall-next-write"
 ] as const
 export type Scenario = (typeof Scenario)[number]
 
@@ -97,6 +100,14 @@ export class FakeBackend extends Context.Service<
       const scope = yield* Effect.scope
       const pushes = yield* PubSub.unbounded<FakePush>()
       let pace = Duration.seconds(1)
+      // `stall-next-write`: the next write hangs, as on a weak connection, until the app gives up on it.
+      let stallNextWrite = false
+      const stallable = <A, E, R>(write: Effect.Effect<A, E, R>) =>
+        Effect.suspend(() => {
+          if (!stallNextWrite) return write
+          stallNextWrite = false
+          return Effect.never
+        })
       let counter = 0
       const nextId = (prefix: string) => `${prefix}_fake${++counter}`
 
@@ -322,70 +333,72 @@ export class FakeBackend extends Context.Service<
             return asks.sort((a, b) => DateTime.Order(a.message.createdAt, b.message.createdAt))
           }),
         CreateProject: ({ idea, harness }) =>
-          Effect.gen(function* () {
-            const now = yield* DateTime.now
-            const id = nextId("prj") as ProjectId
-            const project: Project = {
-              id,
-              ownerId: user.id,
-              title: "New idea",
-              kind: "Just now",
-              idea,
-              harness: harness ?? "codex",
-              phase: "new",
-              slug: `idea-${counter}`,
-              publicUrl: `https://idea-${counter}-q7x2k9.omer.build`,
-              createdAt: now,
-              updatedAt: now
-            }
-            const record: ProjectRecord = {
-              project,
-              status: { phase: "new", phaseSince: now, media: [], milestones: [], updatedAt: now },
-              messages: [
-                {
-                  _tag: "Text",
-                  id: nextId("msg") as MessageId,
-                  projectId: id,
-                  createdAt: now,
-                  from: "user",
-                  text: idea,
-                  media: []
-                }
-              ],
-              working: true,
-              events: yield* PubSub.unbounded<ProjectEvent>()
-            }
-            records = new Map([[id, record], ...records])
-            yield* later(
-              6,
-              Effect.gen(function* () {
-                const title = titleFrom(idea)
-                yield* setProject(record, {
-                  title,
-                  kind: "Just started",
-                  phase: "interviewing",
-                  headline: "One question for you"
+          stallable(
+            Effect.gen(function* () {
+              const now = yield* DateTime.now
+              const id = nextId("prj") as ProjectId
+              const project: Project = {
+                id,
+                ownerId: user.id,
+                title: "New idea",
+                kind: "Just now",
+                idea,
+                harness: harness ?? "codex",
+                phase: "new",
+                slug: `idea-${counter}`,
+                publicUrl: `https://idea-${counter}-q7x2k9.omer.build`,
+                createdAt: now,
+                updatedAt: now
+              }
+              const record: ProjectRecord = {
+                project,
+                status: { phase: "new", phaseSince: now, media: [], milestones: [], updatedAt: now },
+                messages: [
+                  {
+                    _tag: "Text",
+                    id: nextId("msg") as MessageId,
+                    projectId: id,
+                    createdAt: now,
+                    from: "user",
+                    text: idea,
+                    media: []
+                  }
+                ],
+                working: true,
+                events: yield* PubSub.unbounded<ProjectEvent>()
+              }
+              records = new Map([[id, record], ...records])
+              yield* later(
+                6,
+                Effect.gen(function* () {
+                  const title = titleFrom(idea)
+                  yield* setProject(record, {
+                    title,
+                    kind: "Just started",
+                    phase: "interviewing",
+                    headline: "One question for you"
+                  })
+                  yield* setStatus(record, { phase: "interviewing", phaseSince: yield* DateTime.now })
+                  const question: QuestionMessage = {
+                    _tag: "Question",
+                    id: nextId("msg") as MessageId,
+                    projectId: id,
+                    createdAt: yield* DateTime.now,
+                    question: "Who’ll use this besides you?",
+                    options: ["Nobody, just me", "My household", "Friends and family"],
+                    why: "It decides whether I build accounts and sharing, or keep this as sharp as a personal tool.",
+                    meanwhile: "I’ll keep researching how this should work; this only changes who it’s for.",
+                    state: { _tag: "Open" },
+                    notificationId: yield* notificationId()
+                  }
+                  yield* setMessage(record, question)
+                  yield* setWorking(record, false)
+                  yield* push(record, question, question.question)
                 })
-                yield* setStatus(record, { phase: "interviewing", phaseSince: yield* DateTime.now })
-                const question: QuestionMessage = {
-                  _tag: "Question",
-                  id: nextId("msg") as MessageId,
-                  projectId: id,
-                  createdAt: yield* DateTime.now,
-                  question: "Who’ll use this besides you?",
-                  options: ["Nobody, just me", "My household", "Friends and family"],
-                  why: "It decides whether I build accounts and sharing, or keep this as sharp as a personal tool.",
-                  meanwhile: "I’ll keep researching how this should work; this only changes who it’s for.",
-                  state: { _tag: "Open" },
-                  notificationId: yield* notificationId()
-                }
-                yield* setMessage(record, question)
-                yield* setWorking(record, false)
-                yield* push(record, question, question.question)
-              })
-            )
-            return project
-          }),
+              )
+              return project
+            })
+          ),
         GetLiveUrl: ({ projectId }) =>
           find(projectId).pipe(
             Effect.map(() => ({ url: `wss://fixtures.invalid/projects/${projectId}/live?ticket=${nextId("tkt")}` }))
@@ -399,46 +412,50 @@ export class FakeBackend extends Context.Service<
             return { messages: record.messages.slice(from, until).reverse(), hasEarlier: from > 0 }
           }),
         SendMessage: ({ projectId, text }) =>
-          Effect.gen(function* () {
-            const record = yield* find(projectId)
-            const message: TextMessage = {
-              _tag: "Text",
-              id: nextId("msg") as MessageId,
-              projectId,
-              createdAt: yield* DateTime.now,
-              from: "user",
-              text,
-              media: []
-            }
-            yield* setMessage(record, message)
-            yield* later(1, setWorking(record, true))
-            yield* later(
-              5,
-              Effect.gen(function* () {
-                yield* agentText(record, "Noted. I’ll fold that in and show you when it’s ready.")
-                yield* setWorking(record, false)
-              })
-            )
-            return message
-          }),
+          stallable(
+            Effect.gen(function* () {
+              const record = yield* find(projectId)
+              const message: TextMessage = {
+                _tag: "Text",
+                id: nextId("msg") as MessageId,
+                projectId,
+                createdAt: yield* DateTime.now,
+                from: "user",
+                text,
+                media: []
+              }
+              yield* setMessage(record, message)
+              yield* later(1, setWorking(record, true))
+              yield* later(
+                5,
+                Effect.gen(function* () {
+                  yield* agentText(record, "Noted. I’ll fold that in and show you when it’s ready.")
+                  yield* setWorking(record, false)
+                })
+              )
+              return message
+            })
+          ),
         AnswerQuestion: ({ projectId, messageId, answer }) =>
-          Effect.gen(function* () {
-            const { record, message } = yield* findMessage(projectId, messageId)
-            if (message._tag !== "Question")
-              return yield* new InvalidRequest({ message: "That message isn't a question." })
-            if (message.state._tag === "Withdrawn")
-              return yield* new InvalidRequest({
-                message: "This question was withdrawn; it no longer needs an answer."
-              })
-            if (answer._tag === "Choice" && !message.options.includes(answer.option))
-              return yield* new InvalidRequest({ message: `“${answer.option}” isn't one of the options.` })
-            const updated: QuestionMessage = {
-              ...message,
-              state: { _tag: "Answered", answer, answeredAt: yield* DateTime.now }
-            }
-            yield* setMessage(record, updated)
-            return yield* ackAnswer(record, updated, answer._tag === "Choice" ? answer.option : answer.text)
-          }),
+          stallable(
+            Effect.gen(function* () {
+              const { record, message } = yield* findMessage(projectId, messageId)
+              if (message._tag !== "Question")
+                return yield* new InvalidRequest({ message: "That message isn't a question." })
+              if (message.state._tag === "Withdrawn")
+                return yield* new InvalidRequest({
+                  message: "This question was withdrawn; it no longer needs an answer."
+                })
+              if (answer._tag === "Choice" && !message.options.includes(answer.option))
+                return yield* new InvalidRequest({ message: `“${answer.option}” isn't one of the options.` })
+              const updated: QuestionMessage = {
+                ...message,
+                state: { _tag: "Answered", answer, answeredAt: yield* DateTime.now }
+              }
+              yield* setMessage(record, updated)
+              return yield* ackAnswer(record, updated, answer._tag === "Choice" ? answer.option : answer.text)
+            })
+          ),
         StartGoogleAccess: ({ projectId, messageId }) =>
           Effect.gen(function* () {
             const { record, message } = yield* findMessage(projectId, messageId)
@@ -493,39 +510,41 @@ export class FakeBackend extends Context.Service<
             return { authorizeUrl: `https://${request.provider}.example/authorize?fixtures=${messageId}` }
           }),
         SubmitKeyAccess: ({ projectId, messageId }) =>
-          Effect.gen(function* () {
-            const { record, message } = yield* findMessage(projectId, messageId)
-            // As the API does: a retry of a submission that went through returns the card as it is.
-            if (message._tag === "Access" && message.state._tag === "Connected") return message
-            if (message._tag === "Access" && message.request._tag === "File") {
-              const { service, name } = message.request
-              const connected = yield* connectIntegration(record, message, service, {
-                _tag: "File",
-                service,
-                name,
-                path: sandboxKeyPath(name),
-                projectId
-              })
-              yield* later(
-                2,
-                agentText(record, `Got the ${service} key. Only the bot reads it, from its file here.`).pipe(
-                  Effect.asVoid
+          stallable(
+            Effect.gen(function* () {
+              const { record, message } = yield* findMessage(projectId, messageId)
+              // As the API does: a retry of a submission that went through returns the card as it is.
+              if (message._tag === "Access" && message.state._tag === "Connected") return message
+              if (message._tag === "Access" && message.request._tag === "File") {
+                const { service, name } = message.request
+                const connected = yield* connectIntegration(record, message, service, {
+                  _tag: "File",
+                  service,
+                  name,
+                  path: sandboxKeyPath(name),
+                  projectId
+                })
+                yield* later(
+                  2,
+                  agentText(record, `Got the ${service} key. Only the bot reads it, from its file here.`).pipe(
+                    Effect.asVoid
+                  )
                 )
-              )
-              return connected
-            }
-            if (message._tag !== "Access" || message.request._tag !== "Key")
-              return yield* new InvalidRequest({ message: "That request isn't for a key." })
-            const request = message.request
-            return yield* connectIntegration(record, message, request.service, {
-              _tag: "Key",
-              service: request.service,
-              host: request.host,
-              header: request.header,
-              format: request.format,
-              placeholder: `dream-placeholder-${request.service.toLowerCase()}`
+                return connected
+              }
+              if (message._tag !== "Access" || message.request._tag !== "Key")
+                return yield* new InvalidRequest({ message: "That request isn't for a key." })
+              const request = message.request
+              return yield* connectIntegration(record, message, request.service, {
+                _tag: "Key",
+                service: request.service,
+                host: request.host,
+                header: request.header,
+                format: request.format,
+                placeholder: `dream-placeholder-${request.service.toLowerCase()}`
+              })
             })
-          }),
+          ),
         SubmitAppleAccess: ({ projectId, messageId, issuerId, keyId }) =>
           Effect.gen(function* () {
             const { record, message } = yield* findMessage(projectId, messageId)
@@ -534,14 +553,19 @@ export class FakeBackend extends Context.Service<
             return yield* connectIntegration(record, message, "Apple Developer", { _tag: "Apple", issuerId, keyId })
           }),
         DeclineAccess: ({ projectId, messageId }) =>
-          Effect.gen(function* () {
-            const { record, message } = yield* findMessage(projectId, messageId)
-            if (message._tag !== "Access")
-              return yield* new InvalidRequest({ message: "That message isn't an access request." })
-            const declined: AccessMessage = { ...message, state: { _tag: "Declined", declinedAt: yield* DateTime.now } }
-            yield* setMessage(record, declined)
-            return declined
-          }),
+          stallable(
+            Effect.gen(function* () {
+              const { record, message } = yield* findMessage(projectId, messageId)
+              if (message._tag !== "Access")
+                return yield* new InvalidRequest({ message: "That message isn't an access request." })
+              const declined: AccessMessage = {
+                ...message,
+                state: { _tag: "Declined", declinedAt: yield* DateTime.now }
+              }
+              yield* setMessage(record, declined)
+              return declined
+            })
+          ),
         ListIntegrations: () => Effect.sync(() => [...integrations]),
         DisconnectIntegration: ({ integrationId }) =>
           Effect.gen(function* () {
@@ -662,6 +686,7 @@ export class FakeBackend extends Context.Service<
         const now = yield* DateTime.now
         switch (name) {
           case "reset":
+            stallNextWrite = false
             return yield* load(makeWorld(now))
           case "paused": {
             const lift = Array.from(records.values()).find((r) => r.project.slug === "lift-log")
@@ -740,6 +765,25 @@ export class FakeBackend extends Context.Service<
             })
             return
           }
+          case "unsupported-message": {
+            const cabin = Array.from(records.values()).find((r) => r.project.slug === "cabin")
+            if (!cabin || cabin.messages.some((m) => m.id === "msg_unsupported")) return
+            // A kind of message from a newer API, through the same lenient decoding the real clients use.
+            const raw = {
+              _tag: "Poll",
+              id: "msg_unsupported",
+              projectId: cabin.project.id,
+              createdAt: DateTime.formatIso(now),
+              question: "Which weekend works?",
+              choices: ["Nov 14", "Nov 21"]
+            }
+            const message = Schema.decodeUnknownOption(TolerantMessage)(raw)
+            if (Option.isSome(message)) yield* setMessage(cabin, message.value)
+            return
+          }
+          case "stall-next-write":
+            stallNextWrite = true
+            return
           case "signed-in":
           case "signed-out":
             return

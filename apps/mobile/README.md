@@ -67,14 +67,18 @@ xcrun simctl launch --terminate-running-process booted com.omer.dream \
 | `/new` · `/new?dictate=1` | New idea, optionally dictating |
 | `/connect` · `/settings` | Subscription connect flow; settings |
 
-Message ids: `msg_cabinrule`, `msg_cabinpick`, `msg_gcal` (Cabin), `msg_apple` (Lift Log), `msg_gmail` (Morning
-Brief), `msg_recipewho` (Recipe Scaler), and `msg_spotify` (Lift Log, after the `spotify-ask` scenario: an OAuth
-request for a provider other than Google).
+Message ids: `msg_cabinrule`, `msg_cabinpick`, `msg_gcal` (Cabin), `msg_apple` (Lift Log), `msg_gmail` and
+`msg_brieftelegram` (Morning Brief; the last-resort key file card), `msg_recipewho` (Recipe Scaler), `msg_spotify`
+(Lift Log, after the `spotify-ask` scenario: an OAuth request for a provider other than Google), and
+`msg_unsupported` (Cabin, after `unsupported-message`: a kind of message this build can't decode, shown as the
+neutral "update Dream" row).
 
 Scenarios (`dream://fixtures/<name>?to=/path`, or `-dreamScenario a,b`): `signed-in`, `signed-out`, `reset`,
 `paused` (Lift Log waits for a usage reset), `all-clear`, `cabin-resolved`, `withdraw-cabin`, `no-plan`,
 `live-activity`, `live-activity-needs` (start a Live Activity on the phone), `spotify-ask` (Lift Log asks to connect
-Spotify), `spotify-stopped` (Lift Log's Spotify connection stopped working: its card says so and connects again).
+Spotify), `spotify-stopped` (Lift Log's Spotify connection stopped working: its card says so and connects again),
+`unsupported-message`, `stall-next-write` (the next answer, message, new idea, key or decline hangs until the app
+gives up after 25 s; the retry goes through).
 
 ## Checking against a deployed API
 
