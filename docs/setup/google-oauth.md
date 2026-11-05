@@ -6,6 +6,11 @@
 - Agents asking for Gmail, Calendar, Drive and so on with `dream access google`. Until this is set up, those cards
   can't connect.
 
+**Before your Apple account is approved** you can do everything except step 4. The web client (steps 1–3, 5, 6)
+is what agents' Gmail/Calendar/Drive cards use, and it doesn't involve Apple. Step 4, the iOS client for "Sign in with
+Google", needs the bundle id, so it waits; until then you sign in with the dev secret. When you add the iOS client
+later, put both ids in `GOOGLE_IOS_CLIENT_ID` as described in step 6.
+
 **1. A Google Cloud project**
 
 console.cloud.google.com → project picker → **New project** → name "Dream" → **Create**, then select it.
