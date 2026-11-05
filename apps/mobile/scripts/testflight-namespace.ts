@@ -18,8 +18,10 @@
  * running, because a Mac whose application exits is destroyed. Then, over SSH, the key is normalized to
  * AuthKey_<id>.p8 (0600), used, and deleted, and the Mac is destroyed, also on failure or Ctrl-C.
  * Namespace launches the application as `su -l runner -c 'VAR=… cmd'`, so for the Mac's lifetime the value
- * is also in that root process's arguments and in /var/log/so.namespace.vmguest.log on the Mac: it is
- * readable to code running on the build Mac, as the key file is anyway, and to nothing else.
+ * is also in that root process's arguments, readable to code on the build Mac (as the key file is anyway).
+ * Namespace's guest agent also logs the application's environment to /var/log/so.namespace.vmguest.log,
+ * which the Mac's Vector agent ships to Namespace's instance logs; see docs/setup/testflight.md for what
+ * that means for a vault secret.
  *
  * Environment:
  *   DREAM_ASC_KEY_SECRET_ID   the vault secret holding AuthKey_<id>.p8 (its object id, `sec_…`; not secret)
@@ -28,19 +30,17 @@
  *   NAMESPACE_TOKEN           bearer token for the Compute API; unset in an Outerloop workspace, where the
  *                             namespace-compute connection adds it
  *   NAMESPACE_API_URL         default https://us.compute.namespaceapis.com
- *   DREAM_MAC_IMAGE           image the key application mounts (default: an empty image pushed to ttl.sh
- *                             and pinned by digest; nothing from it runs)
+ *   DREAM_MAC_IMAGE           image the key application mounts (default: Dream's empty image in the
+ *                             workspace registry, below; nothing from it runs)
  *   DREAM_APPLE_TEAM_ID, DREAM_BUNDLE_ID, DREAM_API_URL, DREAM_BACKEND, DREAM_GOOGLE_IOS_CLIENT_ID,
  *   DREAM_GOOGLE_WEB_CLIENT_ID, DREAM_APS_ENVIRONMENT, BUILD_NUMBER   passed to build-ios.sh (see there)
  *
  * It prints no secret: not the key, not the Mac's SSH key, not the App Store Connect token.
  */
 import { spawn } from "node:child_process"
-import { createHash } from "node:crypto"
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { gzipSync } from "node:zlib"
 
 const mode = process.argv[2]
 const noUpload = process.argv.includes("--no-upload")
@@ -76,7 +76,6 @@ type Json = any
 
 const log = (line: string) => console.log(`› ${line}`)
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
-const sha256 = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex")
 const quote = (s: string) => `'${s.replaceAll("'", `'\\''`)}'`
 
 const compute = async (method: string, body: object): Promise<Json> => {
@@ -92,80 +91,16 @@ const compute = async (method: string, body: object): Promise<Json> => {
   return json
 }
 
-/** A one-file tar (ustar), so the image has a layer to mount. */
-const tarOf = (name: string, body: Buffer): Buffer => {
-  const header = Buffer.alloc(512)
-  header.write(name, 0)
-  header.write("0000644\0", 100)
-  header.write("0000000\0", 108)
-  header.write("0000000\0", 116)
-  header.write(`${body.length.toString(8).padStart(11, "0")}\0`, 124)
-  header.write("00000000000\0", 136)
-  header.write("        ", 148)
-  header.write("0", 156)
-  header.write("ustar\0", 257)
-  header.write("00", 263)
-  const sum = header.reduce((a, b) => a + b, 0)
-  header.write(`${sum.toString(8).padStart(6, "0")}\0 `, 148)
-  const padded = Buffer.alloc(Math.ceil(body.length / 512) * 512)
-  body.copy(padded)
-  return Buffer.concat([header, padded, Buffer.alloc(1024)])
-}
-
 /**
  * macOS applications must mount an image (CreateInstance rejects one without: "no support disk selectors
- * specified"), even though the key application only runs /bin/sh. This pushes an empty darwin/arm64 image
- * to ttl.sh (anonymous, expires in an hour) and returns it pinned by digest, so the registry can't swap it.
+ * specified"), even though the key application only runs /bin/sh. This one is a single README in the
+ * workspace's own registry (darwin/arm64, no expiry), pinned by digest. To recreate it, on a Namespace Mac:
+ * `NSC_TOKEN_FILE=/var/run/nsc/token.json /opt/nsc/bin/nsc docker login`, then `crane append -f <tar of a
+ * README> -t <repo>:base` and `crane mutate <repo>:base --set-platform darwin/arm64 -t <repo>:v1`.
  */
-const pushEmptyImage = async (): Promise<string> => {
-  const repo = `ttl.sh/dream-asc-${sha256(Buffer.from(`${Date.now()}${Math.random()}`)).slice(0, 12)}`
-  const [host, name] = [repo.slice(0, repo.indexOf("/")), repo.slice(repo.indexOf("/") + 1)]
-  const tar = tarOf(
-    "README",
-    Buffer.from("Dream: mounted by the App Store Connect key application. Nothing here runs.\n")
-  )
-  const layer = gzipSync(tar)
-  const config = Buffer.from(
-    JSON.stringify({
-      architecture: "arm64",
-      os: "darwin",
-      rootfs: { type: "layers", diff_ids: [`sha256:${sha256(tar)}`] },
-      config: {}
-    })
-  )
-  const putBlob = async (blob: Buffer) => {
-    const digest = `sha256:${sha256(blob)}`
-    const start = await fetch(`https://${host}/v2/${name}/blobs/uploads/`, { method: "POST" })
-    const location = start.headers.get("location")
-    if (start.status !== 202 || !location) throw new Error(`ttl.sh upload: ${start.status}`)
-    const url = new URL(location, `https://${host}`)
-    url.searchParams.set("digest", digest)
-    const put = await fetch(url, {
-      method: "PUT",
-      headers: { "content-type": "application/octet-stream" },
-      body: new Uint8Array(blob)
-    })
-    if (put.status !== 201) throw new Error(`ttl.sh blob: ${put.status}`)
-    return { digest, size: blob.length }
-  }
-  const configRef = await putBlob(config)
-  const layerRef = await putBlob(layer)
-  const manifest = Buffer.from(
-    JSON.stringify({
-      schemaVersion: 2,
-      mediaType: "application/vnd.oci.image.manifest.v1+json",
-      config: { mediaType: "application/vnd.oci.image.config.v1+json", ...configRef },
-      layers: [{ mediaType: "application/vnd.oci.image.layer.v1.tar+gzip", ...layerRef }]
-    })
-  )
-  const put = await fetch(`https://${host}/v2/${name}/manifests/1h`, {
-    method: "PUT",
-    headers: { "content-type": "application/vnd.oci.image.manifest.v1+json" },
-    body: new Uint8Array(manifest)
-  })
-  if (put.status !== 201) throw new Error(`ttl.sh manifest: ${put.status}`)
-  return `${repo}@sha256:${sha256(manifest)}`
-}
+const keyAppImage =
+  process.env.DREAM_MAC_IMAGE ??
+  "nscr.io/lso1fm36nm1rq/dream-asc-key-app@sha256:0c318ab18dda8ab8adc9f6f743c4bf3143ae540ca40a1a06b820a2cc523c86e4"
 
 /** Runs on the Mac (Node from Homebrew): normalizes the delivered key, checks it, and signs one read-only call. */
 const checkKeyOnMac = String.raw`
@@ -243,7 +178,6 @@ const main = async () => {
     if (dirty.stdout.trim()) log("Uncommitted changes aren't shipped: the Mac builds HEAD")
   }
 
-  const image = process.env.DREAM_MAC_IMAGE ?? (await pushEmptyImage())
   const keyDir = "$HOME/.dream-asc"
   const deadline = new Date(Date.now() + (mode === "check" ? 20 : 120) * 60_000).toISOString()
   log("Starting a Mac (macos.version=27.x) with the key from the vault")
@@ -261,7 +195,7 @@ const main = async () => {
     applications: [
       {
         name: "dream-asc-key",
-        imageRef: image,
+        imageRef: keyAppImage,
         command: "/bin/sh",
         args: [
           "-c",

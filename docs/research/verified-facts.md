@@ -305,11 +305,22 @@
 - Namespace vault → macOS (2026-11-05): `CreateInstance.applications[].envVars[{name, fromSecretId}]`
   (ApplicationRequest) is how a Mac receives a vault secret; `containers` (ContainerRequest) are Linux-only. A macOS
   application needs an `imageRef` ("no support disk selectors specified" without one). A Docker Hub multi-arch
-  image (busybox) left the Mac PENDING; a one-layer darwin/arm64 OCI image on ttl.sh, pinned by digest, worked
-  (RUNNING in ~15 s). The app runs as `su -l runner -c 'VAR=value … cmd'` with HOME=/Users/runner, so the value is
+  image (busybox) left the Mac PENDING; a one-layer darwin/arm64 OCI image (ttl.sh, then nscr.io), pinned by
+  digest, worked (RUNNING in ~15 s). The app runs as `su -l runner -c 'VAR=value … cmd'` with HOME=/Users/runner, so the value is
   in that root process's argv and in /var/log/so.namespace.vmguest.log (0644) on the Mac for its lifetime. When the
   application exits, the Mac is DESTROYED, so it has to keep running (`exec sleep`). A multi-line PEM value arrived
   byte-exact. An unknown `fromSecretId` gives no error: the Mac stays PENDING. VaultService is at
   global.namespaceapis.com and also answers on us.compute.namespaceapis.com, where the namespace-compute token gets
   permission_denied (it can't list, read or create vault objects). Every SSH command run on the Mac is logged in
   that vmguest.log. `apps/mobile/scripts/testflight-namespace.ts` builds on this.
+- Namespace Mac logging (2026-11-05): `/opt/namespace/vector` (config /etc/vector/vector.json) ships
+  /var/log/so.namespace.vmguest.log, /var/log/namespace/applications/*.log (application stdout),
+  /var/log/programs/*.log and DNS queries to the host (10.0.0.1:9000), i.e. into Namespace's instance logs; host
+  metrics carry no process list, so command lines aren't shipped. The vmguest log has the application's env (plain
+  `value`s in clear) and every SSH command, so never put a secret on an SSH command line. The namespace-compute
+  token gets permission_denied on ObservabilityService (FetchInstanceLogs, StreamInstanceLogs). The Mac's workload
+  token (/var/run/nsc/token.json, 0644; `NSC_TOKEN_FILE=… /opt/nsc/bin/nsc`) can push to the workspace registry
+  nscr.io/lso1fm36nm1rq (`nsc docker login`; default expiry Never) but lacks vault/object:list and
+  vault/object:describe (so `nsc vault export` can't resolve secrets there). Dream's key-application image:
+  nscr.io/lso1fm36nm1rq/dream-asc-key-app@sha256:0c318ab18dda8ab8adc9f6f743c4bf3143ae540ca40a1a06b820a2cc523c86e4,
+  pulled fine by CreateInstance with the namespace-compute token.

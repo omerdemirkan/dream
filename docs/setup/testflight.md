@@ -58,7 +58,7 @@ or list the vault.
    **all** of it, including the `-----BEGIN PRIVATE KEY-----` and `-----END PRIVATE KEY-----` lines.
 2. cloud.namespace.so → sign in → the same workspace Dream's Macs run in (`lso1fm36nm1rq`) → **Vault** (the page
    is `cloud.namespace.so/<workspace>/vars`) → **New Secret**.
-   - **Description:** `dream-testflight-asc-key`
+   - **Description:** any label you'll recognize, for example `dream-asc-key-5G566N355S`. Only the id matters.
    - **Value:** paste the key. If the box flattens the line breaks, that's fine.
    - **Revealable:** leave it **off**. Then nobody can read the key back, not even through the API.
    - Save it.
@@ -76,7 +76,7 @@ DREAM_ASC_KEY_SECRET_ID=sec_… node apps/mobile/scripts/testflight-namespace.ts
 "Dream by Omer" record). It prints only the key's size, file mode and a hash prefix, never the key. `testflight`
 then builds and uploads, as step 3 would on your Mac.
 
-- **New key:** in the vault, open `dream-testflight-asc-key`, set the new value, and keep the same id.
+- **New key:** in the vault, open the secret, set the new value, and keep the same id.
 - **Stop it:** delete the secret in the vault, or revoke the key in App Store Connect (Users and Access →
   Integrations → the key → Revoke). Either takes effect at once.
 - While a build runs, the key sits on that one Mac, readable only by the build. The Mac is destroyed afterwards,
