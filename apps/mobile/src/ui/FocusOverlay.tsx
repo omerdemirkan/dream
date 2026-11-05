@@ -129,7 +129,8 @@ function FocusLayer(props: { readonly focus: Focus }) {
   })
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+    // Modal for VoiceOver: the screen underneath (the project's Chat) isn't read while this is open.
+    <View style={StyleSheet.absoluteFill} pointerEvents="box-none" accessibilityViewIsModal>
       <Animated.View style={[{ position: "absolute", overflow: "hidden" }, container]}>
         <Animated.View style={[{ position: "absolute", width: W, height: H }, inner]}>
           {message?._tag === "Question" ? (
