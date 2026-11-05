@@ -55,8 +55,13 @@ export const DaemonEnv = {
   harness: "DREAM_HARNESS",
   port: "DREAM_DAEMON_PORT",
   socket: "DREAM_SOCKET",
-  /** Optional: the model dreamd asks the harness for instead of its default. */
+  /**
+   * Optional: the model the top-level agent runs on instead of the fleet's flagship (an operator override, e.g. a
+   * cheap model for QA): a name the project's harness accepts.
+   */
   model: "DREAM_MODEL",
+  /** Optional: the top-level agent's `ReasoningEffort` instead of the fleet's ("high"). */
+  effort: "DREAM_EFFORT",
   /**
    * Optional: what the ProjectDO calls this file's settings (a hash). dreamd reports it back in `Health`, so the
    * DO knows the dreamd answering is the one that read this file.

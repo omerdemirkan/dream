@@ -162,6 +162,9 @@ the other workstreams to agree first.
   one-to-one onto `SandboxRpcs`. Turn prompts come from `renderTurnPrompt` in `@dream/agent-context`, and the system
   prompt and skill are exported there as strings. The bins run directly under Node 24 type stripping, which is why
   `erasableSyntaxOnly` is on (no enums, namespaces or parameter properties).
+  The top-level agent's model and effort come from `src/harness/Fleet.ts` (each provider's flagship, effort high;
+  the agent picks each subagent's model and effort itself), unless the operator overrides them for a QA run
+  (`DREAM_AGENT_MODEL`, `DREAM_CODEX_AGENT_MODEL`, `DREAM_AGENT_EFFORT` Worker secrets).
   The `dream-sandbox` template's start command keeps dreamd running, and the snapshot carries it into every new
   sandbox, so the ProjectDO starts dreamd by writing `DaemonEnvFile` (rewriting it restarts dreamd). Both harness
   CLIs are pre-installed. `packages/sandbox-template/scripts/smoke.ts` checks a fresh sandbox, and with

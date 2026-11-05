@@ -27,6 +27,7 @@ import {
   type Harness,
   NotFound,
   type ProjectId,
+  type ReasoningEffort,
   SandboxKeyDir,
   sandboxKeyPath,
   UpstreamFailure
@@ -73,8 +74,8 @@ export const refreshBackoff = (failures: number): Duration.Duration =>
   Duration.hours(Math.min(24, 2 ** Math.max(0, failures - 1)))
 
 /**
- * What dreamd's env file says, but for the project token (signed afresh on every write). The agent model only
- * goes to Claude Code: Codex would send a Claude model name to the ChatGPT backend.
+ * What dreamd's env file says, but for the project token (signed afresh on every write). Each harness gets only
+ * its own model override: Codex would send a Claude model name to the ChatGPT backend, and the other way round.
  */
 export const daemonSettings = (options: {
   readonly apiUrl: string
@@ -82,17 +83,21 @@ export const daemonSettings = (options: {
   readonly harness: Harness
   readonly daemonToken: string
   readonly agentModel: Option.Option<string>
-}): Record<string, string> => ({
-  [DaemonEnv.apiUrl]: options.apiUrl,
-  [DaemonEnv.projectId]: options.projectId,
-  [DaemonEnv.daemonToken]: options.daemonToken,
-  [DaemonEnv.harness]: options.harness,
-  [DaemonEnv.port]: String(DefaultDaemonPort),
-  [DaemonEnv.socket]: DefaultDaemonSocket,
-  ...(options.harness === "claude-code" && Option.isSome(options.agentModel)
-    ? { [DaemonEnv.model]: options.agentModel.value }
-    : {})
-})
+  readonly codexAgentModel: Option.Option<string>
+  readonly agentEffort: Option.Option<ReasoningEffort>
+}): Record<string, string> => {
+  const model = options.harness === "claude-code" ? options.agentModel : options.codexAgentModel
+  return {
+    [DaemonEnv.apiUrl]: options.apiUrl,
+    [DaemonEnv.projectId]: options.projectId,
+    [DaemonEnv.daemonToken]: options.daemonToken,
+    [DaemonEnv.harness]: options.harness,
+    [DaemonEnv.port]: String(DefaultDaemonPort),
+    [DaemonEnv.socket]: DefaultDaemonSocket,
+    ...Option.match(model, { onNone: () => ({}), onSome: (value) => ({ [DaemonEnv.model]: value }) }),
+    ...Option.match(options.agentEffort, { onNone: () => ({}), onSome: (value) => ({ [DaemonEnv.effort]: value }) })
+  }
+}
 
 const hashSettings = (settings: Readonly<Record<string, string>>): Effect.Effect<string> =>
   Effect.promise(async () => {
@@ -199,7 +204,9 @@ export class SandboxManager extends Context.Service<
             projectId: project.id,
             harness: project.harness,
             daemonToken,
-            agentModel: config.agentModel
+            agentModel: config.agentModel,
+            codexAgentModel: config.codexAgentModel,
+            agentEffort: config.agentEffort
           })
         }))
 

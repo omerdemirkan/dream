@@ -35,6 +35,7 @@ import { DreamdConfig } from "../Config.ts"
 import * as JsonFile from "../JsonFile.ts"
 import * as Usage from "../Usage.ts"
 import { withPinnedCli } from "./Bridges.ts"
+import { topLevel } from "./Fleet.ts"
 import { agentEnv, harnessAuth } from "./HarnessEnv.ts"
 import { killAllNow, makeLocalSandboxSession, makeSpawned, stopAll } from "./LocalSandbox.ts"
 import { claudeSettings } from "./PersonChannel.ts"
@@ -182,17 +183,19 @@ const make = Effect.gen(function* () {
       : {})
   }
   const env = agentEnv(process.env, config)
+  const { model, effort } = topLevel(name, config)
+  yield* Effect.logInfo(`The agent runs on ${name}, model ${model}, effort ${effort}`)
 
   const agent = new HarnessAgent({
     harness:
       name === "claude-code"
-        ? withPinnedCli("claude-code", createClaudeCode({ auth }))
-        : withPinnedCli("codex", createCodex({ auth })),
+        ? withPinnedCli("claude-code", createClaudeCode({ auth, effort }))
+        : withPinnedCli("codex", createCodex({ auth, reasoningEffort: effort })),
     instructions: systemPrompt,
     skills: [skill],
     sandboxConfig: { workDir: "." },
     permissionMode: "allow-all",
-    ...Option.match(config.model, { onNone: () => ({}), onSome: (model) => ({ model }) })
+    model
   })
 
   const saved = yield* provide(store.read).pipe(

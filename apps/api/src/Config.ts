@@ -8,7 +8,7 @@
  * fails with `UpstreamFailure` naming what's missing, so the rest of the API
  * keeps working before every provider is configured.
  */
-import { UpstreamFailure } from "@dream/domain"
+import { ReasoningEffort, UpstreamFailure } from "@dream/domain"
 import { Config, Context, Duration, Effect, Layer, Option, Redacted } from "effect"
 
 const optionalSecret = (name: string) => Config.option(Config.Redacted(name))
@@ -48,10 +48,18 @@ export const ApiConfigSchema = Config.all({
   /** The template for short-lived model sign-in sandboxes; needs `claude` and `codex` on PATH. */
   authTemplate: optionalString("E2B_AUTH_TEMPLATE"),
   /**
-   * The model project agents run on, written to dreamd's env as `DREAM_MODEL` (an id or alias `claude --model`
-   * accepts, e.g. "claude-haiku-4-5-20251001"). Claude Code projects only; Codex projects keep their default.
+   * Operator overrides of the fleet, for QA and calibration runs: without them every project's top-level agent
+   * runs on its provider's flagship at high effort (dreamd's `harness/Fleet.ts`). Each is written to dreamd's env.
+   *
+   * - `DREAM_AGENT_MODEL`: Claude Code projects' model, as `DREAM_MODEL` (an id or alias `claude --model`
+   *   accepts, e.g. "haiku" or "claude-haiku-4-5-20251001").
+   * - `DREAM_CODEX_AGENT_MODEL`: Codex projects' model, as `DREAM_MODEL` (a slug in Codex's catalog, e.g.
+   *   "gpt-6-luna").
+   * - `DREAM_AGENT_EFFORT`: every project's reasoning effort, as `DREAM_EFFORT` (low, medium, high, xhigh, max).
    */
   agentModel: optionalString("DREAM_AGENT_MODEL"),
+  codexAgentModel: optionalString("DREAM_CODEX_AGENT_MODEL"),
+  agentEffort: Config.option(Config.schema(ReasoningEffort, "DREAM_AGENT_EFFORT")),
   /** How dreamd is started in a new sandbox (run with `bash -lc`). */
   daemonCommand: Config.NonEmptyString("DREAMD_COMMAND").pipe(Config.withDefault("dreamd")),
   apnsKeyId: optionalString("APNS_KEY_ID"),
@@ -107,6 +115,8 @@ export class ApiConfig extends Context.Service<ApiConfig, ApiConfigShape>()("@dr
         sandboxRefresh: true,
         authTemplate: Option.none(),
         agentModel: Option.none(),
+        codexAgentModel: Option.none(),
+        agentEffort: Option.none(),
         daemonCommand: "dreamd",
         apnsKeyId: Option.some("KEYID12345"),
         apnsTeamId: Option.some("TEAMID1234"),
