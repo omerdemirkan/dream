@@ -72,13 +72,22 @@ export const PublicHandlers = PublicAppRpcs.toLayer(
       SignIn: ({ googleIdToken }) =>
         Effect.gen(function* () {
           const identity = yield* google.verifyIdToken(googleIdToken).pipe(
+            Effect.tapError((error) =>
+              Effect.logWarning(
+                "Google sign-in refused",
+                error._tag === "InvalidIdToken" ? error.reason : error.message
+              )
+            ),
             Effect.catchTags({
               InvalidIdToken: (error) =>
                 Effect.fail(new Unauthorized({ message: `Google sign-in failed (${error.reason}).` })),
               UpstreamFailure: (error) => Effect.fail(new Unauthorized({ message: error.message }))
             })
           )
-          if (!(yield* users.isInvited(identity.email))) return yield* new NotInvited({ email: identity.email })
+          if (!(yield* users.isInvited(identity.email))) {
+            yield* Effect.logWarning("Google sign-in from an account that isn't invited", identity.email)
+            return yield* new NotInvited({ email: identity.email })
+          }
           const user = yield* users.upsertGoogle({ sub: identity.sub, email: identity.email, name: identity.name })
           return { sessionToken: yield* signedIn(user), user }
         }),

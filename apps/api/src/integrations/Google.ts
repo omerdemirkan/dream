@@ -149,7 +149,8 @@ export class Google extends Context.Service<
         const identity = yield* Schema.decodeUnknownEffect(GoogleIdentity)(payload).pipe(
           Effect.mapError(() => new InvalidIdToken({ reason: "unexpected claims" }))
         )
-        if (!audiences.includes(identity.aud)) return yield* new InvalidIdToken({ reason: "wrong audience" })
+        if (!audiences.includes(identity.aud))
+          return yield* new InvalidIdToken({ reason: `wrong audience ${identity.aud}` })
         const now = (yield* Clock.currentTimeMillis) / 1000
         if (identity.exp < now) return yield* new InvalidIdToken({ reason: "expired" })
         if (identity.email_verified === false) return yield* new InvalidIdToken({ reason: "email not verified" })
