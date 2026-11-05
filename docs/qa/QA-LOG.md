@@ -200,3 +200,18 @@ Other findings:
   mid-game, and the room survives everyone locking at once. Gaps: the client only rejoins if the page wasn't reloaded
   (iOS may discard a backgrounded tab), and disconnect now never removes anyone (rooms live forever; harmless here).
   So: a concrete report gets a real fix fast; the same constraint stated up front ("phones will lock") didn't.
+- iPhone app against the live API (Opus child, branch fix/mobile-live, merged at 40ac6c9; 166 tests pass): every flow
+  works with real data in a Simulator on a Namespace Mac — dev sign-in, Home (30 projects, open-asks deck, answer +
+  Undo), Status and Chat, expanding and answering questions, typed answers, live replies over the project socket,
+  catch-up after backgrounding, new idea, Open in Safari, Settings. Fixed what real data broke: agent markdown
+  (headings, label lines over lists, rules, code, nested lists), emoji icons (agents use them instead of SF Symbols),
+  Status falling back to the latest agent message when the agent never fills the card, a stale expanded question
+  over a different project, silent answer failures, long options, a few layout repeats. 28 screenshots in
+  apps/mobile/screenshots/live/. Open: one typed answer once never reached the server (not reproduced; a hung request
+  would still show nothing); not testable here: push, Live Activities, Google sign-in, dictation.
+- Xcode on Namespace: the newest image has Xcode 26.3, and Expo SDK 58 needs 26.4 (one Swift error in
+  expo-modules-jsi; the child patched it on the Mac only for a Debug build, documented in apps/mobile/README.md).
+  TestFlight builds of Dream need Xcode 26.4+ somewhere; agents' Expo SDK 58 apps on the Mac hit the same error
+  (native Swift/XcodeGen apps are fine).
+- The band agent's "you answered 'Coming soon'" was its own confabulation (the phrase is from its page copy); the
+  real answer, "Not now", reached it intact at 07:09 when the question was answered. Not a platform bug.
