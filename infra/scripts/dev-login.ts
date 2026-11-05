@@ -24,10 +24,16 @@ const ApiUrl = process.env.DREAM_API_URL ?? `https://dream.${process.env.DREAM_D
 const QueryResult = Schema.Array(Schema.Struct({ results: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)) }))
 
 const opsDatabase = Effect.gen(function* () {
-  const databases = yield* cloudflare("GET", "/d1/database", Schema.Array(Schema.Struct({ uuid: Schema.String, name: Schema.String })))
+  const databases = yield* cloudflare(
+    "GET",
+    "/d1/database",
+    Schema.Array(Schema.Struct({ uuid: Schema.String, name: Schema.String }))
+  )
   const existing = databases.find((db) => db.name === OpsDatabase)
   if (existing !== undefined) return existing.uuid
-  const created = yield* cloudflare("POST", "/d1/database", Schema.Struct({ uuid: Schema.String }), { name: OpsDatabase })
+  const created = yield* cloudflare("POST", "/d1/database", Schema.Struct({ uuid: Schema.String }), {
+    name: OpsDatabase
+  })
   yield* query(created.uuid, "CREATE TABLE IF NOT EXISTS settings (name TEXT PRIMARY KEY, value TEXT NOT NULL)")
   return created.uuid
 })
@@ -37,7 +43,8 @@ const query = (database: string, sql: string, params: ReadonlyArray<string> = []
     Effect.map((results) => results[0]?.results ?? [])
   )
 
-const randomHex = () => Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, "0")).join("")
+const randomHex = () =>
+  Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, "0")).join("")
 
 export const readSecret = Effect.gen(function* () {
   const database = yield* opsDatabase
@@ -69,7 +76,9 @@ const session = (email: string) =>
     // One RPC request as NDJSON, the way an RpcClient sends it.
     const body = `${JSON.stringify({ _tag: "Request", id: "1", tag: "DevSignIn", payload: { email, secret }, headers: [] })}\n`
     const response = yield* Effect.promise(() =>
-      fetch(`${ApiUrl}/rpc`, { method: "POST", headers: { "content-type": "application/ndjson" }, body }).then((r) => r.text())
+      fetch(`${ApiUrl}/rpc`, { method: "POST", headers: { "content-type": "application/ndjson" }, body }).then((r) =>
+        r.text()
+      )
     )
     const exit = response
       .split("\n")

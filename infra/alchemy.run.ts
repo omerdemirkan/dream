@@ -34,6 +34,10 @@ export default Alchemy.Stack(
   { providers: Cloudflare.providers(), state },
   Effect.gen(function* () {
     const domain = yield* Config.NonEmptyString("DREAM_DOMAIN")
+    const api = yield* Api
+
+    // `alchemy dev` runs the Worker locally; only the deployed stage touches the real zone.
+    if (process.env.ALCHEMY_DEV === "true") return { api: api.url.as<string>() }
 
     // The zone exists already (the domain is registered or delegated to Cloudflare); adopt it, never delete it.
     const zone = yield* Cloudflare.Zone.Zone("Zone", { name: domain }).pipe(adopt(true))
@@ -46,8 +50,6 @@ export default Alchemy.Stack(
       content: "100::",
       proxied: true
     })
-
-    const api = yield* Api
 
     return { api: api.url.as<string>(), zoneId: zone.zoneId }
   })
