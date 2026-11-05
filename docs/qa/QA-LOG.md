@@ -62,3 +62,11 @@ Other findings:
 - QA 5's final report said "no Dream RPC attempts". The transcript says otherwise: the agent ran `dream message` twice,
   and both failed (an .svg attachment was rejected; a long message broke bash quoting). So the plumbing is fine, and
   the fixes above (stdin for messages, the final-text safety net) cover this.
+
+## 5. Merged fix/session-channel (04:10 UTC)
+- AskUserQuestion → Dream questions (turn continues with a result saying where they went).
+- Safety net: a completed turn that sent nothing to the person posts its final text to Chat (skips boilerplate).
+- Claude Code built-ins that can't work here are turned off via ~/.claude/settings.json (schedule/loop/cron tools,
+  plan mode, push notifications, …); `dream` skill kept. Verified on a real Haiku project.
+- Kept the prompt sentence "anything you write here … never reaches them": it shapes the right behaviour; the safety
+  net is a fallback, not a channel.
