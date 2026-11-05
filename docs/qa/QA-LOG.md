@@ -260,3 +260,12 @@ Other findings:
   "Spotify sign-in isn't set up on this deployment … no card was shown" (no provider is configured yet), an unknown
   provider lists the known ones, and no card reached Chat. Connecting needs the founder's provider apps
   (docs/setup/oauth-providers.md).
+- Merged feat/sandbox-refresh (21a7a01): every sandbox catches up to the newest `default` build between turns (donor
+  sandbox → swap /opt/dream and the harness installs → health check on the new release → rollback on failure);
+  template builds are gated on a fake-model turn per harness; Dream pins Claude Code 2.1.318 (agent SDK 0.3.318) and
+  keeps Codex on 0.165.0 (0.166.0 breaks the codex adapter). Built dream-sandbox in the foreground (release
+  9dded0ec63a40291, build bc795234-1ee1-4fc6-ba13-7abefb2d2fdc, gate passed) and deployed.
+- First real refresh VERIFIED on the founder's QA project prj_Ct6EDikT6uFk4w99AYZm8e (created at 05:42 on an old
+  build): a message at 14:29:22 → refreshed to release 9dded0ec63a40291 → the turn ran and replied at 14:30:22; the
+  agent's game server kept its PIDs and the public URL answered 200 throughout; the sandbox now has agent SDK 0.3.318
+  and the new CLI (`dream access oauth`).
