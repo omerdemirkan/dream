@@ -59,3 +59,6 @@ Other findings:
 - Fixes dispatched (`fix/sandbox-env`): stdin for `dream message`, Chromium on PATH + fonts + PIL in the template,
   Mac facts in the skill (simctl screenshots, Homebrew/XcodeGen, file copy) and `dream mac cp` if missing.
 - Merged `fix/status-defaults` (provisional titles, phase → exploring on first turn); deployed from main.
+- QA 5's final report said "no Dream RPC attempts". The transcript says otherwise: the agent ran `dream message` twice,
+  and both failed (an .svg attachment was rejected; a long message broke bash quoting). So the plumbing is fine, and
+  the fixes above (stdin for messages, the final-text safety net) cover this.
