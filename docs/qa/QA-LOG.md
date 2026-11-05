@@ -304,3 +304,11 @@ Other findings:
   in-flight state on Send. Moved agents' Macs to the 27.x image too (apps/api/src/brokers/Namespace.ts) and added a
   skill fact about the Xcodes there; deployed and rebuilt (release d61699a9202eacf3). Verified: `dream mac start` from
   a sandbox → macOS 27.2, default Xcode 27.0, Xcode_26.6 … Xcode_27.2 in /Applications; `dream mac stop`.
+- Google configured by the founder (project dream-513815; web + iOS clients; Gmail/Calendar/Drive/Sheets/People APIs).
+  Verified: `dream access google --scopes gmail.readonly` now creates a card; StartGoogleAccess builds
+  accounts.google.com/o/oauth2/v2/auth with the web client 83583994168-3v9t…, redirect
+  https://dream.omer.build/oauth/google/callback, access_type=offline, and Google answers 302 to its sign-in page (no
+  client or redirect error). The consent screen is still in Testing (refresh tokens expire after 7 days) until the
+  Branding page has a home page and privacy policy (child building them). QA card declined afterwards.
+- Bundle id build.omer.dream in place of the placeholder; build-ios.sh defaults to team ZY6RS9293V and Dream's Google
+  iOS client.
