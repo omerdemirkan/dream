@@ -267,5 +267,5 @@ Other findings:
   9dded0ec63a40291, build bc795234-1ee1-4fc6-ba13-7abefb2d2fdc, gate passed) and deployed.
 - First real refresh VERIFIED on the founder's QA project prj_Ct6EDikT6uFk4w99AYZm8e (created at 05:42 on an old
   build): a message at 14:29:22 → refreshed to release 9dded0ec63a40291 → the turn ran and replied at 14:30:22; the
-  agent's game server kept its PIDs and the public URL answered 200 throughout; the sandbox now has agent SDK 0.3.318
-  and the new CLI (`dream access oauth`).
+  agent's game server kept its PIDs and the public URL answered 200 throughout; dreamd reports the new release and
+  the new CLI (`dream access oauth`) is in place. (Claude Code 2.1.318 is per the child's verification, not re-checked.)
