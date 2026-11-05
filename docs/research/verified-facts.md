@@ -187,3 +187,7 @@
   injected as env vars at instance creation via `env_vars: [{name, from_secret_id}]` on ContainerRequest
   (check ApplicationRequest for macOS). Founder's ASC .p8 for Dream's own TestFlight builds → Namespace Vault; never
   passes through a sandbox. For users' ASC keys, the Worker could create per-user Vault secrets via VaultService.
+- Namespace quota (2026-11-05): macOS limit on the founder's plan is 6 vCPU / 14 GB TOTAL across instances
+  ("0th instance limit ... used all of 6 vCPU 14 GB RAM"), so only one 6x14 Mac at a time. 8x14 is rejected (429).
+  Mac image has Homebrew, node 25, CocoaPods 1.16.2, xcbeautify, ruby 3.4, git; NO rsync (use tar over ssh), no bun.
+  New workspace connections DO appear in an existing child thread on its next turn.
