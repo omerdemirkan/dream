@@ -7,6 +7,7 @@ import { assert, describe, it } from "@effect/vitest"
 import { DaemonEnvFile, type NotificationId, type ProjectId, QuestionAnswer } from "@dream/domain"
 import { Context, DateTime, Effect, Exit, Fiber, Redacted, Stream } from "effect"
 import { ProjectClients } from "../src/project/Client.ts"
+import { Store } from "../src/project/Store.ts"
 import { makeCloud } from "./support/Cloud.ts"
 
 const claudeUrl =
@@ -497,6 +498,47 @@ describe("a project, end to end", () => {
       assert.strictEqual(cloud.world.delivered.length, 1)
       assert.strictEqual(envFileOf(cloud, project.id).sandbox.state, "killed")
       assert.deepStrictEqual(yield* cloud.phone.ListProjects(), [])
+      yield* cloud.close
+    })
+  )
+
+  it.live("keeps the sandbox running through a long turn: resumes it if paused, cycles it before the run cap", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project } = yield* setup(cloud)
+      yield* cloud.alarm(project.id)
+      const { sandbox, env } = envFileOf(cloud, project.id)
+      const dreamd = yield* cloud.sandbox(env.DREAM_PROJECT_TOKEN)
+      const store = Context.get((yield* Effect.promise(() => cloud.project(project.id))).context, Store)
+      /** The next keepalive tick, without waiting five minutes. */
+      const tick = Effect.andThen(store.setTimer("turn-keepalive", 0), cloud.alarm(project.id))
+      yield* dreamd.ReportTurn({ state: "started", eventIds: [] })
+      assert.strictEqual(sandbox.timeoutSeconds, 15 * 60)
+
+      // E2B pauses it mid-turn (the run cap); nothing sends it traffic. The next keepalive resumes it.
+      sandbox.state = "paused"
+      yield* tick
+      assert.strictEqual(sandbox.state, "running")
+      assert.strictEqual(sandbox.resumes, 1)
+
+      // Running, far from the cap: just extends the timeout.
+      sandbox.timeoutSeconds = 0
+      yield* tick
+      assert.strictEqual(sandbox.timeoutSeconds, 15 * 60)
+      assert.strictEqual(sandbox.pauses, 0)
+
+      // Within a tick of the 1-hour cap: pauses and resumes it now, which restarts E2B's clock.
+      sandbox.startedAt = DateTime.subtract(yield* DateTime.now, { minutes: 55 })
+      yield* tick
+      assert.strictEqual(sandbox.pauses, 1)
+      assert.strictEqual(sandbox.resumes, 2)
+      assert.strictEqual(sandbox.state, "running")
+
+      // After the turn, the keepalive stops and the sandbox gets the idle timeout.
+      yield* dreamd.ReportTurn({ state: "finished", eventIds: [] })
+      sandbox.state = "paused"
+      yield* tick
+      assert.strictEqual(sandbox.state, "paused")
       yield* cloud.close
     })
   )

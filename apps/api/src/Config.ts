@@ -9,7 +9,7 @@
  * keeps working before every provider is configured.
  */
 import { UpstreamFailure } from "@dream/domain"
-import { Config, Context, Effect, Layer, Option, Redacted } from "effect"
+import { Config, Context, Duration, Effect, Layer, Option, Redacted } from "effect"
 
 const optionalSecret = (name: string) => Config.option(Config.Redacted(name))
 const optionalString = (name: string) => Config.option(Config.NonEmptyString(name))
@@ -35,6 +35,11 @@ export const ApiConfigSchema = Config.all({
   e2bDomain: Config.NonEmptyString("E2B_DOMAIN").pipe(Config.withDefault("e2b.app")),
   /** The template project sandboxes start from (built by packages/sandbox-template). */
   sandboxTemplate: Config.NonEmptyString("E2B_TEMPLATE").pipe(Config.withDefault("dream-sandbox")),
+  /**
+   * How long E2B lets a sandbox run before it pauses it, whatever its timeout ("1 hour" on Hobby, "24 hours" on
+   * Pro). Resuming restarts the clock, so a long turn is paused and resumed just before the cap.
+   */
+  sandboxMaxRun: Config.Duration("E2B_SANDBOX_MAX_RUN").pipe(Config.withDefault(Duration.hours(1))),
   /** The template for short-lived model sign-in sandboxes; needs `claude` and `codex` on PATH. */
   authTemplate: optionalString("E2B_AUTH_TEMPLATE"),
   /** How dreamd is started in a new sandbox (run with `bash -lc`). */
@@ -88,6 +93,7 @@ export class ApiConfig extends Context.Service<ApiConfig, ApiConfigShape>()("@dr
         e2bApiUrl: "https://api.e2b.test",
         e2bDomain: "e2b.test",
         sandboxTemplate: "dream-sandbox",
+        sandboxMaxRun: Duration.hours(1),
         authTemplate: Option.none(),
         daemonCommand: "dreamd",
         apnsKeyId: Option.some("KEYID12345"),

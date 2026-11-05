@@ -18,6 +18,10 @@ export interface FakeSandbox {
   readonly access: SandboxAccess
   readonly template: string
   state: "running" | "paused" | "killed"
+  /** When it last started or resumed (E2B's run cap counts from here). */
+  startedAt: DateTime.Utc
+  pauses: number
+  resumes: number
   rules: NetworkRules
   timeoutSeconds: number
   readonly files: Map<string, string>
@@ -49,7 +53,7 @@ export const fakeE2B = (world: FakeWorld) =>
     E2B,
     E2B.of({
       create: (options) =>
-        Effect.sync(() => {
+        Effect.map(DateTime.now, (now) => {
           const sandboxId = world.nextId("sbx")
           const access = {
             sandboxId,
@@ -61,6 +65,9 @@ export const fakeE2B = (world: FakeWorld) =>
             access,
             template: options.template,
             state: "running",
+            startedAt: now,
+            pauses: 0,
+            resumes: 0,
             rules: options.rules,
             timeoutSeconds: options.timeoutSeconds,
             files: new Map(),
@@ -71,18 +78,27 @@ export const fakeE2B = (world: FakeWorld) =>
       connect: (sandboxId, timeoutSeconds) => {
         const sandbox = world.sandboxes.get(sandboxId)
         if (sandbox === undefined || sandbox.state === "killed") return Effect.fail(new SandboxGone({ sandboxId }))
-        sandbox.state = "running"
-        sandbox.timeoutSeconds = timeoutSeconds
-        return Effect.succeed(sandbox.access)
+        return Effect.map(DateTime.now, (now) => {
+          if (sandbox.state === "paused") {
+            sandbox.resumes++
+            sandbox.startedAt = now
+          }
+          sandbox.state = "running"
+          sandbox.timeoutSeconds = timeoutSeconds
+          return sandbox.access
+        })
       },
       info: (sandboxId) =>
         Effect.sync(() => {
           const sandbox = world.sandboxes.get(sandboxId)
-          return sandbox === undefined ? Option.none() : Option.some({ sandboxID: sandboxId, state: sandbox.state })
+          return sandbox === undefined
+            ? Option.none()
+            : Option.some({ sandboxID: sandboxId, state: sandbox.state, startedAt: sandbox.startedAt })
         }),
       setTimeout: (sandboxId, timeoutSeconds) => {
         const sandbox = world.sandboxes.get(sandboxId)
-        if (sandbox === undefined) return Effect.fail(new SandboxGone({ sandboxId }))
+        // Like E2B: a paused sandbox's timeout can't be set (404).
+        if (sandbox === undefined || sandbox.state !== "running") return Effect.fail(new SandboxGone({ sandboxId }))
         sandbox.timeoutSeconds = timeoutSeconds
         return Effect.void
       },
@@ -96,7 +112,10 @@ export const fakeE2B = (world: FakeWorld) =>
       pause: (sandboxId) =>
         Effect.sync(() => {
           const sandbox = world.sandboxes.get(sandboxId)
-          if (sandbox !== undefined) sandbox.state = "paused"
+          if (sandbox !== undefined && sandbox.state === "running") {
+            sandbox.state = "paused"
+            sandbox.pauses++
+          }
         }),
       kill: (sandboxId) =>
         Effect.sync(() => {

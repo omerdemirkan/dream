@@ -6,6 +6,9 @@
  * Verified against the live API (2026-11-04): a paused sandbox can't have its
  * network updated (404), traffic to a port URL with the traffic token resumes
  * a paused sandbox in ~200 ms, and processes survive pause and resume.
+ * (2026-11-05): a timeout past the plan's run cap is clamped to `startedAt` +
+ * cap without an error, `startedAt` resets on resume, and setting the timeout
+ * of a paused sandbox is a 404.
  */
 import { UpstreamFailure } from "@dream/domain"
 import { Context, Data, Effect, Layer, Option, Redacted, Schema } from "effect"
@@ -40,6 +43,8 @@ const SandboxInfo = Schema.Struct({
   sandboxID: Schema.String,
   state: Schema.String,
   domain: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  /** When it last started or resumed: E2B's run cap counts from here. */
+  startedAt: Schema.optionalKey(Schema.DateTimeUtcFromString),
   endAt: Schema.optionalKey(Schema.String)
 })
 export type SandboxInfo = typeof SandboxInfo.Type

@@ -6,7 +6,7 @@
  *   DREAM_LIVE_E2B=1 DREAM_LIVE_TEMPLATE=dream-probe bunx vitest run --project @dream/api test/live
  */
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Fiber, Layer, Option, Stream } from "effect"
+import { DateTime, Effect, Fiber, Layer, Option, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { ApiConfig } from "../../src/Config.ts"
 import { findClaudeUrl, findDeviceCode } from "../../src/connect/ModelConnect.ts"
@@ -148,5 +148,36 @@ describe.skipIf(!live)("E2B, live", () => {
         })
       ).pipe(Effect.provide(layer)),
     200_000
+  )
+
+  it.live(
+    "a paused sandbox reads as paused and connect resumes it, restarting the run clock",
+    () =>
+      Effect.gen(function* () {
+        const e2b = yield* E2B
+        const sandbox = yield* e2b.create({
+          template,
+          timeoutSeconds: 300,
+          autoPause: true,
+          envVars: {},
+          metadata: { purpose: "control-plane-live-test" },
+          rules: {}
+        })
+        yield* Effect.gen(function* () {
+          const first = Option.getOrThrow(yield* e2b.info(sandbox.sandboxId))
+          assert.strictEqual(first.state, "running")
+          assert.isDefined(first.startedAt)
+          yield* e2b.pause(sandbox.sandboxId)
+          assert.strictEqual(Option.getOrThrow(yield* e2b.info(sandbox.sandboxId)).state, "paused")
+          // What the old keepalive did: it doesn't resume a paused sandbox.
+          const timeout = yield* e2b.setTimeout(sandbox.sandboxId, 600).pipe(Effect.flip)
+          assert.strictEqual(timeout._tag, "SandboxGone")
+          yield* e2b.connect(sandbox.sandboxId, 600)
+          const resumed = Option.getOrThrow(yield* e2b.info(sandbox.sandboxId))
+          assert.strictEqual(resumed.state, "running")
+          assert.isTrue(DateTime.isGreaterThan(resumed.startedAt!, first.startedAt!))
+        }).pipe(Effect.ensuring(e2b.kill(sandbox.sandboxId).pipe(Effect.ignore)))
+      }).pipe(Effect.provide(layer)),
+    120_000
   )
 })

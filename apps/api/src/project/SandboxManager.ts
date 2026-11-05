@@ -4,6 +4,12 @@
  * DaemonEnv for dreamd, then start dreamd), deliver events to dreamd at least
  * once, keep egress rules current, and keep the sandbox awake while a turn
  * runs. Paused sandboxes resume on traffic, so delivery just sends.
+ *
+ * E2B pauses any sandbox that has run for `sandboxMaxRun` (1 hour on Hobby),
+ * and a turn doesn't make traffic that would resume it. So while a turn runs,
+ * the keepalive checks every few minutes: shortly before the cap it pauses and
+ * resumes the sandbox itself (resuming restarts the clock), and if it finds
+ * the sandbox paused anyway, it resumes it.
  */
 import {
   type AgentEvent,
@@ -32,9 +38,11 @@ import { type SandboxRecord, Singletons, Store } from "./Store.ts"
 
 /** How long an idle sandbox stays up after a turn (it resumes on traffic in ~200 ms). */
 export const IdleTimeout = Duration.minutes(5)
-/** While a turn runs, the timeout is pushed out by this much, every `KeepaliveEvery`. */
-export const WorkingTimeout = Duration.minutes(60)
-export const KeepaliveEvery = Duration.minutes(25)
+/** While a turn runs, the timeout is pushed out by this much (E2B clamps it to the run cap), every `KeepaliveEvery`. */
+export const WorkingTimeout = Duration.minutes(15)
+export const KeepaliveEvery = Duration.minutes(5)
+/** The keepalive cycles the sandbox once less than this is left before the run cap: one tick, plus slack. */
+const CycleWithin = Duration.sum(KeepaliveEvery, Duration.minutes(1))
 const HealthWait = Duration.seconds(120)
 const BatchSize = 50
 
@@ -200,6 +208,18 @@ export class SandboxManager extends Context.Service<
           yield* alarm.reschedule
         })
 
+      /** After a resume: is dreamd answering? If not, restart it (which ends any turn it was running). */
+      const revive = (access: SandboxAccess, daemonToken: string) =>
+        waitForDaemon(access, daemonToken, Duration.seconds(20)).pipe(
+          Effect.catch(() =>
+            Effect.gen(function* () {
+              yield* Effect.logWarning("dreamd isn't answering; rewriting its env file to restart it")
+              yield* writeDaemonEnv(access, daemonToken)
+              yield* awaitDaemon(access, daemonToken)
+            })
+          )
+        )
+
       /** After a failed delivery: is the sandbox gone, paused, or is dreamd down? Repair what can be repaired. */
       const diagnose = (access: SandboxAccess, daemonToken: string) =>
         Effect.gen(function* () {
@@ -212,12 +232,7 @@ export class SandboxManager extends Context.Service<
             return
           }
           const resumed = yield* e2b.connect(access.sandboxId, Duration.toSeconds(IdleTimeout))
-          const healthy = yield* daemon.health(resumed, daemonToken).pipe(Effect.option)
-          if (Option.isNone(healthy)) {
-            yield* Effect.logWarning("dreamd isn't answering; rewriting its env file to restart it")
-            yield* writeDaemonEnv(resumed, daemonToken)
-            yield* awaitDaemon(resumed, daemonToken)
-          }
+          yield* revive(resumed, daemonToken)
         }).pipe(Effect.catch((error) => Effect.logWarning("sandbox check failed", String(error))))
 
       const deliverOnce = Effect.gen(function* () {
@@ -283,12 +298,42 @@ export class SandboxManager extends Context.Service<
         }
       })
 
+      /** Mid-turn: keeps the sandbox running, cycling it before E2B's run cap and resuming it if it was paused. */
+      const stayAwake = (record: SandboxRecord, access: SandboxAccess, daemonToken: string) =>
+        Effect.gen(function* () {
+          const info = yield* e2b.info(access.sandboxId)
+          // Gone: the next delivery creates a new one.
+          if (Option.isNone(info) || info.value.state === "killed") return
+          const { state, startedAt } = info.value
+          if (state === "running") {
+            const now = yield* DateTime.now
+            const capAt = startedAt === undefined ? undefined : DateTime.addDuration(startedAt, config.sandboxMaxRun)
+            const nearCap =
+              capAt !== undefined && Duration.isLessThanOrEqualTo(DateTime.distance(now, capAt), CycleWithin)
+            if (!nearCap) return yield* e2b.setTimeout(access.sandboxId, Duration.toSeconds(WorkingTimeout))
+            // Pause now rather than at the cap, so the turn is frozen for seconds, not until the next tick.
+            yield* Effect.logInfo("sandbox is near E2B's run cap; pausing and resuming it", {
+              sandboxId: access.sandboxId
+            })
+            yield* e2b.pause(access.sandboxId)
+          } else {
+            yield* Effect.logWarning("sandbox was paused mid-turn; resuming it", { sandboxId: access.sandboxId, state })
+          }
+          yield* e2b.connect(access.sandboxId, Duration.toSeconds(WorkingTimeout))
+          if (record.rulesDirty) yield* pushRules(record, false)
+          yield* revive(access, daemonToken)
+        })
+
       const keepalive = Effect.gen(function* () {
         const record = yield* core.sandbox
         if (!record.working || record.access === undefined) return yield* store.clearTimer("turn-keepalive")
-        yield* e2b.setTimeout(record.access.sandboxId, Duration.toSeconds(WorkingTimeout)).pipe(Effect.ignore)
         yield* store.setTimer("turn-keepalive", (yield* Clock.currentTimeMillis) + Duration.toMillis(KeepaliveEvery))
         yield* alarm.reschedule
+        if (record.daemonToken !== undefined) {
+          yield* stayAwake(record, record.access, record.daemonToken).pipe(
+            Effect.catch((error) => Effect.logWarning("keepalive couldn't check the sandbox", String(error)))
+          )
+        }
       })
 
       const turnStarted = Effect.gen(function* () {
