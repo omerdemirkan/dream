@@ -56,5 +56,6 @@ calls fail with "API not enabled".
 **7. The app build:** pass `DREAM_GOOGLE_IOS_CLIENT_ID=<iOS client id>` to the TestFlight build
 ([testflight.md](testflight.md)). If you set it up after building, run the build again.
 
-**Tell me:** that it's done. I'll check a `dream access google` card end to end with my own throwaway Google account,
-not yours.
+**Tell me:** that it's done. I'll check that a `dream access google` card leads to Google's consent page with the
+right client and redirect. I don't have a Google account of my own, so the first real consent will be yours (or a
+friend's).
