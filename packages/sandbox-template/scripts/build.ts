@@ -1,16 +1,18 @@
 /**
  * Build the `dream-sandbox` E2B template:
  *
- *   bun run template:build                          build and wait, streaming the logs
+ *   bun run template:build                          build, check, and make it the build new sandboxes get
  *   bun run template:build --background             start the build on E2B and print its ids
  *   bun run template:build status <template> <build> [logs-offset]
+ *   bun run template:build promote <release>        check a finished build and make it the current one
  *
  * DREAM_TEMPLATE=<name> builds another template (for testing; `dream-sandbox` is built from main).
  *
- * The build is tagged `default` (what new sandboxes get) and `release-<release>`, naming the Dream it carries
- * (`/opt/dream/release.json`), so the ProjectDO can tell whether a sandbox is behind without starting one.
- * Moving `default` back to an older build (`Template.assignTags("dream-sandbox:release-<old>", "default")`) rolls
- * every sandbox back to it on its next refresh.
+ * The build is tagged `release-<release>`, naming the Dream it carries (`/opt/dream/release.json`), so the
+ * ProjectDO can tell whether a sandbox is behind without starting one. Every sandbox follows the `default` tag
+ * (new ones are created from it, existing ones are refreshed to it), so a build gets `default` only once a turn on
+ * each harness has run in it (`harness-check.ts`); `--no-check` skips that. Moving `default` back to an older
+ * build (`promote <old release>`) rolls every sandbox back to it on its next refresh.
  *
  * Needs E2B_API_KEY. In development the key can come from an HTTPS proxy that
  * adds it (the e2b SDK ignores proxy env vars, so it's passed explicitly);
@@ -20,6 +22,7 @@ import { readFileSync, rmSync } from "node:fs"
 import { join } from "node:path"
 import { NodeRuntime } from "@effect/platform-node"
 import { defaultBuildLogger, Template } from "e2b"
+import { checkTemplate, report } from "./harness-check.ts"
 import { Effect } from "effect"
 import { makeTemplate, minFreeDiskMb, resources, stageContext, templateName } from "../src/index.ts"
 
@@ -37,7 +40,7 @@ const build = Effect.gen(function* () {
   const { release } = JSON.parse(readFileSync(join(context, "dream", "release.json"), "utf8")) as { release: string }
   const options = {
     ...resources,
-    tags: ["default", `release-${release}`],
+    tags: [`release-${release}`],
     ...connection,
     minFreeDiskMb,
     skipCache: args.includes("--no-cache"),
@@ -57,7 +60,24 @@ const build = Effect.gen(function* () {
   yield* Effect.logInfo(
     `Built ${info.name} (template ${info.templateId}, build ${info.buildId}, release ${release}) in ${Math.round((Date.now() - started) / 1000)} s`
   )
+  yield* promote(release, args.includes("--no-check"))
 })
+
+/** Checks the build tagged `release-<release>` (unless `skipCheck`), then tags it `default`. */
+const promote = (release: string, skipCheck = false) =>
+  Effect.gen(function* () {
+    const target = `${templateName}:release-${release}`
+    if (!skipCheck) {
+      yield* Effect.logInfo(`Running a turn on each harness in ${target}`)
+      const results = yield* Effect.tryPromise(() => checkTemplate(target))
+      console.log(report(results))
+      if (results.some((result) => !result.ok)) {
+        return yield* Effect.die(new Error(`${target} failed its harness check; the current build stays current`))
+      }
+    }
+    yield* Effect.tryPromise(() => Template.assignTags(target, "default", connection))
+    yield* Effect.logInfo(`${target} is now ${templateName}'s current build`)
+  })
 
 /** Prints the build's logs from `logsOffset` on (E2B pages them), then its status. */
 const status = (templateId: string, buildId: string, logsOffset: number) =>
@@ -80,6 +100,8 @@ const [command, templateId, buildId, offset] = args
 const program =
   command === "status" && templateId !== undefined && buildId !== undefined
     ? status(templateId, buildId, Number(offset ?? 0))
-    : build
+    : command === "promote" && templateId !== undefined
+      ? promote(templateId.replace(/^release-/, ""), args.includes("--no-check"))
+      : build
 
 program.pipe(Effect.scoped, NodeRuntime.runMain)

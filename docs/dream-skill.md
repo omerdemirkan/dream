@@ -99,6 +99,8 @@ this sandbox, including the apps you build. `dream <command> --help` lists every
   - Requests reach your server with `Host` set to the sandbox's internal name (`<port>-<sandbox id>.e2b.app`), so a
     server that checks hosts (Vite's dev server does) has to allow it.
   - The public URL works from inside this sandbox too, so you can load exactly what they'll see.
+- A server you start as a background task of your shell stops when your turn ends. To keep one running between
+  turns, start it detached, e.g. `setsid nohup npm start > server.log 2>&1 &`.
 
 ## Beyond this sandbox
 

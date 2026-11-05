@@ -311,7 +311,8 @@ export class SandboxManager extends Context.Service<
         // Don't leak a sandbox that never became usable.
         const health = yield* ready.pipe(Effect.tapError(() => e2b.kill(access.sandboxId).pipe(Effect.ignore)))
         const now = yield* DateTime.now
-        yield* update((r) => ({
+        // What was known about an earlier sandbox's Dream doesn't carry over to this one.
+        yield* update(({ templateBuild: _b, release: _r, latestBuild: _l, refreshFailure: _f, ...r }) => ({
           ...r,
           status: "ready",
           access,

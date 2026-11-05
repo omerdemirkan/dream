@@ -261,3 +261,30 @@
   landed in Chat. The app itself had a bug (server returns a JSON-serialized Buffer); the agent tested via API only
   and said so. Harness logs "credential brokering does not work, falling back to credential forwarding" with the
   local sandbox provider — benign here because it forwards the placeholder.
+
+## Sandbox refresh (2026-11-05, feat/sandbox-refresh; on real E2B with throwaway templates `dream-sandbox-refresh*`)
+- E2B template tags: a build can carry several tags (`Template.build(..., { tags })`, `Template.assignTags("name:tag",
+  "default")`), `GET /templates/{id}/tags` lists `{buildID, tag}`, `Sandbox.create("name:tag")` picks a build, and
+  `Sandbox.create("name")` gets the build tagged `default`. `GET /templates/aliases/{alias}` resolves an alias to its
+  id (`GET /templates/{alias}` is a 404). Sandbox info doesn't say which build a sandbox came from.
+- Sandbox to sandbox: another sandbox's envd `/files` download works from inside a sandbox with only its
+  `x-access-token` (no traffic token): an ~800 MB tar of /opt/dream (115 MB) and ~/.ai-sdk-harness/.harness-bootstrap
+  (705–817 MB) moved at ~114 MB/s. gzip of the same took 61 s, so it goes uncompressed.
+- A refresh (donor create, tar, download, check, swap, restart, wait for the new release) takes ~45–55 s. A broken
+  new dreamd is rolled back after the 90 s wait (2 m 24 s in all), back on the old release with its servers up.
+  When the build's release tag matches what dreamd reports, the check takes ~1 s and no donor is started.
+- Survives a refresh: the project's files (same sha256), ~/.dream (inbox, session.json), ~/.claude and ~/.codex,
+  and servers the agent started detached (`nohup … &`, `setsid … &`: Claude Code's Bash tool gives each command
+  its own process group, so dreamd's group kill of the bridge doesn't reach them). The Claude Code session resumed
+  across 2.1.290 → 2.1.318 with the same session id and full history.
+- Claude Code's `run_in_background` tasks die when the turn ends (the CLI exits after each query), with or without
+  a refresh. The skill now says to start servers detached.
+- Claude Code honors `env.ANTHROPIC_BASE_URL` in ~/.claude/settings.json (dreamd keeps other settings), so a fake
+  Messages API can run real Claude Code turns (packages/dreamd/scripts/fake-anthropic.ts).
+- The newest adapters (@ai-sdk/harness 1.0.174, harness-claude-code 1.0.178, harness-codex 1.0.176) still pin
+  Claude Code 2.1.290 (agent SDK 0.3.290) and Codex 0.165.0; npm had 2.1.318 / 0.3.318 and Codex 0.166.0. The bridge
+  runs the agent SDK's bundled binary (`@anthropic-ai/claude-agent-sdk-linux-x64`); the SDK's `claudeCodeVersion`
+  says which Claude Code it is. Dream pins 2.1.318 and it runs turns with the 1.0.178 bridge.
+- Codex 0.166.0 breaks harness-codex 1.0.176: every turn fails with "This chat uses agent_bridge_openai, but your
+  current provider is openai" (the bridge sets `model_provider` per thread; 0.166 checks it against the global one).
+  Codex stays on 0.165.0. The harness check in `template:build` catches this kind of break.

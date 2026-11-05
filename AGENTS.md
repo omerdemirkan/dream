@@ -36,7 +36,7 @@ bun run test           # vitest, all projects (see vitest.config.ts)
 bun run format         # biome, TS and JSON only
 bun run sync-prompts   # regenerate agent-context strings after editing docs/agent-context.md or docs/dream-skill.md
 bun run infra:plan     # alchemy plan; needs Cloudflare credentials and DREAM_DOMAIN in .env
-bun run template:build # build the dream-sandbox E2B template (~2 min); --background, then `status <template> <build>`
+bun run template:build # build the dream-sandbox E2B template (~2 min), check a turn on each harness, make it current
 ```
 
 Run alchemy from the workspace root (the `infra:*` scripts do), because relative paths in resource props, such as D1
@@ -166,6 +166,23 @@ the other workstreams to agree first.
   sandbox, so the ProjectDO starts dreamd by writing `DaemonEnvFile` (rewriting it restarts dreamd). Both harness
   CLIs are pre-installed. `packages/sandbox-template/scripts/smoke.ts` checks a fresh sandbox, and with
   `packages/dreamd/scripts/fake-api.ts` and `fake-responses.ts` (exposed publicly) it runs a Codex turn there.
+  `scripts/refresh-check.ts` runs a Claude Code (`fake-anthropic.ts`) or Codex project in a sandbox to check a refresh.
+  Claude Code and Codex versions are Dream's, not the adapters': `src/harness/bridges/<harness>/` holds the bridge
+  manifest and lockfile `dreamd bootstrap` installs. To move to new releases, run
+  `node packages/dreamd/scripts/harness-pins.ts` (shows the pins and npm's latest), then `… harness-pins.ts latest`
+  (or `--claude-code <agent-sdk version> --codex <version>`) and build a test template
+  (`DREAM_TEMPLATE=dream-sandbox-<x> bun run template:build`), whose harness check runs a turn on each. A release can
+  break its adapter (Codex 0.166.0 did; Codex stays on 0.165.0 until the adapter catches up). Rerun the pins script
+  after bumping an adapter; a test fails until the manifests match the adapter's again.
+- **Sandbox refresh.** A sandbox keeps the template build it was created from, so the ProjectDO brings it up to the
+  template's current build between turns (`apps/api/src/e2b/Refresh.ts`): before the next delivery, and a minute after
+  each turn. It copies `/opt/dream` and `~/.ai-sdk-harness/.harness-bootstrap` over from a short-lived donor sandbox
+  of the template, and the new build's `files/refresh.sh` swaps them in and restarts dreamd, rolling back if the new
+  dreamd doesn't come up. The project, `~/.dream`, `~/.claude`, `~/.codex` and processes outside dreamd's tree stay.
+  Builds are tagged `release-<hash of /opt/dream>`, so a rebuild of the same source refreshes nothing; system
+  packages (apt, Node, Playwright, pnpm, Bun) don't refresh. Every sandbox follows the build tagged `default`, which
+  `template:build` moves only after `scripts/harness-check.ts` ran a turn on each harness in the new build.
+  `SANDBOX_REFRESH=false` turns refreshing off.
 - **Mobile.** `apps/mobile` is an Expo SDK 58 development-build app (native modules, so not Expo Go). Metro resolves
   the domain's `.ts` imports and `exports` maps with no extra config. The services in `src/data` are plain Effect and
   tested in Node (`apps/mobile/test`); screens are checked in the iOS Simulator. `DREAM_BACKEND=fixtures` runs the
@@ -185,6 +202,8 @@ the other workstreams to agree first.
   media storage. D1 and R2 names are pinned in `apps/api/src/Resources.ts`, so a deploy from any machine adopts the
   live resources.
 - Worker secrets set in the dashboard or through the API survive deploys; plain vars don't.
-- dreamd and the prompt ship inside the `dream-sandbox` template: `bun run template:build` after changing either.
-  Existing sandboxes keep the dreamd they were created with.
+- dreamd, the CLI, the prompt and the harness CLIs ship inside the `dream-sandbox` template: `bun run template:build`
+  after changing any of them. Existing sandboxes pick the new build up between turns (Sandbox refresh, above).
+  To roll every sandbox back, make an older build current again:
+  `bun run template:build promote <release>` (releases are the build's `release-…` tags).
 - End-to-end checks against the live API: `node packages/sandbox-template/scripts/qa.ts` (see its header).
