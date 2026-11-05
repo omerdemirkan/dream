@@ -18,6 +18,8 @@ export interface DreamdConfigShape extends Config.Success<typeof DaemonConfig> {
   readonly envFile: string
   /** A model to ask the harness for instead of its default. */
   readonly model: Option.Option<string>
+  /** What the ProjectDO called the env file's settings; `Health` reports it. */
+  readonly envHash: Option.Option<string>
   /** For testing: where Codex sends model requests instead of the ChatGPT backend. */
   readonly codexBaseUrl: Option.Option<string>
 }
@@ -27,6 +29,7 @@ const LocalConfig = Config.all({
   stateDir: Config.option(Config.NonEmptyString("DREAM_STATE_DIR")),
   workDir: Config.option(Config.NonEmptyString("DREAM_WORKDIR")),
   model: Config.option(Config.NonEmptyString(DaemonEnv.model)),
+  envHash: Config.option(Config.NonEmptyString(DaemonEnv.envHash)),
   codexBaseUrl: Config.option(Config.NonEmptyString("DREAM_CODEX_BASE_URL"))
 })
 
@@ -49,9 +52,9 @@ export class DreamdConfig extends Context.Service<DreamdConfig, DreamdConfigShap
     })
   )
 
-  /** For tests: everything from one record. */
-  static readonly layerFromRecord = (env: Record<string, string>) =>
-    Layer.effect(DreamdConfig, load(ConfigProvider.fromEnvRecord(env), "(test)"))
+  /** For tests: everything from one record, as if read from `envFile`. */
+  static readonly layerFromRecord = (env: Record<string, string>, envFile = "(test)") =>
+    Layer.effect(DreamdConfig, load(ConfigProvider.fromEnvRecord(env), envFile))
 }
 
 const load = (provider: ConfigProvider.ConfigProvider, envFile: string) =>
@@ -65,6 +68,7 @@ const load = (provider: ConfigProvider.ConfigProvider, envFile: string) =>
       workDir: Option.getOrElse(local.workDir, () => `${local.home}/project`),
       envFile,
       model: local.model,
+      envHash: local.envHash,
       codexBaseUrl: local.codexBaseUrl
     })
   })

@@ -6,6 +6,7 @@
 import {
   AgentEvent,
   DaemonAuth,
+  DaemonRestarting,
   DaemonRpcs,
   DefaultDaemonPort,
   HttpRpcSerialization,
@@ -28,12 +29,18 @@ export class Daemon extends Context.Service<
       daemonToken: string,
       events: readonly [AgentEvent, ...Array<AgentEvent>],
       timeZone?: string | undefined
-    ) => Effect.Effect<ReadonlyArray<string>, UpstreamFailure>
+    ) => Effect.Effect<ReadonlyArray<string>, UpstreamFailure | DaemonRestarting>
     readonly health: (
       sandbox: SandboxAccess,
       daemonToken: string
     ) => Effect.Effect<
-      { readonly version: string; readonly turn: "idle" | "running"; readonly queued: number },
+      {
+        readonly version: string
+        readonly turn: "idle" | "running"
+        readonly queued: number
+        /** The env file's hash, as that dreamd read it; absent from older builds. */
+        readonly envHash?: string
+      },
       UpstreamFailure
     >
   }
@@ -79,7 +86,7 @@ export class Daemon extends Context.Service<
         withClient(sandbox, daemonToken, (client) => client.Deliver({ events })).pipe(
           Effect.map((result) => result.accepted as ReadonlyArray<string>),
           Effect.timeout("60 seconds"),
-          Effect.mapError(failure("Delivering events"))
+          Effect.mapError((error) => (error._tag === "DaemonRestarting" ? error : failure("Delivering events")(error)))
         )
 
       const health = (sandbox: SandboxAccess, daemonToken: string) =>

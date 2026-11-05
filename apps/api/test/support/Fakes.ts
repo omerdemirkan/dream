@@ -2,7 +2,7 @@
  * Fakes for every external service the control plane calls. Each records
  * what it was asked so tests can assert on it.
  */
-import { UpstreamFailure } from "@dream/domain"
+import { DaemonEnv, DaemonEnvFile, DaemonRestarting, UpstreamFailure } from "@dream/domain"
 import { DateTime, Effect, Layer, Option, Stream } from "effect"
 import { Browserbase } from "../../src/brokers/Browserbase.ts"
 import { Namespace } from "../../src/brokers/Namespace.ts"
@@ -30,7 +30,13 @@ export interface FakeSandbox {
 
 export class FakeWorld {
   readonly sandboxes = new Map<string, FakeSandbox>()
-  readonly delivered: Array<{ sandboxId: string; events: ReadonlyArray<unknown>; timeZone: string | undefined }> = []
+  readonly delivered: Array<{
+    sandboxId: string
+    events: ReadonlyArray<unknown>
+    timeZone: string | undefined
+    /** What the dreamd that took them had read. */
+    envHash: string | undefined
+  }> = []
   readonly pushes: Array<{ readonly token: string; readonly kind: string; readonly payload: unknown }> = []
   readonly processes: Array<{ sandboxId: string; command: string; pty: boolean }> = []
   readonly inputs: Array<{ sandboxId: string; pid: number; text: string }> = []
@@ -38,6 +44,16 @@ export class FakeWorld {
   readonly macs = new Map<string, { status: string }>()
   daemonHealthy = true
   deliverFails = false
+  /** Deliveries dreamd refuses because it's restarting. */
+  deliverRestarting = 0
+  /**
+   * The dreamd running in each sandbox: the env hash it read at start. After the env file changes, the old
+   * process answers `restartLag` more health checks before the new one replaces it.
+   */
+  readonly daemons = new Map<string, { envHash: string | undefined; lagLeft?: number }>()
+  restartLag = 0
+  /** Health checks dreamd answered, with the hash it reported. */
+  readonly healthChecks: Array<string | undefined> = []
   /** What a started process prints, by a substring of its command. */
   readonly scripts = new Map<string, ReadonlyArray<ProcessOutput>>()
   /** What a reattached process prints after input. */
@@ -159,21 +175,55 @@ export const fakeEnvd = (world: FakeWorld) => {
   )
 }
 
+/** The `DaemonEnv.envHash` in a sandbox's env file. */
+const fileEnvHash = (world: FakeWorld, sandbox: SandboxAccess): string | undefined => {
+  const file = world.sandboxes.get(sandbox.sandboxId)?.files.get(DaemonEnvFile) ?? ""
+  const line = file.split("\n").find((line) => line.startsWith(`${DaemonEnv.envHash}=`))
+  return line === undefined ? undefined : JSON.parse(line.slice(DaemonEnv.envHash.length + 1))
+}
+
+/** The dreamd answering now: the one that read the current env file, unless the old one hasn't exited yet. */
+const runningDaemon = (world: FakeWorld, sandbox: SandboxAccess) => {
+  const envHash = fileEnvHash(world, sandbox)
+  const running = world.daemons.get(sandbox.sandboxId)
+  if (running !== undefined && running.envHash !== envHash) {
+    running.lagLeft ??= world.restartLag
+    if (running.lagLeft > 0) {
+      running.lagLeft--
+      return running
+    }
+  }
+  if (running === undefined || running.envHash !== envHash) world.daemons.set(sandbox.sandboxId, { envHash })
+  return world.daemons.get(sandbox.sandboxId)!
+}
+
 export const fakeDaemon = (world: FakeWorld) =>
   Layer.succeed(
     Daemon,
     Daemon.of({
       deliver: (sandbox, _token, events, timeZone) =>
-        world.deliverFails
-          ? Effect.fail(new UpstreamFailure({ service: "dreamd", message: "down" }))
-          : Effect.sync(() => {
-              world.delivered.push({ sandboxId: sandbox.sandboxId, events, timeZone })
-              return events.map((event) => event.id)
-            }),
-      health: () =>
-        world.daemonHealthy
-          ? Effect.succeed({ version: "test", turn: "idle" as const, queued: 0 })
-          : Effect.fail(new UpstreamFailure({ service: "dreamd", message: "down" }))
+        Effect.gen(function* () {
+          if (world.deliverFails) return yield* new UpstreamFailure({ service: "dreamd", message: "down" })
+          if (world.deliverRestarting > 0) {
+            world.deliverRestarting--
+            return yield* new DaemonRestarting({ message: "restarting" })
+          }
+          const { envHash } = runningDaemon(world, sandbox)
+          world.delivered.push({ sandboxId: sandbox.sandboxId, events, timeZone, envHash })
+          return events.map((event) => event.id)
+        }),
+      health: (sandbox) =>
+        Effect.suspend(() => {
+          if (!world.daemonHealthy) return Effect.fail(new UpstreamFailure({ service: "dreamd", message: "down" }))
+          const { envHash } = runningDaemon(world, sandbox)
+          world.healthChecks.push(envHash)
+          return Effect.succeed({
+            version: "test",
+            turn: "idle" as const,
+            queued: 0,
+            ...(envHash === undefined ? {} : { envHash })
+          })
+        })
     })
   )
 

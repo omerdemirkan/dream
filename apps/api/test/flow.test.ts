@@ -198,6 +198,51 @@ describe("a project, end to end", () => {
     })
   )
 
+  it.live("after rewriting dreamd's env file, delivers only to the dreamd that read it", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud({ agentModel: Option.some("claude-haiku-4-5-20251001") })
+      const { project } = yield* setup(cloud)
+      yield* cloud.alarm(project.id)
+      const core = Context.get((yield* Effect.promise(() => cloud.project(project.id))).context, Core)
+      const written = (yield* core.sandbox).envHash!
+      assert.strictEqual(envFileOf(cloud, project.id).env.DREAM_ENV_HASH, written)
+      assert.strictEqual(cloud.world.delivered[0]?.envHash, written)
+
+      // The settings changed; the old dreamd keeps answering for a moment after the rewrite, as in QA.
+      yield* core.saveSandbox({ ...(yield* core.sandbox), envHash: "older settings" })
+      const { sandbox } = envFileOf(cloud, project.id)
+      sandbox.files.set(DaemonEnvFile, sandbox.files.get(DaemonEnvFile)!.replace(written, "older settings"))
+      cloud.world.daemons.set(sandbox.access.sandboxId, { envHash: "older settings" })
+      cloud.world.restartLag = 1
+      yield* cloud.phone.SendMessage({ projectId: project.id, text: "Track sets too" })
+      yield* cloud.alarm(project.id)
+      assert.strictEqual(cloud.world.delivered.length, 2)
+      assert.strictEqual(cloud.world.delivered[1]?.envHash, written)
+      // It saw the old dreamd (the hash it read) and waited past it.
+      assert.include(cloud.world.healthChecks, "older settings")
+      yield* cloud.close
+    })
+  )
+
+  it.live("a dreamd that's restarting is delivered to again later, without restarting it again", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project } = yield* setup(cloud)
+      yield* cloud.alarm(project.id)
+      const env = envFileOf(cloud, project.id).sandbox.files.get(DaemonEnvFile)
+      cloud.world.deliverRestarting = 1
+      yield* cloud.phone.SendMessage({ projectId: project.id, text: "Track sets too" })
+      yield* cloud.alarm(project.id)
+      assert.strictEqual(cloud.world.delivered.length, 1)
+      assert.strictEqual(envFileOf(cloud, project.id).sandbox.files.get(DaemonEnvFile), env)
+      const storage = (yield* Effect.promise(() => cloud.project(project.id))).storage
+      storage.db.exec("UPDATE timers SET due_ms = 0 WHERE name = 'deliver'")
+      yield* cloud.alarm(project.id)
+      assert.strictEqual(cloud.world.delivered.length, 2)
+      yield* cloud.close
+    })
+  )
+
   it.live("questions notify, show on Home, and their answers wake the agent", () =>
     Effect.gen(function* () {
       const cloud = yield* makeCloud()

@@ -39,3 +39,8 @@ export class UpstreamFailure extends Schema.TaggedError<UpstreamFailure>()("Upst
   service: Schema.String,
   message: Schema.String
 }) {}
+
+/** dreamd is restarting (its env file changed) and takes no more events; deliver again once it's back. */
+export class DaemonRestarting extends Schema.TaggedError<DaemonRestarting>()("DaemonRestarting", {
+  message: Schema.String
+}) {}

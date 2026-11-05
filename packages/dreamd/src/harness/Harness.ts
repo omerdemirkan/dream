@@ -2,9 +2,9 @@
  * The coding agent: Claude Code or Codex, driven through `@ai-sdk/harness`'s
  * `HarnessAgent` against this machine (`LocalSandbox.ts`). One session lives
  * for the life of the project. After every turn dreamd detaches from it and
- * saves the resume state, so a restart (or a sandbox that was paused and
- * resumed) picks up the same conversation: it reattaches to the running
- * bridge if it's still there, or resumes the CLI's own session if not.
+ * saves the resume state, so a sandbox that was paused and resumed reattaches
+ * to the running bridge, and a restart, which stops the bridge with
+ * everything else the harness spawned, resumes the CLI's own session.
  *
  * `layer` is the real thing; `layerTest` scripts turns for the loop's tests.
  */
@@ -19,6 +19,7 @@ import {
   Context,
   Data,
   DateTime,
+  Duration,
   Effect,
   Exit,
   FileSystem,
@@ -34,7 +35,7 @@ import { DreamdConfig } from "../Config.ts"
 import * as JsonFile from "../JsonFile.ts"
 import * as Usage from "../Usage.ts"
 import { agentEnv, harnessAuth } from "./HarnessEnv.ts"
-import { makeLocalSandboxSession } from "./LocalSandbox.ts"
+import { killAllNow, makeLocalSandboxSession, makeSpawned, stopAll } from "./LocalSandbox.ts"
 import * as Skill from "./Skill.ts"
 
 /** How a turn ended. Limits show up in `usage.limit`, whatever the outcome. */
@@ -64,7 +65,7 @@ export class Harness extends Context.Service<
   Harness,
   {
     readonly name: HarnessName
-    /** Run one turn to its end. Interrupting it stops the turn. */
+    /** Run one turn to its end. Interrupting it stops the turn, within a few seconds. */
     readonly turn: (prompt: string) => Effect.Effect<TurnResult, HarnessError>
     /** Give the running turn more input, e.g. a message that arrived while it works. */
     readonly steer: (text: string) => Effect.Effect<void, SteerUnavailable>
@@ -129,6 +130,9 @@ const SavedSession = Schema.Struct({
 })
 type SavedSession = typeof SavedSession.Type
 
+/** How long detaching from the session may take. */
+const detachTimeout = Duration.seconds(5)
+
 const make = Effect.gen(function* () {
   const config = yield* DreamdConfig
   const fs = yield* FileSystem.FileSystem
@@ -138,6 +142,15 @@ const make = Effect.gen(function* () {
     effect.pipe(Effect.provideService(FileSystem.FileSystem, fs), Effect.provideService(Path.Path, path))
 
   const store = JsonFile.make(SavedSession, path.join(config.stateDir, "session.json"))
+
+  // Everything the harness spawned (bridges and their CLIs) stops when dreamd does: gracefully when the layer
+  // closes, and by SIGKILL if the process exits first (a forced exit doesn't run finalizers).
+  const spawned = makeSpawned()
+  const onExit = () => killAllNow(spawned)
+  yield* Effect.acquireRelease(
+    Effect.sync(() => process.on("exit", onExit)),
+    () => Effect.promise(() => stopAll(spawned)).pipe(Effect.ensuring(Effect.sync(() => process.off("exit", onExit))))
+  )
   const name = config.harness
   const auth = {
     ...harnessAuth(name),
@@ -172,7 +185,7 @@ const make = Effect.gen(function* () {
   const open = Effect.fn("Harness.open")(function* () {
     const current = yield* Ref.get(state)
     const sandboxSession = yield* Effect.promise(() =>
-      makeLocalSandboxSession({ id: `dream-${config.projectId}`, cwd: config.workDir, env })
+      makeLocalSandboxSession({ id: `dream-${config.projectId}`, cwd: config.workDir, env, spawned })
     )
     const attempt = (resumeFrom: SavedSession["resumeFrom"]) =>
       Effect.tryPromise({
@@ -205,9 +218,16 @@ const make = Effect.gen(function* () {
     )
   })
 
-  /** Leave the bridge running and keep what's needed to come back to it. */
+  /**
+   * Leave the bridge running and keep what's needed to come back to it. Bounded, because after an interrupted
+   * turn the bridge may never answer; then the saved state stays as the last turn left it.
+   */
   const detach = (session: HarnessAgentSession) =>
     Effect.tryPromise(() => session.detach()).pipe(
+      Effect.timeoutOrElse({
+        duration: detachTimeout,
+        orElse: () => Effect.fail(`no answer within ${Duration.format(detachTimeout)}`)
+      }),
       Effect.flatMap((resumeFrom) =>
         Schema.decodeUnknownEffect(SavedSession)({ harness: name, sessionId: session.sessionId, resumeFrom })
       ),
