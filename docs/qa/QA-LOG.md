@@ -119,3 +119,18 @@ Other findings:
   Recharts). Uptime monitor prj_snUUtnD2Mmjxy85sSLltF8 — the tester reported "sandbox network isolation"; wrong:
   httpstat.us itself is down (000 from my sandbox too), while example.com and api.github.com answer 200 from the project
   sandbox. The cron wake `*/10 * * * *` with `--run monitor.sh` is scheduled correctly; checking that it fires at 05:10.
+- R3 / QA3.2: Telegram bot prj_kjXhWnJjluf4QgTRceq9GA — agent used `dream access key` (Authorization: Bearer, which is
+  wrong for Telegram's URL token), then after a decline built a local setup script. Discord bot prj_V59vTXtmDqXCkzPQqyIkIT
+  — `dream access key` with `Bot {key}` (correct); fake key connected fine (card → Connected, agent notified). The agent
+  built on discord.py (gateway login, which can't use a header swap), saw it fail, then asked the person to paste the
+  token in Chat "to store it locally", and the tester did. `dream ask`'s guard didn't apply (asked via message).
+  Fix (prompt, model-agnostic context): the person trusts Dream with keys on the promise that they stay out of the
+  sandbox; a key pasted into Chat or written to a file here is readable by any code that runs here.
+  Recommendations for the founder (not built): (1) the app's composer could detect key-shaped text (sk-, ghp_, xoxb-,
+  Discord token shape) and offer the secure field; (2) decide whether Dream should ever support keys that must live in
+  the sandbox (gateway bots, URL tokens), with an explicit warning on the access card.
+- R3 / QA3.4: GitHub webhook viewer prj_oZBwugUU2wW24vbU0jqI9V — PASS: POSTs through the public URL (202), events streamed
+  live over WebSocket, agent pre-sent test events itself. HN clone prj_npL1bW4W6Dab0XfHBQZtFj — signup works, then the
+  page goes blank after login (app bug, not platform); the agent claimed all features worked. The post-turn URL check
+  only loads the landing page, so bugs behind a login are beyond it — that verification is on the agent (model
+  capability; not adding Haiku-specific prompting).
