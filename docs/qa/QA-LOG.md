@@ -320,3 +320,10 @@ Other findings:
   effort high", the reply came from claude-opus-5-5 in the same Claude session (70 earlier Sonnet entries, then Opus).
   Not verified: a real Codex turn on gpt-6.1-sol through Dream's provider (no ChatGPT account connected; the child
   flags openai/codex#31894) — check the first time one is connected.
+- Codex on the founder's ChatGPT account, VERIFIED (2 turns, as promised): project prj_o0MDgfk5F1522K3rIymCuo
+  (harness codex). dreamd: "codex, model gpt-6.1-sol, effort high". Turn 1 ran `uname -sm` in the shell and sent
+  "Linux x86_64" via `dream message` (so gpt-6.1-sol sees its tools through Dream's provider; openai/codex#31894 didn't
+  bite). Turn 2: `spawn_agent` with gpt-6-luna at low, `wait_agent`, and the reply "pong" came back. ChatGPT weekly
+  limit read 51% right after turn 1 and 51% after turn 2 (no earlier reading: the first `dream usage` had none yet).
+  Then archived the project and disconnected ChatGPT (only Claude remains connected). Harmless warning in the codex
+  log: `preferred_auth_method` is ignored.
