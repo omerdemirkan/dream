@@ -141,3 +141,5 @@ Other findings:
   checks, claims matched reality). Offline recipe PWA prj_ggrXh3fBSF1BD5GsGjCtDv — PASS (manifest, service worker
   registered, cache populated, IndexedDB); minor form-validation bug. Both agents asked clarifying questions as chat
   text rather than question cards (still delivered; cards would also reach Home and send a notification).
+- 05:20 cron run: monitor.sh exited 0 (state unchanged), so the agent wasn't woken and no repeat alert was sent — the
+  agent designed its script to exit non-zero only on a change. No spam.

@@ -154,10 +154,10 @@ the other workstreams to agree first.
   in `apps/api/migrations`) and R2 (`Media`) from `Resources.ts`. User credentials (Claude and ChatGPT tokens,
   Google OAuth tokens, pasted keys, App Store Connect keys) are stored AES-GCM encrypted in a D1 `secrets` table and
   decrypted only inside the Worker. The key and the operator keys (E2B, Browserbase, Namespace, APNs, Google client
-  secret) are Worker secrets. Rows reference a secret id, and domain records never carry one. Nothing has been
-  deployed. `bun run infra:plan` evaluates the Stack up to the first Cloudflare API call; bundling and deploy are
-  untested, and R2 must be enabled in the Cloudflare dashboard before the first deploy. `@cloudflare/vitest-pool-workers`
-  needs Vitest 4 and `@effect/vitest` 4.1.2 needs Vitest 5, so test Worker logic in Node against layers and fakes.
+  secret) are Worker secrets. Rows reference a secret id, and domain records never carry one. It is deployed at
+  https://dream.omer.build (see Deploying below); R2 stays disabled until it's enabled in the Cloudflare dashboard.
+  `@cloudflare/vitest-pool-workers` needs Vitest 4 and `@effect/vitest` 4.1.2 needs Vitest 5, so test Worker logic
+  in Node against layers and fakes.
 - **Sandbox runtime.** dreamd reads `DaemonConfig` (env set by the ProjectDO at sandbox creation). The `dream` CLI maps
   one-to-one onto `SandboxRpcs`. Turn prompts come from `renderTurnPrompt` in `@dream/agent-context`, and the system
   prompt and skill are exported there as strings. The bins run directly under Node 24 type stripping, which is why
