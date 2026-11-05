@@ -131,4 +131,6 @@ this sandbox, including the apps you build. `dream <command> --help` lists every
   - There's no GUI session, so `screencapture` fails. `xcrun simctl io booted screenshot <file>` and `recordVideo
     <file>` capture the simulator.
   - It has Homebrew, so tools such as XcodeGen are a `brew install` away.
+  - It runs macOS 27 with several Xcodes in /Applications (26.6 and 27.x). `xcodebuild -version` shows the selected
+    one, and `DEVELOPER_DIR` picks another for one command. Expo SDK 58 needs Xcode 26.4 or newer.
 - `dream usage` shows the five-hour and weekly windows of their subscription: how much is used and when each resets.

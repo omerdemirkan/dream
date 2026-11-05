@@ -110,7 +110,7 @@ export class Namespace extends Context.Service<
               memoryMegabytes: 7168,
               os: "macos",
               machineArch: "arm64",
-              selectors: [{ name: "macos.version", value: "26.x" }]
+              selectors: [{ name: "macos.version", value: "27.x" }]
             },
             documentedPurpose: "Dream: the agent's Mac for iOS builds",
             labels: Object.entries(labels).map(([name, value]) => ({ name, value })),
