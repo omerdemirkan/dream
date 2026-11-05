@@ -215,3 +215,6 @@ Other findings:
   (native Swift/XcodeGen apps are fine).
 - The band agent's "you answered 'Coming soon'" was its own confabulation (the phrase is from its page copy); the
   real answer, "Not now", reached it intact at 07:09 when the question was answered. Not a platform bug.
+- Merged fix/mobile-timeouts (7fec639; additive contract change: optional `requestId` on SendMessage and CreateProject)
+  and deployed main. Writes from the app give up visibly after 25 s and keep the typed text; retries are idempotent.
+  Verified live: the same SendMessage sent twice with one requestId returned the same message id, and Chat has one copy.
