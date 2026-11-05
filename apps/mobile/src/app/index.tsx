@@ -100,8 +100,9 @@ export default function Home() {
 function AllClear(props: { readonly projects: ReadonlyArray<ProjectSummary> }) {
   const building = props.projects.filter((s) => s.project.phase === "building").map((s) => s.project.title)
   const live = props.projects.filter((s) => s.project.phase === "live").map((s) => s.project.title)
+  // Name two at most; past that a count reads better than a paragraph of titles.
   const names = (list: ReadonlyArray<string>) =>
-    list.length <= 1 ? (list[0] ?? "") : `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`
+    list.length <= 1 ? (list[0] ?? "") : list.length === 2 ? `${list[0]} and ${list[1]}` : `${list.length} projects`
   const parts = [
     building.length > 0 ? `${names(building)} ${building.length > 1 ? "are" : "is"} building` : undefined,
     live.length > 0 ? `${names(live)} ${live.length > 1 ? "are" : "is"} running` : undefined
