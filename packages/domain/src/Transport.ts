@@ -12,6 +12,7 @@
  */
 import { Config } from "effect"
 import { RpcSerialization } from "effect/rpc"
+import type { ConnectLinkProvider } from "./Connections.ts"
 import { type MediaId, ProjectId } from "./Ids.ts"
 import { Harness } from "./Project.ts"
 
@@ -23,6 +24,8 @@ export const Routes = {
   /** GET with the session token; serves the bytes of a `MediaRef`. */
   media: (mediaId: MediaId) => `/media/${mediaId}`,
   googleOAuthCallback: "/oauth/google/callback",
+  /** GET serves the token page for a `CreateConnectLink` URL (`?t=<ticket>`); POST submits it. */
+  connect: (provider: ConnectLinkProvider) => `/connect/${provider}`,
   daemon: "/daemon/rpc"
 } as const
 

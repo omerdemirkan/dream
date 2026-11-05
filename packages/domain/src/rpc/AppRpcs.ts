@@ -5,7 +5,7 @@
 import { Schema } from "effect"
 import { Rpc, RpcGroup } from "effect/rpc"
 import { AppAuth } from "../Auth.ts"
-import { Integration, ModelConnectFlow, ModelConnection } from "../Connections.ts"
+import { ConnectLink, ConnectLinkProvider, Integration, ModelConnectFlow, ModelConnection } from "../Connections.ts"
 import { InvalidRequest, NoModelConnection, NotFound, NotInvited, Unauthorized, UpstreamFailure } from "../Errors.ts"
 import { DeviceId, IntegrationId, MessageId, ModelConnectionId, NotificationId, ProjectId } from "../Ids.ts"
 import { AccessMessage, AskMessage, Message, QuestionAnswer, QuestionMessage, TextMessage } from "../Message.ts"
@@ -198,6 +198,14 @@ export class AuthedAppRpcs extends RpcGroup.make(
   Rpc.make("DisconnectModelConnection", {
     payload: { connectionId: ModelConnectionId },
     error: Schema.Union([NotFound, UpstreamFailure])
+  }),
+  /**
+   * A one-time link (15 minutes) to a page where they paste a token they generated themselves (`claude setup-token`).
+   * Open it in a browser; when they submit, the connection is stored like one from `StartModelConnection`.
+   */
+  Rpc.make("CreateConnectLink", {
+    payload: { provider: ConnectLinkProvider },
+    success: ConnectLink
   })
 ).middleware(AppAuth) {}
 

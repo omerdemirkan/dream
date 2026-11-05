@@ -1,6 +1,7 @@
 /**
  * Model connections (Claude or ChatGPT, once per person), integrations
- * (Google, pasted keys, App Store Connect) and pending Google OAuth states (D1).
+ * (Google, pasted keys, App Store Connect), pending Google OAuth states and
+ * one-time connect tickets (D1).
  * Rows reference secrets by id; the records here carry no secret values.
  */
 import {
@@ -9,6 +10,7 @@ import {
   IntegrationId,
   IntegrationStatus,
   MessageId,
+  ConnectLinkProvider,
   ModelConnectFlow,
   ModelConnection,
   ModelConnectionId,
@@ -153,6 +155,18 @@ export class Connections extends Context.Service<
     readonly putOAuthState: (row: OAuthStateRow) => Effect.Effect<void>
     /** Reads and deletes a state; absent if unknown or expired. */
     readonly takeOAuthState: (state: string, nowMs: number) => Effect.Effect<Option.Option<OAuthStateRow>>
+
+    // Connect tickets (`CreateConnectLink`) ----------------------------------------
+    readonly putConnectTicket: (ticket: {
+      readonly id: string
+      readonly userId: UserId
+      readonly provider: ConnectLinkProvider
+      readonly expiresAtMs: number
+    }) => Effect.Effect<void>
+    /** Whether the ticket exists, is theirs, unused and unexpired. */
+    readonly connectTicketUsable: (id: string, userId: UserId, nowMs: number) => Effect.Effect<boolean>
+    /** Marks the ticket used; false if it was already used, expired or unknown. */
+    readonly useConnectTicket: (id: string, userId: UserId, nowMs: number) => Effect.Effect<boolean>
   }
 >()("@dream/api/Connections") {
   static readonly layer = Layer.effect(
@@ -327,6 +341,39 @@ export class Connections extends Context.Service<
           return row === undefined || row.expires_at_ms < nowMs ? Option.none() : Option.some(row)
         })
 
+      const putConnectTicket = (ticket: {
+        readonly id: string
+        readonly userId: UserId
+        readonly provider: ConnectLinkProvider
+        readonly expiresAtMs: number
+      }) =>
+        Effect.gen(function* () {
+          const now = yield* nowIso
+          // Rows of tickets that expired a day ago have no further use.
+          yield* exec(sql`DELETE FROM connect_tickets WHERE expires_at_ms < ${ticket.expiresAtMs - 86_400_000}`)
+          yield* exec(sql`
+            INSERT INTO connect_tickets (id, user_id, provider, expires_at_ms, created_at)
+            VALUES (${ticket.id}, ${ticket.userId}, ${ticket.provider}, ${ticket.expiresAtMs}, ${now})`)
+        })
+
+      const connectTicketUsable = (id: string, userId: UserId, nowMs: number) =>
+        sql`SELECT id FROM connect_tickets
+            WHERE id = ${id} AND user_id = ${userId} AND used_at IS NULL AND expires_at_ms > ${nowMs}`.pipe(
+          Effect.map((rows) => rows.length === 1),
+          Effect.orDie
+        )
+
+      const useConnectTicket = (id: string, userId: UserId, nowMs: number) =>
+        Effect.gen(function* () {
+          const now = yield* nowIso
+          return yield* sql`UPDATE connect_tickets SET used_at = ${now}
+              WHERE id = ${id} AND user_id = ${userId} AND used_at IS NULL AND expires_at_ms > ${nowMs}
+              RETURNING id`.pipe(
+            Effect.map((rows) => rows.length === 1),
+            Effect.orDie
+          )
+        })
+
       return Connections.of({
         createModelConnection,
         modelConnection,
@@ -348,7 +395,10 @@ export class Connections extends Context.Service<
         lockIntegrationRefresh,
         unlockIntegrationRefresh,
         putOAuthState,
-        takeOAuthState
+        takeOAuthState,
+        putConnectTicket,
+        connectTicketUsable,
+        useConnectTicket
       })
     })
   )

@@ -4,8 +4,9 @@
  * - project: dreamd's project-scoped token (SandboxAuth), in DREAM_PROJECT_TOKEN
  * - live: the short-lived WebSocket ticket from GetLiveUrl
  * - upload: a one-media-file PUT to the Worker
+ * - connect: a `CreateConnectLink` page (single use, recorded in D1 by `jti`)
  */
-import { MediaContentType, MediaId, ProjectId, UserId } from "@dream/domain"
+import { ConnectLinkProvider, MediaContentType, MediaId, ProjectId, UserId } from "@dream/domain"
 import { Clock, Context, Data, Duration, Effect, Layer, Redacted, Schema } from "effect"
 import { ApiConfig } from "../Config.ts"
 import { utf8 } from "../lib/Bytes.ts"
@@ -51,9 +52,25 @@ const UploadClaims = Schema.Struct({
 })
 export type UploadClaims = typeof UploadClaims.Type
 
+const ConnectClaims = Schema.Struct({
+  iss: Schema.Literal(issuer),
+  typ: Schema.Literal("connect"),
+  sub: UserId,
+  prv: ConnectLinkProvider,
+  jti: Schema.String,
+  exp: Schema.Number
+})
+export interface ConnectTicket {
+  readonly userId: UserId
+  readonly provider: ConnectLinkProvider
+  readonly ticketId: string
+  readonly expiresAtMs: number
+}
+
 export const SessionLifetime = Duration.days(90)
 export const LiveTicketLifetime = Duration.seconds(60)
 export const UploadLifetime = Duration.minutes(15)
+export const ConnectTicketLifetime = Duration.minutes(15)
 
 const nowSeconds = Effect.map(Clock.currentTimeMillis, (ms) => Math.floor(ms / 1000))
 
@@ -79,6 +96,10 @@ export class Tokens extends Context.Service<
       claims: Omit<UploadClaims, "iss" | "typ" | "exp">
     ) => Effect.Effect<{ readonly token: string; readonly expiresAtMs: number }>
     readonly verifyUpload: (token: string) => Effect.Effect<UploadClaims, InvalidToken>
+    readonly connectTicket: (
+      claims: Omit<ConnectTicket, "expiresAtMs">
+    ) => Effect.Effect<{ readonly token: string; readonly expiresAtMs: number }>
+    readonly verifyConnectTicket: (token: string) => Effect.Effect<ConnectTicket, InvalidToken>
   }
 >()("@dream/api/Tokens") {
   static readonly layer = Layer.effect(
@@ -134,7 +155,30 @@ export class Tokens extends Context.Service<
             const token = yield* signHs256(key, { iss: issuer, typ: "upload", ...claims, exp })
             return { token, expiresAtMs: exp * 1000 }
           }),
-        verifyUpload: (token) => verify(token, UploadClaims).pipe(Effect.flatMap(notExpired))
+        verifyUpload: (token) => verify(token, UploadClaims).pipe(Effect.flatMap(notExpired)),
+        connectTicket: ({ userId, provider, ticketId }) =>
+          Effect.gen(function* () {
+            const exp = (yield* nowSeconds) + Duration.toSeconds(ConnectTicketLifetime)
+            const token = yield* signHs256(key, {
+              iss: issuer,
+              typ: "connect",
+              sub: userId,
+              prv: provider,
+              jti: ticketId,
+              exp
+            })
+            return { token, expiresAtMs: exp * 1000 }
+          }),
+        verifyConnectTicket: (token) =>
+          verify(token, ConnectClaims).pipe(
+            Effect.flatMap(notExpired),
+            Effect.map((claims) => ({
+              userId: claims.sub,
+              provider: claims.prv,
+              ticketId: claims.jti,
+              expiresAtMs: claims.exp * 1000
+            }))
+          )
       })
     })
   )

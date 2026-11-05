@@ -6,6 +6,8 @@
  * - ChatGPT: `codex login --device-auth`. Dream relays the code; when they've
  *   approved it, `~/.codex/auth.json` holds the tokens.
  * Either way the token is stored encrypted and the sandbox is killed.
+ * A Claude token they generated themselves can also be pasted on a one-time
+ * page (`CreateConnectLink`); `connectToken` stores it the same way.
  */
 import {
   InvalidRequest,
@@ -17,7 +19,7 @@ import {
   UpstreamFailure,
   type UserId
 } from "@dream/domain"
-import { Context, DateTime, Duration, Effect, Fiber, Layer, Option, Schema, Stream } from "effect"
+import { Context, DateTime, Duration, Effect, Fiber, Layer, Option, Redacted, Schema, Stream } from "effect"
 import { ApiConfig } from "../Config.ts"
 import { Connections, type ModelConnectionRow, toModelConnection } from "../db/Connections.ts"
 import { AuthSandboxSession, ChatGptCredential, ClaudeCredential } from "../db/Credentials.ts"
@@ -53,6 +55,9 @@ export const findClaudeToken = (output: string): Option.Option<string> => {
   const match = /(sk-ant-oat[A-Za-z0-9_-]{20,})/.exec(stripAnsi(output).replace(/\s+/g, ""))
   return Option.fromUndefinedOr(match?.[1])
 }
+
+/** The shape of a long-lived Claude OAuth token (`sk-ant-oat01-…`). */
+export const isClaudeToken = (token: string): boolean => /^sk-ant-oat[A-Za-z0-9_-]{20,}$/.test(token)
 
 export const findDeviceCode = (output: string): Option.Option<{ readonly url: string; readonly code: string }> => {
   const text = stripAnsi(output)
@@ -99,6 +104,8 @@ export class ModelConnect extends Context.Service<
     ) => Effect.Effect<ModelConnection, NotFound | InvalidRequest | UpstreamFailure>
     /** The connection; a pending ChatGPT one is checked for a finished sign-in first. */
     readonly get: (userId: UserId, id: ModelConnectionId) => Effect.Effect<ModelConnection, NotFound>
+    /** Stores a Claude token they pasted (already shape-checked) as their connected subscription. */
+    readonly connectToken: (userId: UserId, token: Redacted.Redacted<string>) => Effect.Effect<ModelConnection>
     readonly disconnect: (userId: UserId, id: ModelConnectionId) => Effect.Effect<void, NotFound | UpstreamFailure>
     /** Kills auth sandboxes of connections left pending too long. */
     readonly cleanup: Effect.Effect<void>
@@ -323,6 +330,15 @@ export class ModelConnect extends Context.Service<
         )
       })
 
+      const connectToken = Effect.fn("ModelConnect.connectToken")(function* (
+        userId: UserId,
+        token: Redacted.Redacted<string>
+      ) {
+        const row = yield* connections.createModelConnection(userId, "claude")
+        const secretId = yield* secrets.put(userId, "claude_token", ClaudeCredential, { token: Redacted.value(token) })
+        return yield* connected(row, secretId)
+      })
+
       const disconnect = Effect.fn("ModelConnect.disconnect")(function* (userId: UserId, id: ModelConnectionId) {
         const row = yield* pendingRow(userId, id)
         yield* endSandbox(row)
@@ -337,7 +353,7 @@ export class ModelConnect extends Context.Service<
           yield* fail(row, "the sign-in wasn't finished in time")
       })
 
-      return ModelConnect.of({ start, complete, get, disconnect, cleanup })
+      return ModelConnect.of({ start, complete, get, connectToken, disconnect, cleanup })
     })
   )
 }

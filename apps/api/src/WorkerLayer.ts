@@ -4,6 +4,7 @@
  */
 import type { D1Database, R2Bucket } from "@cloudflare/workers-types"
 import { Effect, Layer } from "effect"
+import { ConnectLinks } from "./connect/ConnectLinks.ts"
 import { ModelConnect } from "./connect/ModelConnect.ts"
 import { MediaStore } from "./http/Media.ts"
 import { LiveForwarder } from "./http/Router.ts"
@@ -20,7 +21,8 @@ export interface WorkerBindings {
 }
 
 export const workerLayer = (bindings: WorkerBindings, overrides: PlatformOverrides = {}) =>
-  Layer.mergeAll(ModelConnect.layer, Access.layer).pipe(
+  ConnectLinks.layer.pipe(
+    Layer.provideMerge(Layer.mergeAll(ModelConnect.layer, Access.layer)),
     Layer.provideMerge(platformLayer({ d1: bindings.d1, fetchProject: bindings.fetchProject }, overrides)),
     Layer.provideMerge(MediaStore.layer(bindings.r2)),
     Layer.provideMerge(Layer.succeed(LiveForwarder, LiveForwarder.of({ forward: bindings.forwardLive })))

@@ -23,6 +23,7 @@ import { DateTime, Effect, Layer, Option, Redacted } from "effect"
 import { Headers } from "effect/http"
 import { Tokens } from "../auth/Tokens.ts"
 import { ApiConfig } from "../Config.ts"
+import { ConnectLinks } from "../connect/ConnectLinks.ts"
 import { ModelConnect } from "../connect/ModelConnect.ts"
 import { Connections, toModelConnection } from "../db/Connections.ts"
 import { Projects } from "../db/Projects.ts"
@@ -103,6 +104,7 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
     const clients = yield* ProjectClients
     const access = yield* Access
     const modelConnect = yield* ModelConnect
+    const connectLinks = yield* ConnectLinks
 
     const me = Effect.gen(function* () {
       return (yield* CurrentUser).userId
@@ -261,7 +263,8 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
         Effect.flatMap(me, (userId) => modelConnect.complete(userId, connectionId, Redacted.value(code))),
       GetModelConnection: ({ connectionId }) => Effect.flatMap(me, (userId) => modelConnect.get(userId, connectionId)),
       DisconnectModelConnection: ({ connectionId }) =>
-        Effect.flatMap(me, (userId) => modelConnect.disconnect(userId, connectionId))
+        Effect.flatMap(me, (userId) => modelConnect.disconnect(userId, connectionId)),
+      CreateConnectLink: ({ provider }) => Effect.flatMap(me, (userId) => connectLinks.create(userId, provider))
     }
   })
 )

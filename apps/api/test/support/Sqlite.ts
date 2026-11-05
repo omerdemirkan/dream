@@ -4,7 +4,7 @@
  * Durable Object storage with `sql` (for @effect/sql-sqlite-do). They run the
  * real migrations and the real queries.
  */
-import { readFileSync } from "node:fs"
+import { readdirSync, readFileSync } from "node:fs"
 import { DatabaseSync } from "node:sqlite"
 
 const normalize = (value: unknown) =>
@@ -13,7 +13,11 @@ const normalize = (value: unknown) =>
 export const makeD1 = (migrationsDir = new URL("../../migrations/", import.meta.url)) => {
   const db = new DatabaseSync(":memory:")
   db.exec("PRAGMA foreign_keys = ON")
-  db.exec(readFileSync(new URL("0001_init.sql", migrationsDir), "utf8"))
+  for (const file of readdirSync(migrationsDir)
+    .filter((name) => name.endsWith(".sql"))
+    .sort()) {
+    db.exec(readFileSync(new URL(file, migrationsDir), "utf8"))
+  }
   const statement = (sql: string, params: ReadonlyArray<unknown>) => {
     const run = () => {
       const stmt = db.prepare(sql)

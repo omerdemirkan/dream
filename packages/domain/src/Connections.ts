@@ -43,6 +43,20 @@ export const ModelConnectFlow = Schema.TaggedUnion({
 })
 export type ModelConnectFlow = typeof ModelConnectFlow.Type
 
+/** Providers that can be connected by pasting a token on a one-time web page (`CreateConnectLink`). */
+export const ConnectLinkProvider = Schema.Literals(["claude"])
+export type ConnectLinkProvider = typeof ConnectLinkProvider.Type
+
+/**
+ * A one-time link to a page on the API host where they paste a token (for Claude, the one `claude setup-token`
+ * prints), so it goes from their browser to the Worker and never through a sandbox or a chat. Single use.
+ */
+export const ConnectLink = Schema.Struct({
+  url: Schema.String,
+  expiresAt: Schema.DateTimeUtc
+})
+export type ConnectLink = typeof ConnectLink.Type
+
 // ---------------------------------------------------------------------------
 // Integrations (Google, pasted API keys, App Store Connect)
 // ---------------------------------------------------------------------------

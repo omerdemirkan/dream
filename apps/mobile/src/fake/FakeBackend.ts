@@ -550,7 +550,12 @@ export class FakeBackend extends Context.Service<
             if (!connections.some((c) => c.id === connectionId))
               return yield* new NotFound({ entity: "model connection", id: connectionId })
             connections = connections.filter((c) => c.id !== connectionId)
-          })
+          }),
+        CreateConnectLink: ({ provider }) =>
+          Effect.map(DateTime.now, (now) => ({
+            url: `https://dream.fixtures.invalid/connect/${provider}?t=fixture`,
+            expiresAt: DateTime.add(now, { minutes: 15 })
+          }))
       })
 
       const completeConnection = (connectionId: ModelConnectionId) =>

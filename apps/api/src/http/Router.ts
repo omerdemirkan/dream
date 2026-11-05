@@ -15,6 +15,7 @@ import { ProjectClients } from "../project/Client.ts"
 import { LivePath } from "../project/ProjectRpcs.ts"
 import { timingSafeEqual } from "../lib/Bytes.ts"
 import { AppAuthServer, AuthedHandlers, bearer, PublicHandlers } from "./AppHandlers.ts"
+import { connectProvider, showConnectPage, submitConnectPage } from "./ConnectPage.ts"
 import { gateway } from "./Gateway.ts"
 import { downloadMedia, uploadMedia } from "./Media.ts"
 import { SandboxAuthServer, WorkerSandboxHandlers } from "./SandboxHandlers.ts"
@@ -106,6 +107,15 @@ export const route = (raw: Request) =>
       const clients = yield* ProjectClients
       yield* clients.use(projectId.value, (client) => client.Archive())
       return HttpServerResponse.text("archived")
+    }
+
+    // The one-time token page from `CreateConnectLink`. Its body (the token) is never logged.
+    const connect = /^\/connect\/([^/]+)$/.exec(path)
+    if (connect !== null) {
+      const provider = connectProvider(connect[1]!)
+      if (Option.isSome(provider) && request.method === "GET")
+        return yield* showConnectPage(provider.value, url.searchParams.get("t"))
+      if (Option.isSome(provider) && request.method === "POST") return yield* submitConnectPage(provider.value)
     }
 
     if (path === Routes.googleOAuthCallback && request.method === "GET") {

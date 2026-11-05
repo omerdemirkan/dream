@@ -7,6 +7,8 @@ import { DateTime, Exit, Redacted, Schema } from "effect"
 import {
   AccessRequest,
   AgentEvent,
+  AuthedAppRpcs,
+  ConnectLink,
   IntegrationAccess,
   LiveActivityContent,
   Message,
@@ -14,6 +16,7 @@ import {
   ProjectSummary,
   PublicAppRpcs,
   PushData,
+  Routes,
   StatusCard,
   UsageSnapshot
 } from "../src/index.ts"
@@ -82,6 +85,25 @@ describe("JSON codecs", () => {
       _tag: "Withdraw",
       notificationIds: ["0b6a2d1e-3c4f-4e5a-8b7c-9d0e1f2a3b4c"]
     })
+  })
+})
+
+describe("CreateConnectLink", () => {
+  it("sends expiresAt as an ISO string and accepts only Claude", () => {
+    const link = {
+      url: `https://dream.example.com${Routes.connect("claude")}?t=abc`,
+      expiresAt: DateTime.makeUnsafe("2026-11-05T12:15:00Z")
+    }
+    const { wire, decoded } = roundTrip(ConnectLink, link)
+    assert.deepStrictEqual(wire, {
+      url: "https://dream.example.com/connect/claude?t=abc",
+      expiresAt: "2026-11-05T12:15:00.000Z"
+    })
+    assert.deepStrictEqual(decoded, link)
+    const rpc = AuthedAppRpcs.requests.get("CreateConnectLink")!
+    const payload = Schema.toCodecJson(rpc.payloadSchema)
+    assert.deepStrictEqual(Schema.decodeUnknownSync(payload)({ provider: "claude" }), { provider: "claude" })
+    assert.isTrue(Exit.isFailure(Schema.decodeUnknownExit(payload)({ provider: "chatgpt" })))
   })
 })
 
