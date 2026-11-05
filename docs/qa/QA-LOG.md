@@ -103,3 +103,8 @@ Other findings:
   well (question card with options, two follow-ups, status updated each time), but Vite dev server Host block again.
   Fix dispatched (`feat/publish-check`): `dream publish` loads the public URL in the local headless Chromium and prints
   status, title and page errors, so the facts are in front of the agent at the moment it publishes.
+- Fix loop on broken apps (04:27–04:41): finance tracker — agent fixed the Vite host block; page loads (screenshot).
+  Habit tracker — agent said "Fixed! I updated Vite to allow all hosts" but the URL still answers 403. Weather — agent
+  claimed fixed; page still shows a (different) React runtime error. → Extended `feat/publish-check` with a post-turn
+  health check that delivers an agent-only event when the published URL is broken (deduped, never notifies the person).
+- Merged `fix/secret-asks` into main.
