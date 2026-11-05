@@ -119,6 +119,44 @@ export const slugFromIdea = (idea: string): string => {
   return slug === "" ? "app" : slug
 }
 
+// Request phrasing at the start of an idea ("I want you to build me a…"), skipped for the title.
+const leadingFiller = new Set(
+  "a an the i we you me us my our to want wanted would like need please can could help build make create write lets set up app that which".split(
+    " "
+  )
+)
+// Words that start a describing clause ("…that reads Apple Health"); the title stops there.
+const clauseStart = new Set("that which who where when with so".split(" "))
+// Words a title shouldn't end on.
+const trailingFiller = new Set(
+  "a an and for from in is it me my of on or our so that the this to we with which who will would when where".split(" ")
+)
+
+/**
+ * A provisional title from the idea, until the agent names the project: its
+ * first few words after any request phrasing, up to any describing clause,
+ * in sentence case.
+ */
+export const titleFromIdea = (idea: string): string => {
+  const clause = idea.trim().split(/[.!?;:\n]/)[0] ?? ""
+  const words = clause.match(/[\p{L}\p{N}][\p{L}\p{N}'’&+-]*/gu) ?? []
+  const start = words.findIndex((word) => !leadingFiller.has(word.toLowerCase().replace(/['’]/g, "")))
+  const picked: Array<string> = []
+  let length = 0
+  for (const word of start === -1 ? [] : words.slice(start)) {
+    if (picked.length >= 6 || length + word.length > 36) break
+    if (picked.length >= 2 && clauseStart.has(word.toLowerCase())) break
+    picked.push(word)
+    length += word.length + 1
+  }
+  while (picked.length > 1 && trailingFiller.has(picked[picked.length - 1]?.toLowerCase() ?? "")) picked.pop()
+  const title = picked.join(" ")
+  if (title === "") return "Untitled idea"
+  // "iOS app" keeps its casing; "recipe app" becomes "Recipe app".
+  const first = picked[0] ?? ""
+  return first === first.toLowerCase() ? title.charAt(0).toUpperCase() + title.slice(1) : title
+}
+
 export class Projects extends Context.Service<
   Projects,
   {

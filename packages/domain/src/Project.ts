@@ -7,7 +7,8 @@ export type Harness = typeof Harness.Type
 
 /**
  * Where the project is, as the agent describes it (`dream status --phase`).
- * Starts at "new" (shown as "Looking into this") until the agent sets it.
+ * Starts at "new" (shown as "Looking into this"). If the agent hasn't set one
+ * when its first turn starts, the platform moves it to "exploring".
  * Being paused for usage is not a phase; see `StatusCard.pausedUntil`.
  */
 export const ProjectPhase = Schema.Literals(["new", "interviewing", "exploring", "building", "live"])
@@ -16,7 +17,7 @@ export type ProjectPhase = typeof ProjectPhase.Type
 export const Project = Schema.Struct({
   id: ProjectId,
   ownerId: UserId,
-  /** Starts as "New idea"; the agent names it. */
+  /** Starts as a few words of the idea; the agent names it (`dream status --title`). */
   title: Schema.String,
   /** Short label under the title, e.g. "iOS app" or "Background worker". Set by the agent. */
   kind: Schema.optionalKey(Schema.String),

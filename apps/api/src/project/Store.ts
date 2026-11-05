@@ -42,6 +42,8 @@ export const SandboxRecord = Schema.Struct({
   rulesDirty: Schema.Boolean,
   working: Schema.Boolean,
   turnStartedAt: Schema.optionalKey(Schema.DateTimeUtc),
+  /** A turn has started at least once. Before then, the first turn moves the phase on from "new". */
+  startedWork: Schema.optionalKey(Schema.Boolean),
   /** Consecutive delivery failures, for backoff. */
   failures: Schema.Int,
   lastError: Schema.optionalKey(Schema.String)

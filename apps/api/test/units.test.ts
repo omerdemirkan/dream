@@ -7,7 +7,7 @@ import { Effect, Layer, Option, Redacted, Stream } from "effect"
 import { Tokens } from "../src/auth/Tokens.ts"
 import { ApiConfig } from "../src/Config.ts"
 import { findClaudeToken, findClaudeUrl, findDeviceCode, stripAnsi } from "../src/connect/ModelConnect.ts"
-import { slugFromIdea } from "../src/db/Projects.ts"
+import { slugFromIdea, titleFromIdea } from "../src/db/Projects.ts"
 import { decodeEnvelopes, encodeEnvelope } from "../src/e2b/Envd.ts"
 import { parseRange } from "../src/http/Media.ts"
 import { keyPlaceholder } from "../src/integrations/Access.ts"
@@ -173,6 +173,19 @@ describe("small rules", () => {
     )
     assert.strictEqual(slugFromIdea("A booking site for our family cabin"), "booking-site-family")
     assert.strictEqual(slugFromIdea("!!!"), "app")
+  })
+
+  it("titles ideas provisionally, in a few sentence-case words", () => {
+    assert.strictEqual(
+      titleFromIdea("A strength log that reads Apple Health and tells me when to add weight."),
+      "Strength log"
+    )
+    assert.strictEqual(titleFromIdea("A booking site for our family cabin"), "Booking site for our family cabin")
+    assert.strictEqual(titleFromIdea("I want you to build me an app that tracks my runs with Strava"), "Tracks my runs")
+    assert.strictEqual(titleFromIdea("a recipe app for my mom!"), "Recipe app for my mom")
+    assert.strictEqual(titleFromIdea("build an iOS app for my book club, with voting"), "iOS app for my book club")
+    assert.strictEqual(titleFromIdea("Un journal de rêves"), "Un journal de rêves")
+    assert.strictEqual(titleFromIdea("!!!"), "Untitled idea")
   })
 
   it("maps Google scopes to URLs, hosts and labels", () => {

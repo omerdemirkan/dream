@@ -47,7 +47,7 @@ export const gateway = (host: string, raw: Request) =>
       const result = yield* clients.use(id, (client) => client.GatewayTarget()).pipe(Effect.result)
       if (result._tag === "Failure") {
         return result.failure._tag === "NotFound"
-          ? page(404, "Not published yet", "This app isn't live yet. Check back soon.")
+          ? page(404, "Not published yet", "This app is still being built. It will appear here once it's published.")
           : page(502, "Waking up", "The app couldn't be reached just now. Try again in a moment.")
       }
       target = result.success
