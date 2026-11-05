@@ -35,7 +35,7 @@ const cf = async (path: string, init?: RequestInit): Promise<Json> => {
     ...init,
     headers: { "content-type": "application/json", ...(init?.headers ?? {}) }
   })
-  const body = await res.json()
+  const body: Json = await res.json()
   if (!body.success) throw new Error(`Cloudflare ${path}: ${JSON.stringify(body.errors)}`)
   return body.result
 }
@@ -74,18 +74,19 @@ const rpc = async (tag: string, payload: unknown = null) => rpcRaw(tag, payload,
 const text = (m: Json): string => {
   switch (m._tag) {
     case "Text":
-      return `${m.body ?? m.text ?? ""}${m.media?.length ? ` [media ×${m.media.length}]` : ""}`
+      return `${m.text ?? ""}${m.media?.length ? ` [media ×${m.media.length}]` : ""}`
     case "Question":
-      return `QUESTION ${m.title ?? m.question ?? ""}${m.why ? ` (why: ${m.why})` : ""} options=${JSON.stringify(m.options ?? [])} state=${m.state?._tag}${m.state?.answer ? ` answer=${JSON.stringify(m.state.answer)}` : ""}`
+      return `QUESTION ${m.question ?? ""}${m.why ? ` (why: ${m.why})` : ""} options=${JSON.stringify(m.options ?? [])} state=${m.state?._tag}${m.state?.answer ? ` answer=${JSON.stringify(m.state.answer)}` : ""}`
     case "Access":
-      return `ACCESS ${JSON.stringify(m.request ?? m.kind ?? {})} ${m.title ?? m.why ?? ""} state=${m.state?._tag}`
+      return `ACCESS ${JSON.stringify(m.request ?? {})} why=${m.why ?? ""}${m.when ? ` when=${m.when}` : ""} state=${m.state?._tag}`
     default:
       return JSON.stringify(m).slice(0, 400)
   }
 }
 const printMessages = (ms: Json[]) => {
   for (const m of ms) {
-    const who = m.author ?? m.from ?? m.sender ?? "?"
+    const who =
+      typeof m.from === "string" ? m.from : (m.from?._tag ?? m.from?.kind ?? (m._tag === "Text" ? "?" : "agent"))
     const at = String(m.createdAt ?? m.sentAt ?? "").slice(11, 19)
     console.log(`${at} [${who}] ${m.id} ${text(m)}`)
   }
@@ -109,7 +110,7 @@ const inSandbox = async (projectId: string, command: string, timeoutMs = 60_000)
   }
 }
 
-const [cmd, a, b, c] = process.argv.slice(2)
+const [cmd, a = "", b = "", c = ""] = process.argv.slice(2)
 const main = async () => {
   switch (cmd) {
     case "projects": {
@@ -128,7 +129,7 @@ const main = async () => {
     case "say":
       return console.log((await rpc("SendMessage", { projectId: a, text: b })).id)
     case "msgs": {
-      const r = await rpc("ListMessages", { projectId: a, limit: Number(b ?? 20) })
+      const r = await rpc("ListMessages", { projectId: a, limit: Number(b || 20) })
       return printMessages([...r.messages].reverse())
     }
     case "asks": {
@@ -148,11 +149,11 @@ const main = async () => {
     case "sandbox":
       return console.log(JSON.stringify(await findSandbox(a)))
     case "logs":
-      return console.log(await inSandbox(a, `tail -n ${Number(b ?? 80)} /home/user/.dream/logs/dreamd.log`))
+      return console.log(await inSandbox(a, `tail -n ${Number(b || 80)} /home/user/.dream/logs/dreamd.log`))
     case "exec":
       return console.log(await inSandbox(a, b, 300_000))
     case "wait": {
-      const deadline = Date.now() + Number(b ?? 15) * 60_000
+      const deadline = Date.now() + Number(b || 15) * 60_000
       const before = new Set(
         ((await rpc("ListMessages", { projectId: a, limit: 50 })).messages as Json[]).map((m) => m.id)
       )
