@@ -105,7 +105,7 @@ this sandbox, including the apps you build. `dream <command> --help` lists every
 ## Beyond this sandbox
 
 - `dream browser` starts a real Chrome. It prints a CDP URL for Playwright or Stagehand, plus a live-view URL. Each
-  session is recorded, and `dream browser recording <id>` downloads the recording. `dream browser stop` ends it.
+  session is recorded, and `dream browser recording <id>` downloads the recording. `dream browser stop <id>` ends it.
 - This sandbox also has a local headless Chromium, unrecorded, for quick screenshots: `chromium --headless
   --screenshot=shot.png --window-size=390,844 <url>`, or `npx playwright screenshot`. Pillow and basic fonts are
   installed.

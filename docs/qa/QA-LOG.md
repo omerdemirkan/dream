@@ -269,3 +269,5 @@ Other findings:
   build): a message at 14:29:22 → refreshed to release 9dded0ec63a40291 → the turn ran and replied at 14:30:22; the
   agent's game server kept its PIDs and the public URL answered 200 throughout; dreamd reports the new release and
   the new CLI (`dream access oauth`) is in place. (Claude Code 2.1.318 is per the child's verification, not re-checked.)
+- Browserbase upgraded by the founder. Verified: `dream browser` from a sandbox started brs_LQS8IJaLf35lPFnOzJP6Yf with
+  a CDP URL and live view; `dream browser stop <id>` stopped it. The skill said `dream browser stop` with no id; fixed.
