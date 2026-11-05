@@ -364,3 +364,17 @@ subscription with real models. No ChatGPT account is connected, so nothing on Co
     ("unsupported call"). Production has no Codex projects (2026-11-05), so nothing needs migrating.
   - Codex v2 has no predefined roles in `spawn_agent` (no `agent_type`), so per-call `model` + `reasoning_effort`
     is the only way to choose.
+
+## Codex context window (2026-11-05, feat/agent-fleet-context; Codex 0.165.0)
+- Set through the adapter as `createCodex({ codexConfig: { model_context_window } })` (config.toml keys:
+  `model_context_window`, `model_auto_compact_token_limit`, `model_auto_compact_token_limit_scope`,
+  `model_post_turn_compact_threshold_percent`). dreamd sets `model_context_window = 1000000` (Fleet.ts).
+- The bundled catalog gives gpt-6.1-sol `context_window` 272,000 and `max_context_window` 872,000 (so does every
+  gpt-6.x/5.6 model; gpt-5.5 is 272,000/272,000). 1M isn't available: Codex clamps the setting to the model's
+  max and uses 95% of it. Rollouts record `model_context_window`: 258,400 by default, 828,400 with 872,000 or
+  1,000,000. The live catalog (chatgpt.com) may differ; 1M is taken up to whatever it allows.
+- Not in the request: the window is client-side (compaction and context accounting). The auto-compact limit
+  follows it: with a fake reporting 400k tokens used, the next turn compacted at the default and didn't at 872k.
+- Subagents inherit the config: a gpt-6-luna child spawned by gpt-6.1-sol ran at 828,400 too. No separate limit
+  needed; a model with a smaller max is clamped to its own. The harness check reports the windows the rollouts
+  used and fails if any is the 272k default.

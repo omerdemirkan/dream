@@ -84,7 +84,8 @@ const turn = async (sandbox: Sandbox, harness: HarnessResult["harness"]): Promis
     })
   // Logged when the harness starts, before the turn.
   const runsOn = (await sh(sandbox, `grep "The agent runs on" ${log} | tail -1 | cut -c1-300`)).output
-  const fleet = fleetProblems(harness, runsOn, requests)
+  const window = harness === "codex" ? await codexWindow(sandbox) : undefined
+  const fleet = [...fleetProblems(harness, runsOn, requests), ...(window?.problems ?? [])]
   const ok = ended.output.includes("Turn finished") && !ended.output.includes("The turn failed") && fleet.length === 0
   const asked = requests.map(
     (r) => `${r.model}/${r.effort ?? "-"}${r.did?.startsWith("reply") === false ? ` ${r.did}` : ""}`
@@ -94,10 +95,33 @@ const turn = async (sandbox: Sandbox, harness: HarnessResult["harness"]): Promis
     ok,
     detail: [
       runsOn,
+      ...(window === undefined ? [] : [`(Codex context windows used: ${window.found.join(", ")})`]),
       ended.output,
       `(${requests.length} requests reached the fake model: ${asked.join(", ")})`,
       ...fleet
     ].join("\n")
+  }
+}
+
+/**
+ * Codex doesn't send its context window; the threads' rollouts record the one it used (95% of the window it was
+ * configured with, clamped to the model's maximum). Without dreamd's setting it's the catalog default, 272k.
+ */
+const codexWindow = async (
+  sandbox: Sandbox
+): Promise<{ readonly problems: ReadonlyArray<string>; readonly found: ReadonlyArray<number> }> => {
+  const found = (
+    await sh(sandbox, `grep -rhoE '"model_context_window":[0-9]+' /home/user/.codex/sessions | sort -u`)
+  ).output
+    .split("\n")
+    .flatMap((line) => /:(\d+)$/.exec(line)?.[1] ?? [])
+    .map(Number)
+  if (found.length === 0) return { problems: ["no Codex rollout recorded a context window"], found }
+  const small = found.filter((window) => window <= 272_000)
+  return {
+    problems:
+      small.length === 0 ? [] : [`Codex ran with the default context window (${small.join(", ")}), not dreamd's`],
+    found
   }
 }
 

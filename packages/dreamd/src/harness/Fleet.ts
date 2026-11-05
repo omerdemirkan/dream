@@ -26,6 +26,13 @@ export const flagship: Readonly<Record<Harness, TopLevel>> = {
   codex: { model: "gpt-6.1-sol", effort: "high" }
 }
 
+/**
+ * Codex's context window, as `model_context_window` in its config: the most any model allows. Codex clamps it to
+ * the model's `max_context_window` (gpt-6.1-sol in 0.165.0's catalog: 872,000, of which it uses 95%), raises the
+ * auto-compact limit with it, and applies it to subagents too, whatever model they're on.
+ */
+export const codexContextWindow = 1_000_000
+
 export const topLevel = (
   harness: Harness,
   override: { readonly model: Option.Option<string>; readonly effort: Option.Option<ReasoningEffort> }
