@@ -74,7 +74,7 @@ export function Toast() {
         style
       ]}
     >
-      <Icon name="check" size={16} />
+      {visible.done ? <Icon name="check" size={16} /> : <Icon name="warn" size={16} color={color.need} />}
       <Text style={{ flex: 1, fontSize: 14.5, color: color.t1 }}>{visible.message}</Text>
       {visible.undo ? (
         <Pressable

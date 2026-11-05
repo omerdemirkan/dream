@@ -221,7 +221,7 @@ export function Deck(props: { readonly asks: ReadonlyArray<OpenAsk>; readonly on
         onLeft={(option) => {
           const m = front.message
           answer({ projectId: m.projectId, messageId: m.id, answer: { _tag: "Choice", option } })
-          toast(`Sent to ${front.project.title}`, m.id)
+          toast(`Sent to ${front.project.title}`, { undo: m.id, done: true })
           askPush((n) => n + 1)
           props.onAnswered()
         }}

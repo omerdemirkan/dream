@@ -15,7 +15,11 @@ import { toastAtom } from "../state/ui.ts"
 
 export function useToast() {
   const set = useAtomSet(toastAtom)
-  return useCallback((message: string, undo?: MessageId) => set(Option.some({ message, undo, at: Date.now() })), [set])
+  return useCallback(
+    (message: string, options?: { readonly undo?: MessageId; readonly done?: boolean }) =>
+      set(Option.some({ message, undo: options?.undo, done: options?.done === true, at: Date.now() })),
+    [set]
+  )
 }
 
 export interface Action<Arg, A> {

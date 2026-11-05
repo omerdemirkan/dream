@@ -205,7 +205,9 @@ function DeviceCode(props: {
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Copy code"
-        onPress={() => void Clipboard.setStringAsync(props.flow.userCode).then(() => toast("Code copied"))}
+        onPress={() =>
+          void Clipboard.setStringAsync(props.flow.userCode).then(() => toast("Code copied", { done: true }))
+        }
         style={{
           marginTop: 30,
           paddingVertical: 22,

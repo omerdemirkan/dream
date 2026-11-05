@@ -28,6 +28,7 @@ import Animated, {
 import Svg, { Circle, Text as SvgText } from "react-native-svg"
 import { dayOfPhase, milestoneDate, phaseLabel, shortDuration, timeLabel } from "../data/format.ts"
 import type { ProjectState } from "../data/projectState.ts"
+import { unsupportedText } from "../data/Tolerant.ts"
 import { accessLabel, accessReach, accessScope } from "./describe.ts"
 import { useNow, useOpenMessage } from "./hooks.ts"
 import { Dot, Icon, Lab } from "./kit.tsx"
@@ -530,7 +531,9 @@ export function StatusTab(props: { readonly state: ProjectState }) {
   const latest =
     status.now || status.justDid
       ? undefined
-      : messages.findLast((m): m is TextMessage => m._tag === "Text" && m.from === "agent")
+      : messages.findLast(
+          (m): m is TextMessage => m._tag === "Text" && m.from === "agent" && m.text !== unsupportedText
+        )
   return (
     <View>
       <Idea text={project.idea} />

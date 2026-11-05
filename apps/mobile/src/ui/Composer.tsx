@@ -101,7 +101,14 @@ export function ChatComposer(props: {
       />
       {dictation.listening ? <Listening heard={dictation.heard} inset={20} radius={28} /> : null}
       {has && !dictation.listening ? (
-        <IconButton icon="up" tone="white" label="Send" onPress={send} disabled={props.busy === true} />
+        <IconButton
+          icon="up"
+          tone="white"
+          label={props.busy === true ? "Sending" : "Send"}
+          onPress={send}
+          disabled={props.busy === true}
+          busy={props.busy === true}
+        />
       ) : dictation.available ? (
         <IconButton
           icon="mic"
@@ -156,7 +163,15 @@ export function ElseComposer(props: {
       />
       {dictation.listening ? <Listening heard={dictation.heard} inset={16} radius={props.large ? 18 : 16} /> : null}
       {has && !dictation.listening ? (
-        <IconButton icon="up" tone="need" size={button} label="Send" onPress={send} disabled={props.busy === true} />
+        <IconButton
+          icon="up"
+          tone="need"
+          size={button}
+          label={props.busy === true ? "Sending" : "Send"}
+          onPress={send}
+          disabled={props.busy === true}
+          busy={props.busy === true}
+        />
       ) : dictation.available ? (
         <IconButton
           icon="mic"

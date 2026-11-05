@@ -297,9 +297,11 @@ export function IconButton(
     readonly tone?: "plain" | "white" | "need" | "quiet"
     readonly label: string
     readonly style?: StyleProp<ViewStyle>
+    /** A spinner in place of the icon while what it started is in flight. */
+    readonly busy?: boolean
   }
 ) {
-  const { icon, size = 40, tone = "plain", label, style, ...rest } = props
+  const { icon, size = 40, tone = "plain", label, style, busy = false, ...rest } = props
   const bg = tone === "white" ? color.t1 : tone === "need" ? color.need : tone === "quiet" ? color.s3 : color.s1
   const fg = tone === "white" ? color.black : tone === "need" ? color.needInk : color.t1
   return (
@@ -320,10 +322,15 @@ export function IconButton(
           justifyContent: "center"
         },
         pressed && tone !== "plain" ? { transform: [{ scale: 0.95 }] } : null,
+        rest.disabled && !busy ? { opacity: 0.45 } : null,
         style
       ]}
     >
-      <Icon name={icon} size={Math.round(size * 0.47)} color={fg} weight="semibold" />
+      {busy ? (
+        <ActivityIndicator size="small" color={fg} />
+      ) : (
+        <Icon name={icon} size={Math.round(size * 0.47)} color={fg} weight="semibold" />
+      )}
     </Pressable>
   )
 }

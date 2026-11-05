@@ -7,6 +7,7 @@ import type { AccessMessage, MediaRef, QuestionMessage, TextMessage } from "@dre
 import * as Clipboard from "expo-clipboard"
 import { forwardRef, type ReactNode, useState } from "react"
 import { type HostInstance, Pressable, Text, View, useWindowDimensions } from "react-native"
+import { unsupportedText } from "../data/Tolerant.ts"
 import { answerNowFn, submitKeyAccessFn } from "../state/atoms.ts"
 import {
   accessExplainer,
@@ -82,10 +83,38 @@ function Attachments(props: { readonly media: ReadonlyArray<MediaRef> }) {
 }
 
 export function AgentText(props: { readonly message: TextMessage; readonly time: string | undefined }) {
+  if (props.message.text === unsupportedText) return <Unsupported time={props.time} />
   return (
     <View style={{ maxWidth: "94%" }}>
       <Markdown source={props.message.text} />
       <Attachments media={props.message.media} />
+      {props.time ? <Time text={props.time} /> : null}
+    </View>
+  )
+}
+
+/** Stands in for a message this build can't decode (`Tolerant`): a notice from the app, not the agent's words. */
+function Unsupported(props: { readonly time: string | undefined }) {
+  return (
+    <View>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 10,
+          paddingVertical: 12,
+          paddingHorizontal: 14,
+          borderRadius: 16,
+          borderWidth: 1,
+          borderStyle: "dashed",
+          borderColor: color.line2
+        }}
+      >
+        <Icon name="doc" size={16} color={color.t3} />
+        <Text style={{ flex: 1, fontSize: 14.5, lineHeight: 20, color: color.t2 }}>
+          {unsupportedText.replace(/^_|_$/g, "")}
+        </Text>
+      </View>
       {props.time ? <Time text={props.time} /> : null}
     </View>
   )
