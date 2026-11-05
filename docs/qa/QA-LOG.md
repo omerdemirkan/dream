@@ -236,3 +236,6 @@ Other findings:
 - Maintenance gap for the founder: a sandbox keeps the dreamd, CLI and prompt it was created with, so long-lived
   projects never get fixes like this one. Options: the ProjectDO refreshes /opt/dream from the current template on
   wake, or a migration that recreates the sandbox while keeping /home/user.
+- dream-sandbox rebuilt from main @ 6585d37 (build 6bff64eb-017e-447a-a085-d601b2852533; the first attempt from a
+  background job failed on the dev network, the rerun passed) and smoke-tested: supervisor, dreamd, tools, both
+  harness CLIs. Ships the skill facts on lasting keys / OAuth-only services and on --host, and the CLI host check.
