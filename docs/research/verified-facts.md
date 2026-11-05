@@ -244,3 +244,12 @@
   (verified with a dummy secret). `POST /accounts/:id/workers/scripts/dream-api/tails` works for live logs.
   A DO stub's `fetch` turns `https://project/internal/rpc` into `https://localhost/internal/rpc/` (trailing slash), and
   a deployed DO can keep running its previous code for a few minutes after a deploy.
+- Deploy hazard found and fixed (2026-11-05): alchemy state is local, and its default D1 name has a random suffix,
+  so a deploy from another machine with `--adopt` created a NEW empty D1 and rebound the Worker to it (invites,
+  connections, secrets "vanished"). Fixed by pinning `name` on the D1 database ("Dream-Database-prod-kccyzam25lk62vk7",
+  the original) and the R2 bucket ("dream-media") in apps/api/src/Resources.ts; redeployed, Worker is bound to the
+  original DB again, stray DB deleted. Any machine can now deploy safely with `bun run infra:deploy`.
+- E2B runtime cap handled (fix/sandbox-continuity, merged): keepalive every 5 min during a turn; resumes a sandbox
+  paused mid-turn; proactively pause+resumes before the cap. Cap = E2B_SANDBOX_MAX_RUN (default "1 hour" for Hobby;
+  set "24 hours" on Pro). E2B: setTimeout beyond the cap is silently clamped; setTimeout on a paused sandbox → 404;
+  resume resets the sandbox start time.

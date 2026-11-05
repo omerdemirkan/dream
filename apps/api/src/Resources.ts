@@ -12,8 +12,14 @@ import * as Cloudflare from "@alchemy.run/cloudflare"
  * (Alchemy runs from the workspace root, so non-entry paths are root-relative.)
  */
 export const Database = Cloudflare.D1.Database("Database", {
+  // Pinned so a deploy from a machine without alchemy state adopts the live database (`--adopt` matches by
+  // name) instead of creating an empty one with a random suffix. This is the database created on the first deploy.
+  name: "Dream-Database-prod-kccyzam25lk62vk7",
   migrations: "apps/api/migrations"
 })
 
 /** Screenshots and screen recordings (`MediaRef`). Private; served through the Worker. */
-export const Media = Cloudflare.R2.Bucket("Media")
+export const Media = Cloudflare.R2.Bucket("Media", {
+  // Pinned for the same reason as the database: stateless deploys must adopt, not recreate.
+  name: "dream-media"
+})
