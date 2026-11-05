@@ -21,13 +21,18 @@ export interface HarnessResult {
   readonly detail: string
 }
 
-const sh = async (sandbox: Sandbox, command: string, timeoutMs = 120_000) => {
-  const result = await sandbox.commands
+type Run = { stdout: string; stderr: string; exitCode: number }
+
+/** Runs a command; a nonzero exit is a result. A dropped connection to envd is retried once (it happens). */
+const sh = async (sandbox: Sandbox, command: string, timeoutMs = 120_000, retry = true) => {
+  const result: Run | undefined = await sandbox.commands
     .run(command, { timeoutMs })
-    .catch((error: { result?: { stdout: string; stderr: string; exitCode: number } }) => {
-      if (error.result === undefined) throw error
-      return error.result
+    .catch((error: { result?: Run; name?: string }) => {
+      if (error.result !== undefined) return error.result
+      if (retry && error.name === "SandboxUnreachableError") return undefined
+      throw error
     })
+  if (result === undefined) return sh(sandbox, command, timeoutMs, false)
   return { exitCode: result.exitCode, output: `${result.stdout}${result.stderr}`.trim() }
 }
 
