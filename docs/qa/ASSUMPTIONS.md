@@ -23,3 +23,8 @@ These are best-effort calls I made to keep QA moving. Each can be reversed.
    (written into AGENTS.md). After merging a batch of fixes I deploy `main` myself.
 10. **"Haiku 5.5".** The sandbox's Claude Code (2.1.290) knows Haiku 4.5 as the current Haiku, so test projects run on
     `claude-haiku-4-5-20251001`. If you meant a newer model, it's one Worker secret (`DREAM_AGENT_MODEL`) to change.
+11. **Safety net scope.** The final-text safety net skips turns started only by agent-only events (published-URL
+    check, a failed scheduled command, an Alert from `dream wake`). A plain scheduled wake and a usage reset keep it,
+    because those are often the agent following up with the person.
+12. **Published-app watch.** After each turn, dreamd loads the published URL and wakes the agent (never the person) if
+    it's broken, only when the finding changes. It costs at most one extra turn per new breakage.

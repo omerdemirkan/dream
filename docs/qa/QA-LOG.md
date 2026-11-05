@@ -108,3 +108,10 @@ Other findings:
   claimed fixed; page still shows a (different) React runtime error. → Extended `feat/publish-check` with a post-turn
   health check that delivers an agent-only event when the published URL is broken (deduped, never notifies the person).
 - Merged `fix/secret-asks` into main.
+
+## 7. Round 3 started (04:58 UTC)
+- Merged `feat/publish-check` (publish self-check + post-turn published-URL watch + safety-net scope) and
+  `fix/secret-asks`. main deployed; dream-sandbox rebuilt (build 58e37c71-e7bc-4351-8017-06147d76d3dc). 162 tests.
+- Five Haiku QA threads: ISS map (Vite) + offline recipe PWA · Telegram bot (URL token) + Discord bot (header key) ·
+  ~90-minute cabin booking site (long-running autonomy, E2B 1-hour cap) · HN clone + GitHub webhook viewer ·
+  uptime monitor on an always-down URL + COVID data analysis.
