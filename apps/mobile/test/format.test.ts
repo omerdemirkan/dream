@@ -95,6 +95,15 @@ describe("markdown", () => {
     assert.strictEqual(blocks[5]?.kind === "code" ? blocks[5].text : "", "npm start")
   })
 
+  it("nests indented items under the item above", () => {
+    const blocks = parseBlocks("1. **Set up**: run it\n   - It asks for the token\n2. **Start**")
+    assert.strictEqual(blocks.length, 1)
+    assert.deepStrictEqual(blocks[0]?.kind === "list" ? blocks[0].items : [], [
+      "**Set up**: run it\n• It asks for the token",
+      "**Start**"
+    ])
+  })
+
   it("keeps a list's first number", () => {
     const blocks = parseBlocks("3. three\n4. four")
     assert.isTrue(blocks[0]?.kind === "list" && blocks[0].start === 3)

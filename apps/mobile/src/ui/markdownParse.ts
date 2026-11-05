@@ -89,6 +89,11 @@ export const parseBlocks = (source: string): ReadonlyArray<Block> => {
     }
     const b = bullet.exec(line)
     const n = b ? undefined : numbered.exec(line)
+    if ((b || n) && list && list.items.length > 0 && /^\s{2,}/.test(line)) {
+      // An indented item nests under the item above it.
+      list.items[list.items.length - 1] += `\n• ${(b ? b[1] : n?.[2]) ?? ""}`
+      continue
+    }
     if (b || n) {
       const ordered = n !== undefined && n !== null
       if (paragraph.length > 0 || (list && list.ordered !== ordered)) flush()

@@ -56,6 +56,7 @@ function FocusLayer(props: { readonly focus: Focus }) {
   const progress = useSharedValue(0)
   const fade = useSharedValue(0)
   const closing = useRef(false)
+  const expanded = useRef(false)
   const pathnameRef = useRef(pathname)
   pathnameRef.current = pathname
 
@@ -65,6 +66,7 @@ function FocusLayer(props: { readonly focus: Focus }) {
   /** Once it fills the screen, put that project's Chat underneath, scrolled to this message. */
   const onExpanded = () => {
     if (closing.current) return
+    expanded.current = true
     land(false)
     if (pathnameRef.current === `/project/${focus.projectId}`) router.setParams({ tab: "chat" })
     else router.push({ pathname: "/project/[id]", params: { id: focus.projectId, tab: "chat", instant: "1" } })
@@ -80,6 +82,11 @@ function FocusLayer(props: { readonly focus: Focus }) {
     // Runs once per expanded message (the layer is keyed by it).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // A link or notification that goes somewhere else (another project, Home) leaves this message behind.
+  useEffect(() => {
+    if (expanded.current && !closing.current && pathname !== `/project/${focus.projectId}`) setFocus(Option.none())
+  }, [pathname, focus.projectId, setFocus])
 
   const finish = () => {
     setFocus(Option.none())
