@@ -229,3 +229,10 @@ Other findings:
   (fix/access-host) making `dream access key` refuse a --host that can't be an egress target, in the CLI and the
   Worker. Product gap for the founder: generic OAuth connections (Dream holds the refresh token, refreshes centrally,
   and injects the bearer token), which would cover Spotify, Strava, Dropbox, GitHub, Slack, Notion and others.
+- Merged fix/access-host (6585d37; additive: RequestAccess can fail with InvalidRequest) and deployed. The CLI and the
+  Worker refuse a --host that isn't a bare DNS name (URLs and host:port get a "should be just the hostname" hint;
+  wildcards are refused). Verified live from an old-dreamd sandbox: `--host not-a-host` created no card, but the old
+  CLI printed nothing (it can't decode the new error), so old sandboxes fail quietly until recreated.
+- Maintenance gap for the founder: a sandbox keeps the dreamd, CLI and prompt it was created with, so long-lived
+  projects never get fixes like this one. Options: the ProjectDO refreshes /opt/dream from the current template on
+  wake, or a migration that recreates the sandbox while keeping /home/user.
