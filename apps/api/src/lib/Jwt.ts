@@ -1,7 +1,7 @@
 /**
  * Compact JWTs over WebCrypto: HS256 for Dream's own tokens, ES256 for the
  * provider JWTs Dream mints (APNs, App Store Connect), and RS256 verification
- * for Google ID tokens.
+ * for Google ID tokens; RS256 or ES256 against any JWKS (Namespace's federation tokens).
  */
 import { Data, Effect, Option, Schema } from "effect"
 import { fromBase64, fromBase64Url, fromUtf8, toBase64Url, utf8, type WebCryptoKey } from "./Bytes.ts"
@@ -140,6 +140,59 @@ export const verifyRs256 = (token: string, jwks: Jwks): Effect.Effect<unknown, J
     const valid = yield* Effect.promise(() =>
       crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, decoded.signature, utf8(decoded.signingInput))
     )
+    if (!valid) return yield* new JwtError({ reason: "bad signature" })
+    return decoded.payload
+  })
+
+// ---------------------------------------------------------------------------
+// RS256 or ES256 against a JWKS with either kind of key (Namespace federation)
+// ---------------------------------------------------------------------------
+
+export const AnyJwk = Schema.Struct({
+  kid: Schema.String,
+  kty: Schema.Literals(["RSA", "EC"]),
+  n: Schema.optionalKey(Schema.String),
+  e: Schema.optionalKey(Schema.String),
+  crv: Schema.optionalKey(Schema.String),
+  x: Schema.optionalKey(Schema.String),
+  y: Schema.optionalKey(Schema.String)
+})
+export const AnyJwks = Schema.Struct({ keys: Schema.Array(Schema.Unknown) })
+export type AnyJwk = typeof AnyJwk.Type
+
+/** Verifies an RS256 or ES256 (P-256) token with the JWKS key its `kid` names; returns the unchecked payload. */
+export const verifyJwt = (token: string, keys: ReadonlyArray<AnyJwk>): Effect.Effect<unknown, JwtError> =>
+  Effect.gen(function* () {
+    const decoded = yield* decodeUnverified(token)
+    const jwk = keys.find((key) => key.kid === decoded.header.kid)
+    if (jwk === undefined) return yield* new JwtError({ reason: "unknown signing key" })
+    const algorithm =
+      decoded.header.alg === "RS256" && jwk.kty === "RSA" && jwk.n !== undefined && jwk.e !== undefined
+        ? {
+            import: { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+            verify: { name: "RSASSA-PKCS1-v1_5" },
+            jwk: { kty: "RSA", n: jwk.n, e: jwk.e, alg: "RS256", ext: true }
+          }
+        : decoded.header.alg === "ES256" &&
+            jwk.kty === "EC" &&
+            jwk.crv === "P-256" &&
+            jwk.x !== undefined &&
+            jwk.y !== undefined
+          ? {
+              import: { name: "ECDSA", namedCurve: "P-256" },
+              verify: { name: "ECDSA", hash: "SHA-256" },
+              jwk: { kty: "EC", crv: "P-256", x: jwk.x, y: jwk.y, ext: true }
+            }
+          : undefined
+    if (algorithm === undefined) return yield* new JwtError({ reason: "unexpected algorithm" })
+    const key = yield* Effect.tryPromise({
+      try: () => crypto.subtle.importKey("jwk", algorithm.jwk, algorithm.import, false, ["verify"]),
+      catch: () => new JwtError({ reason: "invalid signing key" })
+    })
+    const valid = yield* Effect.tryPromise({
+      try: () => crypto.subtle.verify(algorithm.verify, key, decoded.signature, utf8(decoded.signingInput)),
+      catch: () => new JwtError({ reason: "bad signature" })
+    })
     if (!valid) return yield* new JwtError({ reason: "bad signature" })
     return decoded.payload
   })

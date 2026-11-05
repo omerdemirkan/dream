@@ -50,7 +50,7 @@ export class FakeWorld {
   readonly processes: Array<{ sandboxId: string; command: string; pty: boolean }> = []
   readonly inputs: Array<{ sandboxId: string; pid: number; text: string }> = []
   readonly browserSessions = new Map<string, { status: string; startedAt: string; endedAt?: string }>()
-  readonly macs = new Map<string, { status: string }>()
+  readonly macs = new Map<string, { status: string; labels?: Record<string, string> }>()
   daemonHealthy = true
   deliverFails = false
   /** Deliveries dreamd refuses because it's restarting. */
@@ -365,6 +365,11 @@ export const fakeNamespace = (world: FakeWorld) =>
         }),
       describe: (instanceId) =>
         Effect.succeed({ instanceId, status: world.macs.get(instanceId)?.status ?? "DESTROYED" }),
+      list: Effect.sync(() =>
+        [...world.macs.entries()]
+          .filter(([, mac]) => mac.status !== "DESTROYED")
+          .map(([instanceId, mac]) => ({ instanceId, status: mac.status, labels: mac.labels }))
+      ),
       ssh: (instanceId) =>
         Effect.succeed({
           host: "ssh.test.namespace.so",

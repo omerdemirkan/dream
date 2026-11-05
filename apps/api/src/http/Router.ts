@@ -20,6 +20,7 @@ import { gateway } from "./Gateway.ts"
 import { downloadMedia, uploadMedia } from "./Media.ts"
 import { homePage, privacyPage } from "./PublicPages.ts"
 import { SandboxAuthServer, WorkerSandboxHandlers } from "./SandboxHandlers.ts"
+import { grantAscKey, releaseAscKey } from "./Testflight.ts"
 
 export class LiveForwarder extends Context.Service<
   LiveForwarder,
@@ -100,14 +101,44 @@ export const route = (raw: Request) =>
       return yield* downloadMedia(request, media[1]!, session.value.userId)
     }
 
-    // Operator tool (e2e cleanup): archive a project. Needs the DEV_LOGIN_SECRET in `x-dream-dev-secret`.
-    const archive = /^\/admin\/projects\/([^/]+)\/archive$/.exec(path)
-    if (archive !== null && request.method === "POST") {
+    // Operator tools need the DEV_LOGIN_SECRET in `x-dream-dev-secret`.
+    const operator = () => {
       const secret = request.headers["x-dream-dev-secret"]
       const expected = Option.map(config.devLoginSecret, Redacted.value)
-      if (secret === undefined || Option.isNone(expected) || !timingSafeEqual(secret, expected.value)) {
-        return HttpServerResponse.text("Forbidden", { status: 403 })
-      }
+      return secret !== undefined && Option.isSome(expected) && timingSafeEqual(secret, expected.value)
+    }
+
+    // Dream's own TestFlight builds: the operator grants a Namespace build Mac, which then fetches the key.
+    if (path === Routes.testflightGrant && request.method === "POST") {
+      if (!operator()) return HttpServerResponse.text("Forbidden", { status: 403 })
+      const body = yield* request.json.pipe(Effect.orElseSucceed(() => null))
+      return yield* grantAscKey(body).pipe(
+        Effect.map((instanceId) => HttpServerResponse.jsonUnsafe({ granted: instanceId })),
+        Effect.catchTag("TestflightDenied", (e) => Effect.succeed(HttpServerResponse.text(e.reason, { status: 400 })))
+      )
+    }
+    if (path === Routes.testflightKey && request.method === "POST") {
+      const body = yield* request.json.pipe(Effect.orElseSucceed(() => null))
+      return yield* releaseAscKey(body).pipe(
+        Effect.map((release) => HttpServerResponse.jsonUnsafe(release)),
+        // The reason goes to the log only; the caller learns nothing about which check failed.
+        Effect.catchTag("TestflightDenied", (e) =>
+          Effect.logWarning("refused the App Store Connect key", e.reason).pipe(
+            Effect.as(HttpServerResponse.text("Forbidden", { status: 403 }))
+          )
+        ),
+        Effect.catchTag("UpstreamFailure", (e) =>
+          Effect.logWarning("couldn't release the App Store Connect key", e.message).pipe(
+            Effect.as(HttpServerResponse.text("Unavailable", { status: 503 }))
+          )
+        )
+      )
+    }
+
+    // Operator tool (e2e cleanup): archive a project.
+    const archive = /^\/admin\/projects\/([^/]+)\/archive$/.exec(path)
+    if (archive !== null && request.method === "POST") {
+      if (!operator()) return HttpServerResponse.text("Forbidden", { status: 403 })
       const projectId = Schema.decodeUnknownOption(ProjectId)(archive[1])
       if (Option.isNone(projectId)) return HttpServerResponse.text("Bad project id", { status: 400 })
       const clients = yield* ProjectClients

@@ -112,4 +112,10 @@ DREAM_APPLE_TEAM_ID=… DREAM_GOOGLE_IOS_CLIENT_ID=… \
 ```
 
 It archives with automatic signing (Xcode registers the App IDs for the app and the widget, and their profiles,
-through the App Store Connect key) and uploads the build to App Store Connect.
+through the App Store Connect key) and uploads the build to App Store Connect. `ASC_EXPORT_ONLY=1` stops at a signed `.ipa` in `build/export`.
+
+Without a Mac, `scripts/testflight-namespace.ts` (run from the repo root) does the same on a Namespace Mac. The
+key is the Worker secret `ASC_TESTFLIGHT_KEY_P8` (see `docs/setup/testflight.md`), released only to that Mac,
+encrypted to a key it generated (`apps/api/src/http/Testflight.ts`); it never touches the machine running the
+script. `check` verifies the key on a fresh Mac in about a minute; `testflight [--no-upload]` ships
+`git archive HEAD`, runs `build-ios.sh testflight` there, then destroys the Mac.

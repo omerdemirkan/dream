@@ -364,3 +364,41 @@ subscription with real models. No ChatGPT account is connected, so nothing on Co
     ("unsupported call"). Production has no Codex projects (2026-11-05), so nothing needs migrating.
   - Codex v2 has no predefined roles in `spawn_agent` (no `agent_type`), so per-call `model` + `reasoning_effort`
     is the only way to choose.
+- Namespace vault → macOS (2026-11-05): `CreateInstance.applications[].envVars[{name, fromSecretId}]`
+  (ApplicationRequest) is how a Mac receives a vault secret; `containers` (ContainerRequest) are Linux-only. A macOS
+  application needs an `imageRef` ("no support disk selectors specified" without one). A Docker Hub multi-arch
+  image (busybox) left the Mac PENDING; a one-layer darwin/arm64 OCI image (ttl.sh, then nscr.io), pinned by
+  digest, worked (RUNNING in ~15 s). The app runs as `su -l runner -c 'VAR=value … cmd'` with HOME=/Users/runner, so the value is
+  in that root process's argv and in /var/log/so.namespace.vmguest.log (0644) on the Mac for its lifetime. When the
+  application exits, the Mac is DESTROYED, so it has to keep running (`exec sleep`). A multi-line PEM value arrived
+  byte-exact. An unknown `fromSecretId` gives no error: the Mac stays PENDING. VaultService is at
+  global.namespaceapis.com and also answers on us.compute.namespaceapis.com, where the namespace-compute token gets
+  permission_denied (it can't list, read or create vault objects). Every SSH command run on the Mac is logged in
+  that vmguest.log. `apps/mobile/scripts/testflight-namespace.ts` builds on this.
+- Namespace Mac logging (2026-11-05): `/opt/namespace/vector` (config /etc/vector/vector.json) ships
+  /var/log/so.namespace.vmguest.log, /var/log/namespace/applications/*.log (application stdout),
+  /var/log/programs/*.log and DNS queries to the host (10.0.0.1:9000), i.e. into Namespace's instance logs; host
+  metrics carry no process list, so command lines aren't shipped. The vmguest log has the application's env (plain
+  `value`s in clear) and every SSH command, so never put a secret on an SSH command line. The namespace-compute
+  token gets permission_denied on ObservabilityService (FetchInstanceLogs, StreamInstanceLogs). The Mac's workload
+  token (/var/run/nsc/token.json, 0644; `NSC_TOKEN_FILE=… /opt/nsc/bin/nsc`) can push to the workspace registry
+  nscr.io/lso1fm36nm1rq (`nsc docker login`; default expiry Never) but lacks vault/object:list and
+  vault/object:describe (so `nsc vault export` can't resolve secrets there). Dream's key-application image:
+  nscr.io/lso1fm36nm1rq/dream-asc-key-app@sha256:0c318ab18dda8ab8adc9f6f743c4bf3143ae540ca40a1a06b820a2cc523c86e4,
+  pulled fine by CreateInstance with the namespace-compute token.
+- Namespace vault values are NOT masked (2026-11-05, dummy secret sec_kb618s8tsg): a `fromSecretId` value arrives
+  byte-exact but is in clear in /var/log/so.namespace.vmguest.log (shipped to Namespace's instance logs), in
+  /Volumes/guestdata/guestdata.json and in the `su` command line. So the vault path is not used for the ASC key, and
+  the nscr.io key-application image above is unused.
+- Namespace workload identity (2026-11-05): on a Mac, `NSC_TOKEN_FILE=/var/run/nsc/token.json /opt/nsc/bin/nsc auth
+  issue-id-token --audience <aud> --duration 5m -o json` → `{id_token}`, an RS256 JWT (kid in the JWKS) with iss
+  https://federation.namespaceapis.com, sub `<tenant_id>/<instance_id>`, aud [<aud>], tenant_id, instance_id,
+  iat/nbf/exp, jti; the duration is honored (30m → 1860 s). Discovery: /.well-known/openid-configuration, JWKS at
+  /.well-known/jwks.json (one RSA and one EC P-256 key). The workload token itself (`nscw_…`, not a JWT) is
+  world-readable on the Mac and carries `instance/*: *`, registry, builder and `federation/*: issue_token`
+  permissions: any Mac of the tenant can mint ID tokens for any audience and reach (SSH into) the tenant's other
+  instances. Dream's TestFlight key release (apps/api/src/http/Testflight.ts) therefore also requires an operator
+  grant per instance id and that the build Mac is the tenant's only instance. Verified end to end against a real
+  Mac with the release logic running locally (not deployed): released once to a granted Mac (dummy key arrived
+  byte-exact, 0600), 403 without a grant and on replay, the key absent from the guest log, app logs and process
+  list. ListInstances returns `instances` as bare InstanceMetadata (with `paginationCursor`).
