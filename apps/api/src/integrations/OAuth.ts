@@ -122,12 +122,14 @@ export const OAuthCatalog: ReadonlyArray<OAuthProviderSpec> = [
     defaultScopes: ["read", "activity:read_all"],
     scopeSeparator: ",",
     authorizeParams: { approval_prompt: "auto" },
-    hosts: [{ host: "www.strava.com" }],
+    // Strava moves its API to api-v3.strava.com during 2027; both carry the token.
+    hosts: [{ host: "www.strava.com" }, { host: "api-v3.strava.com" }],
     account: { fields: ["athlete.username", "athlete.firstname"] },
     revoke: { url: "https://www.strava.com/oauth/deauthorize", style: "form", param: "access_token" },
     notes:
-      "The API is at https://www.strava.com/api/v3. Strava limits each app to 100 requests per 15 minutes and " +
-      "1,000 a day, shared by everyone connected to Dream's app."
+      "The API is at https://www.strava.com/api/v3 (moving to https://api-v3.strava.com in 2027). " +
+      "Strava rate-limits each app as a whole (by default 100 reads " +
+      "per 15 minutes and 1,000 a day), shared by everyone connected to Dream's app, so cache what you fetch."
   },
   {
     id: "dropbox",
@@ -162,7 +164,9 @@ export const OAuthCatalog: ReadonlyArray<OAuthProviderSpec> = [
     revoke: { url: "https://slack.com/api/auth.revoke", style: "form" },
     notes:
       "Scopes are Slack user scopes, and calls act as them in that workspace: what you post appears under their " +
-      "name. The Web API is https://slack.com/api/<method>; private file URLs on files.slack.com work too."
+      "name. The Web API is https://slack.com/api/<method>; private file URLs on files.slack.com work too. Slack " +
+      "throttles conversations.history and conversations.replies hard for apps outside its Marketplace, so read " +
+      "history sparingly and keep what you've read."
   },
   {
     id: "notion",
@@ -201,7 +205,7 @@ export const OAuthCatalog: ReadonlyArray<OAuthProviderSpec> = [
     defaultScopes: ["personal", "daily"],
     hosts: [{ host: "api.ouraring.com" }],
     account: { url: "https://api.ouraring.com/v2/usercollection/personal_info", fields: ["email"] },
-    notes: "The API is https://api.ouraring.com/v2/usercollection/…."
+    notes: "The API is https://api.ouraring.com/v2/usercollection/…; most data needs an active Oura membership."
   }
 ]
 
