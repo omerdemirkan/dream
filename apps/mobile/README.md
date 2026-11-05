@@ -64,7 +64,7 @@ xcrun simctl launch --terminate-running-process booted build.omer.dream \
 | `/` | Home: the needs-you deck, then projects |
 | `/project/prj_liftlog` · `prj_morningbrief` · `prj_cabin` · `prj_recipescaler` | Status |
 | `…?tab=chat` | Chat; add `&focus=<messageId>` to expand a message, `&land=<messageId>` to land on it highlighted |
-| `/new` · `/new?dictate=1` | New idea, optionally dictating |
+| `/new` · `/new?sample=long` · add `dictate=1` | New idea (the page), with a long brain dump, dictating at the cursor (simulated in the Simulator) |
 | `/connect` · `/settings` | Subscription connect flow; settings |
 
 Message ids: `msg_cabinrule`, `msg_cabinpick`, `msg_gcal` (Cabin), `msg_apple` (Lift Log), `msg_gmail` and

@@ -48,6 +48,8 @@ export interface Dictation {
   readonly listening: boolean
   /** What has been heard so far in this take. */
   readonly heard: string
+  /** The same, split into finished segments and the one still being recognized. */
+  readonly transcript: Transcript
   readonly toggle: () => void
   readonly stop: () => void
   /** Stops listening and drops the take, for when its text was already used. */
@@ -55,14 +57,19 @@ export interface Dictation {
 }
 
 /**
- * `onText` receives the final text of each take, to append to the field.
+ * `onText` receives the final text of each take, to put in the field.
  * `sample` is what simulated dictation "hears" in fixtures mode.
  */
 export function useDictation(onText: (text: string) => void, sample = "Can it also convert cups to grams?"): Dictation {
   const [listening, setListening] = useState(false)
-  const [heard, setHeard] = useState("")
+  const [heard, setHeard] = useState<Transcript>(emptyTranscript)
   const heardRef = useRef("")
   const transcript = useRef<Transcript>(emptyTranscript)
+  const hear = useCallback((next: Transcript) => {
+    transcript.current = next
+    heardRef.current = transcriptText(next)
+    setHeard(next)
+  }, [])
   const onTextRef = useRef(onText)
   onTextRef.current = onText
   const subscriptions = useRef<Array<Subscription>>([])
@@ -78,11 +85,10 @@ export function useDictation(onText: (text: string) => void, sample = "Can it al
   const finish = useCallback(() => {
     cleanUp()
     const text = heardRef.current.trim()
-    heardRef.current = ""
-    setHeard("")
+    hear(emptyTranscript)
     setListening(false)
     if (text) onTextRef.current(text)
-  }, [cleanUp])
+  }, [cleanUp, hear])
 
   useEffect(
     () => () => {
@@ -110,12 +116,7 @@ export function useDictation(onText: (text: string) => void, sample = "Can it al
       subscriptions.current = [
         module.addListener("result", (event) => {
           // iOS starts each segment over after a pause, so the take is the kept segments plus this one.
-          transcript.current = addResult(transcript.current, {
-            text: event.results[0]?.transcript ?? "",
-            isFinal: event.isFinal
-          })
-          heardRef.current = transcriptText(transcript.current)
-          setHeard(heardRef.current)
+          hear(addResult(transcript.current, { text: event.results[0]?.transcript ?? "", isFinal: event.isFinal }))
         }),
         module.addListener("error", (event) => {
           if (event.error !== "aborted" && event.error !== "no-speech") {
@@ -124,9 +125,7 @@ export function useDictation(onText: (text: string) => void, sample = "Can it al
         }),
         module.addListener("end", finish)
       ]
-      heardRef.current = ""
-      transcript.current = emptyTranscript
-      setHeard("")
+      hear(emptyTranscript)
       setListening(true)
       module.start({
         lang: getLocales()[0]?.languageTag ?? "en-US",
@@ -136,27 +135,28 @@ export function useDictation(onText: (text: string) => void, sample = "Can it al
         requiresOnDeviceRecognition: module.supportsOnDeviceRecognition()
       })
     },
-    [cleanUp, finish]
+    [cleanUp, finish, hear]
   )
 
   const startSimulated = useCallback(() => {
     cleanUp()
-    heardRef.current = ""
+    hear(emptyTranscript)
     setListening(true)
-    const words = sample.split(" ")
-    words.forEach((_, i) => {
-      timers.current.push(
-        setTimeout(
-          () => {
-            heardRef.current = words.slice(0, i + 1).join(" ")
-            setHeard(heardRef.current)
-          },
-          500 + i * 180
+    // Like iOS: each sentence is heard a word at a time, comes final at its end, and the next starts over.
+    let at = 500
+    for (const sentence of sample.match(/[^.?!]+[.?!]*/g) ?? []) {
+      const words = sentence.trim().split(" ")
+      words.forEach((_, i) => {
+        const isFinal = i === words.length - 1
+        timers.current.push(
+          setTimeout(() => hear(addResult(transcript.current, { text: words.slice(0, i + 1).join(" "), isFinal })), at)
         )
-      )
-    })
-    timers.current.push(setTimeout(finish, 500 + words.length * 180 + 600))
-  }, [cleanUp, finish, sample])
+        at += 180
+      })
+      at += 700
+    }
+    timers.current.push(setTimeout(finish, at))
+  }, [cleanUp, finish, hear, sample])
 
   const stop = useCallback(() => {
     if (!listening) return
@@ -167,11 +167,9 @@ export function useDictation(onText: (text: string) => void, sample = "Can it al
   const cancel = useCallback(() => {
     cleanUp()
     speech?.abort()
-    heardRef.current = ""
-    transcript.current = emptyTranscript
-    setHeard("")
+    hear(emptyTranscript)
     setListening(false)
-  }, [cleanUp])
+  }, [cleanUp, hear])
 
   const toggle = useCallback(() => {
     if (listening) return stop()
@@ -179,5 +177,13 @@ export function useDictation(onText: (text: string) => void, sample = "Can it al
     else if (appConfig.backend === "fixtures") startSimulated()
   }, [listening, startNative, startSimulated, stop])
 
-  return { available: dictationAvailable, listening, heard, toggle, stop, cancel }
+  return {
+    available: dictationAvailable,
+    listening,
+    heard: transcriptText(heard),
+    transcript: heard,
+    toggle,
+    stop,
+    cancel
+  }
 }

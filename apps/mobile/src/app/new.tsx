@@ -1,47 +1,110 @@
 /**
- * New idea: a plain composer. Type, or tap the mic to dictate into the field,
- * then send. Lands in the new project's Chat with the idea as its first message.
+ * New idea: the page (Deck v3, option A). The whole page below the nav is one
+ * field: tap anywhere to write, put the cursor anywhere, select, edit. The mic
+ * dictates in at the cursor (or over the selection), showing settled words and
+ * the ones still being recognized in place; a pause doesn't stop it. Tapping
+ * the text while dictating stops and keeps what was heard, with the cursor
+ * after it. Return is a new line; only Send sends, and it lands in the new
+ * project's Chat with the idea as its first message.
  */
+import { useAtomSet } from "@effect/atom-react"
 import { useLocalSearchParams, useRouter } from "expo-router"
 import { useEffect, useRef, useState } from "react"
 import {
+  Keyboard,
   KeyboardAvoidingView,
   Pressable,
   ScrollView,
+  type ScrollViewInstance,
   Text,
   TextInput,
   type TextInputInstance,
+  type TextStyle,
   View
 } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
+import { caretAt, ideaToSend, insertAt, placeTake, type Selection, wordCountLabel } from "../data/draft.ts"
+import { longIdea } from "../fake/fixtures.ts"
 import { useDictation } from "../platform/dictation.ts"
-import { useAtomSet } from "@effect/atom-react"
 import { createProjectFn } from "../state/atoms.ts"
 import { askPushAtom } from "../state/ui.ts"
 import { useAction, useToast } from "../ui/actions.ts"
 import { useRequestId } from "../ui/hooks.ts"
 import { Bars, Icon, IconButton } from "../ui/kit.tsx"
-import { color, gutter } from "../ui/theme.ts"
+import { color, gutter, tracking } from "../ui/theme.ts"
+
+/** `.dump`: body size, so a long brain dump reads like a note. */
+const lineHeight = 28
+const page: TextStyle = {
+  fontSize: 19,
+  lineHeight,
+  letterSpacing: tracking(-0.012, 19),
+  fontWeight: "400",
+  color: color.t1
+}
+const pad = { paddingHorizontal: gutter, paddingTop: 18, paddingBottom: 28 } as const
+
+function useKeyboardShown() {
+  const [shown, setShown] = useState(false)
+  useEffect(() => {
+    const show = Keyboard.addListener("keyboardWillShow", () => setShown(true))
+    const hide = Keyboard.addListener("keyboardWillHide", () => setShown(false))
+    return () => {
+      show.remove()
+      hide.remove()
+    }
+  }, [])
+  return shown
+}
+
+function useSeconds(running: boolean) {
+  const [seconds, setSeconds] = useState(0)
+  useEffect(() => {
+    if (!running) return
+    setSeconds(0)
+    const id = setInterval(() => setSeconds((s) => s + 1), 1000)
+    return () => clearInterval(id)
+  }, [running])
+  return seconds
+}
+
+const mmss = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`
 
 export default function NewIdea() {
   const router = useRouter()
-  const params = useLocalSearchParams<{ dictate?: string; text?: string }>()
+  const params = useLocalSearchParams<{ dictate?: string; text?: string; sample?: string }>()
   const insets = useSafeAreaInsets()
-  const [text, setText] = useState(params.text ?? "")
+  const keyboard = useKeyboardShown()
+  const [text, setText] = useState(() => params.text ?? (params.sample === "long" ? longIdea : ""))
+  const textRef = useRef(text)
+  textRef.current = text
   const input = useRef<TextInputInstance>(null)
+  /** Where the cursor is (or was, when the field last had focus). */
+  const selection = useRef<Selection>(caretAt(text.length))
+  /** Where the current take goes: the selection when the mic was tapped. */
+  const [anchor, setAnchor] = useState<Selection>(selection.current)
+  const anchorRef = useRef(anchor)
+  anchorRef.current = anchor
+  /** After a take ends: where the cursor goes, and whether to put it there (not when the take was sent). */
+  const caretAfter = useRef<number | null>(null)
+  const refocus = useRef(true)
   const create = useAction(createProjectFn)
   const requestId = useRequestId()
   const toast = useToast()
   const askPush = useAtomSet(askPushAtom)
-  const dictation = useDictation(
-    (heard) => setText((current) => (current.trim() ? `${current.trimEnd()} ${heard}` : heard)),
-    "Scale any recipe up or down, and keep the ingredient math honest."
-  )
-  const has = text.trim().length > 0 || (dictation.listening && dictation.heard.trim().length > 0)
+  const dictation = useDictation((heard) => {
+    const placed = insertAt(textRef.current, anchorRef.current, heard)
+    caretAfter.current = placed.caret
+    setText(placed.text)
+  }, "Scale any recipe up or down, and keep the ingredient math honest. Eggs don’t come in halves, and a pinch stays a pinch.")
+  const listening = dictation.listening
+  const seconds = useSeconds(listening)
+  const idea = ideaToSend(text, anchor, listening ? dictation.transcript : undefined)
+  const has = idea.length > 0
 
   useEffect(() => {
     if (params.dictate) {
-      const id = setTimeout(dictation.toggle, 450)
+      const id = setTimeout(startDictating, 450)
       return () => clearTimeout(id)
     }
     const id = setTimeout(() => input.current?.focus(), 350)
@@ -50,13 +113,34 @@ export default function NewIdea() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // When a take ends, the field comes back with the cursor right after what was said.
+  const wasListening = useRef(false)
+  useEffect(() => {
+    if (wasListening.current && !listening && refocus.current) {
+      // A take that heard nothing leaves the selection as it was.
+      const at = caretAfter.current === null ? anchorRef.current : caretAt(caretAfter.current)
+      selection.current = at
+      input.current?.focus()
+      input.current?.setSelection(at.start, at.end)
+    }
+    caretAfter.current = null
+    refocus.current = true
+    wasListening.current = listening
+  }, [listening])
+
+  function startDictating() {
+    setAnchor(selection.current)
+    // The field gives way to the live text, which also ends the keyboard's own dictation, so the two never share the mic.
+    input.current?.blur()
+    dictation.toggle()
+  }
+
   const send = () => {
-    // Sending mid-dictation takes what's been heard so far, rather than dropping it.
-    const idea = (dictation.listening && dictation.heard ? `${text.trimEnd()} ${dictation.heard}` : text).trim()
     if (!idea || create.busy) return
-    if (dictation.listening) {
-      // The field keeps the whole idea, so a failed send can be retried.
-      setText(idea)
+    if (listening) {
+      // Everything heard so far goes in where it was landing, so a failed send leaves the whole idea on the page.
+      refocus.current = false
+      setText(placeTake(text, anchor, dictation.transcript).text)
       dictation.cancel()
     }
     create.run(
@@ -66,10 +150,10 @@ export default function NewIdea() {
           requestId.done()
           // Its first question can take minutes: now is when notifications make sense.
           askPush((n) => n + 1)
-          // The composer gives way to the new project's Chat, with Home behind it.
+          // The page gives way to the new project's Chat, with Home behind it.
           router.replace({ pathname: "/project/[id]", params: { id: project.id, tab: "chat" } })
         },
-        // The idea stays in the field, so they can send it again.
+        // The idea stays on the page, so they can send it again.
         onFailure: (message, error) => {
           if (typeof error === "object" && error !== null && "_tag" in error && error._tag === "NoModelConnection") {
             router.push("/connect")
@@ -81,39 +165,41 @@ export default function NewIdea() {
 
   return (
     <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: color.bg }}>
-      <ScrollView
-        contentContainerStyle={{ paddingTop: insets.top + 4, paddingHorizontal: gutter, paddingBottom: 40 }}
-        keyboardShouldPersistTaps="handled"
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          height: 44,
+          marginTop: insets.top + 4,
+          paddingHorizontal: gutter
+        }}
       >
-        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", height: 44 }}>
-          <IconButton icon="close" label="Close" onPress={() => router.back()} />
-          <Text style={{ fontSize: 15, fontWeight: "600", color: color.t2 }}>New idea</Text>
-          <View style={{ width: 40 }} />
-        </View>
+        <IconButton icon="close" label="Close" onPress={() => router.back()} />
+        <Text style={{ fontSize: 15, fontWeight: "600", color: color.t2 }}>New idea</Text>
+        <View style={{ width: 40 }} />
+      </View>
+      {listening ? (
+        <LiveText {...placeTake(text, anchor, dictation.transcript)} onPress={dictation.stop} />
+      ) : (
         <TextInput
           ref={input}
           value={text}
           onChangeText={setText}
+          onSelectionChange={(e) => {
+            selection.current = e.nativeEvent.selection
+          }}
           multiline
-          placeholder="What do you want to exist?"
+          submitBehavior="newline"
+          placeholder="Start anywhere. Say everything on your mind, in any order — messy is fine."
           placeholderTextColor={color.t3}
           keyboardAppearance="dark"
-          style={{
-            marginTop: 26,
-            fontSize: 32,
-            lineHeight: 37,
-            letterSpacing: -1.1,
-            fontWeight: "600",
-            color: color.t1,
-            minHeight: 44,
-            padding: 0
-          }}
+          selectionColor={color.need}
+          textAlignVertical="top"
+          style={[page, pad, { flex: 1 }]}
           accessibilityLabel="Your idea"
         />
-        <Text style={{ fontSize: 14.5, lineHeight: 21, color: color.t3, marginTop: 8, maxWidth: 300 }}>
-          A sentence is enough. I’ll look into it first, then write to you with questions — that can take a few minutes.
-        </Text>
-      </ScrollView>
+      )}
       <View
         style={{
           flexDirection: "row",
@@ -121,38 +207,44 @@ export default function NewIdea() {
           gap: 12,
           height: 56,
           marginHorizontal: 16,
-          marginBottom: Math.max(insets.bottom, 12) + 2
+          marginTop: 8,
+          marginBottom: keyboard ? 10 : Math.max(insets.bottom, 12) + 2
         }}
       >
         {dictation.available ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={dictation.listening ? "Stop dictating" : "Dictate"}
-            onPress={dictation.toggle}
+            accessibilityLabel={listening ? "Stop dictating" : "Dictate"}
+            onPress={listening ? dictation.stop : startDictating}
             style={{
               width: 56,
               height: 56,
               borderRadius: 28,
-              backgroundColor: dictation.listening ? color.need : color.s2,
+              backgroundColor: listening ? color.need : color.s2,
               borderWidth: 1,
-              borderColor: dictation.listening ? color.need : color.line2,
+              borderColor: listening ? color.need : color.line2,
               alignItems: "center",
               justifyContent: "center"
             }}
           >
-            <Icon name="mic" size={22} color={dictation.listening ? color.needInk : color.t1} />
+            <Icon name="mic" size={22} color={listening ? color.needInk : color.t1} />
           </Pressable>
         ) : null}
-        {dictation.listening ? (
-          <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 12 }}>
-            <Bars />
-            <Text numberOfLines={1} ellipsizeMode="head" style={{ flex: 1, fontSize: 15, color: color.t2 }}>
-              {dictation.heard || "Listening…"}
-            </Text>
-          </View>
-        ) : (
-          <View style={{ flex: 1 }} />
-        )}
+        <View style={{ flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 12 }}>
+          {listening ? (
+            <>
+              <Bars />
+              <Text style={{ fontSize: 14, color: color.t3 }}>
+                <Text style={{ color: color.t1, fontWeight: "600", fontVariant: ["tabular-nums"] }}>
+                  {mmss(seconds)}
+                </Text>
+                {"  Listening"}
+              </Text>
+            </>
+          ) : (
+            <Text style={{ fontSize: 14, color: color.t3 }}>{wordCountLabel(text)}</Text>
+          )}
+        </View>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Send"
@@ -174,5 +266,80 @@ export default function NewIdea() {
         </Pressable>
       </View>
     </KeyboardAvoidingView>
+  )
+}
+
+/**
+ * The page while dictating: the take in place at the cursor, settled words in
+ * white, words still being recognized in gray, an amber caret after them. It
+ * keeps the caret in view as the take grows. Tapping it stops dictating.
+ */
+function LiveText(props: {
+  readonly before: string
+  readonly settled: string
+  readonly interim: string
+  readonly after: string
+  readonly onPress: () => void
+}) {
+  const scroll = useRef<ScrollViewInstance>(null)
+  const view = useRef({ height: 0, y: 0 })
+  const [caretY, setCaretY] = useState(0)
+
+  useEffect(() => {
+    const { height, y } = view.current
+    if (!height) return
+    const bottom = pad.paddingTop + caretY
+    if (bottom > y + height - 24) scroll.current?.scrollTo({ y: bottom - height + 24, animated: true })
+    else if (bottom - lineHeight < y) scroll.current?.scrollTo({ y: Math.max(0, bottom - 2 * lineHeight) })
+  }, [caretY])
+
+  return (
+    <ScrollView
+      ref={scroll}
+      style={{ flex: 1 }}
+      contentContainerStyle={[pad, { flexGrow: 1 }]}
+      scrollEventThrottle={32}
+      onLayout={(e) => {
+        view.current.height = e.nativeEvent.layout.height
+      }}
+      onScroll={(e) => {
+        view.current.y = e.nativeEvent.contentOffset.y
+      }}
+    >
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Stop dictating and edit"
+        onPress={props.onPress}
+        style={{ flexGrow: 1 }}
+      >
+        {/* The text up to the caret, laid out the same but unseen: its height is where the caret is. */}
+        <Text
+          style={[page, { position: "absolute", left: 0, right: 0, top: 0, opacity: 0 }]}
+          onLayout={(e) => setCaretY(e.nativeEvent.layout.height)}
+          accessible={false}
+          importantForAccessibility="no"
+        >
+          {props.before}
+          {props.settled}
+          {props.interim}
+        </Text>
+        <Text style={page}>
+          {props.before}
+          {props.settled}
+          <Text style={{ color: color.t3 }}>{props.interim}</Text>
+          <View
+            style={{
+              width: 2,
+              height: 22,
+              borderRadius: 1,
+              backgroundColor: color.need,
+              marginLeft: 2,
+              transform: [{ translateY: 4 }]
+            }}
+          />
+          {props.after}
+        </Text>
+      </Pressable>
+    </ScrollView>
   )
 }

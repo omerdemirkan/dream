@@ -31,6 +31,15 @@ import { DateTime } from "effect"
 /** The mock's "now": Wednesday, November 4, 2:12 PM in Los Angeles. */
 export const mockNow = DateTime.makeUnsafe("2026-11-04T22:12:00Z")
 
+/** A long brain dump for the New idea page (`/new?sample=long`), from the mock's option A. */
+export const longIdea = [
+  "Okay so, recipes. I cook a lot, from websites and from my mom’s old index cards, and whenever I’m cooking for a different number of people I end up doing math on the back of an envelope and getting it wrong.",
+  "What I want: paste a link or snap a photo of a card, say how many people, and it rewrites the whole recipe. Not just multiplied. Eggs don’t come in halves, a pinch stays a pinch, and a bigger pan changes the baking time.",
+  "My sister would use it too. She cooks for eight most weekends, and she’s in Berlin, so grams. I’m cups. It should flip between them without making either of us think.",
+  "Maybe it remembers the ones we make a lot? A shopping list would be nice, but that’s later, don’t get distracted by it.",
+  "What bugs me about the apps that exist: they’re full of ads, and they scale everything in a straight line, which is how you end up with three tablespoons of salt."
+].join("\n\n")
+
 const at = (iso: string) => DateTime.makeUnsafe(iso)
 const msg = (id: string) => id as MessageId
 const med = (id: string) => id as MediaId
