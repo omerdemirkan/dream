@@ -327,3 +327,8 @@ Other findings:
   limit read 51% right after turn 1 and 51% after turn 2 (no earlier reading: the first `dream usage` had none yet).
   Then archived the project and disconnected ChatGPT (only Claude remains connected). Harmless warning in the codex
   log: `preferred_auth_method` is ignored.
+- Founder set ASC_TESTFLIGHT_KEY_P8 and deleted the dummy vault secret. `testflight-namespace.ts check` on a real Mac
+  (1m8fld3676j48): the Worker released the key (257 bytes, 0600 in 0700), App Store Connect answered 200 for "Dream by
+  Omer", key deleted, Mac destroyed. TestFlight build + upload started (job 295ce6bc).
+- Google Search Console: added TXT `google-site-verification=fqMN…` on omer.build through Cloudflare's API; visible via
+  1.1.1.1 and dns.google within 20 s.
