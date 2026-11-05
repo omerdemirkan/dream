@@ -966,8 +966,8 @@ describe("sandbox refresh", () => {
         assert.strictEqual(donor?.state, "killed")
         const run = commands(before)
         const stage = run.findIndex((c) => c.includes("curl"))
-        const activate = run.findIndex((c) => c.includes("/opt/dream.next/sandbox/refresh.sh activate"))
-        const commit = run.findIndex((c) => c.includes("/opt/dream/sandbox/refresh.sh commit"))
+        const activate = run.findIndex((c) => c.includes("bash /opt/dream-refresh.sh activate"))
+        const commit = run.findIndex((c) => c.includes("bash /opt/dream-refresh.sh commit"))
         assert.isTrue(stage >= 0 && stage < activate && activate < commit, run.join("\n"))
         assert.strictEqual(sandbox.release, "r2")
         const record = yield* core.sandbox
@@ -1023,7 +1023,7 @@ describe("sandbox refresh", () => {
       const before = commands().length
       yield* say("Track sets too")
 
-      assert.isTrue(commands(before).some((c) => c.includes("/opt/dream/sandbox/refresh.sh rollback")))
+      assert.isTrue(commands(before).some((c) => c.includes("bash /opt/dream-refresh.sh rollback")))
       assert.strictEqual(sandbox.release, "r1")
       const record = yield* core.sandbox
       assert.strictEqual(record.templateBuild, "b1")

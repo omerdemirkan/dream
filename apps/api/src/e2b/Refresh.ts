@@ -25,6 +25,8 @@ const ReleaseFile = Schema.fromJsonString(Schema.Struct({ release: Schema.String
 
 export const ReleasePath = "/opt/dream/release.json"
 const Tarball = "/tmp/dream-release.tar"
+/** The new build's refresh.sh, outside both trees (and out of the user's reach). */
+const RefreshScript = "/opt/dream-refresh.sh"
 const DonorTimeout = Duration.minutes(10)
 const NewDaemonWait = Duration.seconds(90)
 
@@ -39,10 +41,15 @@ export const stageCommand = [
   `curl -fsS --retry 3 -H "x-access-token: $DONOR_TOKEN" "$DONOR_URL" | tar -x -C / ${packed
     .map((path) => `--transform='s,^${path.replaceAll(".", "\\.")},${path}.next,'`)
     .join(" ")}`,
-  "test -f /opt/dream.next/sandbox/refresh.sh"
+  // Run from a copy of its own, so rolling back works whatever state a failed activate left the trees in.
+  `install -m 755 /opt/dream.next/sandbox/refresh.sh ${RefreshScript}`
 ].join("\n")
 
-export const refreshScript = (tree: string) => `bash ${tree}/sandbox/refresh.sh`
+/** Runs the new build's refresh.sh; once it's rolled back or committed, its copy goes too. */
+const refresh = (command: "activate" | "rollback" | "commit") =>
+  command === "activate"
+    ? `bash ${RefreshScript} activate`
+    : `bash ${RefreshScript} ${command} && rm -f ${RefreshScript}`
 
 export type RefreshResult = Data.TaggedEnum<{
   /** The sandbox now runs `release`, from template build `build`. */
@@ -131,7 +138,7 @@ export class SandboxRefresh extends Context.Service<
       const rollback = (options: RefreshOptions, step: string, error: { readonly message: string }) =>
         Effect.gen(function* () {
           yield* Effect.logWarning("sandbox refresh failed; rolling back", { step, error: error.message })
-          const restored = yield* root(options.target, `${refreshScript("/opt/dream")} rollback`, "2 minutes").pipe(
+          const restored = yield* root(options.target, refresh("rollback"), "2 minutes").pipe(
             Effect.andThen(waitForDaemon(options)),
             Effect.as(true),
             Effect.catch((rollbackError) =>
@@ -179,7 +186,7 @@ export class SandboxRefresh extends Context.Service<
         )
         const unstage = root(
           options.target,
-          `rm -rf ${packed.map((path) => `/${path}.next`).join(" ")}`,
+          `rm -rf ${packed.map((path) => `/${path}.next`).join(" ")} ${RefreshScript}`,
           "1 minute"
         ).pipe(Effect.ignore)
         yield* root(options.target, stageCommand, "5 minutes", {
@@ -196,11 +203,11 @@ export class SandboxRefresh extends Context.Service<
           yield* unstage
           return RefreshResult.Busy()
         }
-        yield* root(options.target, `${refreshScript("/opt/dream.next")} activate`, "3 minutes").pipe(
+        yield* root(options.target, refresh("activate"), "3 minutes").pipe(
           Effect.catch((error) => rollback(options, "activate", error))
         )
         yield* waitForDaemon(options, release.value).pipe(Effect.catch((error) => rollback(options, "restart", error)))
-        yield* root(options.target, `${refreshScript("/opt/dream")} commit`, "2 minutes").pipe(
+        yield* root(options.target, refresh("commit"), "2 minutes").pipe(
           Effect.catch((error) =>
             Effect.logWarning("couldn't drop the old copies after a refresh", { error: error.message })
           )
