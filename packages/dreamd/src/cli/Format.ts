@@ -17,6 +17,7 @@ import type {
   Wake
 } from "@dream/domain"
 import { DateTime } from "effect"
+import type { PageLoad } from "./PageCheck.ts"
 
 const relative = (time: DateTime.Utc, now: DateTime.Utc): string => {
   const millis = DateTime.toEpochMillis(time) - DateTime.toEpochMillis(now)
@@ -147,3 +148,39 @@ export const usage = (snapshot: UsageSnapshot, now: DateTime.Utc): string =>
       ? []
       : [`Limit reached (${snapshot.limitedUntil.window}): no turns until ${time(snapshot.limitedUntil.until, now)}.`])
   ].join("\n")
+
+const clip = (text: string, max = 200) => {
+  const line = text.trim().split("\n")[0]?.trim() ?? ""
+  return line.length > max ? `${line.slice(0, max - 1)}…` : line
+}
+
+const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`
+
+/** Up to three items under a count, then how many more. */
+const listed = (noun: string, items: ReadonlyArray<string>) =>
+  items.length === 0
+    ? []
+    : [
+        `${plural(items.length, noun)}:`,
+        ...items.slice(0, 3).map((item) => `  ${clip(item)}`),
+        ...(items.length > 3 ? [`  … and ${items.length - 3} more`] : [])
+      ]
+
+/** What a published URL answered when loaded from the sandbox (`dream publish`); at most 10 lines. */
+export const pageCheck = (load: PageLoad): string => {
+  const how = load.via === "browser" ? "in Chromium" : "over HTTP (no browser, so page errors weren't checked)"
+  if (load._tag === "Unreachable") return `Loading it from this sandbox ${how} failed: ${clip(load.message)}.`
+  const type = load.contentType?.split(";")[0]?.trim()
+  const body = load.firstLine === undefined ? undefined : `"${clip(load.firstLine, 160)}"`
+  const title = load.title === undefined ? undefined : `title "${clip(load.title, 120)}"`
+  const showBody = body !== undefined && (title === undefined || (load.status >= 400 && load.firstLine !== load.title))
+  const what = [title, showBody ? body : undefined].filter((part) => part !== undefined).join(", ")
+  const summary = `Loaded it from this sandbox ${how}: ${load.status}${type === undefined ? "" : ` ${type}`}${what === "" ? "" : `, ${what}`}${load.stillLoading ? "; still loading when the check stopped" : ""}`
+  const lines = [
+    summary.endsWith('"') ? summary : `${summary}.`,
+    ...listed("page error", load.pageErrors),
+    ...listed("failed request", load.failedRequests),
+    ...listed("console error", load.consoleErrors)
+  ]
+  return lines.length <= 10 ? lines.join("\n") : [...lines.slice(0, 9), `… ${lines.length - 9} more lines`].join("\n")
+}

@@ -9,9 +9,11 @@ import { NodeServices } from "@effect/platform-node"
 import { ConfigProvider, Context, Effect, Exit, Layer, Queue, Ref } from "effect"
 import { Command } from "effect/cli"
 import { FetchHttpClient } from "effect/http"
+import { TestConsole } from "effect/testing"
 import { Agent } from "../src/Agent.ts"
 import { dream } from "../src/Cli.ts"
 import { Dream } from "../src/cli/Client.ts"
+import { PageCheck, PageCheckError, PageLoad } from "../src/cli/PageCheck.ts"
 import { DreamdConfig } from "../src/Config.ts"
 import { layerWith } from "../src/Daemon.ts"
 import { Harness, type HarnessError, type TurnResult, TurnOutcome } from "../src/harness/Harness.ts"
@@ -41,17 +43,20 @@ const setup = Effect.gen(function* () {
   const shutdown = Context.get(context, Shutdown)
   yield* Effect.forkScoped(agent.run)
   /** Run `dream …` as the agent would, from a process with only `DREAM_SOCKET` set. */
-  const cli = (...args: Array<string>) =>
-    Command.runWith(dream, { version: "test" })(args).pipe(
-      Effect.provide(Layer.mergeAll(Dream.layer, FetchHttpClient.layer, NodeServices.layer)),
-      Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnvRecord({ DREAM_SOCKET: env.DREAM_SOCKET! })))
-    )
+  const cliWith =
+    (pageCheck: Layer.Layer<PageCheck>) =>
+    (...args: Array<string>) =>
+      Command.runWith(dream, { version: "test" })(args).pipe(
+        Effect.provide(Layer.mergeAll(Dream.layer, FetchHttpClient.layer, NodeServices.layer, pageCheck)),
+        Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnvRecord({ DREAM_SOCKET: env.DREAM_SOCKET! })))
+      )
   const waitFor = (predicate: (calls: ReadonlyArray<string>) => boolean) =>
     Effect.gen(function* () {
       while (!predicate(yield* Ref.get(calls))) yield* Effect.sleep("10 millis")
       return yield* Ref.get(calls)
     }).pipe(Effect.timeout("5 seconds"))
-  return { daemonPort, socket: env.DREAM_SOCKET!, calls, turns, log, cli, waitFor, shutdown }
+  const cli = cliWith(PageCheck.layerTest(Effect.die("no page checks here")))
+  return { daemonPort, socket: env.DREAM_SOCKET!, calls, turns, log, cli, cliWith, waitFor, shutdown }
 })
 
 describe("dreamd", () => {
@@ -103,6 +108,43 @@ describe("dreamd", () => {
         calls.find((call) => call.startsWith("SendMessage")),
         '"notify":true'
       )
+    }).pipe(Effect.scoped)
+  )
+
+  it.live("publishes, then prints what the URL answers, and still publishes when the check fails", () =>
+    Effect.gen(function* () {
+      const { cliWith, calls } = yield* setup
+      const publish = (pageCheck: Layer.Layer<PageCheck>) =>
+        Effect.gen(function* () {
+          yield* cliWith(pageCheck)("publish", "--port", "3000")
+          return (yield* TestConsole.logLines).join("\n")
+        }).pipe(Effect.provide(TestConsole.layer))
+      const loaded = yield* publish(
+        PageCheck.layerTest(
+          Effect.succeed(
+            PageLoad.cases.Loaded.make({
+              via: "browser",
+              status: 200,
+              contentType: "text/html",
+              title: "Lift Log",
+              pageErrors: [],
+              consoleErrors: [],
+              failedRequests: [],
+              stillLoading: false
+            })
+          )
+        )
+      )
+      assert.include(loaded, "Port 3000 is public at https://lift-log-x7k2.dream.test.")
+      assert.include(loaded, 'Loaded it from this sandbox in Chromium: 200 text/html, title "Lift Log"')
+      const failed = yield* publish(
+        PageCheck.layerTest(Effect.fail(new PageCheckError({ message: "the browser check hung" })))
+      )
+      assert.include(failed, "Port 3000 is public at")
+      assert.include(failed, "Couldn't check it from this sandbox: the browser check hung.")
+      const crashed = yield* publish(PageCheck.layerTest(Effect.die(new Error("boom"))))
+      assert.include(crashed, "Couldn't check it from this sandbox: boom.")
+      assert.strictEqual((yield* Ref.get(calls)).filter((call) => call.startsWith("Publish")).length, 3)
     }).pipe(Effect.scoped)
   )
 

@@ -1,11 +1,15 @@
 import { assert, describe, it } from "@effect/vitest"
 import { dreamSkill } from "@dream/agent-context"
+import { createServer } from "node:http"
+import type { AddressInfo } from "node:net"
 import { NodeServices } from "@effect/platform-node"
 import { ConfigProvider, DateTime, Effect, Layer, Option, Result } from "effect"
 import { CliOutput, Command } from "effect/cli"
 import { FetchHttpClient } from "effect/http"
 import { dream } from "../src/Cli.ts"
 import { Dream } from "../src/cli/Client.ts"
+import { pageCheck } from "../src/cli/Format.ts"
+import { PageCheck, PageLoad } from "../src/cli/PageCheck.ts"
 import { checkCron, mediaType, parseAt, parseStep, planCopy } from "../src/cli/Parse.ts"
 import { requestedSecret } from "../src/cli/Secrets.ts"
 import { invalidInvocation } from "../src/cli/Usage.ts"
@@ -119,7 +123,12 @@ const run = (args: ReadonlyArray<string>) =>
     return printed[0] ?? failure.message
   }).pipe(
     Effect.provide(
-      Layer.mergeAll(Dream.layer, FetchHttpClient.layer, NodeServices.layer).pipe(
+      Layer.mergeAll(
+        Dream.layer,
+        FetchHttpClient.layer,
+        NodeServices.layer,
+        PageCheck.layerTest(Effect.die("no page checks here"))
+      ).pipe(
         Layer.provide(
           ConfigProvider.layer(ConfigProvider.fromEnv({ env: { DREAM_SOCKET: "/nonexistent/dreamd.sock" } }))
         )
@@ -218,5 +227,96 @@ describe("dream ask and secrets", () => {
       const sent = yield* run(["ask", "What's your Discord bot token?", "--not-a-secret"])
       assert.isTrue(sent.startsWith("Couldn't reach Dream through dreamd"), sent)
     })
+  )
+})
+
+describe("dream publish's check", () => {
+  const loaded = (fields: Partial<Omit<Extract<PageLoad, { _tag: "Loaded" }>, "_tag">>) =>
+    PageLoad.cases.Loaded.make({
+      via: "browser",
+      status: 200,
+      pageErrors: [],
+      consoleErrors: [],
+      failedRequests: [],
+      stillLoading: false,
+      ...fields
+    })
+
+  it("says what the page answers, with its title", () => {
+    assert.strictEqual(
+      pageCheck(loaded({ contentType: "text/html; charset=utf-8", title: "Habit Tracker", firstLine: "Today" })),
+      'Loaded it from this sandbox in Chromium: 200 text/html, title "Habit Tracker"'
+    )
+  })
+
+  it("quotes the body of an error", () => {
+    assert.strictEqual(
+      pageCheck(
+        loaded({
+          via: "http",
+          status: 403,
+          contentType: "text/plain",
+          firstLine: `Blocked request. This host ("3000-abc.e2b.app") is not allowed.`
+        })
+      ),
+      `Loaded it from this sandbox over HTTP (no browser, so page errors weren't checked): 403 text/plain, "Blocked request. This host ("3000-abc.e2b.app") is not allowed."`
+    )
+  })
+
+  it("lists page errors and failed requests, at most ten lines", () => {
+    const text = pageCheck(
+      loaded({
+        contentType: "text/html",
+        title: "Air",
+        pageErrors: ["TypeError: Cannot read properties of undefined (reading 'pm2_5')\n    at App (App.tsx:12)"],
+        failedRequests: ["404 https://x/a.js", "404 https://x/b.js", "500 https://x/api", "404 https://x/c.css"],
+        consoleErrors: ["one", "two"]
+      })
+    )
+    assert.strictEqual(
+      text,
+      [
+        'Loaded it from this sandbox in Chromium: 200 text/html, title "Air"',
+        "1 page error:",
+        "  TypeError: Cannot read properties of undefined (reading 'pm2_5')",
+        "4 failed requests:",
+        "  404 https://x/a.js",
+        "  404 https://x/b.js",
+        "  500 https://x/api",
+        "  … and 1 more",
+        "2 console errors:",
+        "… 2 more lines"
+      ].join("\n")
+    )
+  })
+
+  it("says when nothing answered in time, or the page never finished loading", () => {
+    assert.strictEqual(
+      pageCheck(PageLoad.cases.Unreachable.make({ via: "http", message: "no response within 10s" })),
+      "Loading it from this sandbox over HTTP (no browser, so page errors weren't checked) failed: no response within 10s."
+    )
+    assert.strictEqual(
+      pageCheck(loaded({ contentType: "text/html", stillLoading: true })),
+      "Loaded it from this sandbox in Chromium: 200 text/html; still loading when the check stopped."
+    )
+  })
+
+  it.live("loads a real URL", () =>
+    Effect.gen(function* () {
+      const server = createServer((_, response) => {
+        response.writeHead(403, { "content-type": "text/plain" })
+        response.end('Blocked request. This host ("localhost") is not allowed.\nTo allow this host, …')
+      })
+      yield* Effect.acquireRelease(
+        Effect.promise(() => new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))),
+        () => Effect.sync(() => server.close())
+      )
+      const { port } = server.address() as AddressInfo
+      const load = yield* Effect.gen(function* () {
+        return yield* (yield* PageCheck).check(`http://127.0.0.1:${port}/`)
+      }).pipe(Effect.provide(PageCheck.layer.pipe(Layer.provide([FetchHttpClient.layer, NodeServices.layer]))))
+      assert.strictEqual(load._tag, "Loaded")
+      assert.include(pageCheck(load), `403 text/plain, "Blocked request. This host ("localhost") is not allowed."`)
+    }).pipe(Effect.scoped)
   )
 })

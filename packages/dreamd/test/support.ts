@@ -86,6 +86,7 @@ export const fakeApi = (calls: Ref.Ref<ReadonlyArray<string>>, port: number) => 
         Effect.gen(function* () {
           yield* record(`${tag} ${JSON.stringify(payload)}`)
           if (tag === "SendMessage") return Fixtures.liftLogUpdate
+          if (tag === "Publish") return { url: "https://lift-log-x7k2.dream.test" }
           return undefined
         })
     })

@@ -26,12 +26,13 @@ import {
   type WakeId,
   WakeWhen
 } from "@dream/domain"
-import { Console, DateTime, Effect, FileSystem, Option, Path, Redacted, Result, Schema } from "effect"
+import { Cause, Console, DateTime, Effect, FileSystem, Option, Path, Redacted, Result, Schema } from "effect"
 import { Argument, CliError, Command, Flag } from "effect/cli"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
 import { Dream, userFacing } from "./cli/Client.ts"
 import * as Format from "./cli/Format.ts"
+import { PageCheck, PageLoad } from "./cli/PageCheck.ts"
 import * as Parse from "./cli/Parse.ts"
 import * as Secrets from "./cli/Secrets.ts"
 
@@ -607,16 +608,28 @@ const publish = Command.make(
   (input) =>
     Effect.gen(function* () {
       const dream = yield* Dream
+      const pages = yield* PageCheck
       const published = yield* userFacing(dream.Publish({ port: input.port }))
+      // The check is information for the agent; it never fails the publish.
+      const check = yield* pages.check(published.url).pipe(
+        Effect.map((load) => ({ load, text: Format.pageCheck(load) })),
+        Effect.catchCause((cause) => {
+          const error = Cause.squash(cause)
+          const reason = error instanceof Error ? error.message : String(error)
+          return Effect.succeed({ load: undefined, text: `Couldn't check it from this sandbox: ${reason}.` })
+        })
+      )
       yield* show(
         input.json,
-        Schema.Struct({ url: Schema.String }),
-        published,
-        `Port ${input.port} is public at ${published.url}. Requests to it wake the sandbox.`
+        Schema.Struct({ url: Schema.String, check: Schema.optionalKey(PageLoad) }),
+        check.load === undefined ? published : { ...published, check: check.load },
+        `Port ${input.port} is public at ${published.url}. Requests to it wake the sandbox.\n${check.text}`
       )
     })
 ).pipe(
-  Command.withDescription("Give a port the project's stable public URL."),
+  Command.withDescription(
+    "Give a port the project's stable public URL, then load it from here and print what it answers. Run it again to re-check."
+  ),
   Command.withExamples([{ command: "dream publish --port 3000" }])
 )
 
