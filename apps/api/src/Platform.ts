@@ -17,6 +17,7 @@ import { Projects } from "./db/Projects.ts"
 import { Secrets } from "./db/Secrets.ts"
 import { TestflightGrants } from "./db/TestflightGrants.ts"
 import { TestflightIdentity } from "./db/TestflightIdentity.ts"
+import { UpdateStore } from "./db/Updates.ts"
 import { Users } from "./db/Users.ts"
 import { Daemon } from "./e2b/Daemon.ts"
 import { E2B } from "./e2b/E2B.ts"
@@ -42,7 +43,8 @@ export const databaseLayer = (d1: D1Database) =>
     Connections.layer,
     Secrets.layer,
     TestflightGrants.layer,
-    TestflightIdentity.layer
+    TestflightIdentity.layer,
+    UpdateStore.layer
   ).pipe(Layer.provide(D1Client.layer({ db: d1 }).pipe(Layer.orDie)))
 
 /** Everything above the database: providers, credentials, and the project clients. */

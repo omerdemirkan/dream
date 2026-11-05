@@ -14,60 +14,14 @@
  *   {"sql":"SELECT value FROM settings WHERE name = 'DEV_LOGIN_SECRET'"}
  */
 import { NodeRuntime } from "@effect/platform-node"
-import { Console, Effect, Schema } from "effect"
-import { cloudflare } from "./cloudflare.ts"
+import { Console, Effect } from "effect"
+import { ensureOpsSecret, readOpsSecret } from "./ops.ts"
 
-const OpsDatabase = "dream-ops"
-const Script = "dream-api"
 const ApiUrl = process.env.DREAM_API_URL ?? `https://dream.${process.env.DREAM_DOMAIN ?? "omer.build"}`
 
-const QueryResult = Schema.Array(Schema.Struct({ results: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)) }))
+export const readSecret = readOpsSecret("DEV_LOGIN_SECRET")
 
-const opsDatabase = Effect.gen(function* () {
-  const databases = yield* cloudflare(
-    "GET",
-    "/d1/database",
-    Schema.Array(Schema.Struct({ uuid: Schema.String, name: Schema.String }))
-  )
-  const existing = databases.find((db) => db.name === OpsDatabase)
-  if (existing !== undefined) return existing.uuid
-  const created = yield* cloudflare("POST", "/d1/database", Schema.Struct({ uuid: Schema.String }), {
-    name: OpsDatabase
-  })
-  yield* query(created.uuid, "CREATE TABLE IF NOT EXISTS settings (name TEXT PRIMARY KEY, value TEXT NOT NULL)")
-  return created.uuid
-})
-
-const query = (database: string, sql: string, params: ReadonlyArray<string> = []) =>
-  cloudflare("POST", `/d1/database/${database}/query`, QueryResult, { sql, params }).pipe(
-    Effect.map((results) => results[0]?.results ?? [])
-  )
-
-const randomHex = () =>
-  Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, "0")).join("")
-
-export const readSecret = Effect.gen(function* () {
-  const database = yield* opsDatabase
-  const rows = yield* query(database, "SELECT value FROM settings WHERE name = ?", ["DEV_LOGIN_SECRET"])
-  const value = rows[0]?.value
-  return typeof value === "string" ? value : undefined
-})
-
-const ensure = Effect.gen(function* () {
-  const database = yield* opsDatabase
-  let value = yield* readSecret
-  if (value === undefined) {
-    value = randomHex()
-    yield* query(database, "INSERT INTO settings (name, value) VALUES (?, ?)", ["DEV_LOGIN_SECRET", value])
-    yield* Console.log(`DEV_LOGIN_SECRET: generated and stored in D1 ${OpsDatabase}.settings`)
-  }
-  yield* cloudflare("PUT", `/workers/scripts/${Script}/secrets`, Schema.Unknown, {
-    name: "DEV_LOGIN_SECRET",
-    text: value,
-    type: "secret_text"
-  })
-  yield* Console.log(`DEV_LOGIN_SECRET: set on the ${Script} Worker (same value as ${OpsDatabase})`)
-})
+const ensure = ensureOpsSecret("DEV_LOGIN_SECRET")
 
 const session = (email: string) =>
   Effect.gen(function* () {

@@ -29,6 +29,8 @@ yarn-error.*
 # macOS
 .DS_Store
 *.pem
+# The over-the-air update signing certificate (public; scripts/updates.ts init writes it).
+!/certs/*.pem
 
 # local env files
 .env*.local

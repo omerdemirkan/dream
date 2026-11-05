@@ -10,13 +10,15 @@ import { DatabaseSync } from "node:sqlite"
 const normalize = (value: unknown) =>
   typeof value === "boolean" ? (value ? 1 : 0) : value === undefined ? null : value
 
-export const makeD1 = (migrationsDir = new URL("../../migrations/", import.meta.url)) => {
-  const db = new DatabaseSync(":memory:")
+/** `path`: a file to keep the database in (migrated when it's new), for scripts/updates-dev-server.ts. */
+export const makeD1 = (migrationsDir = new URL("../../migrations/", import.meta.url), path = ":memory:") => {
+  const db = new DatabaseSync(path)
   db.exec("PRAGMA foreign_keys = ON")
+  const migrated = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'users'").all().length > 0
   for (const file of readdirSync(migrationsDir)
     .filter((name) => name.endsWith(".sql"))
     .sort()) {
-    db.exec(readFileSync(new URL(file, migrationsDir), "utf8"))
+    if (!migrated) db.exec(readFileSync(new URL(file, migrationsDir), "utf8"))
   }
   const statement = (sql: string, params: ReadonlyArray<unknown>) => {
     const run = () => {

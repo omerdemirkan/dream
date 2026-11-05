@@ -15,6 +15,10 @@ declare module "node:sqlite" {
 }
 
 declare module "node:fs" {
-  export function readFileSync(path: URL, encoding: "utf8"): string
+  export function readFileSync(path: URL | string, encoding: "utf8"): string
+  export function readFileSync(path: string): Uint8Array
   export function readdirSync(path: URL): Array<string>
+  export function existsSync(path: string): boolean
+  export function mkdirSync(path: string, options?: { recursive?: boolean }): void
+  export function writeFileSync(path: string, data: Uint8Array | string): void
 }

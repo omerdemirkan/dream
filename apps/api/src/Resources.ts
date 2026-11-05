@@ -23,3 +23,11 @@ export const Media = Cloudflare.R2.Bucket("Media", {
   // Pinned for the same reason as the database: stateless deploys must adopt, not recreate.
   name: "dream-media"
 })
+
+/**
+ * Over-the-air update bundles and assets of the iPhone app, by content hash (`assets/<hash>`). Private; the Worker
+ * serves them at `/updates/assets/:hash`.
+ */
+export const Updates = Cloudflare.R2.Bucket("Updates", {
+  name: "dream-updates"
+})

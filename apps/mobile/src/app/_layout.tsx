@@ -19,6 +19,7 @@ import { FocusOverlay } from "../ui/FocusOverlay.tsx"
 import { MediaViewer } from "../ui/Media.tsx"
 import { color } from "../ui/theme.ts"
 import { Toast } from "../ui/Toast.tsx"
+import { UpdatesHost } from "../ui/UpdatesHost.tsx"
 
 void SplashScreen.preventAutoHideAsync()
 
@@ -70,6 +71,7 @@ function Shell() {
         <Stack.Screen name="fixtures/index" />
       </Stack>
       {signedIn ? <DeviceHost /> : null}
+      <UpdatesHost />
       <FixturesLaunch />
       <FocusOverlay />
       <Toast />

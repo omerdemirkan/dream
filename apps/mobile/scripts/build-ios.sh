@@ -17,13 +17,9 @@
 #
 #   On a Namespace Mac, with the key released by Dream's Worker: scripts/testflight-namespace.ts.
 #
-# Environment (app.config.ts reads the DREAM_* values at prebuild):
-#   DREAM_APPLE_TEAM_ID         default ZY6RS9293V (Dream's team)
-#   DREAM_BUNDLE_ID             default build.omer.dream
-#   DREAM_API_URL               default https://dream.omer.build
-#   DREAM_BACKEND               default "live" here ("fixtures" runs the built-in sample world)
-#   DREAM_GOOGLE_IOS_CLIENT_ID  default Dream's iOS client; enables Google sign-in
-#   DREAM_APS_ENVIRONMENT       default "production" for testflight, "development" otherwise
+# Environment (app.config.ts reads the DREAM_* values at prebuild; defaults in build-env.sh):
+#   DREAM_APPLE_TEAM_ID, DREAM_BUNDLE_ID, DREAM_API_URL, DREAM_BACKEND (default "live" here),
+#   DREAM_GOOGLE_IOS_CLIENT_ID, DREAM_APS_ENVIRONMENT, DREAM_UPDATES_CHANNEL   see build-env.sh
 #   BUILD_NUMBER                default: seconds since 2026-01-01, so every upload is unique
 #   DEVELOPER_DIR               Xcode to use. Expo SDK 58 needs Xcode 26.4 or newer (older ones fail compiling
 #                               expo-modules-jsi under Swift 6); by default the newest /Applications/Xcode_26.* that
@@ -42,17 +38,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 if [[ "$mode" != "simulator" && "$mode" != "testflight" ]]; then
-  sed -n '2,31p' "$0"; exit 2
+  sed -n '2,26p' "$0"; exit 2
 fi
 
 app_dir="$(cd "$(dirname "$0")/.." && pwd)"
 repo_root="$(cd "$app_dir/../.." && pwd)"
 build_dir="$app_dir/build"
-export DREAM_BACKEND="${DREAM_BACKEND:-live}"
-# Dream's own Apple team and Google iOS client (public identifiers, not secrets).
-export DREAM_APPLE_TEAM_ID="${DREAM_APPLE_TEAM_ID:-ZY6RS9293V}"
-export DREAM_GOOGLE_IOS_CLIENT_ID="${DREAM_GOOGLE_IOS_CLIENT_ID:-83583994168-spbq6nhfhqv23uj17ua11kt9018k62gv.apps.googleusercontent.com}"
-export DREAM_APS_ENVIRONMENT="${DREAM_APS_ENVIRONMENT:-$([[ $mode == testflight ]] && echo production || echo development)}"
+# shellcheck source=build-env.sh
+. "$app_dir/scripts/build-env.sh" "$mode"
 build_number="${BUILD_NUMBER:-$(( $(date +%s) - 1767225600 ))}"
 # app.config.ts writes it into the app's Info.plist (CFBundleVersion); the widget takes CURRENT_PROJECT_VERSION.
 # They have to match, and every upload needs a new one.
@@ -60,6 +53,9 @@ export BUILD_NUMBER="$build_number"
 
 if [[ "$mode" == "testflight" ]]; then
   : "${DREAM_APPLE_TEAM_ID:?set DREAM_APPLE_TEAM_ID}"
+  # Builds without the certificate can't take over-the-air updates; a TestFlight build must (README).
+  [[ -f "$app_dir/${DREAM_UPDATES_CERTIFICATE:-certs/updates-certificate.pem}" ]] || {
+    echo "no update signing certificate: run \`node apps/mobile/scripts/updates.ts init\` and commit it" >&2; exit 2; }
   [[ -f "$key_path" && -n "$key_id" && -n "$issuer_id" ]] || {
     echo "testflight needs --asc-key-path (an existing .p8), --asc-key-id and --asc-issuer-id" >&2; exit 2; }
   key_path="$(cd "$(dirname "$key_path")" && pwd)/$(basename "$key_path")"
@@ -76,7 +72,7 @@ echo "› Using $(xcodebuild -version | head -n1)"
 echo "› Installing dependencies"
 (cd "$repo_root" && bun install --frozen-lockfile)
 
-echo "› Generating the native project (backend: $DREAM_BACKEND)"
+echo "› Generating the native project (backend: $DREAM_BACKEND, update channel: $DREAM_UPDATES_CHANNEL)"
 (cd "$app_dir" && CI=1 bunx expo prebuild --platform ios --clean --no-install)
 
 echo "› Installing pods"
