@@ -19,3 +19,7 @@ These are best-effort calls I made to keep QA moving. Each can be reversed.
    template rebuild; existing sandboxes keep the old prompt until recreated.
 8. **Test projects are left in place** (paused sandboxes cost little) so the founder can look at them, and are
    listed in docs/qa/QA-LOG.md.
+9. **Deploy from main.** Every deploy replaces the whole Worker, so fix branches rebase on `origin/main` before deploying
+   (written into AGENTS.md). After merging a batch of fixes I deploy `main` myself.
+10. **"Haiku 5.5".** The sandbox's Claude Code (2.1.290) knows Haiku 4.5 as the current Haiku, so test projects run on
+    `claude-haiku-4-5-20251001`. If you meant a newer model, it's one Worker secret (`DREAM_AGENT_MODEL`) to change.

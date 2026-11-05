@@ -174,3 +174,16 @@ the other workstreams to agree first.
   APNs payload as `trigger.payload` (taps) and `data` (background task). The Swift widget and `modules/dream-native`
   both define `DreamActivityAttributes` matching `LiveActivityAttributes`/`LiveActivityContent`; keep the two copies
   identical. iOS builds: `apps/mobile/scripts/build-ios.sh` (expo prebuild + xcodebuild, Simulator or TestFlight).
+
+## Deploying (live at https://dream.omer.build)
+
+- Deploy only from `main` or a branch rebased on the latest `origin/main`: every deploy replaces the whole Worker, so
+  deploying a stale branch silently rolls back other fixes. Run `bun run check` first.
+- `bun run infra:deploy` from the workspace root. The root `.env` needs `DREAM_DOMAIN=omer.build`,
+  `CLOUDFLARE_ACCOUNT_ID=2d98de7c4511e98d2f774c4fcc9b9b93` and `CLOUDFLARE_API_TOKEN=anything` (the workspace's
+  `cloudflare-api` connection adds the real token). D1 and R2 names are pinned in `apps/api/src/Resources.ts`, so a
+  deploy from any machine adopts the live resources.
+- Worker secrets set in the dashboard or through the API survive deploys; plain vars don't.
+- dreamd and the prompt ship inside the `dream-sandbox` template: `bun run template:build` after changing either.
+  Existing sandboxes keep the dreamd they were created with.
+- End-to-end checks against the live API: `node packages/sandbox-template/scripts/qa.ts` (see its header).
