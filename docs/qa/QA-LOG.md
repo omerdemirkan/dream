@@ -271,3 +271,21 @@ Other findings:
   the new CLI (`dream access oauth`) is in place. (Claude Code 2.1.318 is per the child's verification, not re-checked.)
 - Browserbase upgraded by the founder. Verified: `dream browser` from a sandbox started brs_LQS8IJaLf35lPFnOzJP6Yf with
   a CDP URL and live view; `dream browser stop <id>` stopped it. The skill said `dream browser stop` with no id; fixed.
+
+## 8. Calibration: the same scripts on Sonnet 5.5 (15:46–16:10 UTC, DREAM_AGENT_MODEL=claude-sonnet-5-5)
+- QA projects archived first (34, via /admin/projects/:id/archive); E2B shows no sandboxes left.
+- Codenames (prj_a1uYnfoGNFQ3iCTUHovCQg), same idea and same go-ahead as the Haiku run: a one-line plan that already
+  named "reconnect if someone's phone sleeps"; a playable build in 3 minutes with a screenshot attached; claims that
+  were specific and hedged ("I haven't played it on real phones yet"; "a room code can be lost if the sandbox is
+  reset"). After the go-ahead: wake-up reconnect tested by restarting the server mid-game, crash restart, games saved
+  on every move, a `dream wake --cron "*/15 * * * 4,5,6,0" --run ensure.sh` watchdog through Sunday, turn chimes,
+  PWA. Verified with four WebSocket clients through the public URL: the spymaster gets all 25 colors and an operative
+  none; a dropped player rejoins with their token into the same id, team and game; the server sets a turn deadline.
+  Every claim checked out.
+- Cabin (prj_0anBZ9iinMN4W0YfNfNhi4), same idea: built without questions (the idea was complete), sent the share
+  link and an admin passcode, and said plainly "Not done yet: pushing the decision to their phone or inbox", then a
+  question card offering "Email them (needs an email service key)" or banner only. Choosing email → `dream access
+  google --scopes gmail.send`. PLATFORM GAP: Google isn't configured on this deployment, yet the card was created and
+  can never connect (`dream access oauth` refuses in that case). Sent to the Google-refresh child.
+- Verdict: the Haiku failure modes (overclaiming, dropping stated constraints, stopping with promises, no media, no
+  Status) are model capability. The prompt carried Sonnet to the right behaviour unaided, so no Haiku-specific rules.
