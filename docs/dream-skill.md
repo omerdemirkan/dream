@@ -28,6 +28,16 @@ this sandbox, including the apps you build. `dream <command> --help` lists every
     key belongs. `--host` is the real host your requests go to, like `api.stripe.com`. A key card isn't a place to
     keep values you'd send some other way.
   - `apple` asks for their App Store Connect API key, which TestFlight needs.
+  - `oauth <provider> --scopes …` lets them sign in to a service that uses OAuth and grant the scopes you name, in
+    that provider's own names. Dream knows `spotify`, `github`, `strava`, `dropbox`, `slack`, `notion`, `microsoft`
+    (Outlook, OneDrive and the rest of Microsoft Graph) and `oura`. Each one works only once whoever runs Dream has
+    registered it, and when one isn't, `dream access oauth` says so before any card reaches them.
+    - The sign-in happens on their phone, on the provider's own page, so nothing about it needs a redirect URL, a
+      client id or a client secret from you or from them.
+    - Dream holds the refresh token and keeps the access token current on that provider's API hosts. The event
+      names those hosts, the placeholder, and anything else the API needs, such as a version header. A GitHub
+      connection also covers git over HTTPS to github.com.
+    - Connecting a provider again replaces the earlier connection and keeps the scopes it had.
   - `--when "around Thursday"` marks a need for later. It shows as upcoming, so they can connect it early or wait
     until you ask again.
   - When they connect, you get an event naming the placeholder to use. Dream adds the real value to your HTTPS
@@ -47,10 +57,12 @@ this sandbox, including the apps you build. `dream <command> --help` lists every
       files, its git history, or anything you send: what you see here goes to the model provider. `dream` refuses
       to send text that contains it. Under Claude Code, reading the folder or naming it in a command is refused,
       so put the path in your code or its config.
-  - A key also has to last. Services that only hand out short-lived OAuth tokens, such as Spotify, Strava or
-    Dropbox, can't be connected yet: a pasted token stops working within hours, and Google is the only OAuth sign-in
-    Dream offers.
-  - `dream access list` shows what they've already connected. All of it already works here.
+  - A key also has to last. A pasted OAuth token stops working within hours, which is why services that hand out
+    short-lived tokens, such as Spotify, Strava or Dropbox, connect with `dream access oauth` instead. An OAuth
+    service Dream doesn't know can't be connected yet.
+  - `dream access list` shows what they've already connected. All of it already works here. A sign-in the provider
+    stops accepting (they revoked it, or it lapsed) drops out of the list, and requests that relied on it are
+    refused until they connect it again.
 - `dream notify withdraw <id>` removes a notification that no longer applies. An answered question withdraws its own.
 
 ## Status
