@@ -1,0 +1,273 @@
+/**
+ * What the screens read and do, as atoms over the app's services.
+ *
+ * Queries refresh through reactivity keys when a mutation changes what they
+ * show ("projects", "asks", "connections", "integrations"), and when the app
+ * comes back to the foreground.
+ */
+import type {
+  AccessMessage,
+  IntegrationId,
+  Message,
+  MessageId,
+  ModelConnectionId,
+  ModelProvider,
+  ProjectId,
+  QuestionAnswer
+} from "@dream/domain"
+import { Effect, Option, Redacted, Stream } from "effect"
+import { Atom } from "effect/reactivity"
+import { AppClient } from "../data/AppClient.ts"
+import { type AnswerInput, Answers, asksChanged } from "../data/Answers.ts"
+import { ProjectStates } from "../data/ProjectStates.ts"
+import { Session } from "../data/Session.ts"
+import { appRuntime } from "./runtime.ts"
+
+// ---------------------------------------------------------------------------
+// Session
+// ---------------------------------------------------------------------------
+
+export const sessionAtom = appRuntime.subscriptionRef(Session.useSync((session) => session.current))
+
+export const signInWithGoogleFn = appRuntime.fn(
+  Effect.fn(function* (googleIdToken: string) {
+    const app = yield* AppClient
+    const session = yield* Session
+    const result = yield* app.SignIn({ googleIdToken })
+    yield* session.signIn({ token: result.sessionToken, user: result.user })
+    return result.user
+  })
+)
+
+export const devSignInFn = appRuntime.fn(
+  Effect.fn(function* (input: { readonly email: string; readonly secret: string }) {
+    const app = yield* AppClient
+    const session = yield* Session
+    const result = yield* app.DevSignIn({ email: input.email, secret: Redacted.make(input.secret) })
+    yield* session.signIn({ token: result.sessionToken, user: result.user })
+    return result.user
+  })
+)
+
+export const signOutFn = appRuntime.fn(
+  Effect.fn(function* () {
+    const app = yield* AppClient
+    const session = yield* Session
+    yield* app.UnregisterDevice({ deviceId: session.deviceId }).pipe(Effect.ignore)
+    yield* session.signOut
+  })
+)
+
+// ---------------------------------------------------------------------------
+// Home
+// ---------------------------------------------------------------------------
+
+export const projectsAtom = appRuntime
+  .atom(AppClient.use((app) => app.ListProjects()))
+  .pipe(Atom.withReactivity(["projects"]), Atom.keepAlive)
+
+export const openAsksAtom = appRuntime
+  .atom(AppClient.use((app) => app.ListOpenAsks()))
+  .pipe(Atom.withReactivity(["asks"]), Atom.keepAlive)
+
+export const modelConnectionsAtom = appRuntime
+  .atom(AppClient.use((app) => app.ListModelConnections()))
+  .pipe(Atom.withReactivity(["connections"]), Atom.keepAlive)
+
+export const integrationsAtom = appRuntime
+  .atom(AppClient.use((app) => app.ListIntegrations()))
+  .pipe(Atom.withReactivity(["integrations"]))
+
+/** Refreshes everything Home shows, e.g. when the app returns to the foreground or a push arrives. */
+export const refreshHomeFn = appRuntime.fn(
+  Effect.fn(function* () {
+    yield* Effect.void
+  }),
+  { reactivityKeys: ["projects", "asks", "connections"] }
+)
+
+export const createProjectFn = appRuntime.fn(
+  Effect.fn(function* (idea: string) {
+    const app = yield* AppClient
+    return yield* app.CreateProject({ idea })
+  }),
+  { reactivityKeys: ["projects"] }
+)
+
+// ---------------------------------------------------------------------------
+// A project
+// ---------------------------------------------------------------------------
+
+/** The live state of one project; `None` until its first snapshot. */
+export const projectAtom = Atom.family((projectId: ProjectId) =>
+  appRuntime.atom(Stream.unwrap(ProjectStates.useSync((states) => states.state(projectId))))
+)
+
+export const loadEarlierFn = appRuntime.fn(
+  Effect.fn(function* (projectId: ProjectId) {
+    const states = yield* ProjectStates
+    yield* states.loadEarlier(projectId)
+  })
+)
+
+export const reconnectProjectsFn = appRuntime.fn(
+  Effect.fn(function* () {
+    const states = yield* ProjectStates
+    yield* states.reconnect
+  })
+)
+
+const received = (message: Message) => ProjectStates.use((states) => states.receive(message))
+
+export const sendMessageFn = appRuntime.fn(
+  Effect.fn(function* (input: { readonly projectId: ProjectId; readonly text: string }) {
+    const app = yield* AppClient
+    const message = yield* app.SendMessage(input)
+    yield* received(message)
+    return message
+  }),
+  { reactivityKeys: ["projects"] }
+)
+
+// ---------------------------------------------------------------------------
+// Answers
+// ---------------------------------------------------------------------------
+
+/** Answers held for Undo, by question; the UI shows them as answered. */
+export const pendingAnswersAtom = appRuntime.subscriptionRef(Answers.useSync((answers) => answers.pending))
+
+export const answerNowFn = appRuntime.fn(
+  Effect.fn(function* (input: AnswerInput) {
+    const answers = yield* Answers
+    const message = yield* answers.answerNow(input)
+    yield* received(message)
+    return message
+  })
+)
+
+export const answerUndoableFn = appRuntime.fn(
+  Effect.fn(function* (input: AnswerInput) {
+    const answers = yield* Answers
+    yield* answers.answerUndoable(input)
+  })
+)
+
+export const undoAnswerFn = appRuntime.fn(
+  Effect.fn(function* (messageId: MessageId) {
+    const answers = yield* Answers
+    return yield* answers.undo(messageId)
+  })
+)
+
+export const flushAnswersFn = appRuntime.fn(
+  Effect.fn(function* () {
+    const answers = yield* Answers
+    yield* answers.flush
+  })
+)
+
+/** Failures of answers sent after their undo window, for the toast. */
+export const answerFailuresAtom = appRuntime.atom(
+  Stream.unwrap(Answers.useSync((answers) => answers.failures))
+)
+
+export type { QuestionAnswer }
+
+// ---------------------------------------------------------------------------
+// Access
+// ---------------------------------------------------------------------------
+
+interface AccessRef {
+  readonly projectId: ProjectId
+  readonly messageId: MessageId
+}
+
+const accessChanged = { reactivityKeys: [...asksChanged, "integrations"] }
+
+export const startGoogleAccessFn = appRuntime.fn(
+  Effect.fn(function* (input: AccessRef) {
+    const app = yield* AppClient
+    return yield* app.StartGoogleAccess(input)
+  })
+)
+
+const receivedAccess = (message: AccessMessage) => received(message).pipe(Effect.as(message))
+
+export const submitKeyAccessFn = appRuntime.fn(
+  Effect.fn(function* (input: AccessRef & { readonly key: string }) {
+    const app = yield* AppClient
+    const message = yield* app.SubmitKeyAccess({ ...input, key: Redacted.make(input.key) })
+    return yield* receivedAccess(message)
+  }),
+  accessChanged
+)
+
+export const submitAppleAccessFn = appRuntime.fn(
+  Effect.fn(function* (
+    input: AccessRef & { readonly issuerId: string; readonly keyId: string; readonly privateKey: string }
+  ) {
+    const app = yield* AppClient
+    const message = yield* app.SubmitAppleAccess({ ...input, privateKey: Redacted.make(input.privateKey) })
+    return yield* receivedAccess(message)
+  }),
+  accessChanged
+)
+
+export const declineAccessFn = appRuntime.fn(
+  Effect.fn(function* (input: AccessRef) {
+    const app = yield* AppClient
+    return yield* receivedAccess(yield* app.DeclineAccess(input))
+  }),
+  accessChanged
+)
+
+export const disconnectIntegrationFn = appRuntime.fn(
+  Effect.fn(function* (integrationId: IntegrationId) {
+    const app = yield* AppClient
+    yield* app.DisconnectIntegration({ integrationId })
+  }),
+  accessChanged
+)
+
+// ---------------------------------------------------------------------------
+// Model connections (Claude or ChatGPT)
+// ---------------------------------------------------------------------------
+
+export const startModelConnectionFn = appRuntime.fn(
+  Effect.fn(function* (provider: ModelProvider) {
+    const app = yield* AppClient
+    return yield* app.StartModelConnection({ provider })
+  }),
+  { reactivityKeys: ["connections"] }
+)
+
+export const completeModelConnectionFn = appRuntime.fn(
+  Effect.fn(function* (input: { readonly connectionId: ModelConnectionId; readonly code: string }) {
+    const app = yield* AppClient
+    return yield* app.CompleteModelConnection({ connectionId: input.connectionId, code: Redacted.make(input.code) })
+  }),
+  { reactivityKeys: ["connections"] }
+)
+
+/** Polls a device-code sign-in until it's no longer pending. */
+export const awaitModelConnectionFn = appRuntime.fn(
+  Effect.fn(function* (connectionId: ModelConnectionId) {
+    const app = yield* AppClient
+    while (true) {
+      const connection = yield* app.GetModelConnection({ connectionId })
+      if (connection.status !== "pending") return connection
+      yield* Effect.sleep("3 seconds")
+    }
+  }),
+  { reactivityKeys: ["connections"] }
+)
+
+export const disconnectModelConnectionFn = appRuntime.fn(
+  Effect.fn(function* (connectionId: ModelConnectionId) {
+    const app = yield* AppClient
+    yield* app.DisconnectModelConnection({ connectionId })
+  }),
+  { reactivityKeys: ["connections"] }
+)
+
+export const unwrapOption = Option.getOrUndefined

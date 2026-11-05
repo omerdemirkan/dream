@@ -1,0 +1,16 @@
+{
+  // Repo-wide strictness plus what React Native needs. `expo-env.d.ts` (generated
+  // by `expo start`) is replaced by src/env.d.ts so typecheck runs without Expo.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "customConditions": ["react-native"],
+    "allowJs": false,
+    "esModuleInterop": true,
+    "types": ["node"],
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": ["src", "test", "app.config.ts", "targets/**/*.ts"],
+  "exclude": ["node_modules", "ios", "android", ".expo"]
+}
