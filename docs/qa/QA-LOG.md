@@ -218,3 +218,14 @@ Other findings:
 - Merged fix/mobile-timeouts (7fec639; additive contract change: optional `requestId` on SendMessage and CreateProject)
   and deployed main. Writes from the app give up visibly after 25 s and keep the typed text; retries are idempotent.
   Verified live: the same SendMessage sent twice with one requestId returned the same message id, and Chat has one copy.
+- OAuth-only service (Spotify weekly playlist prj_J3N0w5uxBhNl4KoItInopI, new template): good clarifying questions,
+  then `dream access key --host api.spotify.com --format "Bearer {key}"`. Spotify has no long-lived user keys (OAuth
+  tokens last an hour), so the person can't fill that card. Asked "what do I paste?", the agent said to create a
+  Spotify developer app and "send me" the client id and secret, with a localhost redirect URL (unreachable from a
+  phone). Pushed back ("paste the secret in chat? localhost on my phone?"), it opened a second key card with
+  `--host spotify-oauth` (not a host, so the pasted secret could never be used), left the first card open, and didn't
+  answer the localhost question. Two fixes: a skill fact (model-agnostic: a key has to last; short-lived-OAuth
+  services such as Spotify, Strava and Dropbox can't be connected yet; Google is the only OAuth sign-in), and a child
+  (fix/access-host) making `dream access key` refuse a --host that can't be an egress target, in the CLI and the
+  Worker. Product gap for the founder: generic OAuth connections (Dream holds the refresh token, refreshes centrally,
+  and injects the bearer token), which would cover Spotify, Strava, Dropbox, GitHub, Slack, Notion and others.

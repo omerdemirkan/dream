@@ -34,6 +34,9 @@ this sandbox, including the apps you build. `dream <command> --help` lists every
   - Only a key sent in a header can be swapped in. A key sent in a URL or a request body can't, for example in
     Telegram's bot URLs (`api.telegram.org/bot<token>/…`) or in Discord's gateway login. Discord's REST API takes
     `Authorization: Bot …` (`--host discord.com --header Authorization --format "Bot {key}"`).
+  - A key also has to last. Services that only hand out short-lived OAuth tokens, such as Spotify, Strava or
+    Dropbox, can't be connected yet: a pasted token stops working within hours, and Google is the only OAuth sign-in
+    Dream offers.
   - `dream access list` shows what they've already connected. All of it already works here.
 - `dream notify withdraw <id>` removes a notification that no longer applies. An answered question withdraws its own.
 
