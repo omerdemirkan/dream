@@ -292,3 +292,8 @@ Other findings:
 - Declined the Gmail card as the person: Sonnet said it wouldn't use Gmail, kept the banner, and added an "Email them"
   button on the admin page that opens a pre-written email in the person's own mail app (only when the relative left an
   email), offering automatic notifications "another way" later. A graceful, honest fallback without being asked.
+- Merged fix/google-refresh (ab8d9a2): Google refreshes go through the shared OAuth client (only a refusal fails the
+  connection; 5xx/429/network/invalid_client are retried), dead Google connections are announced to the projects
+  that asked, and `dream access google` is refused when Google isn't configured. Deployed; dream-sandbox rebuilt
+  (release a2da26a3b154905d). Verified live from the cabin sandbox: "Google sign-in isn't set up on this deployment of
+  Dream yet … no card was shown", exit 1, nothing new in Chat.
