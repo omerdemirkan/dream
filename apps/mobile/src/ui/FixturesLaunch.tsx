@@ -2,7 +2,7 @@
  * Fixtures mode only: opens a screen state named in the launch arguments, so
  * every state can be reached in the Simulator without tapping:
  *
- *   xcrun simctl launch --terminate-running-process booted com.omer.dream \
+ *   xcrun simctl launch --terminate-running-process booted build.omer.dream \
  *     -dreamScenario signed-in,cabin-resolved -dreamRoute "/project/prj_cabin?tab=chat"
  */
 import { type Href, useRouter } from "expo-router"

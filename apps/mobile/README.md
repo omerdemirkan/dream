@@ -26,7 +26,7 @@ expanded view.
 | --- | --- | --- |
 | `DREAM_BACKEND` | `fixtures` | `fixtures` runs against the in-app fake; `live` talks to the API |
 | `DREAM_API_URL` | `https://dream.omer.build` | RPC at `/rpc`, live sockets via `GetLiveUrl`, media at `/media/:id` |
-| `DREAM_BUNDLE_ID` | `com.omer.dream` | placeholder until the founder confirms |
+| `DREAM_BUNDLE_ID` | `build.omer.dream` | registered on team ZY6RS9293V |
 | `DREAM_APPLE_TEAM_ID` | — | needed to sign the app and the widget |
 | `DREAM_GOOGLE_IOS_CLIENT_ID` | — | enables native Google Sign-In (adds its URL scheme) |
 | `DREAM_GOOGLE_WEB_CLIENT_ID` | — | optional: Google's ID token audience becomes the web client |
@@ -55,7 +55,7 @@ Reach any state from a link, or from launch arguments in the Simulator (no taps 
 
 ```sh
 xcrun simctl openurl booted "dream://project/prj_cabin?tab=chat&focus=msg_cabinrule"
-xcrun simctl launch --terminate-running-process booted com.omer.dream \
+xcrun simctl launch --terminate-running-process booted build.omer.dream \
   -dreamScenario signed-in,cabin-resolved -dreamRoute "/project/prj_cabin?tab=chat"
 ```
 

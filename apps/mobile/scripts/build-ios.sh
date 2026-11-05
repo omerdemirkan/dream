@@ -13,11 +13,11 @@
 #       App Store Connect for TestFlight.
 #
 # Environment (app.config.ts reads the DREAM_* values at prebuild):
-#   DREAM_APPLE_TEAM_ID         required for testflight
-#   DREAM_BUNDLE_ID             default com.omer.dream
+#   DREAM_APPLE_TEAM_ID         default ZY6RS9293V (Dream's team)
+#   DREAM_BUNDLE_ID             default build.omer.dream
 #   DREAM_API_URL               default https://dream.omer.build
 #   DREAM_BACKEND               default "live" here ("fixtures" runs the built-in sample world)
-#   DREAM_GOOGLE_IOS_CLIENT_ID  enables Google sign-in
+#   DREAM_GOOGLE_IOS_CLIENT_ID  default Dream's iOS client; enables Google sign-in
 #   DREAM_APS_ENVIRONMENT       default "production" for testflight, "development" otherwise
 #   BUILD_NUMBER                default: seconds since 2026-01-01, so every upload is unique
 #   DEVELOPER_DIR               Xcode to use. Expo SDK 58 needs Xcode 26.4 or newer (older ones fail compiling
@@ -44,6 +44,9 @@ app_dir="$(cd "$(dirname "$0")/.." && pwd)"
 repo_root="$(cd "$app_dir/../.." && pwd)"
 build_dir="$app_dir/build"
 export DREAM_BACKEND="${DREAM_BACKEND:-live}"
+# Dream's own Apple team and Google iOS client (public identifiers, not secrets).
+export DREAM_APPLE_TEAM_ID="${DREAM_APPLE_TEAM_ID:-ZY6RS9293V}"
+export DREAM_GOOGLE_IOS_CLIENT_ID="${DREAM_GOOGLE_IOS_CLIENT_ID:-83583994168-spbq6nhfhqv23uj17ua11kt9018k62gv.apps.googleusercontent.com}"
 export DREAM_APS_ENVIRONMENT="${DREAM_APS_ENVIRONMENT:-$([[ $mode == testflight ]] && echo production || echo development)}"
 build_number="${BUILD_NUMBER:-$(( $(date +%s) - 1767225600 ))}"
 

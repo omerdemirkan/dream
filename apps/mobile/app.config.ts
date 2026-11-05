@@ -13,7 +13,7 @@ import type { ConfigContext, ExpoConfig } from "expo/config"
  * - DREAM_APS_ENVIRONMENT       "development" or "production" (APNs entitlement)
  */
 const env = process.env
-const bundleId = env.DREAM_BUNDLE_ID ?? "com.omer.dream"
+const bundleId = env.DREAM_BUNDLE_ID ?? "build.omer.dream"
 const googleIosClientId = env.DREAM_GOOGLE_IOS_CLIENT_ID
 
 /** Google Sign-In returns to the reversed client id as a URL scheme. */
