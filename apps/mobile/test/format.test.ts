@@ -63,4 +63,40 @@ describe("markdown", () => {
     )
     assert.isTrue(blocks[2]?.kind === "list" && blocks[2].ordered)
   })
+  it("reads agent-style messages: headings, labels over lists, rules and code", () => {
+    const source = [
+      "## ✅ **Done**",
+      "**Core features:**",
+      "- ✅ Magic links",
+      "- ✅ Booking",
+      "  with approval",
+      "",
+      "---",
+      "1. First",
+      "",
+      "2. Second",
+      "",
+      "```sh",
+      "npm start",
+      "```",
+      "Ship it."
+    ].join("\n")
+    const blocks = parseBlocks(source)
+    assert.deepStrictEqual(
+      blocks.map((b) => b.kind),
+      ["heading", "paragraph", "list", "rule", "list", "code", "paragraph"]
+    )
+    assert.deepStrictEqual(blocks[2]?.kind === "list" ? blocks[2].items : [], [
+      "✅ Magic links",
+      "✅ Booking\nwith approval"
+    ])
+    const numbered = blocks[4]
+    assert.isTrue(numbered?.kind === "list" && numbered.ordered && numbered.start === 1 && numbered.items.length === 2)
+    assert.strictEqual(blocks[5]?.kind === "code" ? blocks[5].text : "", "npm start")
+  })
+
+  it("keeps a list's first number", () => {
+    const blocks = parseBlocks("3. three\n4. four")
+    assert.isTrue(blocks[0]?.kind === "list" && blocks[0].start === 3)
+  })
 })
