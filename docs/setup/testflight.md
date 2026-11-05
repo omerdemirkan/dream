@@ -34,6 +34,9 @@ node apps/mobile/scripts/testflight-namespace.ts check       # ~1 min, builds no
 node apps/mobile/scripts/testflight-namespace.ts testflight  # 15–25 min, uploads
 ```
 
+If the run is interrupted after the build started, rerunning `testflight` picks the build up where it is;
+`node apps/mobile/scripts/testflight-namespace.ts destroy` stops it instead.
+
 `check` makes sure the key arrives intact, then signs one read-only App Store Connect request with it (it looks
 up the "Dream by Omer" record). It prints only the key's size, file mode and a short hash, never the key.
 `testflight` then builds and uploads, as step 3 would on your Mac.

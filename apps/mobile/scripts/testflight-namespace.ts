@@ -20,7 +20,19 @@
  * that key (`nsc auth issue-id-token`, 5 minutes), and POST both to `/testflight/asc-key`. The Worker checks the
  * token against Namespace's JWKS, the tenant, the grant, and that this Mac is the workspace's only instance, then
  * returns the .p8 encrypted to the Mac's key; the Mac decrypts it into ~/.dream-asc (0600 in a 0700 directory).
- * After the build the key is deleted and the Mac destroyed, also on failure or Ctrl-C.
+ * The build runs detached on the Mac (its own session, log at ~/dream-build/build.log, exit code in
+ * ~/dream-build/exit); the launcher starts it and follows it in short SSH calls, retried, and every Compute API,
+ * Cloudflare and Worker call is retried on network failures, because this environment drops requests now and
+ * then. When the build ends, its script deletes the key, and the launcher destroys the Mac.
+ * If the launcher dies (or is stopped) after the build started, the Mac keeps building: rerun `testflight` and
+ * it finds the Mac by its label (dream=testflight) and picks it up instead of starting a second one. Before
+ * that point, a failure or Ctrl-C destroys the Mac. The Mac's 2-hour deadline is the backstop.
+ *
+ *   node apps/mobile/scripts/testflight-namespace.ts destroy
+ *       Destroys every build Mac (label dream=testflight).
+ *
+ * --dry-run (with testflight) does everything except the build, which becomes a 3-minute loop that reports
+ * whether the key is in place; it exercises the key release, shipping, the detached run and the pick-up.
  *
  * Environment:
  *   DREAM_ASC_KEY_ID          default 5G566N355S
@@ -38,14 +50,21 @@
  * Never put one on an SSH command line: Namespace logs every SSH command run on the Mac.
  */
 import { spawn } from "node:child_process"
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { createHash } from "node:crypto"
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 const mode = process.argv[2]
 const noUpload = process.argv.includes("--no-upload")
-if ((mode !== "check" && mode !== "testflight") || process.argv.slice(3).some((a) => a !== "--no-upload")) {
-  console.error("usage: node apps/mobile/scripts/testflight-namespace.ts check | testflight [--no-upload]")
+const dryRun = process.argv.includes("--dry-run")
+if (
+  (mode !== "check" && mode !== "testflight" && mode !== "destroy") ||
+  process.argv.slice(3).some((a) => a !== "--no-upload" && a !== "--dry-run")
+) {
+  console.error(
+    "usage: node apps/mobile/scripts/testflight-namespace.ts check | testflight [--no-upload] [--dry-run] | destroy"
+  )
   process.exit(2)
 }
 const keyId = process.env.DREAM_ASC_KEY_ID ?? "5G566N355S"
@@ -78,17 +97,59 @@ const log = (line: string) => console.log(`› ${line}`)
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const quote = (s: string) => `'${s.replaceAll("'", `'\\''`)}'`
 
+/**
+ * fetch, retried: this environment's network drops requests now and then ("fetch failed"), so network errors and
+ * 5xx answers are retried with backoff for about two minutes. Callers that must not repeat a request (creating
+ * a Mac) check first whether the earlier attempt went through.
+ */
+const fetchRetrying = async (url: string, init: RequestInit, what: string, tries = 8): Promise<Response> => {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const res = await fetch(url, { ...init, signal: AbortSignal.timeout(60_000) })
+      if (res.status < 500 || attempt >= tries) return res
+      log(`${what}: ${res.status}, retrying`)
+    } catch (e: any) {
+      if (attempt >= tries) throw new Error(`${what}: ${e?.cause?.code ?? e?.message ?? e}`)
+      if (attempt >= 2) log(`${what}: ${e?.cause?.code ?? e?.message ?? e}, retrying`)
+    }
+    await sleep(Math.min(2_000 * 2 ** (attempt - 1), 30_000))
+  }
+}
+
+/** A Compute API call. CreateInstance isn't retried here (a lost answer may hide a created Mac); see main. */
 const compute = async (method: string, body: object): Promise<Json> => {
   const token = process.env.NAMESPACE_TOKEN
-  const res = await fetch(`${api}/${method}`, {
-    method: "POST",
-    headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
-    body: JSON.stringify(body)
-  })
+  const res = await fetchRetrying(
+    `${api}/${method}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify(body)
+    },
+    `Namespace ${method}`,
+    method === "CreateInstance" ? 1 : 8
+  )
   const json: Json = await res.json().catch(() => ({}))
   // Only the message: some responses (DescribeInstance, GetSSHConfig) carry the Mac's SSH key.
   if (!res.ok) throw new Error(`Namespace ${method}: ${res.status} ${json?.message ?? ""}`)
   return json
+}
+
+/** The workspace's Dream build Macs (label dream=testflight) that aren't gone. */
+const buildMacs = async (label?: { name: string; value: string }): Promise<Array<{ id: string; status: string }>> => {
+  const macs: Array<{ id: string; status: string }> = []
+  let cursor: string | undefined
+  do {
+    const page = await compute("ListInstances", cursor ? { paginationCursor: cursor } : {})
+    for (const m of page.instances ?? []) {
+      const labels: Array<{ name: string; value: string }> = m.labels ?? []
+      const has = (l: { name: string; value: string }) => labels.some((x) => x.name === l.name && x.value === l.value)
+      if (m.status !== "DESTROYED" && has({ name: "dream", value: "testflight" }) && (!label || has(label)))
+        macs.push({ id: m.instanceId, status: m.status })
+    }
+    cursor = page.paginationCursor || undefined
+  } while (cursor)
+  return macs
 }
 
 /** DEV_LOGIN_SECRET, from the operator's D1 `dream-ops` (see infra/scripts/dev-login.ts). */
@@ -96,13 +157,17 @@ const devSecret = async (): Promise<string> => {
   if (process.env.DREAM_DEV_SECRET) return process.env.DREAM_DEV_SECRET
   const cf = async (path: string, init?: RequestInit): Promise<Json> => {
     const token = process.env.CLOUDFLARE_API_TOKEN
-    const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${cloudflareAccount}${path}`, {
-      ...init,
-      headers: {
-        "content-type": "application/json",
-        ...(token && token !== "anything" ? { authorization: `Bearer ${token}` } : {})
-      }
-    })
+    const res = await fetchRetrying(
+      `https://api.cloudflare.com/client/v4/accounts/${cloudflareAccount}${path}`,
+      {
+        ...init,
+        headers: {
+          "content-type": "application/json",
+          ...(token && token !== "anything" ? { authorization: `Bearer ${token}` } : {})
+        }
+      },
+      "Cloudflare"
+    )
     const body: Json = await res.json().catch(() => ({}))
     if (!body.success) throw new Error(`Cloudflare ${path}: ${res.status}`)
     return body.result
@@ -186,6 +251,8 @@ const b64u = (bytes) => Buffer.from(bytes).toString("base64url")
 
 let instanceId: string | undefined
 let workDir: string | undefined
+/** Set once the build runs detached on the Mac: from then on only its outcome (or the deadline) ends the Mac. */
+let detached = false
 
 const destroy = async () => {
   if (instanceId) {
@@ -198,10 +265,22 @@ const destroy = async () => {
   }
   if (workDir) rmSync(workDir, { recursive: true, force: true })
 }
+const leave = () => {
+  if (workDir) rmSync(workDir, { recursive: true, force: true })
+  console.error(
+    `The build keeps running on Mac ${instanceId}: rerun \`node apps/mobile/scripts/testflight-namespace.ts testflight\` to pick it up, or \`… destroy\` to stop it. Its deadline ends it otherwise.`
+  )
+}
 for (const signal of ["SIGINT", "SIGTERM"] as const)
-  process.on(signal, () => void destroy().finally(() => process.exit(130)))
+  process.on(signal, () => {
+    if (detached) {
+      leave()
+      process.exit(130)
+    }
+    void destroy().finally(() => process.exit(130))
+  })
 
-const run = (command: string, args: Array<string>, input?: string | NodeJS.ReadableStream) =>
+const run = (command: string, args: Array<string>, input?: string | Buffer) =>
   new Promise<{ code: number; stdout: string }>((resolve, reject) => {
     const child = spawn(command, args, { stdio: ["pipe", "pipe", "inherit"] })
     let stdout = ""
@@ -210,56 +289,92 @@ const run = (command: string, args: Array<string>, input?: string | NodeJS.Reada
     })
     child.on("error", reject)
     child.on("close", (code) => resolve({ code: code ?? 1, stdout }))
-    if (typeof input === "string") child.stdin.end(input)
-    else if (input) input.pipe(child.stdin)
-    else child.stdin.end()
+    // A child that exits without reading its input (EPIPE) reports through its exit code.
+    child.stdin.on("error", () => {})
+    child.stdin.end(input ?? "")
   })
 
+/** Where the detached build keeps its state on the Mac. */
+const buildDir = "$HOME/dream-build"
+const keyDir = "$HOME/.dream-asc"
+
 const main = async () => {
-  if (mode === "testflight") {
-    const dirty = await run("git", ["status", "--porcelain", "--untracked-files=no"])
-    if (dirty.stdout.trim()) log("Uncommitted changes aren't shipped: the Mac builds HEAD")
+  if (mode === "destroy") {
+    const macs = await buildMacs()
+    for (const mac of macs) {
+      instanceId = mac.id
+      await destroy()
+    }
+    if (macs.length === 0) log("No build Mac is running")
+    return
   }
 
-  const keyDir = "$HOME/.dream-asc"
-  const secret = await devSecret()
-  const deadline = new Date(Date.now() + (mode === "check" ? 20 : 120) * 60_000).toISOString()
-  log("Starting a Mac (macos.version=27.x)")
-  const createMac = () =>
-    compute("CreateInstance", {
-      shape: {
-        virtualCpu: 6,
-        memoryMegabytes: 14336,
-        os: "macos",
-        machineArch: "arm64",
-        selectors: [{ name: "macos.version", value: "27.x" }]
-      },
-      documentedPurpose: "Dream: TestFlight build of the iPhone app",
-      labels: [{ name: "dream", value: "testflight" }],
-      deadline
-    })
-  // A Mac destroyed a moment ago still holds the plan's one slot for about half a minute.
-  let created: Json
-  for (let attempt = 1; ; attempt++) {
-    try {
-      created = await createMac()
-      break
-    } catch (e: any) {
-      if (!String(e.message).includes("instance limit")) throw e
-      if (attempt >= 5)
-        throw new Error(`${e.message}\nAnother Mac is running (one at a time on this plan); stop it first.`)
-      await sleep(15_000)
+  // Pick up a build Mac a previous run left (its launcher died), rather than start a second one.
+  const existing = await buildMacs()
+  if (existing.length > 1)
+    throw new Error(`Several build Macs are running (${existing.map((m) => m.id).join(", ")}): run \`… destroy\``)
+  if (existing.length === 1 && mode === "check")
+    throw new Error(`Build Mac ${existing[0]!.id} is running: rerun \`testflight\` to pick it up, or \`destroy\` it`)
+  if (existing.length === 1) {
+    instanceId = existing[0]!.id
+    detached = true // until its state says otherwise, don't end a Mac this run didn't start
+    log(`Picking up build Mac ${instanceId} (${existing[0]!.status})`)
+  } else {
+    if (mode === "testflight") {
+      const dirty = await run("git", ["status", "--porcelain", "--untracked-files=no"])
+      if (dirty.stdout.trim()) log("Uncommitted changes aren't shipped: the Mac builds HEAD")
     }
+    const deadline = new Date(Date.now() + (mode === "check" ? 20 : 120) * 60_000).toISOString()
+    // A run label, so a CreateInstance whose answer was lost can be found instead of repeated.
+    const runLabel = {
+      name: "dream-run",
+      value: `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+    }
+    log("Starting a Mac (macos.version=27.x)")
+    for (let attempt = 1; ; attempt++) {
+      try {
+        const created = await compute("CreateInstance", {
+          shape: {
+            virtualCpu: 6,
+            memoryMegabytes: 14336,
+            os: "macos",
+            machineArch: "arm64",
+            selectors: [{ name: "macos.version", value: "27.x" }]
+          },
+          documentedPurpose: "Dream: TestFlight build of the iPhone app",
+          labels: [{ name: "dream", value: "testflight" }, runLabel],
+          deadline
+        })
+        instanceId = created.metadata.instanceId as string
+        break
+      } catch (e: any) {
+        const found = await buildMacs(runLabel).catch(() => [])
+        if (found.length > 0) {
+          instanceId = found[0]!.id
+          break
+        }
+        // Retry network failures, and the plan's one-Mac limit (a Mac destroyed a moment ago still holds the slot
+        // for about half a minute); other refusals are final.
+        const limit = String(e.message).includes("instance limit")
+        if ((/CreateInstance: 4\d\d/.test(e.message) && !limit) || attempt >= 5)
+          throw new Error(
+            limit ? `${e.message}\nAnother Mac is running (one at a time on this plan); stop it first.` : e.message
+          )
+        log(`Creating the Mac: ${limit ? "the Mac slot is still taken" : e.message}; retrying`)
+        await sleep(15_000)
+      }
+    }
+    log(`Mac ${instanceId} created; waiting for it to run`)
   }
-  instanceId = created.metadata.instanceId as string
-  log(`Mac ${instanceId} created; waiting for it to run`)
 
   for (let i = 0; ; i++) {
     const described = await compute("DescribeInstance", { instanceId })
     const status: string = described.metadata?.status ?? "UNKNOWN"
     if (status === "RUNNING") break
-    if (status !== "PENDING" || i >= 60)
+    if (status !== "PENDING" || i >= 60) {
+      detached = false
       throw new Error(status === "PENDING" ? "The Mac stayed PENDING for 5 minutes" : `The Mac ended up ${status}`)
+    }
     await sleep(5_000)
   }
 
@@ -282,58 +397,155 @@ const main = async () => {
     "-o",
     `StrictHostKeyChecking=${hostKeys.length > 0 ? "yes" : "accept-new"}`,
     "-o",
-    "ServerAliveInterval=30",
+    "ConnectTimeout=20",
+    "-o",
+    "ServerAliveInterval=15",
+    "-o",
+    "ServerAliveCountMax=4",
     "-o",
     "LogLevel=ERROR",
     `${ssh.username}@${ssh.endpoint}`
   ]
-  const onMac = (script: string, input?: string | NodeJS.ReadableStream) => run("ssh", [...sshArgs, script], input)
+  /** One short SSH call, retried while the connection itself fails (exit 255). */
+  const onMac = async (script: string, input?: string | Buffer, tries = 6) => {
+    for (let attempt = 1; ; attempt++) {
+      const result = await run("ssh", [...sshArgs, script], input)
+      if (result.code !== 255 || attempt >= tries) return result
+      await sleep(Math.min(3_000 * attempt, 20_000))
+    }
+  }
 
-  const granted = await fetch(`${keyApi}/admin/testflight/grants`, {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-dream-dev-secret": secret },
-    body: JSON.stringify({ instanceId })
-  })
-  if (!granted.ok) throw new Error(`Granting the Mac failed: ${granted.status} ${await granted.text()}`)
-  log(`Granted Mac ${instanceId} the key (once, 15 minutes); fetching it on the Mac`)
-  const fetched = await onMac(
-    `PATH=/opt/homebrew/bin:$PATH node --input-type=commonjs - ${keyId} ${issuerId} ${bundleId} ${keyApi} ${instanceId}`,
-    fetchKeyOnMac
-  )
-  const report: Json = JSON.parse(fetched.stdout.trim().split("\n").pop() || "{}")
-  const facts = `${report.bytes ?? "?"} bytes, mode ${report.mode ?? "?"} in a ${report.dirMode ?? "?"} directory, sha256 ${report.sha256 ?? "?"}…`
-  if (!report.ok) throw new Error(`The key isn't usable: ${report.problem ?? "unknown"} (${facts})`)
-  log(`Key arrived (${facts}); App Store Connect answered ${report.appStoreConnect} for "${report.app}"`)
+  const keyFile = `${keyDir}/AuthKey_${keyId}.p8`
+  const state = (
+    await onMac(
+      `if [ -f ${buildDir}/exit ]; then echo done; elif [ -f ${buildDir}/pid ]; then echo started; elif [ -s ${keyFile} ]; then echo keyed; else echo fresh; fi`
+    )
+  ).stdout.trim()
+  if (!["done", "started", "keyed", "fresh"].includes(state)) throw new Error("Can't reach the Mac over SSH")
+  if (state === "fresh" || state === "keyed") detached = false
 
-  if (mode === "testflight") {
+  if (state === "fresh") {
+    const secret = await devSecret()
+    const granted = await fetchRetrying(
+      `${keyApi}/admin/testflight/grants`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-dream-dev-secret": secret },
+        body: JSON.stringify({ instanceId })
+      },
+      "Granting the Mac"
+    )
+    if (!granted.ok) throw new Error(`Granting the Mac failed: ${granted.status} ${await granted.text()}`)
+    log(`Granted Mac ${instanceId} the key (once, 15 minutes); fetching it on the Mac`)
+    const fetched = await onMac(
+      `PATH=/opt/homebrew/bin:$PATH node --input-type=commonjs - ${keyId} ${issuerId} ${bundleId} ${keyApi} ${instanceId}`,
+      fetchKeyOnMac
+    )
+    const report: Json = JSON.parse(fetched.stdout.trim().split("\n").pop() || "{}")
+    const facts = `${report.bytes ?? "?"} bytes, mode ${report.mode ?? "?"} in a ${report.dirMode ?? "?"} directory, sha256 ${report.sha256 ?? "?"}…`
+    if (!report.ok) throw new Error(`The key isn't usable: ${report.problem ?? "unknown"} (${facts})`)
+    log(`Key arrived (${facts}); App Store Connect answered ${report.appStoreConnect} for "${report.app}"`)
+  } else if (state === "keyed") log("The key is already on the Mac")
+
+  if (mode === "check") {
+    await onMac(`rm -rf ${keyDir}`)
+    log("Deleted the key from the Mac")
+    return
+  }
+
+  if (state === "fresh" || state === "keyed") {
     log("Shipping HEAD to the Mac")
-    const archive = spawn("git", ["archive", "--format=tar", "HEAD"], { stdio: ["ignore", "pipe", "inherit"] })
-    const shipped = await onMac("rm -rf dream && mkdir dream && tar -x -C dream", archive.stdout)
-    if (shipped.code !== 0) throw new Error("Shipping the tree failed")
+    const tarball = join(workDir, "dream.tar")
+    const archived = await run("git", ["archive", "--format=tar", "-o", tarball, "HEAD"])
+    if (archived.code !== 0) throw new Error("git archive failed")
+    const bytes = readFileSync(tarball)
+    const digest = createHash("sha256").update(bytes).digest("hex")
+    for (let attempt = 1; ; attempt++) {
+      await onMac(`mkdir -p ${buildDir} && cat > ${buildDir}/dream.tar`, bytes)
+      const remote = await onMac(`shasum -a 256 ${buildDir}/dream.tar 2>/dev/null | cut -d' ' -f1`)
+      if (remote.stdout.trim() === digest) break
+      if (attempt >= 5) throw new Error("Shipping the tree failed")
+      log("The upload came through incomplete; sending it again")
+    }
     const env = passThrough
       .filter((name) => process.env[name] !== undefined)
       .map((name) => `${name}=${quote(process.env[name] ?? "")}`)
       .join(" ")
-    const build = [
-      "set -euo pipefail",
+    // Runs detached; deletes the key itself when the build ends, so a dead launcher doesn't leave it behind.
+    const script = [
+      "#!/bin/bash",
+      "set -uo pipefail",
       'export PATH="$HOME/.bun/bin:/opt/homebrew/bin:$PATH"',
-      "command -v bun >/dev/null || curl -fsSL https://bun.sh/install | bash -s bun-v1.4.4 >/dev/null",
-      "cd dream",
-      `${env} ${noUpload ? "ASC_EXPORT_ONLY=1 " : ""}apps/mobile/scripts/build-ios.sh testflight --asc-key-path ${keyDir}/AuthKey_${keyId}.p8 --asc-key-id ${keyId} --asc-issuer-id ${issuerId}`
+      `rm -rf "$HOME/dream" && mkdir "$HOME/dream" && tar -xf "${buildDir}/dream.tar" -C "$HOME/dream"`,
+      "(",
+      "  set -e",
+      // SHELL=/bin/sh: the installer then leaves ~/.zshrc alone (its edits make every later SSH call noisy).
+      "  command -v bun >/dev/null || curl -fsSL https://bun.sh/install | SHELL=/bin/sh bash -s bun-v1.4.4 >/dev/null 2>&1",
+      '  cd "$HOME/dream"',
+      dryRun
+        ? `  for i in $(seq 1 18); do echo "dry run $i/18: key $([ -s "${keyFile}" ] && echo present || echo missing)"; sleep 10; done`
+        : `  ${env} ${noUpload ? "ASC_EXPORT_ONLY=1 " : ""}apps/mobile/scripts/build-ios.sh testflight --asc-key-path "${keyFile}" --asc-key-id ${keyId} --asc-issuer-id ${issuerId}`,
+      ")",
+      "code=$?",
+      `rm -rf "${keyDir}"`,
+      `echo $code > "${buildDir}/exit.tmp" && mv "${buildDir}/exit.tmp" "${buildDir}/exit"`,
+      ""
     ].join("\n")
-    const child = spawn("ssh", [...sshArgs, `bash -c ${quote(build)}`], { stdio: ["ignore", "inherit", "inherit"] })
-    const code = await new Promise<number>((resolve) => child.on("close", (c) => resolve(c ?? 1)))
-    if (code !== 0) throw new Error(`build-ios.sh failed (exit ${code})`)
-  }
+    await onMac(`cat > ${buildDir}/run.sh && chmod +x ${buildDir}/run.sh`, script)
+    // Starting is the one step that mustn't repeat: the pid file makes a retried start a no-op.
+    const started = await onMac(
+      // Its own session (macOS has no setsid(1); its nohup refuses to run without a console), so it outlives SSH.
+      `cd ${buildDir} && if [ ! -f pid ]; then echo ${digest.slice(0, 12)} > commit; /usr/bin/perl -MPOSIX=setsid -e 'setsid(); exec @ARGV' ./run.sh > build.log 2>&1 < /dev/null & echo $! > pid; fi; cat pid`
+    )
+    if (!started.stdout.trim()) throw new Error("Starting the build on the Mac failed")
+    detached = true
+    log(`Build started on the Mac (detached; log at ~/dream-build/build.log)`)
+  } else if (state === "started") log("The build is already running; following it")
 
-  await onMac(`rm -rf ${keyDir}`)
-  log("Deleted the key from the Mac")
+  // Follow the log in short SSH calls until the build writes its exit code. Picking up a running build starts
+  // from the log's last 20 KB.
+  let offset =
+    state === "started"
+      ? Math.max(0, Number((await onMac(`wc -c < ${buildDir}/build.log`)).stdout.trim() || 0) - 20_000)
+      : 0
+  let lastContact = Date.now()
+  for (;;) {
+    const poll = await onMac(
+      `cd ${buildDir} 2>/dev/null || exit 3; size=$(wc -c < build.log | tr -d ' '); echo "@@$( [ -f exit ] && cat exit || { kill -0 $(cat pid) 2>/dev/null && echo running || echo died; } ) $size"; tail -c +$((${offset} + 1)) build.log | head -c 200000`,
+      undefined,
+      2
+    )
+    if (poll.code === 0 || poll.code === 3) {
+      lastContact = Date.now()
+      const [head, ...rest] = poll.stdout.split("\n")
+      const m = /^@@(\S+) (\d+)/.exec(head ?? "")
+      if (poll.code === 3 || !m) throw new Error("The Mac has no build state; destroy it with `… destroy` and rerun")
+      const chunk = rest.join("\n")
+      if (chunk) process.stdout.write(chunk.endsWith("\n") ? chunk : `${chunk}\n`)
+      offset += Buffer.byteLength(chunk)
+      if (offset > Number(m[2])) offset = Number(m[2])
+      if (m[1] !== "running") {
+        // "died": the build process is gone without an exit code (killed, or the Mac rebooted).
+        const code = m[1] === "died" ? -1 : Number(m[1])
+        detached = false
+        await onMac(`rm -rf ${keyDir}`)
+        log("Deleted the key from the Mac")
+        if (code !== 0)
+          throw new Error(code === -1 ? "The build process died on the Mac" : `build-ios.sh failed (exit ${code})`)
+        return
+      }
+    } else if (Date.now() - lastContact > 20 * 60_000) {
+      throw new Error("Lost the Mac for 20 minutes")
+    }
+    await sleep(20_000)
+  }
 }
 
 main()
   .then(destroy)
   .catch(async (e: Error) => {
     console.error(`✗ ${e.message}`)
-    await destroy()
+    if (detached) leave()
+    else await destroy()
     process.exit(1)
   })
