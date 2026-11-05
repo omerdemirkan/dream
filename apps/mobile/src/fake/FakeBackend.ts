@@ -58,6 +58,7 @@ export const Scenario = [
   "cabin-resolved",
   "withdraw-cabin",
   "no-plan",
+  "signed-in",
   "signed-out"
 ] as const
 export type Scenario = (typeof Scenario)[number]
@@ -622,6 +623,7 @@ export class FakeBackend extends Context.Service<
           case "no-plan":
             connections = []
             return
+          case "signed-in":
           case "signed-out":
             return
           case "withdraw-cabin": {

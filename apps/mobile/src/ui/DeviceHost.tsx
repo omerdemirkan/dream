@@ -5,13 +5,13 @@
  * the app comes back to the foreground.
  */
 import { NotificationId, ProjectId } from "@dream/domain"
-import { useAtomMount, useAtomSet } from "@effect/atom-react"
+import { useAtomMount, useAtomSet, useAtomValue } from "@effect/atom-react"
 import { Effect, Option, Schema } from "effect"
 import * as Notifications from "expo-notifications"
 import { useRouter } from "expo-router"
 import { useEffect, useRef } from "react"
 import { AppState } from "react-native"
-import { DreamLiveActivity } from "../../modules/dream-live-activity/index.ts"
+import { DreamNative } from "../../modules/dream-native/index.ts"
 import * as Push from "../platform/push.ts"
 import {
   answerNowFn,
@@ -24,7 +24,7 @@ import {
   registerLiveActivityFn,
   sendMessageFn
 } from "../state/atoms.ts"
-import { landingAtom } from "../state/ui.ts"
+import { askPushAtom, landingAtom } from "../state/ui.ts"
 import { useOpenMessage } from "./hooks.ts"
 
 Notifications.setNotificationHandler({
@@ -57,20 +57,13 @@ export function DeviceHost() {
     void Effect.runPromise(
       Effect.all([Push.registerCategories, Push.registerWithdrawTask], { discard: true }).pipe(Effect.ignore)
     )
-    void Effect.runPromise(Push.apnsToken.pipe(Effect.option)).then((token) => {
-      const value = Option.getOrUndefined(Option.flatten(token))
-      if (value && value !== tokens.current.apnsToken) {
-        tokens.current = { ...tokens.current, apnsToken: value }
-        register()
-      }
-    })
     const tokenListener = Notifications.addPushTokenListener((token) => {
       if (typeof token.data === "string" && token.data !== tokens.current.apnsToken) {
         tokens.current = { ...tokens.current, apnsToken: token.data }
         register()
       }
     })
-    const live = DreamLiveActivity
+    const live = DreamNative
     const subscriptions = live
       ? [
           live.addListener("onPushToStartToken", ({ token }) => {
@@ -90,6 +83,18 @@ export function DeviceHost() {
       for (const s of subscriptions) s.remove()
     }
   }, [registerDevice, registerActivity])
+
+  // The APNs token: silently if already allowed; asking only when a moment calls for it.
+  const ask = useAtomValue(askPushAtom)
+  useEffect(() => {
+    void Effect.runPromise(Push.apnsToken(ask > 0).pipe(Effect.option)).then((token) => {
+      const value = Option.getOrUndefined(Option.flatten(token))
+      if (value && value !== tokens.current.apnsToken) {
+        tokens.current = { ...tokens.current, apnsToken: value }
+        registerDevice({ ...tokens.current })
+      }
+    })
+  }, [ask, registerDevice])
 
   // Taps and lock-screen replies.
   const lastResponse = Notifications.useLastNotificationResponse()

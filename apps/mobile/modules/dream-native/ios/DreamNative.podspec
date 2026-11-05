@@ -1,7 +1,7 @@
 Pod::Spec.new do |s|
-  s.name           = 'DreamLiveActivity'
+  s.name           = 'DreamNative'
   s.version        = '0.1.0'
-  s.summary        = 'Live Activity tokens for Dream'
+  s.summary        = 'Native pieces of Dream: Live Activity tokens, launch arguments'
   s.description    = 'Reports ActivityKit push-to-start and update tokens for DreamActivityAttributes to JavaScript.'
   s.author         = 'Dream'
   s.homepage       = 'https://dream.omer.build'

@@ -1,6 +1,7 @@
 /**
- * Live Activity tokens from ActivityKit (see ios/DreamLiveActivityModule.swift).
- * Absent where the native module isn't built in (tests, Expo Go).
+ * Dream's own native module (ios/DreamNativeModule.swift): Live Activity tokens
+ * from ActivityKit, and launch arguments. Absent where it isn't built in
+ * (tests, Expo Go).
  */
 import { type EventSubscription, requireOptionalNativeModule } from "expo"
 
@@ -10,7 +11,9 @@ export interface ActivityToken {
   readonly token: string
 }
 
-export interface DreamLiveActivityModule {
+export interface DreamNativeModule {
+  /** A `-key value` launch argument (the Simulator's `simctl launch … -key value`). */
+  launchArgument(key: string): string | null
   areActivitiesEnabled(): boolean
   startObserving(): void
   /** Starts an activity on this phone (fixtures mode); returns its id. Arguments are JSON. */
@@ -24,4 +27,4 @@ export interface DreamLiveActivityModule {
   ): EventSubscription
 }
 
-export const DreamLiveActivity = requireOptionalNativeModule<DreamLiveActivityModule>("DreamLiveActivity")
+export const DreamNative = requireOptionalNativeModule<DreamNativeModule>("DreamNative")

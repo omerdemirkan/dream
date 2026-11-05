@@ -288,9 +288,12 @@ export const scenarioFn = appRuntime.fn(
     const backend = yield* Effect.serviceOption(FakeBackend)
     if (Option.isNone(backend)) return
     yield* backend.value.scenario(name)
-    if (name === "signed-out") {
-      const session = yield* Session
-      yield* session.signOut
+    const session = yield* Session
+    if (name === "signed-out") yield* session.signOut
+    if (name === "signed-in") {
+      const app = yield* AppClient
+      const result = yield* app.DevSignIn({ email: "ada@example.com", secret: Redacted.make("fixtures") })
+      yield* session.signIn({ token: result.sessionToken, user: result.user })
     }
   }),
   { reactivityKeys: ["projects", "asks", "connections", "integrations"] }

@@ -15,7 +15,9 @@ import {
 } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { useDictation } from "../platform/dictation.ts"
+import { useAtomSet } from "@effect/atom-react"
 import { createProjectFn } from "../state/atoms.ts"
+import { askPushAtom } from "../state/ui.ts"
 import { useAction } from "../ui/actions.ts"
 import { Bars, Icon, IconButton } from "../ui/kit.tsx"
 import { color, gutter } from "../ui/theme.ts"
@@ -27,6 +29,7 @@ export default function NewIdea() {
   const [text, setText] = useState(params.text ?? "")
   const input = useRef<TextInputInstance>(null)
   const create = useAction(createProjectFn)
+  const askPush = useAtomSet(askPushAtom)
   const dictation = useDictation(
     (heard) => setText((current) => (current.trim() ? `${current.trimEnd()} ${heard}` : heard)),
     "Scale any recipe up or down, and keep the ingredient math honest."
@@ -49,6 +52,8 @@ export default function NewIdea() {
     dictation.stop()
     create.run(text.trim(), {
       onSuccess: (project) => {
+        // Its first question can take minutes: now is when notifications make sense.
+        askPush((n) => n + 1)
         router.dismissAll()
         router.push({ pathname: "/project/[id]", params: { id: project.id, tab: "chat" } })
       },

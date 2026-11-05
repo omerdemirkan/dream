@@ -10,7 +10,7 @@ import { useEffect, useState } from "react"
 import { Scenario } from "../../fake/FakeBackend.ts"
 import { scenarioFn } from "../../state/atoms.ts"
 import { appConfig } from "../../state/runtime.ts"
-import { DreamLiveActivity } from "../../../modules/dream-live-activity/index.ts"
+import { DreamNative } from "../../../modules/dream-native/index.ts"
 
 const isScenario = (name: string | undefined): name is Scenario => Scenario.some((s) => s === name)
 
@@ -21,10 +21,10 @@ export default function FixtureScenario() {
   useEffect(() => {
     if (appConfig.backend !== "fixtures") return setDone(true)
     const sample = liveActivitySamples[params.scenario]
-    if (sample && DreamLiveActivity) {
+    if (sample && DreamNative) {
       // Shows the widget on the lock screen and in the Dynamic Island.
-      void DreamLiveActivity.endAll()
-        .then(() => DreamLiveActivity?.startLocal(JSON.stringify(sample.attributes), JSON.stringify(sample.content)))
+      void DreamNative.endAll()
+        .then(() => DreamNative?.startLocal(JSON.stringify(sample.attributes), JSON.stringify(sample.content)))
         .finally(() => setDone(true))
       return
     }

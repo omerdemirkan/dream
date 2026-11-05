@@ -7,6 +7,7 @@
  * in fixtures mode, where it types a canned phrase so the flow can be seen.
  */
 import { requireOptionalNativeModule } from "expo"
+import * as Device from "expo-device"
 import { getLocales } from "expo-localization"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Alert, Linking } from "react-native"
@@ -35,7 +36,9 @@ interface SpeechModule {
   addListener(event: "end", listener: () => void): Subscription
 }
 
-const speech = requireOptionalNativeModule<SpeechModule>("ExpoSpeechRecognition")
+/** The Simulator has no microphone worth using: fixtures there simulate dictation instead. */
+const simulate = appConfig.backend === "fixtures" && !Device.isDevice
+const speech = simulate ? null : requireOptionalNativeModule<SpeechModule>("ExpoSpeechRecognition")
 
 export const dictationAvailable = speech !== null || appConfig.backend === "fixtures"
 

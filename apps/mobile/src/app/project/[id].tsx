@@ -5,7 +5,7 @@
  * request expanded (deep links and notifications use both).
  */
 import { MessageId, ProjectId } from "@dream/domain"
-import { useAtomValue } from "@effect/atom-react"
+import { useAtomSet, useAtomValue } from "@effect/atom-react"
 import { Option, Schema } from "effect"
 import { AsyncResult } from "effect/reactivity"
 import { useLocalSearchParams, useRouter } from "expo-router"
@@ -13,6 +13,7 @@ import { useEffect } from "react"
 import { KeyboardAvoidingView, Pressable, ScrollView, Text, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { projectsAtom, sendMessageFn } from "../../state/atoms.ts"
+import { landingAtom } from "../../state/ui.ts"
 import { useAction } from "../../ui/actions.ts"
 import { ChatTab } from "../../ui/Chat.tsx"
 import { ChatComposer } from "../../ui/Composer.tsx"
@@ -27,16 +28,24 @@ const decodeMessageId = Schema.decodeUnknownOption(MessageId)
 const header = 124
 
 export default function ProjectScreen() {
-  const params = useLocalSearchParams<{ id: string; tab?: string; focus?: string }>()
+  const params = useLocalSearchParams<{ id: string; tab?: string; focus?: string; land?: string }>()
   const projectId = Option.getOrUndefined(decodeProjectId(params.id))
   if (!projectId) return null
-  return <Project projectId={projectId} tab={params.tab === "chat" ? "chat" : "status"} focus={params.focus} />
+  return (
+    <Project
+      projectId={projectId}
+      tab={params.tab === "chat" ? "chat" : "status"}
+      focus={params.focus}
+      land={params.land}
+    />
+  )
 }
 
 function Project(props: {
   readonly projectId: ProjectId
   readonly tab: "status" | "chat"
   readonly focus: string | undefined
+  readonly land: string | undefined
 }) {
   const router = useRouter()
   const insets = useSafeAreaInsets()
@@ -45,6 +54,7 @@ function Project(props: {
   const summaries = Option.getOrUndefined(AsyncResult.value(useAtomValue(projectsAtom)))
   const project = state?.project ?? summaries?.find((s) => s.project.id === props.projectId)?.project
   const send = useAction(sendMessageFn)
+  const setLanding = useAtomSet(landingAtom)
 
   useEffect(() => {
     const messageId = Option.getOrUndefined(decodeMessageId(props.focus))
@@ -52,6 +62,14 @@ function Project(props: {
     open({ projectId: props.projectId, messageId })
     router.setParams({ focus: undefined })
   }, [props.focus, props.projectId, open, router])
+
+  // `?land=<messageId>`: scroll Chat to it and highlight it, as after Back from the expanded view.
+  useEffect(() => {
+    const messageId = Option.getOrUndefined(decodeMessageId(props.land))
+    if (!messageId) return
+    setLanding(Option.some({ projectId: props.projectId, messageId, highlight: true, at: Date.now() }))
+    router.setParams({ land: undefined })
+  }, [props.land, props.projectId, router, setLanding])
 
   const needsYou = state?.messages.some(
     (m) => m._tag !== "Text" && m.state._tag === "Open" && !(m._tag === "Access" && m.when)

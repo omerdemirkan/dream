@@ -10,6 +10,7 @@ import { type HostInstance, Pressable, Text, View } from "react-native"
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated"
 import { scheduleOnRN } from "react-native-worklets"
 import { answerUndoableFn } from "../state/atoms.ts"
+import { askPushAtom } from "../state/ui.ts"
 import { useGoogleAccess, useToast } from "./actions.ts"
 import { accessExplainer } from "./describe.ts"
 import { useOpenMessage } from "./hooks.ts"
@@ -195,6 +196,7 @@ export function Segments(props: { readonly done: number; readonly remaining: num
 
 export function Deck(props: { readonly asks: ReadonlyArray<OpenAsk>; readonly onAnswered: () => void }) {
   const answer = useAtomSet(answerUndoableFn)
+  const askPush = useAtomSet(askPushAtom)
   const toast = useToast()
   const [seen, setSeen] = useState<string | undefined>(undefined)
   const front = props.asks[0]
@@ -216,6 +218,7 @@ export function Deck(props: { readonly asks: ReadonlyArray<OpenAsk>; readonly on
           const m = front.message
           answer({ projectId: m.projectId, messageId: m.id, answer: { _tag: "Choice", option } })
           toast(`Sent to ${front.project.title}`, m.id)
+          askPush((n) => n + 1)
           props.onAnswered()
         }}
       />

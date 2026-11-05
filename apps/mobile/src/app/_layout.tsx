@@ -14,6 +14,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler"
 import { SafeAreaProvider } from "react-native-safe-area-context"
 import { sessionAtom } from "../state/atoms.ts"
 import { DeviceHost } from "../ui/DeviceHost.tsx"
+import { FixturesLaunch } from "../ui/FixturesLaunch.tsx"
 import { FocusOverlay } from "../ui/FocusOverlay.tsx"
 import { MediaViewer } from "../ui/Media.tsx"
 import { color } from "../ui/theme.ts"
@@ -67,6 +68,7 @@ function Shell() {
         <Stack.Screen name="fixtures/[scenario]" options={{ animation: "none" }} />
       </Stack>
       {signedIn ? <DeviceHost /> : null}
+      <FixturesLaunch />
       <FocusOverlay />
       <Toast />
       <MediaViewer />

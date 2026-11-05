@@ -59,28 +59,33 @@ export const registerCategories = Effect.tryPromise({
   catch: (cause) => new PushError({ step: "categories", cause })
 }).pipe(Effect.asVoid)
 
-/** Asks for permission (once) and returns the hex APNs device token, if iOS gives one. */
-export const apnsToken: Effect.Effect<Option.Option<string>, PushError> = Effect.gen(function* () {
-  const current = yield* Effect.tryPromise({
-    try: () => Notifications.getPermissionsAsync(),
-    catch: (cause) => new PushError({ step: "permissions", cause })
+/**
+ * The hex APNs device token, if iOS gives one. Asks for permission only when
+ * `ask` is set: Dream asks at a moment that explains itself (after the first
+ * idea or answer), not at launch.
+ */
+export const apnsToken = (ask: boolean): Effect.Effect<Option.Option<string>, PushError> =>
+  Effect.gen(function* () {
+    const current = yield* Effect.tryPromise({
+      try: () => Notifications.getPermissionsAsync(),
+      catch: (cause) => new PushError({ step: "permissions", cause })
+    })
+    const granted = current.granted
+      ? true
+      : ask && current.canAskAgain
+        ? (yield* Effect.tryPromise({
+            try: () =>
+              Notifications.requestPermissionsAsync({ ios: { allowAlert: true, allowBadge: true, allowSound: true } }),
+            catch: (cause) => new PushError({ step: "permissions", cause })
+          })).granted
+        : false
+    if (!granted) return Option.none()
+    const token = yield* Effect.tryPromise({
+      try: () => Notifications.getDevicePushTokenAsync(),
+      catch: (cause) => new PushError({ step: "device token", cause })
+    })
+    return token.type === "ios" && typeof token.data === "string" ? Option.some(token.data) : Option.none()
   })
-  const granted = current.granted
-    ? true
-    : current.canAskAgain
-      ? (yield* Effect.tryPromise({
-          try: () =>
-            Notifications.requestPermissionsAsync({ ios: { allowAlert: true, allowBadge: true, allowSound: true } }),
-          catch: (cause) => new PushError({ step: "permissions", cause })
-        })).granted
-      : false
-  if (!granted) return Option.none()
-  const token = yield* Effect.tryPromise({
-    try: () => Notifications.getDevicePushTokenAsync(),
-    catch: (cause) => new PushError({ step: "device token", cause })
-  })
-  return token.type === "ios" && typeof token.data === "string" ? Option.some(token.data) : Option.none()
-})
 
 const sameId = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
 

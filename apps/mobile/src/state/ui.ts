@@ -45,6 +45,9 @@ export interface Toast {
 
 export const toastAtom = Atom.make<Option.Option<Toast>>(Option.none()).pipe(Atom.keepAlive)
 
+/** Bumped when a moment calls for asking to send notifications (a first idea, a first answer). */
+export const askPushAtom = Atom.make(0).pipe(Atom.keepAlive)
+
 export const viewerAtom = Atom.make<Option.Option<MediaRef>>(Option.none()).pipe(Atom.keepAlive)
 
 /** Measures for the message cards on screen in Chat, so the expanded view can shrink back into one. */

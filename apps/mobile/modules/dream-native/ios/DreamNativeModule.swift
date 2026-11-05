@@ -3,13 +3,19 @@ import ExpoModulesCore
 
 /// Reports the tokens Dream needs to drive Live Activities from the Worker:
 /// the push-to-start token (iOS 17.2+) and each activity's update token.
-/// It can also start one locally, which fixtures mode uses to show the widget.
-public class DreamLiveActivityModule: Module {
+/// It can also start one locally, which fixtures mode uses to show the widget,
+/// and reads launch arguments (`-dreamRoute /project/…`), which fixtures mode
+/// uses to open a screen state without tapping.
+public class DreamNativeModule: Module {
   private var tasks: [Task<Void, Never>] = []
   private var observed = Set<String>()
 
   public func definition() -> ModuleDefinition {
-    Name("DreamLiveActivity")
+    Name("DreamNative")
+
+    Function("launchArgument") { (key: String) -> String? in
+      UserDefaults.standard.string(forKey: key)
+    }
 
     Events("onPushToStartToken", "onActivityToken", "onActivityEnded")
 

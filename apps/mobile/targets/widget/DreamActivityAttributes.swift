@@ -1,4 +1,4 @@
-// Keep identical to modules/dream-live-activity/ios/DreamActivityAttributes.swift: ActivityKit
+// Keep identical to modules/dream-native/ios/DreamActivityAttributes.swift: ActivityKit
 // matches the app's activities to the widget's by this type's name and shape.
 // The shape mirrors LiveActivityAttributes / LiveActivityContent in
 // packages/domain/src/LiveActivity.ts (flat, optional keys omitted, no dates).
