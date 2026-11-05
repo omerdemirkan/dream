@@ -24,6 +24,8 @@ export const Routes = {
   /** GET with the session token; serves the bytes of a `MediaRef`. */
   media: (mediaId: MediaId) => `/media/${mediaId}`,
   googleOAuthCallback: "/oauth/google/callback",
+  /** Where every other OAuth provider (`AccessRequest.OAuth`) redirects back to, e.g. `/oauth/spotify/callback`. */
+  oauthCallback: (provider: string) => `/oauth/${provider}/callback`,
   /** GET serves the token page for a `CreateConnectLink` URL (`?t=<ticket>`); POST submits it. */
   connect: (provider: ConnectLinkProvider) => `/connect/${provider}`,
   daemon: "/daemon/rpc"

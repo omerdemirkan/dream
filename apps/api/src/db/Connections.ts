@@ -1,6 +1,6 @@
 /**
  * Model connections (Claude or ChatGPT, once per person), integrations
- * (Google, pasted keys, App Store Connect), pending Google OAuth states and
+ * (Google, pasted keys, App Store Connect, OAuth providers), pending OAuth states and
  * one-time connect tickets (D1).
  * Rows reference secrets by id; the records here carry no secret values.
  */
@@ -26,7 +26,7 @@ import { newIntegrationId, newModelConnectionId } from "../lib/Ids.ts"
 import { decodeFirst, decodeRows, encodeJson, exec, IsoDate, JsonColumn, nowIso, orNull } from "./Sql.ts"
 
 /** `sandbox_file`: a `File` key, which belongs to the one project in its `access_json` rather than to all of theirs. */
-export const IntegrationKind = Schema.Literals(["google_oauth", "api_key", "apple_asc", "sandbox_file"])
+export const IntegrationKind = Schema.Literals(["google_oauth", "api_key", "apple_asc", "sandbox_file", "oauth"])
 export type IntegrationKind = typeof IntegrationKind.Type
 
 const ModelConnectionRow = Schema.Struct({
@@ -86,6 +86,14 @@ const OAuthStateRow = Schema.Struct({
   expires_at_ms: Schema.Number
 })
 export type OAuthStateRow = typeof OAuthStateRow.Type
+
+/** A pending sign-in with an OAuth provider other than Google. */
+const ProviderStateRow = Schema.Struct({
+  ...OAuthStateRow.fields,
+  provider: Schema.String,
+  code_verifier: Schema.NullOr(Schema.String)
+})
+export type ProviderStateRow = typeof ProviderStateRow.Type
 
 export interface NewIntegration {
   readonly userId: UserId
@@ -156,6 +164,13 @@ export class Connections extends Context.Service<
     readonly putOAuthState: (row: OAuthStateRow) => Effect.Effect<void>
     /** Reads and deletes a state; absent if unknown or expired. */
     readonly takeOAuthState: (state: string, nowMs: number) => Effect.Effect<Option.Option<OAuthStateRow>>
+    readonly putProviderState: (row: ProviderStateRow) => Effect.Effect<void>
+    /** Reads and deletes a state for `provider`; absent if unknown, expired, or another provider's. */
+    readonly takeProviderState: (
+      provider: string,
+      state: string,
+      nowMs: number
+    ) => Effect.Effect<Option.Option<ProviderStateRow>>
 
     // Connect tickets (`CreateConnectLink`) ----------------------------------------
     readonly putConnectTicket: (ticket: {
@@ -342,6 +357,23 @@ export class Connections extends Context.Service<
           return row === undefined || row.expires_at_ms < nowMs ? Option.none() : Option.some(row)
         })
 
+      const putProviderState = (row: ProviderStateRow) =>
+        exec(sql`
+          INSERT INTO oauth_states (state, user_id, project_id, message_id, scopes_json, expires_at_ms, provider, code_verifier)
+          VALUES (${row.state}, ${row.user_id}, ${row.project_id}, ${row.message_id},
+                  ${encodeJson(Schema.Array(Schema.String), row.scopes_json)}, ${row.expires_at_ms}, ${row.provider},
+                  ${row.code_verifier})`)
+
+      const takeProviderState = (provider: string, state: string, nowMs: number) =>
+        Effect.gen(function* () {
+          const row =
+            yield* sql`DELETE FROM oauth_states WHERE state = ${state} AND provider = ${provider} RETURNING *`.pipe(
+              decodeFirst(ProviderStateRow)
+            )
+          yield* exec(sql`DELETE FROM oauth_states WHERE expires_at_ms < ${nowMs}`)
+          return row === undefined || row.expires_at_ms < nowMs ? Option.none() : Option.some(row)
+        })
+
       const putConnectTicket = (ticket: {
         readonly id: string
         readonly userId: UserId
@@ -397,6 +429,8 @@ export class Connections extends Context.Service<
         unlockIntegrationRefresh,
         putOAuthState,
         takeOAuthState,
+        putProviderState,
+        takeProviderState,
         putConnectTicket,
         connectTicketUsable,
         useConnectTicket

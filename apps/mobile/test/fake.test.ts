@@ -98,6 +98,29 @@ describe("fixtures backend through the app's services", () => {
     )
   )
 
+  it.effect("connects an OAuth request as if they'd approved it, and lists the integration", () =>
+    run(
+      Effect.gen(function* () {
+        yield* signIn
+        const app = yield* AppClient
+        yield* (yield* FakeBackend).scenario("spotify-ask")
+        const asks = yield* app.ListOpenAsks()
+        assert.isTrue(asks.some((a) => a.message.id === "msg_spotify"))
+        const projectId = "prj_liftlog" as ProjectId
+        const messageId = "msg_spotify" as MessageId
+        const { authorizeUrl } = yield* app.StartOAuthAccess({ projectId, messageId })
+        assert.include(authorizeUrl, "spotify")
+        yield* TestClock.adjust("10 seconds")
+        const integrations = yield* app.ListIntegrations()
+        const spotify = integrations.find((i) => i.access._tag === "OAuth")
+        assert.strictEqual(spotify?.label, "Spotify")
+        assert.isFalse((yield* app.ListOpenAsks()).some((a) => a.message.id === "msg_spotify"))
+        const notOAuth = yield* Effect.flip(app.StartOAuthAccess({ projectId, messageId: "msg_apple" as MessageId }))
+        assert.strictEqual(notOAuth._tag, "InvalidRequest")
+      })
+    )
+  )
+
   it.effect("holds an answer for the undo window, then sends it", () =>
     run(
       Effect.gen(function* () {

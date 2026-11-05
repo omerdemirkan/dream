@@ -22,6 +22,7 @@ import { Envd } from "./e2b/Envd.ts"
 import { CredentialStore } from "./integrations/CredentialStore.ts"
 import { Google } from "./integrations/Google.ts"
 import { KeyFiles } from "./integrations/KeyFiles.ts"
+import { OAuth, OAuthProviders } from "./integrations/OAuth.ts"
 import { SandboxCredentials } from "./integrations/SandboxCredentials.ts"
 import { ProjectClients, ProjectDirectory, type ProjectFetch } from "./project/Client.ts"
 import { Apns } from "./push/Apns.ts"
@@ -46,6 +47,8 @@ export const servicesLayer = Layer.mergeAll(
   Browserbase.layer,
   Namespace.layer,
   Google.layer,
+  OAuthProviders.layer,
+  OAuth.layer,
   ChatGpt.layer,
   Tokens.layer
 )

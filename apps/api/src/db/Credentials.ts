@@ -44,6 +44,16 @@ export const AppleCredential = Schema.Struct({
 })
 export type AppleCredential = typeof AppleCredential.Type
 
+/** Tokens from an OAuth provider other than Google (`src/integrations/OAuth.ts`). */
+export const OAuthCredential = Schema.Struct({
+  accessToken: Schema.String,
+  /** Absent for providers whose tokens don't expire (GitHub OAuth apps, Notion). */
+  refreshToken: Schema.optionalKey(Schema.String),
+  /** Epoch ms when `accessToken` expires; absent if it doesn't. */
+  accessExpiresAtMs: Schema.optionalKey(Schema.Number)
+})
+export type OAuthCredential = typeof OAuthCredential.Type
+
 /** Access to a short-lived sign-in sandbox, kept while a model connection is pending. */
 export const AuthSandboxSession = Schema.Struct({
   sandboxId: Schema.String,

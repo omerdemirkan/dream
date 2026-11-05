@@ -259,6 +259,11 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
             )
           return { authorizeUrl }
         }),
+      StartOAuthAccess: ({ projectId, messageId }) =>
+        Effect.gen(function* () {
+          const authorizeUrl = yield* access.startOAuth(yield* me, projectId, messageId)
+          return { authorizeUrl }
+        }),
       SubmitKeyAccess: ({ projectId, messageId, key }) =>
         Effect.flatMap(me, (userId) => access.submitKey(userId, projectId, messageId, Redacted.value(key))),
       SubmitAppleAccess: ({ projectId, messageId, issuerId, keyId, privateKey }) =>

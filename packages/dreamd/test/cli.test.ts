@@ -8,7 +8,7 @@ import { CliOutput, Command } from "effect/cli"
 import { FetchHttpClient } from "effect/http"
 import { dream } from "../src/Cli.ts"
 import { Dream } from "../src/cli/Client.ts"
-import { pageCheck } from "../src/cli/Format.ts"
+import { accessRequested, integrations, pageCheck } from "../src/cli/Format.ts"
 import { PageCheck, PageLoad } from "../src/cli/PageCheck.ts"
 import { checkCron, mediaType, parseAt, parseStep, planCopy } from "../src/cli/Parse.ts"
 import { requestedSecret } from "../src/cli/Secrets.ts"
@@ -214,6 +214,56 @@ describe("dream usage errors", () => {
       assert.isTrue((yield* run(["acess"])).startsWith('Unknown subcommand "acess" for "dream"'))
     })
   )
+})
+
+describe("dream access oauth", () => {
+  it.effect("needs a provider, and says so with an example", () =>
+    Effect.gen(function* () {
+      const printed = yield* run(["access", "oauth", "--why", "Build playlists"])
+      assert.isTrue(printed.startsWith("<provider> is missing"), printed)
+      assert.include(printed, "Example: dream access oauth spotify --scopes user-read-private,playlist-modify-private")
+    })
+  )
+
+  it("prints what it asked for and what's connected, with the provider's notes", () => {
+    const createdAt = DateTime.makeUnsafe("2026-11-05T10:00:00Z")
+    const requested = accessRequested({
+      _tag: "Access",
+      id: "msg_1" as never,
+      projectId: "prj_1" as never,
+      createdAt,
+      request: { _tag: "OAuth", provider: "spotify", service: "Spotify", scopes: ["user-read-private"] },
+      why: "Build playlists",
+      state: { _tag: "Open" }
+    })
+    assert.strictEqual(
+      requested,
+      "Asked for Spotify (user-read-private) as msg_1. You'll get an event when they connect."
+    )
+    const listed = integrations([
+      {
+        id: "int_1" as never,
+        label: "GitHub",
+        status: "connected",
+        connectedAt: createdAt,
+        access: {
+          _tag: "OAuth",
+          provider: "github",
+          service: "GitHub",
+          account: "octocat",
+          scopes: ["repo"],
+          hosts: ["api.github.com", "github.com"],
+          placeholder: "dream-github-oauth-placeholder",
+          notes: "api.github.com refuses requests without a User-Agent header."
+        }
+      }
+    ])
+    assert.strictEqual(
+      listed,
+      'GitHub [connected] OAuth as octocat (repo); hosts api.github.com, github.com; placeholder "dream-github-oauth-placeholder"\n' +
+        "  api.github.com refuses requests without a User-Agent header."
+    )
+  })
 })
 
 describe("dream ask and secrets", () => {

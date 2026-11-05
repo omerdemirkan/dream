@@ -58,8 +58,14 @@ export const accessLabel = (request: AccessRequest) => {
       return request.service
     case "Apple":
       return "Apple Developer"
+    case "OAuth":
+      return oauthService(request)
   }
 }
+
+/** The provider's display name; the API always fills it in, the provider id stands in otherwise. */
+export const oauthService = (request: Extract<AccessRequest, { readonly _tag: "OAuth" }>) =>
+  request.service ?? request.provider.charAt(0).toUpperCase() + request.provider.slice(1)
 
 /** The line under the heading: how the access works. */
 export const accessExplainer = (message: AccessMessage) => {
@@ -75,13 +81,15 @@ export const accessExplainer = (message: AccessMessage) => {
       return message.when
         ? `Apple has no sign-in for this, so it takes an App Store Connect key. Add it now, or I'll ask again ${message.when}.`
         : "Apple has no sign-in for this, so it takes an App Store Connect key (issuer ID, key ID and the .p8 file)."
+    case "OAuth":
+      return `You’ll sign in with ${oauthService(request)} and approve what it asks for. Dream keeps the sign-in fresh.`
   }
 }
 
 export const accessScope = (request: AccessRequest) =>
   request._tag === "Google" ? scopeSummary(request.scopes) : undefined
 
-export const isOAuth = (request: AccessRequest) => request._tag === "Google"
+export const isOAuth = (request: AccessRequest) => request._tag === "Google" || request._tag === "OAuth"
 
 /** A key Dream writes into the project's sandbox (`dream access file`): the last resort, which the card warns about. */
 export const isKeyFile = (request: AccessRequest) => request._tag === "File"
@@ -110,6 +118,8 @@ export const integrationSummary = (integration: Integration) => {
       return "Key file on one project’s computer"
     case "Apple":
       return `App Store Connect key ${access.keyId}`
+    case "OAuth":
+      return access.account ?? `${access.service} account`
   }
 }
 

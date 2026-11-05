@@ -58,6 +58,10 @@ const accessLabel = (message: AccessMessage): string => {
       return `a ${message.request.service} key in ${sandboxKeyPath(message.request.name)}`
     case "Apple":
       return "an App Store Connect API key"
+    case "OAuth":
+      return `${message.request.service ?? message.request.provider}${
+        message.request.scopes.length === 0 ? "" : ` (${message.request.scopes.join(", ")})`
+      }`
   }
 }
 
@@ -78,8 +82,11 @@ export const integrations = (list: ReadonlyArray<Integration>): string => {
             ? `${access.host}, header "${access.header}: ${access.format}"; placeholder "${access.placeholder}"`
             : access._tag === "File"
               ? `key file ${access.path} (this project only; read it from your code, never print it)`
-              : `App Store Connect key ${access.keyId} (issuer ${access.issuerId})`
-      return `${integration.label} [${integration.status}] ${detail.replace(/\s+/g, " ")}`
+              : access._tag === "OAuth"
+                ? `OAuth${access.account === undefined ? "" : ` as ${access.account}`} (${access.scopes.join(", ")}); hosts ${access.hosts.join(", ")}; placeholder "${access.placeholder}"`
+                : `App Store Connect key ${access.keyId} (issuer ${access.issuerId})`
+      const notes = access._tag === "OAuth" && access.notes !== undefined ? `\n  ${access.notes}` : ""
+      return `${integration.label} [${integration.status}] ${detail.replace(/\s+/g, " ")}${notes}`
     })
     .join("\n")
 }

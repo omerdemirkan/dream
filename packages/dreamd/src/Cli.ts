@@ -383,6 +383,46 @@ const access = Command.make("access").pipe(
         }
       ])
     ),
+    Command.make(
+      "oauth",
+      {
+        provider: Argument.String("provider").pipe(
+          Argument.withDescription("The service Dream connects with OAuth, like spotify, github, strava or dropbox")
+        ),
+        scopes: Flag.String("scopes").pipe(
+          Flag.withDescription(
+            "Comma-separated, in the provider's own names, e.g. user-read-private,playlist-read-private"
+          ),
+          Flag.optional
+        ),
+        ...accessFlags
+      },
+      (input) => {
+        const scopes = Option.match(input.scopes, {
+          onNone: () => [],
+          onSome: (list) =>
+            list
+              .split(/[,\s]+/)
+              .map((scope) => scope.trim())
+              .filter((scope) => scope.length > 0)
+        })
+        const provider = input.provider.trim().toLowerCase()
+        return provider.length === 0
+          ? fail("Name the provider, e.g. dream access oauth spotify")
+          : requestAccess(AccessRequest.cases.OAuth.make({ provider, scopes }), input)
+      }
+    ).pipe(
+      Command.withDescription(
+        "Let them sign in to a service with OAuth (Spotify, GitHub, Strava, Dropbox, Slack, Notion, …). Dream keeps the token fresh on its API hosts."
+      ),
+      Command.withExamples([
+        {
+          command:
+            'dream access oauth spotify --scopes user-read-private,playlist-modify-private --why "Build playlists from your runs"'
+        },
+        { command: 'dream access oauth github --scopes repo --why "Keep the code in your GitHub"' }
+      ])
+    ),
     Command.make("apple", accessFlags, (input) => requestAccess(AccessRequest.cases.Apple.make({}), input)).pipe(
       Command.withDescription("Ask for their App Store Connect API key, which TestFlight uploads need."),
       Command.withExamples([
