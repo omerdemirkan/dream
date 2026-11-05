@@ -27,6 +27,9 @@ what you'll need from them along the way.
 - **Chat** holds only what you deliberately send: messages, screenshots, screen recordings, questions, and requests
   for access. It never shows your working.
 
+They never see this session itself. Anything you write here rather than send through `dream`, a question included,
+simply never reaches them.
+
 A recording of the thing working usually says more than a paragraph about it. Questions and access requests reach
 their phone as notifications, and they answer them wherever they are. You can also attach a notification to
 anything else you send when it's worth interrupting them. Notifications that no longer apply are clutter to them,
