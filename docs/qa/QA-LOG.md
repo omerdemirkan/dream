@@ -182,3 +182,15 @@ Other findings:
   message the person. Reasonable for a silent fix, but it still didn't notice that no email reaches anyone.
 - Spawned an Opus (medium) child to run the iPhone app against the live API with these real projects and fix what
   breaks (branch fix/mobile-live). The app had only been checked against its in-app fake backend.
+- One-shot `dream wake --at 2m --run "…" "why"` VERIFIED: fired at 06:36:43, the command ran (exit 0), the agent wasn't
+  woken. `dream wake list` keeps a fired one-off, shown as "(2m ago)". `dream wake --at` without a "why" is refused with
+  a clear hint. `dream live start/end` succeed with no push-to-start device registered (the record is kept; nothing
+  reaches a phone yet, which needs APNs keys and a device).
+- PLATFORM FINDING (design): E2B's egress transform is per host and unconditional, and the Claude Code rule puts the
+  person's subscription token on every request to api.anthropic.com. Verified from the cabin sandbox: a plain curl to
+  /v1/messages with no key got a Haiku reply on their plan. So any code here, including a published app that anyone
+  with the link can drive, can run on their Claude subscription; and a person's own Anthropic API key can't work
+  (SandboxCredentials lets the model rule win the host, and a request carrying the placeholder `x-api-key` is
+  refused: "more than one credential"). The same holds for chatgpt.com on Codex projects. Not changed: it needs a
+  founder decision (options in the summary: route the harness through a Dream-owned egress host so api.anthropic.com
+  carries nothing, or keep it and state it to the agent).
