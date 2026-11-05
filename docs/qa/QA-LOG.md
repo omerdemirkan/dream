@@ -332,3 +332,11 @@ Other findings:
   Omer", key deleted, Mac destroyed. TestFlight build + upload started (job 295ce6bc).
 - Google Search Console: added TXT `google-site-verification=fqMN…` on omer.build through Cloudflare's API; visible via
   1.1.1.1 and dns.google within 20 s.
+- FIRST TESTFLIGHT UPLOAD (20:47 UTC): merged fix/testflight-signing (manual signing with one reusable Apple
+  Distribution certificate the Worker stores sealed; migration 0005), deployed, then ran
+  `testflight-namespace.ts testflight` from the foreground: the Worker released the ASC key and created/stored the
+  team's one distribution certificate, the Mac archived and signed Dream + DreamWidget, `Uploaded Dream ** EXPORT
+  SUCCEEDED **`, build 26686125, key deleted, Mac sd7fu3hf4llf2 destroyed, no Macs left. Only dSYM warnings for
+  prebuilt frameworks (SDWebImage coders, hermesvm). The founder's "certificate revoked" emails were the three test
+  certificates and one development certificate revoked during the signing work. A dreamd test (daemon.test.ts) failed
+  once in the check before that deploy and passed on three reruns: flaky, worth a look.
