@@ -18,7 +18,9 @@ import {
   DefaultDaemonPort,
   DefaultDaemonSocket,
   type EventId,
+  type Harness,
   NotFound,
+  type ProjectId,
   UpstreamFailure
 } from "@dream/domain"
 import { Cause, Clock, Context, DateTime, Duration, Effect, Layer, Option, Redacted, Schedule, Semaphore } from "effect"
@@ -30,6 +32,7 @@ import { Daemon } from "../e2b/Daemon.ts"
 import { E2B, type SandboxAccess } from "../e2b/E2B.ts"
 import { Envd } from "../e2b/Envd.ts"
 import { SandboxCredentials } from "../integrations/SandboxCredentials.ts"
+import { toHex, utf8 } from "../lib/Bytes.ts"
 import { randomToken } from "../lib/Ids.ts"
 import { Alarm } from "./Alarm.ts"
 import { Core } from "./Core.ts"
@@ -45,6 +48,38 @@ export const KeepaliveEvery = Duration.minutes(5)
 const CycleWithin = Duration.sum(KeepaliveEvery, Duration.minutes(1))
 const HealthWait = Duration.seconds(120)
 const BatchSize = 50
+
+/**
+ * What dreamd's env file says, but for the project token (signed afresh on every write). The agent model only
+ * goes to Claude Code: Codex would send a Claude model name to the ChatGPT backend.
+ */
+export const daemonSettings = (options: {
+  readonly apiUrl: string
+  readonly projectId: ProjectId
+  readonly harness: Harness
+  readonly daemonToken: string
+  readonly agentModel: Option.Option<string>
+}): Record<string, string> => ({
+  [DaemonEnv.apiUrl]: options.apiUrl,
+  [DaemonEnv.projectId]: options.projectId,
+  [DaemonEnv.daemonToken]: options.daemonToken,
+  [DaemonEnv.harness]: options.harness,
+  [DaemonEnv.port]: String(DefaultDaemonPort),
+  [DaemonEnv.socket]: DefaultDaemonSocket,
+  ...(options.harness === "claude-code" && Option.isSome(options.agentModel)
+    ? { [DaemonEnv.model]: options.agentModel.value }
+    : {})
+})
+
+const hashSettings = (settings: Readonly<Record<string, string>>): Effect.Effect<string> =>
+  Effect.promise(async () => {
+    const canonical = JSON.stringify(
+      Object.keys(settings)
+        .sort()
+        .map((key) => [key, settings[key]])
+    )
+    return toHex(new Uint8Array(await crypto.subtle.digest("SHA-256", utf8(canonical))))
+  })
 
 export const backoffMs = (failures: number): number => Math.min(15 * 60_000, 5_000 * 3 ** Math.max(0, failures - 1))
 
@@ -106,24 +141,31 @@ export class SandboxManager extends Context.Service<
           .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
           .join("\n") + "\n"
 
+      const settingsFor = (daemonToken: string) =>
+        Effect.map(core.project.pipe(Effect.orDie), (project) => ({
+          project,
+          settings: daemonSettings({
+            apiUrl: config.apiUrl,
+            projectId: project.id,
+            harness: project.harness,
+            daemonToken,
+            agentModel: config.agentModel
+          })
+        }))
+
+      /** Writes dreamd's env file and records what it said (`envHash`). */
       const writeDaemonEnv = (access: SandboxAccess, daemonToken: string) =>
         Effect.gen(function* () {
-          const project = yield* core.project.pipe(Effect.orDie)
+          const { project, settings } = yield* settingsFor(daemonToken)
           const projectToken = yield* tokens.project(project.id, project.ownerId)
           yield* envd.run(access, { command: `mkdir -p "$(dirname '${DaemonEnvFile}')"`, timeout: "20 seconds" })
           yield* envd.writeFile(
             access,
             DaemonEnvFile,
-            daemonEnv({
-              [DaemonEnv.apiUrl]: config.apiUrl,
-              [DaemonEnv.projectId]: project.id,
-              [DaemonEnv.projectToken]: Redacted.value(projectToken),
-              [DaemonEnv.daemonToken]: daemonToken,
-              [DaemonEnv.harness]: project.harness,
-              [DaemonEnv.port]: String(DefaultDaemonPort),
-              [DaemonEnv.socket]: DefaultDaemonSocket
-            })
+            daemonEnv({ ...settings, [DaemonEnv.projectToken]: Redacted.value(projectToken) })
           )
+          const envHash = yield* hashSettings(settings)
+          yield* update((r) => ({ ...r, envHash }))
         })
 
       /** Waits for dreamd; if the template didn't start it within a while, starts it and waits again. */
@@ -137,6 +179,23 @@ export class SandboxManager extends Context.Service<
             })
           )
         )
+
+      /**
+       * Between turns: if dreamd's settings changed since its env file was written (say, the agent model), write
+       * it again, which restarts dreamd. Its inbox is on disk, so a restart loses nothing.
+       */
+      const refreshDaemonEnv = (access: SandboxAccess, daemonToken: string) =>
+        Effect.gen(function* () {
+          const record = yield* core.sandbox
+          if (record.working) return
+          const { settings } = yield* settingsFor(daemonToken)
+          if ((yield* hashSettings(settings)) === record.envHash) return
+          const health = yield* daemon.health(access, daemonToken)
+          if (health.turn === "running") return
+          yield* Effect.logInfo("dreamd's settings changed; rewriting its env file", { sandboxId: access.sandboxId })
+          yield* writeDaemonEnv(access, daemonToken)
+          yield* awaitDaemon(access, daemonToken)
+        }).pipe(Effect.catch((error) => Effect.logWarning("couldn't refresh dreamd's env file", error.message)))
 
       const create = Effect.gen(function* () {
         const project = yield* core.project.pipe(Effect.orDie)
@@ -250,6 +309,7 @@ export class SandboxManager extends Context.Service<
         const { access, daemonToken } = yield* ensureReady
         const record = yield* core.sandbox
         if (record.rulesDirty) yield* pushRules(record, true)
+        yield* refreshDaemonEnv(access, daemonToken)
         const timeZone = Option.flatMap(yield* users.find(project.ownerId), (user) =>
           Option.fromUndefinedOr(user.timeZone)
         )

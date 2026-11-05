@@ -18,7 +18,7 @@ import { decodeUnverified, importEs256Pem, signEs256 } from "../src/lib/Jwt.ts"
 import { makeSecretBox } from "../src/lib/SecretBox.ts"
 import { nextWakeAt } from "../src/project/Handlers.ts"
 import { notificationText } from "../src/project/Notifier.ts"
-import { backoffMs } from "../src/project/SandboxManager.ts"
+import { backoffMs, daemonSettings } from "../src/project/SandboxManager.ts"
 
 const masterKey = "11".repeat(32)
 
@@ -155,6 +155,17 @@ describe("Connect envelopes", () => {
 })
 
 describe("small rules", () => {
+  it("gives the agent model to Claude Code only", () => {
+    const base = { apiUrl: "https://api.dream.test", projectId: "prj_1" as any, daemonToken: "t" }
+    const haiku = Option.some("claude-haiku-4-5-20251001")
+    assert.strictEqual(
+      daemonSettings({ ...base, harness: "claude-code", agentModel: haiku }).DREAM_MODEL,
+      "claude-haiku-4-5-20251001"
+    )
+    assert.notProperty(daemonSettings({ ...base, harness: "codex", agentModel: haiku }), "DREAM_MODEL")
+    assert.notProperty(daemonSettings({ ...base, harness: "claude-code", agentModel: Option.none() }), "DREAM_MODEL")
+  })
+
   it("slugs ideas into short DNS-safe names", () => {
     assert.strictEqual(
       slugFromIdea("A strength log that reads Apple Health and tells me when to add weight."),

@@ -42,6 +42,11 @@ export const ApiConfigSchema = Config.all({
   sandboxMaxRun: Config.Duration("E2B_SANDBOX_MAX_RUN").pipe(Config.withDefault(Duration.hours(1))),
   /** The template for short-lived model sign-in sandboxes; needs `claude` and `codex` on PATH. */
   authTemplate: optionalString("E2B_AUTH_TEMPLATE"),
+  /**
+   * The model project agents run on, written to dreamd's env as `DREAM_MODEL` (an id or alias `claude --model`
+   * accepts, e.g. "claude-haiku-4-5-20251001"). Claude Code projects only; Codex projects keep their default.
+   */
+  agentModel: optionalString("DREAM_AGENT_MODEL"),
   /** How dreamd is started in a new sandbox (run with `bash -lc`). */
   daemonCommand: Config.NonEmptyString("DREAMD_COMMAND").pipe(Config.withDefault("dreamd")),
   apnsKeyId: optionalString("APNS_KEY_ID"),
@@ -95,6 +100,7 @@ export class ApiConfig extends Context.Service<ApiConfig, ApiConfigShape>()("@dr
         sandboxTemplate: "dream-sandbox",
         sandboxMaxRun: Duration.hours(1),
         authTemplate: Option.none(),
+        agentModel: Option.none(),
         daemonCommand: "dreamd",
         apnsKeyId: Option.some("KEYID12345"),
         apnsTeamId: Option.some("TEAMID1234"),
