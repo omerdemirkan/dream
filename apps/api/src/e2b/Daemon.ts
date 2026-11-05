@@ -26,7 +26,8 @@ export class Daemon extends Context.Service<
     readonly deliver: (
       sandbox: SandboxAccess,
       daemonToken: string,
-      events: readonly [AgentEvent, ...Array<AgentEvent>]
+      events: readonly [AgentEvent, ...Array<AgentEvent>],
+      timeZone?: string | undefined
     ) => Effect.Effect<ReadonlyArray<string>, UpstreamFailure>
     readonly health: (
       sandbox: SandboxAccess,

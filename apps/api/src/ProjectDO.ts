@@ -14,7 +14,6 @@ import * as Cloudflare from "@alchemy.run/cloudflare"
 import * as RpcWebSocket from "@alchemy.run/cloudflare/Workers/RpcWebSocket"
 import type { DurableObjectStorage } from "@cloudflare/workers-types"
 import { HttpRpcSerialization, type ProjectId, ProjectLiveRpcs, SocketRpcSerialization } from "@dream/domain"
-import * as SqliteClient from "@effect/sql-sqlite-do/SqliteClient"
 import { RuntimeContext } from "alchemy/RuntimeContext"
 import { Context, Effect, Fiber, Layer, Scope } from "effect"
 import type { HttpClientRequest } from "effect/http"
@@ -22,29 +21,13 @@ import { HttpServerRequest } from "effect/http/HttpServerRequest"
 import * as HttpServerResponse from "effect/http/HttpServerResponse"
 import { RpcMiddleware, RpcServer } from "effect/rpc"
 import { platformLayer } from "./Platform.ts"
-import { Alarm, NativeAlarm } from "./project/Alarm.ts"
 import type { ProjectFetch } from "./project/Client.ts"
 import { DoRpcs } from "./project/Client.ts"
-import { Core } from "./project/Core.ts"
 import { AgentHandlers, LiveHandlers, ProjectHandlers, SandboxAuthServer } from "./project/Handlers.ts"
-import { LiveFeed } from "./project/Live.ts"
-import { Machines } from "./project/Machines.ts"
-import { Notifier } from "./project/Notifier.ts"
+import { projectLayer } from "./project/Layer.ts"
 import { InternalRpcPath, LivePath } from "./project/ProjectRpcs.ts"
-import { SandboxManager } from "./project/SandboxManager.ts"
 import { Scheduler } from "./project/Scheduler.ts"
-import { migrate, Store } from "./project/Store.ts"
 import { Database } from "./Resources.ts"
-
-/** The project's own services over its SQLite storage. */
-export const projectLayer = (storage: DurableObjectStorage) => {
-  const sql = SqliteClient.layer({ storage })
-  const store = Layer.mergeAll(Store.layer, Layer.effectDiscard(migrate)).pipe(Layer.provide(sql))
-  const alarm = Alarm.layer.pipe(Layer.provide(NativeAlarm.fromStorage(storage)))
-  const core = Core.layer.pipe(Layer.provideMerge(Layer.mergeAll(LiveFeed.layer, alarm)))
-  const domain = Layer.mergeAll(Notifier.layer, SandboxManager.layer, Machines.layer).pipe(Layer.provideMerge(core))
-  return Scheduler.layer.pipe(Layer.provideMerge(domain), Layer.provideMerge(store))
-}
 
 /** Keeps the object alive while an RPC on the socket is in flight (as alchemy's RpcDurableObject does). */
 class RequestLifetime extends RpcMiddleware.Service<RequestLifetime>()("@dream/api/ProjectDO/RequestLifetime") {}

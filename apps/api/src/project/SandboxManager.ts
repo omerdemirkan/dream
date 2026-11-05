@@ -8,6 +8,7 @@
 import {
   type AgentEvent,
   DaemonEnv,
+  DaemonEnvFile,
   DefaultDaemonPort,
   DefaultDaemonSocket,
   type EventId,
@@ -18,6 +19,7 @@ import { Clock, Context, DateTime, Duration, Effect, Layer, Option, Redacted, Sc
 import { Tokens } from "../auth/Tokens.ts"
 import { ApiConfig } from "../Config.ts"
 import { Projects } from "../db/Projects.ts"
+import { Users } from "../db/Users.ts"
 import { Daemon } from "../e2b/Daemon.ts"
 import { E2B, type SandboxAccess } from "../e2b/E2B.ts"
 import { Envd } from "../e2b/Envd.ts"
@@ -68,54 +70,80 @@ export class SandboxManager extends Context.Service<
       const tokens = yield* Tokens
       const credentials = yield* SandboxCredentials
       const projects = yield* Projects
+      const users = yield* Users
       const busy = yield* Semaphore.make(1)
 
       const update = (f: (record: SandboxRecord) => SandboxRecord) =>
         Effect.flatMap(core.sandbox, (r) => core.saveSandbox(f(r)))
 
-      const waitForDaemon = (access: SandboxAccess, daemonToken: string) =>
+      const waitForDaemon = (access: SandboxAccess, daemonToken: string, within: Duration.Duration) =>
         daemon.health(access, daemonToken).pipe(
           Effect.retry(Schedule.spaced("2 seconds")),
           Effect.timeoutOrElse({
-            duration: HealthWait,
+            duration: within,
             orElse: () =>
               Effect.fail(new UpstreamFailure({ service: "dreamd", message: "dreamd didn't come up in the sandbox" }))
           })
         )
 
+      /** For a template without dreamd's supervisor: start it directly (a second copy just fails to bind its port). */
       const startDaemon = (access: SandboxAccess) =>
         envd.startBackground(access, { command: `${config.daemonCommand} >>/tmp/dreamd.log 2>&1` })
+
+      /** dreamd's environment, as `DaemonEnvFile` (dotenv). dreamd waits for it and restarts when it changes. */
+      const daemonEnv = (values: Readonly<Record<string, string>>) =>
+        Object.entries(values)
+          .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
+          .join("\n") + "\n"
+
+      const writeDaemonEnv = (access: SandboxAccess, daemonToken: string) =>
+        Effect.gen(function* () {
+          const project = yield* core.project.pipe(Effect.orDie)
+          const projectToken = yield* tokens.project(project.id, project.ownerId)
+          yield* envd.run(access, { command: `mkdir -p "$(dirname '${DaemonEnvFile}')"`, timeout: "20 seconds" })
+          yield* envd.writeFile(
+            access,
+            DaemonEnvFile,
+            daemonEnv({
+              [DaemonEnv.apiUrl]: config.apiUrl,
+              [DaemonEnv.projectId]: project.id,
+              [DaemonEnv.projectToken]: Redacted.value(projectToken),
+              [DaemonEnv.daemonToken]: daemonToken,
+              [DaemonEnv.harness]: project.harness,
+              [DaemonEnv.port]: String(DefaultDaemonPort),
+              [DaemonEnv.socket]: DefaultDaemonSocket
+            })
+          )
+        })
+
+      /** Waits for dreamd; if the template didn't start it within a while, starts it and waits again. */
+      const awaitDaemon = (access: SandboxAccess, daemonToken: string) =>
+        waitForDaemon(access, daemonToken, Duration.seconds(45)).pipe(
+          Effect.catch(() =>
+            Effect.gen(function* () {
+              yield* Effect.logWarning("dreamd didn't answer; starting it directly")
+              yield* startDaemon(access)
+              yield* waitForDaemon(access, daemonToken, HealthWait)
+            })
+          )
+        )
 
       const create = Effect.gen(function* () {
         const project = yield* core.project.pipe(Effect.orDie)
         const daemonToken = randomToken(40)
-        const projectToken = yield* tokens.project(project.id, project.ownerId)
-        const setup = yield* credentials.setup(project.ownerId, project.id, project.harness)
+        const setup = yield* credentials.setup(project.ownerId, project.harness)
         yield* update((r) => ({ ...r, status: "creating" }))
         const access = yield* e2b.create({
           template: config.sandboxTemplate,
           timeoutSeconds: Duration.toSeconds(IdleTimeout),
           autoPause: true,
-          envVars: {
-            ...setup.envVars,
-            [DaemonEnv.apiUrl]: config.apiUrl,
-            [DaemonEnv.projectId]: project.id,
-            [DaemonEnv.projectToken]: Redacted.value(projectToken),
-            [DaemonEnv.daemonToken]: daemonToken,
-            [DaemonEnv.harness]: project.harness,
-            [DaemonEnv.port]: String(DefaultDaemonPort),
-            [DaemonEnv.socket]: DefaultDaemonSocket
-          },
+          envVars: {},
           metadata: { projectId: project.id, userId: project.ownerId },
           rules: setup.rules
         })
         const ready = Effect.gen(function* () {
-          for (const file of setup.files) {
-            yield* envd.run(access, { command: `mkdir -p "$(dirname '${file.path}')"`, timeout: "20 seconds" })
-            yield* envd.writeFile(access, file.path, file.content)
-          }
-          yield* startDaemon(access)
-          yield* waitForDaemon(access, daemonToken)
+          yield* writeDaemonEnv(access, daemonToken)
+          yield* awaitDaemon(access, daemonToken)
         })
         // Don't leak a sandbox that never became usable.
         yield* ready.pipe(Effect.tapError(() => e2b.kill(access.sandboxId).pipe(Effect.ignore)))
@@ -149,17 +177,13 @@ export class SandboxManager extends Context.Service<
         Effect.gen(function* () {
           if (record.access === undefined) return
           const project = yield* core.project.pipe(Effect.orDie)
-          const setup = yield* credentials.setup(project.ownerId, project.id, project.harness)
+          const setup = yield* credentials.setup(project.ownerId, project.harness)
           if (setup.rulesHash === record.rulesHash && !record.rulesDirty) return
           if (resume) yield* e2b.connect(record.access.sandboxId, Duration.toSeconds(IdleTimeout)).pipe(Effect.ignore)
           const updated = yield* e2b.updateRules(record.access.sandboxId, setup.rules)
           yield* update((r) =>
             updated ? { ...r, rulesHash: setup.rulesHash, rulesDirty: false } : { ...r, rulesDirty: true }
           )
-          if (updated) {
-            for (const file of setup.files)
-              yield* envd.writeFile(record.access, file.path, file.content).pipe(Effect.ignore)
-          }
         })
 
       const refreshRules = Effect.flatMap(core.sandbox, (record) => pushRules(record, false)).pipe(
@@ -188,9 +212,9 @@ export class SandboxManager extends Context.Service<
           const resumed = yield* e2b.connect(access.sandboxId, Duration.toSeconds(IdleTimeout))
           const healthy = yield* daemon.health(resumed, daemonToken).pipe(Effect.option)
           if (Option.isNone(healthy)) {
-            yield* Effect.logWarning("dreamd isn't answering; restarting it")
-            yield* startDaemon(resumed)
-            yield* waitForDaemon(resumed, daemonToken)
+            yield* Effect.logWarning("dreamd isn't answering; rewriting its env file to restart it")
+            yield* writeDaemonEnv(resumed, daemonToken)
+            yield* awaitDaemon(resumed, daemonToken)
           }
         }).pipe(Effect.catch((error) => Effect.logWarning("sandbox check failed", String(error))))
 
@@ -204,11 +228,16 @@ export class SandboxManager extends Context.Service<
         yield* store.clearTimer("deliver")
         const pending = yield* store.pendingEvents(BatchSize)
         if (pending.length === 0) return
+        const project = yield* core.project.pipe(Effect.orDie)
         const { access, daemonToken } = yield* ensureReady
         const record = yield* core.sandbox
         if (record.rulesDirty) yield* pushRules(record, true)
+        const timeZone = Option.flatMap(yield* users.find(project.ownerId), (user) =>
+          Option.fromUndefinedOr(user.timeZone)
+        )
+        const events = pending as unknown as readonly [AgentEvent, ...Array<AgentEvent>]
         const accepted = yield* daemon
-          .deliver(access, daemonToken, pending as unknown as readonly [AgentEvent, ...Array<AgentEvent>])
+          .deliver(access, daemonToken, events, Option.getOrUndefined(timeZone))
           .pipe(Effect.tapError(() => diagnose(access, daemonToken)))
         yield* store.markDelivered(accepted as ReadonlyArray<EventId>, DateTime.formatIso(yield* DateTime.now))
         yield* update((r) => ({ ...r, failures: 0 }))

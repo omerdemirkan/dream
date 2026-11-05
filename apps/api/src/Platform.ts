@@ -49,15 +49,21 @@ export const servicesLayer = Layer.mergeAll(
   Tokens.layer
 )
 
-export const platformLayer = (bindings: PlatformBindings) => {
+/** Replaceable parts, so tests can run the same wiring against fakes and fixed config. */
+export interface PlatformOverrides {
+  readonly services?: typeof servicesLayer | undefined
+  readonly config?: Layer.Layer<ApiConfig> | undefined
+}
+
+export const platformLayer = (bindings: PlatformBindings, overrides: PlatformOverrides = {}) => {
   const base = Layer.mergeAll(
     databaseLayer(bindings.d1),
-    servicesLayer,
+    overrides.services ?? servicesLayer,
     ProjectClients.layer(bindings.fetchProject)
   ).pipe(Layer.provideMerge(FetchHttpClient.layer))
   const credentials = CredentialStore.layer.pipe(Layer.provideMerge(base))
   return Layer.mergeAll(SandboxCredentials.layer, ProjectDirectory.layer).pipe(
     Layer.provideMerge(credentials),
-    Layer.provideMerge(ApiConfig.layer)
+    Layer.provideMerge(overrides.config ?? ApiConfig.layer)
   )
 }

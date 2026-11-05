@@ -13,18 +13,14 @@
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import type { D1Database, R2Bucket } from "@cloudflare/workers-types"
 import type { ProjectId } from "@dream/domain"
-import { Config, Effect, Layer, Option } from "effect"
+import { Config, Effect, Option } from "effect"
 import type { HttpClientRequest } from "effect/http"
 import * as HttpServerRequest from "effect/http/HttpServerRequest"
 import * as HttpServerResponse from "effect/http/HttpServerResponse"
-import { ModelConnect } from "./connect/ModelConnect.ts"
-import { MediaStore } from "./http/Media.ts"
-import { LiveForwarder, route } from "./http/Router.ts"
-import { Access } from "./integrations/Access.ts"
-import { CredentialStore } from "./integrations/CredentialStore.ts"
-import { platformLayer } from "./Platform.ts"
-import { type ProjectFetch, ProjectDirectory } from "./project/Client.ts"
+import { route } from "./http/Router.ts"
+import type { ProjectFetch } from "./project/Client.ts"
 import ProjectDO from "./ProjectDO.ts"
+import { maintenance, type WorkerBindings, workerLayer } from "./WorkerLayer.ts"
 import { Database, Media } from "./Resources.ts"
 
 /** The apex domain Dream runs on, e.g. "omer.build". */
@@ -38,29 +34,6 @@ export const WorkerName = "dream-api"
 
 /** Set once R2 is enabled on the account; until then the Worker runs without media storage. */
 export const R2Enabled = Config.Boolean("DREAM_R2_ENABLED").pipe(Config.withDefault(false))
-
-export interface WorkerBindings {
-  readonly d1: D1Database
-  readonly r2: R2Bucket | undefined
-  readonly fetchProject: ProjectFetch
-  readonly forwardLive: LiveForwarder["Service"]["forward"]
-}
-
-export const workerLayer = (bindings: WorkerBindings) =>
-  Layer.mergeAll(ModelConnect.layer, Access.layer).pipe(
-    Layer.provideMerge(platformLayer({ d1: bindings.d1, fetchProject: bindings.fetchProject })),
-    Layer.provideMerge(MediaStore.layer(bindings.r2)),
-    Layer.provideMerge(Layer.succeed(LiveForwarder, LiveForwarder.of({ forward: bindings.forwardLive })))
-  )
-
-/** Every five minutes: refresh credentials that expire soon, push them to sandboxes, end abandoned sign-ins. */
-export const maintenance = Effect.gen(function* () {
-  const store = yield* CredentialStore
-  const directory = yield* ProjectDirectory
-  const modelConnect = yield* ModelConnect
-  for (const userId of yield* store.sweep) yield* directory.credentialsChanged(userId)
-  yield* modelConnect.cleanup
-}).pipe(Effect.withSpan("maintenance"))
 
 export default class Api extends Cloudflare.Worker<Api>()(
   "Api",

@@ -4,7 +4,6 @@
  * - project: dreamd's project-scoped token (SandboxAuth), in DREAM_PROJECT_TOKEN
  * - live: the short-lived WebSocket ticket from GetLiveUrl
  * - upload: a one-media-file PUT to the Worker
- * - codex: the placeholder refresh token Codex sends to Dream's refresh endpoint
  */
 import { MediaContentType, MediaId, ProjectId, UserId } from "@dream/domain"
 import { Clock, Context, Data, Duration, Effect, Layer, Redacted, Schema } from "effect"
@@ -52,13 +51,6 @@ const UploadClaims = Schema.Struct({
 })
 export type UploadClaims = typeof UploadClaims.Type
 
-const CodexClaims = Schema.Struct({
-  iss: Schema.Literal(issuer),
-  typ: Schema.Literal("codex"),
-  sub: UserId,
-  pid: ProjectId
-})
-
 export const SessionLifetime = Duration.days(90)
 export const LiveTicketLifetime = Duration.seconds(60)
 export const UploadLifetime = Duration.minutes(15)
@@ -87,10 +79,6 @@ export class Tokens extends Context.Service<
       claims: Omit<UploadClaims, "iss" | "typ" | "exp">
     ) => Effect.Effect<{ readonly token: string; readonly expiresAtMs: number }>
     readonly verifyUpload: (token: string) => Effect.Effect<UploadClaims, InvalidToken>
-    readonly codexRefresh: (projectId: ProjectId, userId: UserId) => Effect.Effect<string>
-    readonly verifyCodexRefresh: (
-      token: string
-    ) => Effect.Effect<{ readonly projectId: ProjectId; readonly userId: UserId }, InvalidToken>
   }
 >()("@dream/api/Tokens") {
   static readonly layer = Layer.effect(
@@ -146,10 +134,7 @@ export class Tokens extends Context.Service<
             const token = yield* signHs256(key, { iss: issuer, typ: "upload", ...claims, exp })
             return { token, expiresAtMs: exp * 1000 }
           }),
-        verifyUpload: (token) => verify(token, UploadClaims).pipe(Effect.flatMap(notExpired)),
-        codexRefresh: (projectId, userId) => signHs256(key, { iss: issuer, typ: "codex", sub: userId, pid: projectId }),
-        verifyCodexRefresh: (token) =>
-          verify(token, CodexClaims).pipe(Effect.map((claims) => ({ projectId: claims.pid, userId: claims.sub })))
+        verifyUpload: (token) => verify(token, UploadClaims).pipe(Effect.flatMap(notExpired))
       })
     })
   )

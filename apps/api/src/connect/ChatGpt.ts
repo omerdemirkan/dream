@@ -1,8 +1,8 @@
 /**
  * ChatGPT sign-in tokens as the Codex CLI keeps them (~/.codex/auth.json), and
  * the central refresh. Refresh tokens are single-use, so only the Worker ever
- * refreshes: sandboxes get placeholders, and E2B injects the current access
- * token on chatgpt.com.
+ * refreshes; sandboxes never hold them, and E2B injects the current access
+ * token on chatgpt.com (ModelEgress).
  *
  * Endpoint, client id and body are from codex-rs 0.166.0
  * (login/src/auth/manager.rs, oauth/client.rs).
@@ -12,13 +12,10 @@ import { Context, Effect, Layer, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 import { describe } from "../e2b/E2B.ts"
 import { ChatGptCredential } from "../db/Credentials.ts"
-import { toBase64Url, utf8 } from "../lib/Bytes.ts"
 import { decodeUnverified } from "../lib/Jwt.ts"
 
 export const CodexClientId = "app_EMoamEEZ73f0CkXaXp7hrann"
 export const RefreshUrl = "https://auth.openai.com/oauth/token"
-/** Hosts Codex sends the ChatGPT bearer to. */
-export const ChatGptHosts = ["chatgpt.com"] as const
 
 /** The auth.json Codex writes after `codex login --device-auth`. */
 export const CodexAuthFile = Schema.Struct({
@@ -100,45 +97,6 @@ export const idTokenClaims = (idToken: string): Effect.Effect<IdTokenClaims> =>
 /** "ChatGPT Pro" from a plan type like "pro". */
 export const planName = (planType: string | undefined): string | undefined =>
   planType === undefined ? undefined : `ChatGPT ${planType.charAt(0).toUpperCase()}${planType.slice(1)}`
-
-const fakeJwt = (payload: object) =>
-  `${toBase64Url(utf8(JSON.stringify({ alg: "none", typ: "JWT" })))}.${toBase64Url(utf8(JSON.stringify(payload)))}.ZHJlYW0`
-
-/** Far enough ahead that Codex never refreshes the placeholder on its own (it refreshes within 5 min of `exp`). */
-const PlaceholderExpiry = 4102444800
-
-/**
- * The auth.json written into a sandbox. Codex sends `access_token` as the
- * bearer (E2B swaps in the real one on chatgpt.com) and needs the real account
- * id for workspace routing. `refreshToken` is Dream's own token for its refresh
- * endpoint, which Codex calls via CODEX_REFRESH_TOKEN_URL_OVERRIDE after a 401.
- */
-export const placeholderAuthFile = (claims: IdTokenClaims, refreshToken: string): string =>
-  JSON.stringify(
-    {
-      auth_mode: "chatgpt",
-      OPENAI_API_KEY: null,
-      tokens: placeholderTokens(claims, refreshToken),
-      last_refresh: "2020-01-01T00:00:00Z"
-    },
-    null,
-    2
-  )
-
-export const placeholderTokens = (claims: IdTokenClaims, refreshToken: string) => ({
-  id_token: fakeJwt({
-    ...(claims.email === undefined ? {} : { email: claims.email }),
-    "https://api.openai.com/auth": {
-      ...(claims.accountId === undefined ? {} : { chatgpt_account_id: claims.accountId }),
-      ...(claims.planType === undefined ? {} : { chatgpt_plan_type: claims.planType }),
-      ...(claims.userId === undefined ? {} : { chatgpt_user_id: claims.userId })
-    },
-    exp: PlaceholderExpiry
-  }),
-  access_token: fakeJwt({ dream: "placeholder", exp: PlaceholderExpiry }),
-  refresh_token: refreshToken,
-  ...(claims.accountId === undefined ? {} : { account_id: claims.accountId })
-})
 
 export class ChatGpt extends Context.Service<
   ChatGpt,
