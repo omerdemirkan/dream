@@ -2,7 +2,9 @@
  * The E2B template every project sandbox starts from (`dream-sandbox`):
  *
  * - Node 24 (Debian 12), git, build tools, Python, ripgrep, jq, ffmpeg, an SSH
- *   client, and Playwright's Chromium with its system libraries
+ *   client, Pillow and basic fonts, and Playwright (on PATH, so `npx playwright`
+ *   works offline) with its Chromium and system libraries; `chromium` and
+ *   `chrome` on PATH run that browser
  * - pnpm (the harness adapters install their bridges with it) and Bun
  * - dreamd and the `dream` CLI in /opt/dream, run from TypeScript source by
  *   Node's type stripping, with dependencies installed from the repo's bun.lock
@@ -88,7 +90,10 @@ const aptPackages = [
   "sqlite3",
   "ffmpeg",
   "tmux",
-  "sudo"
+  "sudo",
+  "python3-pil",
+  "fontconfig",
+  "fonts-dejavu-core"
 ]
 
 /** The template, built from a context made by `stageContext`. */
@@ -100,8 +105,10 @@ export const makeTemplate = (context: string) =>
       [
         `npm install -g pnpm@${versions.pnpm}`,
         `curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash -s bun-v${versions.bun}`,
-        `PLAYWRIGHT_BROWSERS_PATH=/opt/playwright npx -y playwright@${versions.playwright} install --with-deps chromium`,
+        `npm install -g playwright@${versions.playwright}`,
+        "PLAYWRIGHT_BROWSERS_PATH=/opt/playwright playwright install --with-deps chromium",
         "chmod -R a+rX /opt/playwright",
+        "fc-cache -f",
         "ln -sf /usr/bin/fdfind /usr/local/bin/fd"
       ],
       { user: "root" }
@@ -111,6 +118,7 @@ export const makeTemplate = (context: string) =>
       [
         "cd /opt/dream && bun install --frozen-lockfile --production",
         "install -m 755 /opt/dream/sandbox/dream /opt/dream/sandbox/dreamd /usr/local/bin/",
+        "install -m 755 /opt/dream/sandbox/chromium /usr/local/bin/ && ln -sf chromium /usr/local/bin/chrome",
         "chmod 755 /opt/dream/sandbox/supervisor.sh",
         "echo '. /opt/dream/sandbox/env.sh' > /etc/profile.d/dream.sh",
         "mkdir -p /home/user/project /home/user/.dream/logs && chown -R user:user /home/user"

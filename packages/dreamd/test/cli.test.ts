@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { dreamSkill } from "@dream/agent-context"
 import { DateTime, Option, Result } from "effect"
-import { checkCron, mediaType, parseAt, parseStep } from "../src/cli/Parse.ts"
+import { checkCron, mediaType, parseAt, parseStep, planCopy } from "../src/cli/Parse.ts"
 import { requestedTags } from "../src/Servers.ts"
 import { parseSkill } from "../src/harness/Skill.ts"
 import { harnessAuth, harnessEnv } from "../src/harness/HarnessEnv.ts"
@@ -35,6 +35,23 @@ describe("other flags", () => {
     assert.deepStrictEqual(parseStep("3/5"), Result.succeed({ current: 3, total: 5 }))
     assert.deepStrictEqual(mediaType("shot.PNG"), Result.succeed("image/png"))
     assert.isTrue(Result.isFailure(mediaType("notes.txt")))
+  })
+})
+
+describe("dream mac cp", () => {
+  it("copies to or from the Mac, never both or neither", () => {
+    assert.deepStrictEqual(
+      planCopy(["App", "project.yml", "mac:src"]),
+      Result.succeed({ direction: "to-mac", sources: ["App", "project.yml"], destination: "src" })
+    )
+    assert.deepStrictEqual(
+      planCopy(["mac:shot.png", "."]),
+      Result.succeed({ direction: "from-mac", sources: ["shot.png"], destination: "." })
+    )
+    assert.isTrue(Result.isFailure(planCopy(["a", "b"])))
+    assert.isTrue(Result.isFailure(planCopy(["mac:a", "mac:b"])))
+    assert.isTrue(Result.isFailure(planCopy(["mac:a", "b", "c"])))
+    assert.isTrue(Result.isFailure(planCopy(["mac:a"])))
   })
 })
 

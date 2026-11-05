@@ -1,0 +1,9 @@
+#!/bin/sh
+# Playwright's Chromium, as `chromium` and `chrome`, for quick headless
+# screenshots: `chromium --headless --screenshot=shot.png --window-size=390,844 http://localhost:3000`.
+# Its setuid sandbox isn't available here, so it runs with --no-sandbox.
+for chrome in /opt/playwright/chromium-*/chrome-linux*/chrome; do
+  [ -x "$chrome" ] && exec "$chrome" --no-sandbox "$@"
+done
+echo "chromium: Playwright's Chromium isn't installed in /opt/playwright" >&2
+exit 127

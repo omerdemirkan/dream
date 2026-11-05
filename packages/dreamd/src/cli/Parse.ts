@@ -52,3 +52,24 @@ export const mediaType = (file: string): Result.Result<MediaContentType, string>
   const type = mediaTypes[file.split(".").pop()?.toLowerCase() ?? ""]
   return type === undefined ? Result.fail(`${file}: attach png, jpg or mp4 files.`) : Result.succeed(type)
 }
+
+/** `dream mac cp` paths: `mac:<path>` is on the Mac (relative to its home), anything else is here. */
+export interface CopyPlan {
+  readonly direction: "to-mac" | "from-mac"
+  readonly sources: ReadonlyArray<string>
+  readonly destination: string
+}
+
+export const planCopy = (paths: ReadonlyArray<string>): Result.Result<CopyPlan, string> => {
+  const usage = "Use `dream mac cp <src>... mac:<dst>` or `dream mac cp mac:<src>... <dst>`."
+  if (paths.length < 2) return Result.fail(`Name a source and a destination. ${usage}`)
+  const onMac = (path: string) => path.startsWith("mac:")
+  const strip = (path: string) => path.slice("mac:".length)
+  const sources = paths.slice(0, -1)
+  const destination = paths[paths.length - 1]!
+  if (onMac(destination) && !sources.some(onMac))
+    return Result.succeed({ direction: "to-mac", sources, destination: strip(destination) })
+  if (!onMac(destination) && sources.every(onMac))
+    return Result.succeed({ direction: "from-mac", sources: sources.map(strip), destination })
+  return Result.fail(`One side must be the Mac (mac:<path>) and the other this sandbox. ${usage}`)
+}

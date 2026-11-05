@@ -66,21 +66,35 @@ const defined = <T extends Record<string, unknown>>(fields: T) =>
 
 const now = DateTime.now
 
-/** `-` reads the text from stdin, for long messages. */
+/** `-`, or leaving the text out while stdin is piped, reads it from stdin; for long messages. */
 const textArgument = (name: string) =>
-  Argument.String(name).pipe(Argument.withDescription(`The ${name}; markdown. Use "-" to read it from stdin.`))
+  Argument.String(name).pipe(
+    Argument.withDescription(`The ${name}; markdown. Use "-" or leave it out to read it from piped stdin.`),
+    Argument.optional
+  )
 
-const readText = (text: string) =>
-  text === "-"
-    ? Effect.tryPromise({
-        try: async () => {
-          const chunks: Array<Buffer> = []
-          for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk))
-          return Buffer.concat(chunks).toString("utf8").trim()
-        },
-        catch: (cause) => new CliError.UserError({ cause, userMessage: "Couldn't read stdin." })
-      })
-    : Effect.succeed(text)
+const stdinIsPiped = () => process.stdin.isTTY !== true
+
+const readStdin = Effect.tryPromise({
+  try: async () => {
+    const chunks: Array<Buffer> = []
+    for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk))
+    return Buffer.concat(chunks).toString("utf8").trim()
+  },
+  catch: (cause) => new CliError.UserError({ cause, userMessage: "Couldn't read stdin." })
+})
+
+const readText = (text: string) => (text === "-" ? readStdin : Effect.succeed(text))
+
+const readOptional = (text: Option.Option<string>) =>
+  Option.match(text, { onNone: () => Effect.succeed(undefined), onSome: readText })
+
+/** The text argument, from the command line or stdin; `missing` is the error when there's neither. */
+const textFrom = (text: Option.Option<string>, missing: string) =>
+  Option.match(text, {
+    onNone: () => (stdinIsPiped() ? readStdin : fail(missing)),
+    onSome: readText
+  })
 
 /** Reserve a media id and upload the file's bytes to where the API says. */
 const upload = Effect.fn("dream.upload")(function* (file: string, caption?: string) {
@@ -140,7 +154,10 @@ const message = Command.make(
   (input) =>
     Effect.gen(function* () {
       const dream = yield* Dream
-      const text = yield* readText(input.text)
+      const text = yield* textFrom(
+        input.text,
+        "Say what: `dream message \"…\"`, or pipe it in: `dream message - <<'EOF'`."
+      )
       if (text.length === 0) return yield* fail("The message is empty.")
       const media: Array<MediaId> = []
       for (const file of input.media) media.push((yield* upload(file)).id)
@@ -160,14 +177,17 @@ const askWithdraw = Command.make("withdraw", { messageId: Argument.String("messa
 const ask = Command.make(
   "ask",
   {
-    question: Argument.String("question").pipe(Argument.optional),
+    question: textArgument("question"),
     option: Flag.String("option").pipe(
       Flag.withDescription("An answer they can pick. Repeat for each."),
       Flag.atLeast(0)
     ),
-    why: Flag.String("why").pipe(Flag.withDescription("The one-line reason shown under the question."), Flag.optional),
+    why: Flag.String("why").pipe(
+      Flag.withDescription('The one-line reason shown under the question; "-" reads it from stdin.'),
+      Flag.optional
+    ),
     meanwhile: Flag.String("meanwhile").pipe(
-      Flag.withDescription("What you'll keep doing while you wait."),
+      Flag.withDescription('What you\'ll keep doing while you wait; "-" reads it from stdin.'),
       Flag.optional
     ),
     json
@@ -175,18 +195,24 @@ const ask = Command.make(
   (input) =>
     Effect.gen(function* () {
       const dream = yield* Dream
-      const question = yield* Option.match(input.question, {
-        onNone: () => fail('Ask what? `dream ask "question" --option "…" --option "…"`'),
-        onSome: readText
-      })
+      const fromStdin = [
+        Option.getOrElse(input.question, () => (stdinIsPiped() ? "-" : "")),
+        Option.getOrUndefined(input.why),
+        Option.getOrUndefined(input.meanwhile)
+      ].filter((text) => text === "-")
+      if (fromStdin.length > 1)
+        return yield* fail("Only one of the question, --why and --meanwhile can come from stdin.")
+      const question = yield* textFrom(input.question, 'Ask what? `dream ask "question" --option "…" --option "…"`')
       if (question.length === 0) return yield* fail("The question is empty.")
+      const why = yield* readOptional(input.why)
+      const meanwhile = yield* readOptional(input.meanwhile)
       const asked = yield* userFacing(
         dream.AskQuestion(
           defined({
             question,
             options: input.option,
-            why: Option.getOrUndefined(input.why),
-            meanwhile: Option.getOrUndefined(input.meanwhile)
+            why,
+            meanwhile
           })
         )
       )
@@ -595,50 +621,85 @@ const browser = Command.make("browser", { json }, (input) =>
   ])
 )
 
+/**
+ * Run `ssh` or `scp` against the Mac with a fresh short-lived key: `build` gets
+ * the shared options and `user@host`, and returns the program and its arguments.
+ */
+const onMac = (
+  build: (
+    options: ReadonlyArray<string>,
+    target: string,
+    port: string
+  ) => readonly [command: string, args: ReadonlyArray<string>]
+) =>
+  Effect.gen(function* () {
+    const dream = yield* Dream
+    const fs = yield* FileSystem.FileSystem
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+    const ssh = yield* userFacing(dream.GetMacSsh())
+    const exitCode = yield* Effect.scoped(
+      Effect.gen(function* () {
+        const dir = yield* fs.makeTempDirectoryScoped({ prefix: "dream-mac-" })
+        const key = `${dir}/key`
+        yield* fs.writeFileString(key, `${Redacted.value(ssh.privateKey).trimEnd()}\n`, { mode: 0o600 })
+        const hostOptions =
+          ssh.hostKey === undefined
+            ? ["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null"]
+            : yield* fs
+                .writeFileString(`${dir}/known_hosts`, `${ssh.hostKey}\n`)
+                .pipe(Effect.as(["-o", `UserKnownHostsFile=${dir}/known_hosts`, "-o", "StrictHostKeyChecking=yes"]))
+        const options = ["-i", key, "-o", "IdentitiesOnly=yes", "-o", "LogLevel=ERROR", ...hostOptions]
+        const [command, args] = build(options, `${ssh.user}@${ssh.host}`, String(ssh.port))
+        const handle = yield* spawner.spawn(
+          ChildProcess.make(command, args, { stdin: "inherit", stdout: "inherit", stderr: "inherit", extendEnv: true })
+        )
+        return yield* handle.exitCode
+      })
+    ).pipe(Effect.mapError((cause) => new CliError.UserError({ cause, userMessage: `ssh failed: ${cause.message}` })))
+    if (exitCode !== 0) process.exitCode = exitCode
+  })
+
 const macSsh = Command.make(
   "ssh",
   { command: Argument.String("command").pipe(Argument.withDescription("Run after --"), Argument.variadic()) },
   (input) =>
+    input.command.length === 0
+      ? fail("Pass a command: `dream mac ssh -- xcodebuild -version`.")
+      : onMac((options, target, port) => ["ssh", ["-p", port, ...options, target, "--", ...input.command]])
+).pipe(
+  Command.withDescription(
+    "Run a command on the Mac over a fresh short-lived SSH session; stdin is passed through (e.g. `tar c . | dream mac ssh -- tar x -C app`)."
+  )
+)
+
+const macCp = Command.make(
+  "cp",
+  {
+    paths: Argument.String("path").pipe(
+      Argument.withDescription(
+        "Sources, then the destination; prefix the Mac's side with mac: (relative to its home)."
+      ),
+      Argument.variadic()
+    )
+  },
+  (input) =>
     Effect.gen(function* () {
-      const dream = yield* Dream
-      const fs = yield* FileSystem.FileSystem
-      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
-      if (input.command.length === 0) return yield* fail("Pass a command: `dream mac ssh -- xcodebuild -version`.")
-      const ssh = yield* userFacing(dream.GetMacSsh())
-      const exitCode = yield* Effect.scoped(
-        Effect.gen(function* () {
-          const dir = yield* fs.makeTempDirectoryScoped({ prefix: "dream-mac-" })
-          const key = `${dir}/key`
-          yield* fs.writeFileString(key, `${Redacted.value(ssh.privateKey).trimEnd()}\n`, { mode: 0o600 })
-          const hostOptions =
-            ssh.hostKey === undefined
-              ? ["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null"]
-              : yield* fs
-                  .writeFileString(`${dir}/known_hosts`, `${ssh.hostKey}\n`)
-                  .pipe(Effect.as(["-o", `UserKnownHostsFile=${dir}/known_hosts`, "-o", "StrictHostKeyChecking=yes"]))
-          const args = [
-            "-i",
-            key,
-            "-p",
-            String(ssh.port),
-            "-o",
-            "IdentitiesOnly=yes",
-            "-o",
-            "LogLevel=ERROR",
-            ...hostOptions,
-            `${ssh.user}@${ssh.host}`,
-            "--",
-            ...input.command
-          ]
-          const handle = yield* spawner.spawn(
-            ChildProcess.make("ssh", args, { stdin: "inherit", stdout: "inherit", stderr: "inherit", extendEnv: true })
-          )
-          return yield* handle.exitCode
-        })
-      ).pipe(Effect.mapError((cause) => new CliError.UserError({ cause, userMessage: `ssh failed: ${cause.message}` })))
-      if (exitCode !== 0) process.exitCode = exitCode
+      const plan = yield* fromResult(Parse.planCopy(input.paths))
+      yield* onMac((options, target, port) => {
+        const remote = (path: string) => `${target}:${path}`
+        const paths =
+          plan.direction === "to-mac"
+            ? [...plan.sources, remote(plan.destination)]
+            : [...plan.sources.map(remote), plan.destination]
+        // -O: the legacy protocol runs over exec like `dream mac ssh`; the Mac's SFTP sees a different filesystem.
+        return ["scp", ["-O", "-r", "-q", "-P", port, ...options, ...paths]]
+      })
     })
-).pipe(Command.withDescription("Run a command on the Mac over a fresh short-lived SSH session."))
+).pipe(
+  Command.withDescription(
+    "Copy files or directories to or from the Mac with scp: `dream mac cp app mac:app`, `dream mac cp mac:shot.png .`."
+  )
+)
 
 const mac = Command.make("mac", { json }, (input) =>
   Effect.gen(function* () {
@@ -657,6 +718,7 @@ const mac = Command.make("mac", { json }, (input) =>
       })
     ).pipe(Command.withDescription("Start the Mac; returns once it's running.")),
     macSsh,
+    macCp,
     Command.make("stop", {}, () =>
       Effect.gen(function* () {
         const dream = yield* Dream
