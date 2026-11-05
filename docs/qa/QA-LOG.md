@@ -156,3 +156,15 @@ Other findings:
   resumed it; the sleep and the Claude Code session carried on, and the turn finished at 05:48:32 with both timestamps
   (6m36s wall clock = 4 min of sleep + ~2.6 min paused). The proactive cycle before E2B's 1-hour cap uses the same
   pause → connect → revive path. (The agent replied in final text; the safety net posted it.)
+- Direct checks in the cabin sandbox (05:50): `dream message --media` with R2 off answers "Media storage isn't switched
+  on for this deployment yet … Send text for now" (graceful). `dream browser` fails: Browserbase answers 402 "Free plan
+  browser minutes limit reached" — the cloud browser is out until the plan is upgraded (local headless Chromium still
+  works). `dream wake "…"` run from an app process woke the agent within a second (CLI → dreamd → Worker → ProjectDO →
+  dreamd → turn).
+- Autonomy run (me as the person, not a Haiku tester): Codenames-style party game prj_Ct6EDikT6uFk4w99AYZm8e. One good
+  question card, then a 2.5-minute build and "live and ready to play". Reading server.js: no turn timer (claimed), the
+  full key goes to every client in `roomUpdate`, duplicate words in the list, and a socket disconnect removes the
+  player (a locked phone drops out; the room is deleted when all lock). Then sent a go-ahead with a deadline and
+  "phones will lock between turns … I'll check back tonight", and left it alone.
+- dream-sandbox rebuilt from main @ 89ab6b7 (build 946738d1-1dc6-4d29-b50f-f0e3a7ce670b): ships the key-safety prompt
+  line. No Worker change since the round-3 deploy, so no redeploy.
