@@ -33,7 +33,12 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     bundleIdentifier: bundleId,
     ...(env.DREAM_APPLE_TEAM_ID ? { appleTeamId: env.DREAM_APPLE_TEAM_ID } : {}),
     supportsTablet: false,
+    // CFBundleVersion: build-ios.sh sets BUILD_NUMBER so the app and its widget carry the same, new build number.
+    ...(env.BUILD_NUMBER ? { buildNumber: env.BUILD_NUMBER } : {}),
     infoPlist: {
+      // expo-image and expo-file-system link photo-library APIs, so App Store Connect requires a purpose string
+      // even though Dream never opens the photo library.
+      NSPhotoLibraryUsageDescription: "Dream doesn't use your photo library.",
       NSSupportsLiveActivities: true,
       NSSupportsLiveActivitiesFrequentUpdates: true,
       ITSAppUsesNonExemptEncryption: false

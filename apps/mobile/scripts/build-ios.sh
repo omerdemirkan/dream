@@ -54,6 +54,9 @@ export DREAM_APPLE_TEAM_ID="${DREAM_APPLE_TEAM_ID:-ZY6RS9293V}"
 export DREAM_GOOGLE_IOS_CLIENT_ID="${DREAM_GOOGLE_IOS_CLIENT_ID:-83583994168-spbq6nhfhqv23uj17ua11kt9018k62gv.apps.googleusercontent.com}"
 export DREAM_APS_ENVIRONMENT="${DREAM_APS_ENVIRONMENT:-$([[ $mode == testflight ]] && echo production || echo development)}"
 build_number="${BUILD_NUMBER:-$(( $(date +%s) - 1767225600 ))}"
+# app.config.ts writes it into the app's Info.plist (CFBundleVersion); the widget takes CURRENT_PROJECT_VERSION.
+# They have to match, and every upload needs a new one.
+export BUILD_NUMBER="$build_number"
 
 if [[ "$mode" == "testflight" ]]; then
   : "${DREAM_APPLE_TEAM_ID:?set DREAM_APPLE_TEAM_ID}"
