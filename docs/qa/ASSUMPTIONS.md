@@ -28,3 +28,15 @@ These are best-effort calls I made to keep QA moving. Each can be reversed.
     because those are often the agent following up with the person.
 12. **Published-app watch.** After each turn, dreamd loads the published URL and wakes the agent (never the person) if
     it's broken, only when the finding changes. It costs at most one extra turn per new breakage.
+13. **I verify, not the Haiku testers.** Haiku QA threads tended to repeat the agent's claims ("excellent, launch
+    ready") and to keep prompting it, so from round 3 on I check claims myself (code, the public URL, simulated
+    clients) and drive the longer runs as the person.
+14. **Model egress is left as is.** Anything in a sandbox that calls api.anthropic.com (chatgpt.com for Codex) runs on
+    the person's subscription, and their own Anthropic API key can't work there. Changing it is an architecture call
+    (see the summary), so nothing changed.
+15. **Agent behaviour on Haiku stays a model matter.** Ending a turn while promising more work, claiming features that
+    aren't there, and asking for secrets in Chat all recur on Haiku even though the prompt states the relevant facts.
+    I didn't add rules for them; the prompt changes in this run are facts only a model in Dream could know (keys
+    stay out of the sandbox; OAuth-only services can't be connected).
+16. **iOS toolchain.** Namespace's newest Mac image has Xcode 26.3, while Expo SDK 58 needs 26.4. I documented the
+    Debug-build workaround and left TestFlight builds for a Mac with Xcode 26.4+.
