@@ -47,16 +47,21 @@ const build = Effect.gen(function* () {
   )
 })
 
+/** Prints the build's logs from `logsOffset` on (E2B pages them), then its status. */
 const status = (templateId: string, buildId: string, logsOffset: number) =>
   Effect.gen(function* () {
-    const response = yield* Effect.tryPromise(() =>
-      Template.getBuildStatus({ templateId, buildId }, { ...connection, logsOffset })
-    )
-    for (const entry of response.logEntries) console.log(entry.toString())
-    const reason = response.reason === undefined ? "" : `: ${response.reason.message}`
-    yield* Effect.logInfo(
-      `Build ${buildId} is ${response.status}${reason} (next logs offset ${logsOffset + response.logEntries.length})`
-    )
+    let offset = logsOffset
+    while (true) {
+      const response = yield* Effect.tryPromise(() =>
+        Template.getBuildStatus({ templateId, buildId }, { ...connection, logsOffset: offset })
+      )
+      for (const entry of response.logEntries) console.log(entry.toString())
+      offset += response.logEntries.length
+      if (response.logEntries.length === 0) {
+        const reason = response.reason === undefined ? "" : `: ${response.reason.message}`
+        return yield* Effect.logInfo(`Build ${buildId} is ${response.status}${reason} (next logs offset ${offset})`)
+      }
+    }
   })
 
 const [command, templateId, buildId, offset] = args

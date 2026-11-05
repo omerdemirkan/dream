@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "node scripts/build.ts",
+    "smoke": "node scripts/smoke.ts",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
