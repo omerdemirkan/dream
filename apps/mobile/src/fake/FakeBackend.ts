@@ -60,7 +60,8 @@ export const Scenario = [
   "withdraw-cabin",
   "no-plan",
   "signed-in",
-  "signed-out"
+  "signed-out",
+  "spotify-ask"
 ] as const
 export type Scenario = (typeof Scenario)[number]
 
@@ -463,6 +464,33 @@ export class FakeBackend extends Context.Service<
             )
             return { authorizeUrl: `https://accounts.google.com/o/oauth2/v2/auth?fixtures=${messageId}` }
           }),
+        StartOAuthAccess: ({ projectId, messageId }) =>
+          Effect.gen(function* () {
+            const { record, message } = yield* findMessage(projectId, messageId)
+            if (message._tag !== "Access" || message.request._tag !== "OAuth")
+              return yield* new InvalidRequest({ message: "That request isn't an OAuth sign-in." })
+            const request = message.request
+            const service = request.service ?? request.provider
+            yield* later(
+              1.3,
+              Effect.gen(function* () {
+                yield* connectIntegration(record, message, service, {
+                  _tag: "OAuth",
+                  provider: request.provider,
+                  service,
+                  account: user.name ?? user.email,
+                  scopes: [...request.scopes],
+                  hosts: [`api.${request.provider}.com`],
+                  placeholder: `dream-${request.provider}-oauth-placeholder`
+                })
+                yield* later(
+                  2,
+                  agentText(record, `${service} is connected. I’ll take it from here.`).pipe(Effect.asVoid)
+                )
+              })
+            )
+            return { authorizeUrl: `https://${request.provider}.example/authorize?fixtures=${messageId}` }
+          }),
         SubmitKeyAccess: ({ projectId, messageId }) =>
           Effect.gen(function* () {
             const { record, message } = yield* findMessage(projectId, messageId)
@@ -646,6 +674,25 @@ export class FakeBackend extends Context.Service<
           case "no-plan":
             connections = []
             return
+          case "spotify-ask": {
+            const lift = Array.from(records.values()).find((r) => r.project.slug === "lift-log")
+            if (!lift || lift.messages.some((m) => m.id === "msg_spotify")) return
+            yield* setMessage(lift, {
+              _tag: "Access",
+              id: "msg_spotify" as MessageId,
+              projectId: lift.project.id,
+              createdAt: now,
+              request: {
+                _tag: "OAuth",
+                provider: "spotify",
+                service: "Spotify",
+                scopes: ["user-read-playback-state", "user-modify-playback-state"]
+              },
+              why: "Connect Spotify so your lifting playlist starts when a session does.",
+              state: { _tag: "Open" }
+            })
+            return
+          }
           case "signed-in":
           case "signed-out":
             return

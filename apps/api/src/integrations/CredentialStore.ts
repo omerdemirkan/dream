@@ -1,7 +1,8 @@
 /**
  * Current header values for a person's credentials, refreshed centrally.
  * ChatGPT access tokens (refresh tokens rotate on each use), Google access
- * tokens (1 h) and App Store Connect JWTs (20 min max) all expire, so before
+ * tokens (1 h), other OAuth providers' access tokens (1–24 h, some rotating
+ * their refresh tokens) and App Store Connect JWTs (20 min max) all expire, so before
  * one goes into a sandbox's egress rules it is refreshed here, under a D1 lock
  * so two isolates never spend the same refresh token.
  */
@@ -14,11 +15,13 @@ import {
   AppleCredential,
   ChatGptCredential,
   ClaudeCredential,
-  GoogleCredential
+  GoogleCredential,
+  OAuthCredential
 } from "../db/Credentials.ts"
 import { Secrets } from "../db/Secrets.ts"
 import { importEs256Pem, signEs256 } from "../lib/Jwt.ts"
 import { Google } from "./Google.ts"
+import { OAuth, OAuthProviders } from "./OAuth.ts"
 
 /** Refresh when less than this is left. */
 export const RefreshMarginMs = 10 * 60 * 1000
@@ -46,6 +49,11 @@ export class CredentialStore extends Context.Service<
     readonly chatGpt: (row: ModelConnectionRow, force?: boolean) => Effect.Effect<ChatGptCredential, UpstreamFailure>
     readonly google: (row: IntegrationRow, force?: boolean) => Effect.Effect<GoogleCredential, UpstreamFailure>
     readonly apiKey: (row: IntegrationRow) => Effect.Effect<ApiKeyCredential>
+    /**
+     * An OAuth provider's tokens, refreshed if they expire soon (or `force`). When the provider refuses the refresh
+     * token (they revoked it, or it lapsed), the integration is marked failed and they have to connect again.
+     */
+    readonly oauth: (row: IntegrationRow, force?: boolean) => Effect.Effect<OAuthCredential, UpstreamFailure>
     /** The credential with a current App Store Connect JWT. */
     readonly apple: (row: IntegrationRow) => Effect.Effect<AppleCredential, UpstreamFailure>
     /** Refreshes everything that expires within the margin; returns whose credentials changed. */
@@ -59,6 +67,8 @@ export class CredentialStore extends Context.Service<
       const secrets = yield* Secrets
       const chatGptClient = yield* ChatGpt
       const google = yield* Google
+      const providers = yield* OAuthProviders
+      const oauthClient = yield* OAuth
 
       const withLock = <A, E>(
         lock: (nowMs: number, untilMs: number) => Effect.Effect<boolean>,
@@ -138,6 +148,53 @@ export class CredentialStore extends Context.Service<
         )
       })
 
+      const oauth = Effect.fn("CredentialStore.oauth")(function* (row: IntegrationRow, force = false) {
+        const access = row.access_json
+        if (access._tag !== "OAuth") return yield* Effect.die("not an OAuth integration")
+        const now = yield* Clock.currentTimeMillis
+        const usable = (credential: OAuthCredential) =>
+          credential.refreshToken === undefined ||
+          (!force &&
+            (credential.accessExpiresAtMs === undefined || credential.accessExpiresAtMs > now + RefreshMarginMs))
+        const current = yield* secrets.get(row.secret_id, OAuthCredential)
+        if (usable(current)) return current
+        const provider = yield* providers
+          .configured(access.provider)
+          .pipe(Effect.mapError((error) => new UpstreamFailure({ service: access.service, message: error.message })))
+        return yield* withLock(
+          (nowMs, untilMs) => connections.lockIntegrationRefresh(row.id, nowMs, untilMs),
+          connections.unlockIntegrationRefresh(row.id),
+          Effect.gen(function* () {
+            const latest = yield* secrets.get(row.secret_id, OAuthCredential)
+            if (usable(latest) || latest.refreshToken === undefined) return latest
+            const tokens = yield* oauthClient.refresh(provider, latest.refreshToken).pipe(
+              Effect.catchTag("OAuthRejected", (rejected) =>
+                connections.updateIntegration(row.id, { status: "failed" }).pipe(
+                  Effect.andThen(
+                    Effect.fail(
+                      new UpstreamFailure({
+                        service: access.service,
+                        message: `${access.service} refused the refresh token (${rejected.reason}); they need to connect it again`
+                      })
+                    )
+                  )
+                )
+              )
+            )
+            // Providers that rotate refresh tokens send a new one; the rest keep the old one working.
+            const fresh: OAuthCredential = {
+              accessToken: tokens.accessToken,
+              refreshToken: tokens.refreshToken ?? latest.refreshToken,
+              ...(tokens.expiresAtMs === undefined ? {} : { accessExpiresAtMs: tokens.expiresAtMs })
+            }
+            yield* secrets.replace(row.secret_id, OAuthCredential, fresh)
+            yield* connections.updateIntegration(row.id, { accessExpiresAtMs: fresh.accessExpiresAtMs ?? null })
+            return fresh
+          }),
+          secrets.get(row.secret_id, OAuthCredential)
+        )
+      })
+
       const apiKey = (row: IntegrationRow) => secrets.get(row.secret_id, ApiKeyCredential)
 
       const apple = Effect.fn("CredentialStore.apple")(function* (row: IntegrationRow) {
@@ -174,13 +231,20 @@ export class CredentialStore extends Context.Service<
               ? yield* googleCredential(row).pipe(Effect.asVoid, Effect.option)
               : row.kind === "apple_asc"
                 ? yield* apple(row).pipe(Effect.asVoid, Effect.option)
-                : Option.none()
+                : row.kind === "oauth"
+                  ? yield* oauth(row).pipe(Effect.asVoid, Effect.option)
+                  : Option.none()
           if (Option.isSome(refreshed)) changed.add(row.user_id)
+          // A refused refresh token takes the connection out of their sandboxes' rules.
+          else if (row.kind === "oauth") {
+            const after = yield* connections.integration(row.user_id, row.id)
+            if (Option.isSome(after) && after.value.status !== "connected") changed.add(row.user_id)
+          }
         }
         return [...changed]
       }).pipe(Effect.withSpan("CredentialStore.sweep"))
 
-      return CredentialStore.of({ claude, chatGpt, google: googleCredential, apiKey, apple, sweep })
+      return CredentialStore.of({ claude, chatGpt, google: googleCredential, oauth, apiKey, apple, sweep })
     })
   )
 }

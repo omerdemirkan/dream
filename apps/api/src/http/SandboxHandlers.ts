@@ -5,6 +5,7 @@
  * project's file keys to the person, which are refused here.
  */
 import {
+  AccessRequest,
   CurrentProject,
   InvalidRequest,
   MediaRef,
@@ -20,6 +21,7 @@ import { ApiConfig } from "../Config.ts"
 import { Connections, toIntegration } from "../db/Connections.ts"
 import { Projects } from "../db/Projects.ts"
 import { KeyFiles } from "../integrations/KeyFiles.ts"
+import { OAuthProviders, scopesFor } from "../integrations/OAuth.ts"
 import { newMediaId } from "../lib/Ids.ts"
 import { type ProjectClient, ProjectClients } from "../project/Client.ts"
 import { bearer } from "./AppHandlers.ts"
@@ -53,6 +55,7 @@ export const WorkerSandboxHandlers = SandboxRpcs.toLayer(
     const tokens = yield* Tokens
     const media = yield* MediaStore
     const keyFiles = yield* KeyFiles
+    const providers = yield* OAuthProviders
 
     const current = Effect.gen(function* () {
       return yield* CurrentProject
@@ -75,7 +78,19 @@ export const WorkerSandboxHandlers = SandboxRpcs.toLayer(
       SendMessage: (payload) => forwardUnlessLeaking(payload, (c) => c.SendMessage(payload)),
       AskQuestion: (payload) => forwardUnlessLeaking(payload, (c) => c.AskQuestion(payload)),
       WithdrawQuestion: (payload) => forward((c) => c.WithdrawQuestion(payload)),
-      RequestAccess: (payload) => forwardUnlessLeaking(payload, (c) => c.RequestAccess(payload)),
+      RequestAccess: (payload) =>
+        Effect.gen(function* () {
+          const request = payload.request
+          if (request._tag !== "OAuth") return yield* forwardUnlessLeaking(payload, (c) => c.RequestAccess(payload))
+          // Said at the moment it asks, so the agent never shows a card nobody can connect.
+          const { spec } = yield* providers.configured(request.provider)
+          const oauth = AccessRequest.cases.OAuth.make({
+            provider: spec.id,
+            service: spec.service,
+            scopes: scopesFor(spec, request.scopes)
+          })
+          return yield* forwardUnlessLeaking(payload, (c) => c.RequestAccess({ ...payload, request: oauth }))
+        }),
       ListAccess: () =>
         Effect.gen(function* () {
           const { projectId, userId } = yield* current

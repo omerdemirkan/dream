@@ -11,6 +11,7 @@ import { Connections } from "../db/Connections.ts"
 import type { NetworkRules } from "../e2b/E2B.ts"
 import { toHex, utf8 } from "../lib/Bytes.ts"
 import { CredentialStore } from "./CredentialStore.ts"
+import { headersFor, OAuthProviders } from "./OAuth.ts"
 
 export const AppStoreConnectHost = "api.appstoreconnect.apple.com"
 
@@ -43,6 +44,7 @@ export class SandboxCredentials extends Context.Service<
     Effect.gen(function* () {
       const connections = yield* Connections
       const store = yield* CredentialStore
+      const providers = yield* OAuthProviders
 
       const setup = Effect.fn("SandboxCredentials.setup")(function* (userId: UserId, harness: Harness) {
         const rules: Record<string, ReturnType<typeof header>> = {}
@@ -74,7 +76,19 @@ export class SandboxCredentials extends Context.Service<
                 Effect.catch((error) => Effect.logWarning("App Store Connect credential unavailable", error.message))
               ),
             // Written into its project's sandbox as a file (SandboxManager), never sent in a header.
-            File: () => Effect.void
+            File: () => Effect.void,
+            OAuth: (access) =>
+              store.oauth(row).pipe(
+                Effect.map((credential) => {
+                  // A provider dropped from the catalog keeps working on the hosts it was connected with.
+                  const spec = Option.getOrElse(providers.spec(access.provider), () => ({
+                    hosts: access.hosts.map((host) => ({ host }))
+                  }))
+                  for (const [host, name, value] of headersFor(spec, credential.accessToken))
+                    rules[host] = header({ [name]: value })
+                }),
+                Effect.catch((error) => Effect.logWarning(`${access.service} credential unavailable`, error.message))
+              )
           })
         }
 

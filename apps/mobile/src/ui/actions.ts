@@ -1,6 +1,6 @@
 /**
  * Running an action atom from a tap: a busy flag for the button, and a toast
- * when it fails. Opening Google's consent screen for an access request.
+ * when it fails. Opening Google's or another provider's consent screen for an access request.
  */
 import type { AccessMessage, MessageId } from "@dream/domain"
 import { useAtomSet } from "@effect/atom-react"
@@ -9,7 +9,7 @@ import type { Atom } from "effect/reactivity"
 import * as WebBrowser from "expo-web-browser"
 import { useCallback, useRef, useState } from "react"
 import { describeError } from "../data/errors.ts"
-import { startGoogleAccessFn } from "../state/atoms.ts"
+import { startGoogleAccessFn, startOAuthAccessFn } from "../state/atoms.ts"
 import { appConfig } from "../state/runtime.ts"
 import { toastAtom } from "../state/ui.ts"
 
@@ -57,16 +57,24 @@ export function useAction<Arg, A, E>(fn: Atom.AtomResultFn<Arg, A, E>): Action<A
 /** The redirect the API sends the browser to after Google's consent screen. */
 export const googleRedirect = "dream://oauth/google"
 
+/** Where the API sends the browser back to after another provider's consent screen (`Routes.oauthCallback`). */
+export const oauthRedirect = (provider: string) => `dream://oauth/${provider}`
+
 /**
- * Starts Google OAuth for an access request in an auth session. The access
+ * Starts the sign-in for a Google or OAuth access request in an auth session. The access
  * message turns "connected" over the live stream once the API has the tokens.
  */
-export function useGoogleAccess(message: AccessMessage) {
-  const start = useAction(startGoogleAccessFn)
+export function useSignInAccess(message: AccessMessage) {
+  const google = useAction(startGoogleAccessFn)
+  const oauth = useAction(startOAuthAccessFn)
   const toast = useToast()
   const [opening, setOpening] = useState(false)
+  const request = message.request
+  const service = request._tag === "OAuth" ? (request.service ?? request.provider) : "Google"
+  const start = request._tag === "OAuth" ? oauth : google
   return {
     busy: opening || start.busy,
+    service,
     start: () => {
       setOpening(true)
       start.run(
@@ -78,12 +86,13 @@ export function useGoogleAccess(message: AccessMessage) {
               setTimeout(() => setOpening(false), 1500)
               return
             }
-            void WebBrowser.openAuthSessionAsync(authorizeUrl, googleRedirect).then((result) => {
+            const redirect = request._tag === "OAuth" ? oauthRedirect(request.provider) : googleRedirect
+            void WebBrowser.openAuthSessionAsync(authorizeUrl, redirect).then((result) => {
               setOpening(false)
               if (result.type !== "success") return
               const url = new URL(result.url)
               if (url.searchParams.get("status") === "error") {
-                toast(`Google didn't connect: ${url.searchParams.get("error") ?? "try again"}.`)
+                toast(`${service} didn't connect: ${url.searchParams.get("error") ?? "try again"}.`)
               }
             })
           },

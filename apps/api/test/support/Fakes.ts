@@ -11,6 +11,8 @@ import { Daemon } from "../../src/e2b/Daemon.ts"
 import { E2B, type NetworkRules, type SandboxAccess, SandboxGone } from "../../src/e2b/E2B.ts"
 import { Envd, type ProcessOutput } from "../../src/e2b/Envd.ts"
 import { Google } from "../../src/integrations/Google.ts"
+import { OAuth, OAuthProviders } from "../../src/integrations/OAuth.ts"
+import { FetchHttpClient, HttpClient } from "effect/http"
 import { Apns } from "../../src/push/Apns.ts"
 import { Tokens } from "../../src/auth/Tokens.ts"
 
@@ -60,6 +62,12 @@ export class FakeWorld {
   attachOutput: ReadonlyArray<ProcessOutput> = []
   googleRefreshes = 0
   chatGptRefreshes = 0
+  /** OAuth providers this deployment has credentials for (the rest of the catalog isn't set up). */
+  oauthConfigured: ReadonlyArray<string> = ["spotify", "github", "slack", "notion", "dropbox"]
+  /** Every request to an OAuth provider, with its form or JSON body. */
+  readonly oauthRequests: Array<{ url: string; method: string; headers: Record<string, string>; body: string }> = []
+  /** How providers answer, by `METHOD url` (without the query); unset ones answer 404. */
+  readonly oauthResponses = new Map<string, () => { status?: number; body: unknown }>()
   private counter = 0
   nextId = (prefix: string) => `${prefix}${++this.counter}`
 }
@@ -335,6 +343,35 @@ export const fakeGoogle = (world: FakeWorld) =>
     })
   )
 
+/** The real OAuth client, talking to `world.oauthResponses` instead of the providers. */
+export const fakeOAuth = (world: FakeWorld) => {
+  const fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const request = new Request(input, init)
+    const url = new URL(request.url)
+    world.oauthRequests.push({
+      url: request.url,
+      method: request.method,
+      headers: Object.fromEntries(request.headers.entries()),
+      body: await request.text()
+    })
+    const answer = world.oauthResponses.get(`${request.method} ${url.origin}${url.pathname}`)
+    if (answer === undefined) return new Response("not found", { status: 404 })
+    const { status, body } = answer()
+    return new Response(status === 204 ? null : JSON.stringify(body), {
+      status: status ?? 200,
+      headers: { "content-type": "application/json" }
+    })
+  }) as typeof globalThis.fetch
+  // `Fetch` is read from the running fiber, so it's provided around each request.
+  const client = Layer.effect(
+    HttpClient.HttpClient,
+    Effect.map(HttpClient.HttpClient, (http) =>
+      http.pipe(HttpClient.transformResponse(Effect.provideService(FetchHttpClient.Fetch, fetch)))
+    )
+  ).pipe(Layer.provide(FetchHttpClient.layer))
+  return OAuth.layer.pipe(Layer.provide(client))
+}
+
 export const fakeChatGpt = (world: FakeWorld) =>
   Layer.succeed(
     ChatGpt,
@@ -362,6 +399,8 @@ export const fakeServices = (world: FakeWorld) =>
     fakeBrowserbase(world),
     fakeNamespace(world),
     fakeGoogle(world),
+    OAuthProviders.layerTest(world.oauthConfigured),
+    fakeOAuth(world),
     fakeChatGpt(world),
     Tokens.layer
   )

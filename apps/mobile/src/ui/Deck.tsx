@@ -11,10 +11,10 @@ import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from "
 import { scheduleOnRN } from "react-native-worklets"
 import { answerUndoableFn } from "../state/atoms.ts"
 import { askPushAtom } from "../state/ui.ts"
-import { useGoogleAccess, useToast } from "./actions.ts"
+import { useSignInAccess, useToast } from "./actions.ts"
 import { accessExplainer } from "./describe.ts"
 import { useOpenMessage } from "./hooks.ts"
-import { Choices, GoogleButton, Icon, Tile } from "./kit.tsx"
+import { Choices, GoogleButton, Icon, SignInButton, Tile } from "./kit.tsx"
 import { color, needGlow } from "./theme.ts"
 
 const cardShell = {
@@ -93,13 +93,15 @@ function QuestionFront(props: {
 }
 
 function AccessFront(props: { readonly ask: OpenAsk; readonly message: AccessMessage; readonly onOpen: () => void }) {
-  const google = useGoogleAccess(props.message)
+  const signIn = useSignInAccess(props.message)
   return (
     <>
       <Who ask={props.ask} label="Access" onOpen={props.onOpen} />
       <Heading title={props.message.why} tldr={accessExplainer(props.message)} onOpen={props.onOpen} />
       {props.message.request._tag === "Google" ? (
-        <GoogleButton compact busy={google.busy} onPress={google.start} />
+        <GoogleButton compact busy={signIn.busy} onPress={signIn.start} />
+      ) : props.message.request._tag === "OAuth" ? (
+        <SignInButton compact service={signIn.service} busy={signIn.busy} onPress={signIn.start} />
       ) : (
         <Pressable
           accessibilityRole="button"

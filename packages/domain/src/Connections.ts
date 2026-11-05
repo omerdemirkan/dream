@@ -59,7 +59,7 @@ export const ConnectLink = Schema.Struct({
 export type ConnectLink = typeof ConnectLink.Type
 
 // ---------------------------------------------------------------------------
-// Integrations (Google, pasted API keys, keys in a sandbox file, App Store Connect)
+// Integrations (Google, pasted API keys, keys in a sandbox file, App Store Connect, OAuth providers)
 // ---------------------------------------------------------------------------
 
 /**
@@ -109,6 +109,24 @@ export const IntegrationAccess = Schema.TaggedUnion({
     /** App Store Connect API key identifiers. The .p8 private key stays encrypted with Dream. */
     issuerId: Schema.String,
     keyId: Schema.String
+  },
+  /**
+   * An OAuth sign-in with a provider other than Google (Spotify, GitHub, …). Dream holds the refresh token and
+   * keeps the access token on `hosts` current, so the agent never refreshes anything.
+   */
+  OAuth: {
+    /** The id Dream knows the provider by, e.g. "spotify". */
+    provider: Schema.String,
+    /** Display name, e.g. "Spotify". */
+    service: Schema.String,
+    /** Who they signed in as, when the provider says: a username, an email, or a workspace. */
+    account: Schema.optionalKey(Schema.String),
+    /** Scopes granted, in the provider's own names. */
+    scopes: Schema.Array(Schema.String),
+    hosts: Schema.Array(Schema.String),
+    placeholder: Schema.String,
+    /** What else the provider's API needs, in a sentence or two (a version header, a User-Agent, git over HTTPS). */
+    notes: Schema.optionalKey(Schema.String)
   }
 })
 export type IntegrationAccess = typeof IntegrationAccess.Type

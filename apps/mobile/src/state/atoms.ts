@@ -203,6 +203,13 @@ export const startGoogleAccessFn = appRuntime.fn(
   })
 )
 
+export const startOAuthAccessFn = appRuntime.fn(
+  Effect.fn(function* (input: AccessRef) {
+    const app = yield* AppClient
+    return yield* app.StartOAuthAccess(input)
+  })
+)
+
 const receivedAccess = (message: AccessMessage) => received(message).pipe(Effect.as(message))
 
 export const submitKeyAccessFn = appRuntime.fn(

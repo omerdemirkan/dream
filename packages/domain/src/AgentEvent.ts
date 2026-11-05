@@ -116,7 +116,12 @@ const renderAccess = (label: string, access: IntegrationAccess): string =>
       `runs. Don't print it, put it in a command or the project's files, or send it anywhere but ${service}: ` +
       "whatever you see in this session goes to the model provider.",
     Apple: ({ issuerId, keyId }) =>
-      `They connected their App Store Connect API key (issuer id ${issuerId}, key id ${keyId}).`
+      `They connected their App Store Connect API key (issuer id ${issuerId}, key id ${keyId}).`,
+    OAuth: ({ service, account, scopes, hosts, placeholder, notes }) =>
+      `They connected ${service}${account === undefined ? "" : ` as ${account}`}` +
+      `${scopes.length === 0 ? "" : ` (${scopes.join(", ")})`}. HTTPS requests to ${hosts.join(", ")} carry ` +
+      `their ${service} access token, which Dream keeps fresh. Where a library needs a token configured, use the ` +
+      `placeholder "${placeholder}"; never refresh it yourself.${notes === undefined ? "" : ` ${notes}`}`
   })
 
 const renderRemoved = (label: string, access: IntegrationAccess): string =>

@@ -407,6 +407,37 @@ export function GoogleButton(
   )
 }
 
+/** `.gbtn` for any other provider: "Continue with Spotify". No brand mark; the lock says it's a sign-in. */
+export function SignInButton(
+  props: Press & { readonly service: string; readonly busy?: boolean; readonly compact?: boolean }
+) {
+  const { busy, compact, service, ...rest } = props
+  return (
+    <Pressable
+      accessibilityRole="button"
+      disabled={busy === true}
+      {...rest}
+      style={({ pressed }) => ({
+        height: compact ? 48 : 56,
+        borderRadius: 28,
+        backgroundColor: color.white,
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 10,
+        opacity: busy ? 0.7 : 1,
+        transform: pressed ? [{ scale: 0.985 }] : [],
+        marginTop: compact ? 14 : 0
+      })}
+    >
+      {busy ? null : <Icon name="lock" size={18} color="#1f1f1f" />}
+      <Text style={{ color: "#1f1f1f", fontSize: compact ? 16 : 17, fontWeight: "600", letterSpacing: -0.17 }}>
+        {busy ? `Opening ${service}…` : `Continue with ${service}`}
+      </Text>
+    </Pressable>
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Choices
 // ---------------------------------------------------------------------------

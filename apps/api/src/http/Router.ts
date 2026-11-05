@@ -135,5 +135,26 @@ export const route = (raw: Request) =>
         : back({ status: "error", error: result.failure.message })
     }
 
+    // Every other OAuth provider (`Routes.oauthCallback`); the state names the request it answers.
+    const oauthCallback = /^\/oauth\/([a-z0-9-]+)\/callback$/.exec(path)
+    if (oauthCallback !== null && request.method === "GET") {
+      const provider = oauthCallback[1]!
+      const access = yield* Access
+      const back = (params: Record<string, string>) =>
+        HttpServerResponse.redirect(
+          `${config.appScheme}://oauth/${provider}?${new URLSearchParams(params).toString()}`,
+          { status: 302 }
+        )
+      const state = url.searchParams.get("state")
+      const code = url.searchParams.get("code")
+      const error = url.searchParams.get("error")
+      if (state === null || code === null || error !== null)
+        return back({ status: "error", error: error === "access_denied" || error === null ? "cancelled" : error })
+      const result = yield* access.finishOAuth(provider, state, code).pipe(Effect.result)
+      return result._tag === "Success"
+        ? back({ status: "connected", projectId: result.success.projectId, messageId: result.success.messageId })
+        : back({ status: "error", error: result.failure.message })
+    }
+
     return HttpServerResponse.text("Not found", { status: 404 })
   })

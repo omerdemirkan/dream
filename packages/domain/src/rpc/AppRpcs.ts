@@ -158,6 +158,17 @@ export class AuthedAppRpcs extends RpcGroup.make(
     error: Schema.Union([NotFound, InvalidRequest])
   }),
   /**
+   * Begin an OAuth sign-in for an `OAuth` access request, like `StartGoogleAccess`: open `authorizeUrl` in an auth
+   * session; the provider returns to `Routes.oauthCallback(provider)`, which finishes the connection and redirects to
+   * `<app scheme>://oauth/<provider>?status=connected|error&projectId=…&messageId=…[&error=…]`.
+   * `UpstreamFailure` when the provider isn't set up on this deployment.
+   */
+  Rpc.make("StartOAuthAccess", {
+    payload: ProjectMessage,
+    success: Schema.Struct({ authorizeUrl: Schema.String }),
+    error: Schema.Union([NotFound, InvalidRequest, UpstreamFailure])
+  }),
+  /**
    * The key for a `Key` request, or for a `File` request, which Dream writes into that project's sandbox (and
    * no other) before the agent hears it's there. Submitting again for the same host, or the same project and
    * file name, replaces the key.

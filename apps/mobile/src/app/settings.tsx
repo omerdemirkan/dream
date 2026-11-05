@@ -23,7 +23,7 @@ import {
 } from "../state/atoms.ts"
 import { appConfig } from "../state/runtime.ts"
 import { useAction } from "../ui/actions.ts"
-import { integrationReach } from "../ui/describe.ts"
+import { integrationReach, integrationSummary } from "../ui/describe.ts"
 import { Button, Icon, IconButton, Lab } from "../ui/kit.tsx"
 import { color, gutter } from "../ui/theme.ts"
 
@@ -203,9 +203,13 @@ function IntegrationRow(props: {
   const i = props.integration
   return (
     <Row
-      icon={i.access._tag === "Google" ? "lock" : "key"}
+      icon={i.access._tag === "Google" || i.access._tag === "OAuth" ? "lock" : "key"}
       title={i.label}
-      subtitle={integrationReach(i, props.projectTitle)}
+      subtitle={
+        i.status === "connected"
+          ? integrationReach(i, props.projectTitle)
+          : `${integrationSummary(i)} · stopped working; it reconnects the next time a project asks`
+      }
       action={i.access._tag === "File" ? "Remove" : "Disconnect"}
       busy={disconnect.busy}
       onAction={() => disconnect.run(i.id)}

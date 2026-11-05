@@ -99,6 +99,32 @@ describe("JSON codecs", () => {
     )
   })
 
+  it("renders an OAuth connection for the agent with its hosts, placeholder and notes", () => {
+    const access = IntegrationAccess.cases.OAuth.make({
+      provider: "github",
+      service: "GitHub",
+      account: "octocat",
+      scopes: ["repo"],
+      hosts: ["api.github.com", "github.com"],
+      placeholder: "dream-github-oauth-placeholder",
+      notes: "api.github.com wants a User-Agent header."
+    })
+    assert.deepStrictEqual(roundTrip(IntegrationAccess, access).decoded, access)
+    const event = AgentEvent.cases.AccessConnected.make({
+      id: "evt_1" as never,
+      at: DateTime.makeUnsafe("2026-11-05T12:00:00Z"),
+      messageId: "msg_1" as never,
+      label: "GitHub",
+      access
+    })
+    assert.strictEqual(
+      renderAgentEvent(event),
+      "[Thu, Nov 5, 12:00 PM] They connected GitHub as octocat (repo). HTTPS requests to api.github.com, github.com " +
+        'carry their GitHub access token, which Dream keeps fresh. Where a library needs a token configured, use the placeholder "dream-github-oauth-placeholder"; never refresh it yourself. ' +
+        "api.github.com wants a User-Agent header. This answers your request msg_1."
+    )
+  })
+
   it("keeps Live Activity content flat for Swift Codable", () => {
     const content: LiveActivityContent = {
       title: "Building progress charts",
@@ -190,6 +216,13 @@ describe("validation", () => {
     assert.strictEqual(keyFileNameFor("  SMTP (Fastmail) "), "smtp-fastmail")
     assert.strictEqual(keyFileNameFor("日本"), "key")
     assert.isUndefined(keyFileNameProblem(keyFileNameFor("x".repeat(80) + " y")))
+  })
+
+  it("decodes an OAuth request with or without its display name and scopes", () => {
+    const fromCli = { _tag: "OAuth", provider: "spotify", scopes: ["user-read-private"] }
+    assert.isTrue(Exit.isSuccess(decodeAccess(fromCli)))
+    assert.isTrue(Exit.isSuccess(decodeAccess({ _tag: "OAuth", provider: "notion", service: "Notion", scopes: [] })))
+    assert.isTrue(Exit.isFailure(decodeAccess({ ...fromCli, provider: "" })))
   })
 
   it("requires at least one Google scope", () => {

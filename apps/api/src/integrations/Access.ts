@@ -1,6 +1,6 @@
 /**
  * Connecting an integration in answer to an access request: Google OAuth,
- * a pasted key, or an App Store Connect key. Each becomes an encrypted secret,
+ * another OAuth provider, a pasted key, or an App Store Connect key. Each becomes an encrypted secret,
  * an integration record, an `AccessConnected` event for the agent, and new
  * egress rules in every one of their sandboxes.
  *
@@ -23,7 +23,7 @@ import {
 import { Clock, Context, Effect, Layer, Option } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { Connections, type IntegrationRow, toIntegration } from "../db/Connections.ts"
-import { ApiKeyCredential, AppleCredential, GoogleCredential } from "../db/Credentials.ts"
+import { ApiKeyCredential, AppleCredential, GoogleCredential, OAuthCredential } from "../db/Credentials.ts"
 import { Projects } from "../db/Projects.ts"
 import { Secrets } from "../db/Secrets.ts"
 import { randomToken } from "../lib/Ids.ts"
@@ -31,6 +31,7 @@ import { importEs256Pem } from "../lib/Jwt.ts"
 import { ProjectClients, ProjectDirectory } from "../project/Client.ts"
 import { mintAppleJwt } from "./CredentialStore.ts"
 import { Google, hostsForScopes, labelForScopes } from "./Google.ts"
+import { OAuth, OAuthProviders, placeholderFor } from "./OAuth.ts"
 
 export const GooglePlaceholder = "dream-google-oauth-placeholder"
 
@@ -59,6 +60,17 @@ export class Access extends Context.Service<
     ) => Effect.Effect<string, NotFound | InvalidRequest | UpstreamFailure>
     /** Finishes the Google redirect; fails with a short reason the app can show. */
     readonly finishGoogle: (state: string, code: string) => Effect.Effect<OAuthResult, InvalidRequest | UpstreamFailure>
+    readonly startOAuth: (
+      userId: UserId,
+      projectId: ProjectId,
+      messageId: MessageId
+    ) => Effect.Effect<string, NotFound | InvalidRequest | UpstreamFailure>
+    /** Finishes a provider's redirect; fails with a short reason the app can show. */
+    readonly finishOAuth: (
+      provider: string,
+      state: string,
+      code: string
+    ) => Effect.Effect<OAuthResult, InvalidRequest | UpstreamFailure>
     readonly submitKey: (
       userId: UserId,
       projectId: ProjectId,
@@ -90,6 +102,8 @@ export class Access extends Context.Service<
       const directory = yield* ProjectDirectory
       const google = yield* Google
       const http = yield* HttpClient.HttpClient
+      const providers = yield* OAuthProviders
+      const oauth = yield* OAuth
 
       const owned = (userId: UserId, projectId: ProjectId) =>
         Effect.flatMap(projects.findOwned(userId, projectId), (found) =>
@@ -233,6 +247,109 @@ export class Access extends Context.Service<
         return yield* announce(userId, projectId, messageId, row)
       })
 
+      const startOAuth = Effect.fn("Access.startOAuth")(function* (
+        userId: UserId,
+        projectId: ProjectId,
+        messageId: MessageId
+      ) {
+        const message = yield* openAccess(userId, projectId, messageId)
+        if (message.request._tag !== "OAuth") {
+          return yield* new InvalidRequest({ message: "This access request isn't for an OAuth sign-in." })
+        }
+        const request = message.request
+        const provider = yield* providers.configured(request.provider).pipe(
+          Effect.mapError(
+            () =>
+              new UpstreamFailure({
+                service: request.service ?? request.provider,
+                message: "sign-in isn't set up on this deployment of Dream yet"
+              })
+          )
+        )
+        // Ask again for what they granted before, so reconnecting never narrows what other projects rely on.
+        const existing = (yield* connections.integrations(userId)).find(
+          (row) =>
+            row.kind === "oauth" && row.access_json._tag === "OAuth" && row.access_json.provider === provider.spec.id
+        )
+        const previous = existing?.access_json._tag === "OAuth" ? existing.access_json.scopes : []
+        const scopes = [...new Set([...previous, ...request.scopes])]
+        const state = randomToken(32)
+        const codeVerifier = provider.spec.pkce === true ? randomToken(64) : undefined
+        yield* connections.putProviderState({
+          state,
+          user_id: userId,
+          project_id: projectId,
+          message_id: messageId,
+          scopes_json: scopes,
+          expires_at_ms: (yield* Clock.currentTimeMillis) + OAuthStateLifetimeMs,
+          provider: provider.spec.id,
+          code_verifier: codeVerifier ?? null
+        })
+        return yield* oauth.authorizeUrl(provider, { state, scopes, codeVerifier })
+      })
+
+      const finishOAuth = Effect.fn("Access.finishOAuth")(function* (providerId: string, state: string, code: string) {
+        const now = yield* Clock.currentTimeMillis
+        const pending = yield* connections.takeProviderState(providerId, state, now)
+        if (Option.isNone(pending)) return yield* new InvalidRequest({ message: "expired" })
+        const { user_id: userId, project_id: projectId, message_id: messageId, scopes_json: requested } = pending.value
+        const provider = yield* providers
+          .configured(providerId)
+          .pipe(Effect.mapError(() => new InvalidRequest({ message: "it isn't set up on this deployment" })))
+        const { spec } = provider
+        const tokens = yield* oauth
+          .exchangeCode(provider, code, pending.value.code_verifier ?? undefined)
+          .pipe(
+            Effect.catchTag("OAuthRejected", (rejected) =>
+              Effect.fail(new InvalidRequest({ message: `${spec.service} refused the sign-in (${rejected.reason})` }))
+            )
+          )
+        const account = yield* oauth.account(provider, tokens)
+        const access = IntegrationAccess.cases.OAuth.make({
+          provider: spec.id,
+          service: spec.service,
+          ...Option.match(account, { onNone: () => ({}), onSome: (value) => ({ account: value }) }),
+          scopes: tokens.scopes ?? requested,
+          hosts: spec.hosts.map(({ host }) => host),
+          placeholder: placeholderFor(spec.id),
+          ...(spec.notes === undefined ? {} : { notes: spec.notes })
+        })
+        const credential: OAuthCredential = {
+          accessToken: tokens.accessToken,
+          ...(tokens.refreshToken === undefined ? {} : { refreshToken: tokens.refreshToken }),
+          ...(tokens.expiresAtMs === undefined ? {} : { accessExpiresAtMs: tokens.expiresAtMs })
+        }
+        // One connection per provider: each host carries one token, so connecting again replaces it.
+        const existing = (yield* connections.integrations(userId)).find(
+          (row) => row.kind === "oauth" && row.access_json._tag === "OAuth" && row.access_json.provider === spec.id
+        )
+        let row: IntegrationRow
+        if (existing !== undefined) {
+          yield* secrets.replace(existing.secret_id, OAuthCredential, credential)
+          yield* connections.updateIntegration(existing.id, {
+            status: "connected",
+            label: spec.service,
+            access,
+            accessExpiresAtMs: credential.accessExpiresAtMs ?? null
+          })
+          row = (yield* connections.integration(userId, existing.id)).pipe(Option.getOrThrow)
+        } else {
+          const secretId = yield* secrets.put(userId, "oauth_tokens", OAuthCredential, credential)
+          row = yield* connections.createIntegration({
+            userId,
+            kind: "oauth",
+            label: spec.service,
+            access,
+            secretId,
+            accessExpiresAtMs: credential.accessExpiresAtMs
+          })
+        }
+        yield* announce(userId, projectId, messageId, row).pipe(
+          Effect.catchTag("NotFound", () => Effect.fail(new InvalidRequest({ message: "the request is gone" })))
+        )
+        return { projectId, messageId }
+      })
+
       const submitKey = Effect.fn("Access.submitKey")(function* (
         userId: UserId,
         projectId: ProjectId,
@@ -353,6 +470,11 @@ export class Access extends Context.Service<
           const credential = yield* secrets.get(row.value.secret_id, GoogleCredential)
           yield* google.revoke(credential.refreshToken)
         }
+        if (row.value.kind === "oauth" && row.value.access_json._tag === "OAuth") {
+          const credential = yield* secrets.get(row.value.secret_id, OAuthCredential)
+          const provider = yield* providers.configured(row.value.access_json.provider).pipe(Effect.option)
+          if (Option.isSome(provider)) yield* oauth.revoke(provider.value, credential.accessToken)
+        }
         yield* connections.deleteIntegration(id)
         yield* secrets.remove(row.value.secret_id)
         const access = row.value.access_json
@@ -366,7 +488,17 @@ export class Access extends Context.Service<
         }
       })
 
-      return Access.of({ startGoogle, finishGoogle, submitKey, submitApple, decline, list, disconnect })
+      return Access.of({
+        startGoogle,
+        finishGoogle,
+        startOAuth,
+        finishOAuth,
+        submitKey,
+        submitApple,
+        decline,
+        list,
+        disconnect
+      })
     })
   )
 }

@@ -68,7 +68,7 @@ export type QuestionMessage = typeof QuestionMessage.Type
 // Access request
 // ---------------------------------------------------------------------------
 
-/** What the agent asks to be connected. Mirrors `dream access google|key|file|apple`. */
+/** What the agent asks to be connected. Mirrors `dream access google|key|file|apple|oauth`. */
 export const AccessRequest = Schema.TaggedUnion({
   /** Sign in with Google and grant these scopes (short names, e.g. "gmail.readonly"). */
   Google: { scopes: Schema.NonEmptyArray(Schema.NonEmptyString) },
@@ -86,7 +86,17 @@ export const AccessRequest = Schema.TaggedUnion({
    */
   File: { service: Schema.NonEmptyString, name: Schema.NonEmptyString },
   /** An App Store Connect API key (issuer id, key id, .p8), which TestFlight uploads need. */
-  Apple: {}
+  Apple: {},
+  /**
+   * Sign in to a service Dream connects with OAuth and grant these scopes, in the provider's own names (e.g.
+   * "user-read-private" for Spotify). `provider` is the id Dream knows it by ("spotify"). `service` is its display
+   * name; the CLI leaves it out and the API fills it in, so cards always carry it. Some providers have no scopes.
+   */
+  OAuth: {
+    provider: Schema.NonEmptyString,
+    service: Schema.optionalKey(Schema.String),
+    scopes: Schema.Array(Schema.NonEmptyString)
+  }
 })
 export type AccessRequest = typeof AccessRequest.Type
 

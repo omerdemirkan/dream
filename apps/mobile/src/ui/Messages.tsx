@@ -18,8 +18,8 @@ import {
   keyFileWarning,
   whenTag
 } from "./describe.ts"
-import { useAction, useGoogleAccess, useToast } from "./actions.ts"
-import { GoogleButton, Choices, Icon } from "./kit.tsx"
+import { useAction, useSignInAccess, useToast } from "./actions.ts"
+import { GoogleButton, Choices, Icon, SignInButton } from "./kit.tsx"
 import { Markdown } from "./Markdown.tsx"
 import { MediaTile } from "./Media.tsx"
 import { color, gutter, needGlow } from "./theme.ts"
@@ -379,10 +379,12 @@ function InlineKey(props: { readonly message: AccessMessage }) {
 
 function OpenAccessBody(props: { readonly message: AccessMessage; readonly onOpen: () => void }) {
   const m = props.message
-  const google = useGoogleAccess(m)
+  const signIn = useSignInAccess(m)
   switch (m.request._tag) {
     case "Google":
-      return <GoogleButton compact busy={google.busy} onPress={google.start} />
+      return <GoogleButton compact busy={signIn.busy} onPress={signIn.start} />
+    case "OAuth":
+      return <SignInButton compact service={signIn.service} busy={signIn.busy} onPress={signIn.start} />
     case "Key":
     case "File":
       return <InlineKey message={m} />

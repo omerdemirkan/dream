@@ -57,6 +57,11 @@ const sections: ReadonlyArray<{ readonly title: string; readonly jumps: Readonly
       { title: "Access · Google", scenarios: ["reset"], to: "/project/prj_cabin?tab=chat&focus=msg_gcal" },
       { title: "Access · Apple key", scenarios: ["reset"], to: "/project/prj_liftlog?tab=chat&focus=msg_apple" },
       {
+        title: "Access · Spotify (OAuth)",
+        scenarios: ["reset", "spotify-ask"],
+        to: "/project/prj_liftlog?tab=chat&focus=msg_spotify"
+      },
+      {
         title: "Access · connected",
         scenarios: ["reset"],
         to: "/project/prj_morningbrief?tab=chat&focus=msg_gmail"

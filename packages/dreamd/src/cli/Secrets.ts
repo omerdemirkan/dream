@@ -92,7 +92,7 @@ export const refusal = (secret: string) =>
     `Not sent: this asks them for a secret ("${secret}"). Answers to \`dream ask\` are visible in Chat and arrive in this sandbox, so a typed-in secret leaks.`,
     "Ask for it with `dream access key`; they paste it into Dream, and Dream adds it to your HTTPS requests to --host:",
     `  dream access key --service Discord --host discord.com --header Authorization --format "Bot {key}" --why "Post quotes to your channel"`,
-    "Google sign-in is `dream access google --scopes …`; App Store Connect is `dream access apple`.",
+    "Google sign-in is `dream access google --scopes …`; other OAuth sign-ins (Spotify, GitHub, Strava, Dropbox, Slack, Notion, …) are `dream access oauth <provider>`; App Store Connect is `dream access apple`.",
     "Only if it can't go in a header (a URL path, a login payload, SMTP), `dream access file` puts it in a file here.",
     "If it isn't a credential (e.g. you're asking how the app's own login should work), run it again with --not-a-secret."
   ].join("\n")
