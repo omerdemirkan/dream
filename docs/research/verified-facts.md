@@ -253,3 +253,11 @@
   paused mid-turn; proactively pause+resumes before the cap. Cap = E2B_SANDBOX_MAX_RUN (default "1 hour" for Hobby;
   set "24 hours" on Pro). E2B: setTimeout beyond the cap is silently clamped; setTimeout on a paused sandbox → 404;
   resume resets the sandbox start time.
+- FIRST REAL END-TO-END RUN (2026-11-05 03:17 UTC): founder's Claude token connected via the one-time link
+  (feat/connect-link). CreateProject → ProjectDO created the E2B sandbox from dream-sandbox, wrote the env file,
+  dreamd started in ~1 s, the turn ran ~45 s on Claude Code (default model) with the real token injected by E2B
+  egress (sandbox env holds only Dream tokens). Agent built a to-do app, `dream publish` → https://simple-one-page-
+  bfqbqj53.omer.build served through the gateway, `dream status` set title/kind/phase/headline, `dream message`
+  landed in Chat. The app itself had a bug (server returns a JSON-serialized Buffer); the agent tested via API only
+  and said so. Harness logs "credential brokering does not work, falling back to credential forwarding" with the
+  local sandbox provider — benign here because it forwards the placeholder.
