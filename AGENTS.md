@@ -155,7 +155,7 @@ the other workstreams to agree first.
   Google OAuth tokens, pasted keys, App Store Connect keys) are stored AES-GCM encrypted in a D1 `secrets` table and
   decrypted only inside the Worker. The key and the operator keys (E2B, Browserbase, Namespace, APNs, Google client
   secret) are Worker secrets. Rows reference a secret id, and domain records never carry one. It is deployed at
-  https://dream.omer.build (see Deploying below); R2 stays disabled until it's enabled in the Cloudflare dashboard.
+  https://dream.omer.build (see Deploying below); R2 media storage is on (`DREAM_R2_ENABLED=true`).
   `@cloudflare/vitest-pool-workers` needs Vitest 4 and `@effect/vitest` 4.1.2 needs Vitest 5, so test Worker logic
   in Node against layers and fakes.
 - **Sandbox runtime.** dreamd reads `DaemonConfig` (env set by the ProjectDO at sandbox creation). The `dream` CLI maps
@@ -180,9 +180,10 @@ the other workstreams to agree first.
 - Deploy only from `main` or a branch rebased on the latest `origin/main`: every deploy replaces the whole Worker, so
   deploying a stale branch silently rolls back other fixes. Run `bun run check` first.
 - `bun run infra:deploy` from the workspace root. The root `.env` needs `DREAM_DOMAIN=omer.build`,
-  `CLOUDFLARE_ACCOUNT_ID=2d98de7c4511e98d2f774c4fcc9b9b93` and `CLOUDFLARE_API_TOKEN=anything` (the workspace's
-  `cloudflare-api` connection adds the real token). D1 and R2 names are pinned in `apps/api/src/Resources.ts`, so a
-  deploy from any machine adopts the live resources.
+  `DREAM_R2_ENABLED=true`, `CLOUDFLARE_ACCOUNT_ID=2d98de7c4511e98d2f774c4fcc9b9b93` and `CLOUDFLARE_API_TOKEN=anything`
+  (the workspace's `cloudflare-api` connection adds the real token). Without `DREAM_R2_ENABLED=true` a deploy unbinds
+  media storage. D1 and R2 names are pinned in `apps/api/src/Resources.ts`, so a deploy from any machine adopts the
+  live resources.
 - Worker secrets set in the dashboard or through the API survive deploys; plain vars don't.
 - dreamd and the prompt ship inside the `dream-sandbox` template: `bun run template:build` after changing either.
   Existing sandboxes keep the dreamd they were created with.
