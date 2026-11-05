@@ -82,3 +82,6 @@ Other findings:
   safety net posted the final text. Agent didn't run `dream status` (phase stayed "exploring", no kind).
   Chrome extension prj_XZCCv9SuFZncDWfFRqbWLN — PASS: valid MV3 extension, status kept (kind "Chrome Extension",
   phase live, headline with load instructions), clear load steps in chat.
+- R2 / QA2.4: iOS tip calculator prj_PwQkmMO3vZje99blwmowRA — PASS: XcodeGen project, built, booted iPhone 15 simulator,
+  three real simctl screenshots (1179×2556), Mac stopped at the end, final message with next steps. Didn't attach
+  screenshots (media storage needs R2 anyway). Round 1's iOS failure modes are gone.
