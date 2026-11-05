@@ -18,6 +18,7 @@ import { AppAuthServer, AuthedHandlers, bearer, PublicHandlers } from "./AppHand
 import { connectProvider, showConnectPage, submitConnectPage } from "./ConnectPage.ts"
 import { gateway } from "./Gateway.ts"
 import { downloadMedia, uploadMedia } from "./Media.ts"
+import { homePage, privacyPage } from "./PublicPages.ts"
 import { SandboxAuthServer, WorkerSandboxHandlers } from "./SandboxHandlers.ts"
 
 export class LiveForwarder extends Context.Service<
@@ -65,6 +66,11 @@ export const route = (raw: Request) =>
 
     const path = url.pathname.length > 1 ? url.pathname.replace(/\/+$/, "") : url.pathname
     if (path === "/health") return HttpServerResponse.text("ok")
+    // The public pages Google's consent screen links to.
+    if (request.method === "GET" || request.method === "HEAD") {
+      if (path === "/") return homePage()
+      if (path === "/privacy") return privacyPage()
+    }
     if (path === Routes.app && request.method === "POST") return yield* appRpc
     if (path === Routes.sandbox && request.method === "POST") return yield* sandboxRpc
 
