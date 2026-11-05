@@ -52,7 +52,9 @@ export const DaemonEnv = {
   daemonToken: "DREAM_DAEMON_TOKEN",
   harness: "DREAM_HARNESS",
   port: "DREAM_DAEMON_PORT",
-  socket: "DREAM_SOCKET"
+  socket: "DREAM_SOCKET",
+  /** Optional: the model dreamd asks the harness for instead of its default. */
+  model: "DREAM_MODEL"
 } as const
 
 export const DefaultDaemonPort = 4747

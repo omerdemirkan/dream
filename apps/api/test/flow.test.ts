@@ -5,8 +5,9 @@
  */
 import { assert, describe, it } from "@effect/vitest"
 import { DaemonEnvFile, type NotificationId, type ProjectId, QuestionAnswer } from "@dream/domain"
-import { Context, DateTime, Effect, Exit, Fiber, Redacted, Stream } from "effect"
+import { Context, DateTime, Effect, Exit, Fiber, Option, Redacted, Stream } from "effect"
 import { ProjectClients } from "../src/project/Client.ts"
+import { Core } from "../src/project/Core.ts"
 import { Store } from "../src/project/Store.ts"
 import { makeCloud } from "./support/Cloud.ts"
 
@@ -142,6 +143,7 @@ describe("a project, end to end", () => {
       assert.strictEqual(env.DREAM_PROJECT_ID, project.id)
       assert.strictEqual(env.DREAM_HARNESS, "claude-code")
       assert.strictEqual(env.DREAM_API_URL, "https://api.dream.test")
+      assert.notProperty(env, "DREAM_MODEL")
       assert.notInclude(JSON.stringify(env), claudeToken)
 
       const [first] = cloud.world.delivered
@@ -156,6 +158,42 @@ describe("a project, end to end", () => {
 
       const projects = yield* cloud.phone.ListProjects()
       assert.strictEqual(projects[0]?.project.ownerId, user.id)
+      yield* cloud.close
+    })
+  )
+
+  it.live("runs the agent on the configured model, and rewrites dreamd's env between turns when settings change", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud({ agentModel: Option.some("claude-haiku-4-5-20251001") })
+      const { project } = yield* setup(cloud)
+      yield* cloud.alarm(project.id)
+      const { sandbox, env } = envFileOf(cloud, project.id)
+      assert.strictEqual(env.DREAM_MODEL, "claude-haiku-4-5-20251001")
+      const core = Context.get((yield* Effect.promise(() => cloud.project(project.id))).context, Core)
+      const written = (yield* core.sandbox).envHash
+      assert.isString(written)
+
+      // Same settings: the next delivery leaves the file (and dreamd) alone.
+      sandbox.files.set(DaemonEnvFile, "untouched")
+      yield* cloud.phone.SendMessage({ projectId: project.id, text: "Track sets too" })
+      yield* cloud.alarm(project.id)
+      assert.strictEqual(cloud.world.delivered.length, 2)
+      assert.strictEqual(sandbox.files.get(DaemonEnvFile), "untouched")
+
+      // Written under other settings, mid-turn: still left alone, so the turn isn't cut short.
+      yield* core.saveSandbox({ ...(yield* core.sandbox), envHash: "older settings", working: true })
+      yield* cloud.phone.SendMessage({ projectId: project.id, text: "And rest times" })
+      yield* cloud.alarm(project.id)
+      assert.strictEqual(cloud.world.delivered.length, 3)
+      assert.strictEqual(sandbox.files.get(DaemonEnvFile), "untouched")
+
+      // Between turns: rewritten before delivering, with the model.
+      yield* core.saveSandbox({ ...(yield* core.sandbox), working: false })
+      yield* cloud.phone.SendMessage({ projectId: project.id, text: "Thanks" })
+      yield* cloud.alarm(project.id)
+      assert.strictEqual(cloud.world.delivered.length, 4)
+      assert.strictEqual(envFileOf(cloud, project.id).env.DREAM_MODEL, "claude-haiku-4-5-20251001")
+      assert.strictEqual((yield* core.sandbox).envHash, written)
       yield* cloud.close
     })
   )

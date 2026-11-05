@@ -5,7 +5,7 @@
  * the new values. Where dreamd keeps its state, and where the agent works,
  * are properties of the sandbox template and come from the environment.
  */
-import { DaemonConfig, DaemonEnvFile } from "@dream/domain"
+import { DaemonConfig, DaemonEnv, DaemonEnvFile } from "@dream/domain"
 import { Config, ConfigProvider, Context, Duration, Effect, FileSystem, Layer, Option, Schedule } from "effect"
 
 export interface DreamdConfigShape extends Config.Success<typeof DaemonConfig> {
@@ -26,7 +26,7 @@ const LocalConfig = Config.all({
   home: Config.NonEmptyString("HOME"),
   stateDir: Config.option(Config.NonEmptyString("DREAM_STATE_DIR")),
   workDir: Config.option(Config.NonEmptyString("DREAM_WORKDIR")),
-  model: Config.option(Config.NonEmptyString("DREAM_MODEL")),
+  model: Config.option(Config.NonEmptyString(DaemonEnv.model)),
   codexBaseUrl: Config.option(Config.NonEmptyString("DREAM_CODEX_BASE_URL"))
 })
 

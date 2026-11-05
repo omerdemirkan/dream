@@ -36,6 +36,8 @@ export const SandboxRecord = Schema.Struct({
   createdAt: Schema.optionalKey(Schema.DateTimeUtc),
   /** sha-256 of the rules last pushed, so unchanged rules aren't pushed again. */
   rulesHash: Schema.optionalKey(Schema.String),
+  /** sha-256 of dreamd's env file as last written, but for the project token, so a changed setting is rewritten. */
+  envHash: Schema.optionalKey(Schema.String),
   /** The rules changed while the sandbox was paused; push them when it runs. */
   rulesDirty: Schema.Boolean,
   working: Schema.Boolean,
