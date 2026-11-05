@@ -130,7 +130,12 @@ export function Tile(props: { readonly icon: string | undefined; readonly size?:
           style={{ width: s.glyph, height: s.glyph }}
         />
       ) : (
-        <Text accessible={false} style={{ fontSize: s.glyph, lineHeight: s.glyph * 1.25 }}>
+        <Text
+          accessible={false}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          style={{ fontSize: s.glyph, lineHeight: s.glyph * 1.25 }}
+        >
           {props.icon}
         </Text>
       )}

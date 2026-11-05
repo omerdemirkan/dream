@@ -3,7 +3,16 @@
  * What it's doing now, what it just did, what's next, and what it needs from
  * them, pinned to the milestone where it matters.
  */
-import type { AccessMessage, AskMessage, Message, MessageId, Milestone, Need, StatusCard } from "@dream/domain"
+import type {
+  AccessMessage,
+  AskMessage,
+  Message,
+  MessageId,
+  Milestone,
+  Need,
+  StatusCard,
+  TextMessage
+} from "@dream/domain"
 import { isOpenAsk } from "@dream/domain"
 import { DateTime } from "effect"
 import { useEffect, useRef, useState } from "react"
@@ -23,6 +32,7 @@ import { accessLabel, accessScope } from "./describe.ts"
 import { useNow, useOpenMessage } from "./hooks.ts"
 import { Dot, Icon, Lab } from "./kit.tsx"
 import { MediaStrip } from "./Media.tsx"
+import { plainText } from "./markdownParse.ts"
 import { color, gutter } from "./theme.ts"
 
 // ---------------------------------------------------------------------------
@@ -56,7 +66,7 @@ export function StatusLine(props: { readonly state: ProjectState }) {
     detail = "thanks, working on it"
   } else {
     dot = working ? "live" : "quiet"
-    detail = working ? "working on it" : "reading your reactions"
+    detail = working ? "working on it" : asks.length === 0 ? "nothing needed from you" : "reading your reactions"
   }
   return <Line dot={dot} lead={phaseLabel(phase)} detail={detail} />
 }
@@ -86,11 +96,13 @@ function Block(props: {
   readonly text: string
   readonly hero?: boolean
   readonly live?: boolean
+  readonly lines?: number
 }) {
   return (
     <View style={{ marginTop: 16 }}>
       <Lab>{props.label}</Lab>
       <Text
+        numberOfLines={props.lines}
         style={
           props.hero
             ? { marginTop: 5, fontSize: 19, lineHeight: 25, fontWeight: "600", letterSpacing: -0.38, color: color.t1 }
@@ -484,8 +496,11 @@ function FocusBlocks(props: {
 // The tab
 // ---------------------------------------------------------------------------
 
-const earlyNote = (phase: StatusCard["phase"]) =>
-  phase === "new"
+/** Before the agent writes a Status card: still looking into it, unless they've already answered something. */
+const earlyNote = (messages: ReadonlyArray<Message>) =>
+  !messages.some(
+    (m) => (m._tag === "Question" || m._tag === "Access") && m.state._tag !== "Open" && m.state._tag !== "Withdrawn"
+  )
     ? "I’m looking into this before I ask you anything. That can take a few minutes, so there’s no need to wait around — I’ll send a notification when I have a question."
     : "Thanks. I’m shaping the first version around your answer, and I’ll write when there’s something to look at."
 
@@ -511,6 +526,11 @@ export function StatusTab(props: { readonly state: ProjectState }) {
   const focus = focusIndex(status.milestones)
   const firstUpcoming = status.milestones.findIndex((m) => m.state === "upcoming")
   const connected = messages.filter((m): m is AccessMessage => m._tag === "Access" && m.state._tag === "Connected")
+  // Agents don't always write a Status card; then the last thing they said in Chat stands in for it.
+  const latest =
+    status.now || status.justDid
+      ? undefined
+      : messages.findLast((m): m is TextMessage => m._tag === "Text" && m.from === "agent")
   return (
     <View>
       <Idea text={project.idea} />
@@ -519,6 +539,7 @@ export function StatusTab(props: { readonly state: ProjectState }) {
         <View>
           {status.now ? <Block label="Now" text={status.now} hero live={working} /> : null}
           {status.justDid ? <Block label="Just did" text={status.justDid} /> : null}
+          {latest ? <Block label="Latest in Chat" text={plainText(latest.text)} lines={4} /> : null}
           <MediaStrip media={status.media} inset={gutter} />
           {status.next ? <Block label="Next" text={status.next} /> : null}
           {unpinned.length > 0 ? (
@@ -527,9 +548,9 @@ export function StatusTab(props: { readonly state: ProjectState }) {
                 <NeedRow key={message.id} message={message} />
               ))}
             </View>
-          ) : status.now ? null : (
+          ) : status.now || latest ? null : (
             <Text style={{ marginTop: 26, fontSize: 15, lineHeight: 22, color: color.t2, maxWidth: 330 }}>
-              {earlyNote(status.phase)}
+              {earlyNote(messages)}
             </Text>
           )}
         </View>

@@ -2,7 +2,7 @@ import * as Fx from "@dream/domain/fixtures"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime } from "effect"
 import { dayLabel, dayOfPhase, milestoneDate, shortDuration, timeLabel, usageLine } from "../src/data/format.ts"
-import { parseBlocks, parseInline } from "../src/ui/markdownParse.ts"
+import { parseBlocks, parseInline, plainText } from "../src/ui/markdownParse.ts"
 
 const la = "America/Los_Angeles"
 const at = (iso: string) => DateTime.makeUnsafe(iso)
@@ -102,6 +102,13 @@ describe("markdown", () => {
       "**Set up**: run it\n• It asks for the token",
       "**Start**"
     ])
+  })
+
+  it("flattens a message to plain lines for a preview", () => {
+    assert.strictEqual(
+      plainText("## **Live!** 🌱\n\nOpen [it](https://x.omer.build).\n\n```\nnpm start\n```\n- one\n- `two`"),
+      "Live! 🌱\nOpen it.\none\ntwo"
+    )
   })
 
   it("keeps a list's first number", () => {

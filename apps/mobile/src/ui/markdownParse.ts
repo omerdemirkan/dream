@@ -115,3 +115,18 @@ export const parseBlocks = (source: string): ReadonlyArray<Block> => {
   flush()
   return blocks
 }
+
+const inlineText = (nodes: ReadonlyArray<Inline>): string =>
+  nodes.map((node) => (node.kind === "text" || node.kind === "code" ? node.text : inlineText(node.children))).join("")
+
+/** The message as plain text, one line per block, for a preview: no markers, no code. */
+export const plainText = (source: string): string =>
+  parseBlocks(source)
+    .flatMap((block) =>
+      block.kind === "paragraph" || block.kind === "heading"
+        ? [inlineText(parseInline(block.text))]
+        : block.kind === "list"
+          ? block.items.map((item) => inlineText(parseInline(item)))
+          : []
+    )
+    .join("\n")
