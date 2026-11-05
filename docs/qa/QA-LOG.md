@@ -38,3 +38,12 @@ Other findings:
 - Google dashboard: Google access card created correctly; decline recorded. Agent's message claimed "real-time
   updates" before any data access — overclaiming (agent honesty; watch after prompt changes).
 - Gateway, publish, auto-resume all fine wherever the agent published.
+
+## 3. QA wave 1 — protocols (03:40–03:50 UTC)
+- Tic-tac-toe prj_eFOk8NKZZhdS2UiPc4vDGZ: WebSocket realtime through the gateway works; two clients saw each other's
+  moves instantly. PASS.
+- URL shortener prj_DTxj1b6a5ZxkNJz9cyjDUN: POST/GET/DELETE and 302 redirect through the gateway all work; UI works.
+  PASS. The tester killed a 2m45s first turn as a "hang" — inconclusive (it may have been working); inbox recovery
+  re-ran it in 18 s. No CORS headers (not needed same-origin).
+- Prompt: added one line of context about honesty ("they act on what you tell them … an honest 'not yet'") after the
+  Google dashboard overclaim. Model-agnostic.
