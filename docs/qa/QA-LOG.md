@@ -78,3 +78,7 @@ Other findings:
 - Five Haiku QA threads, 9 projects: band site (questions + Home deck), habit tracker (pause/resume persistence),
   HN email worker (cron + decline), Discord bot (pasted fake key → connected), Python CLI, Chrome extension,
   iOS tip calculator (XcodeGen/simctl/mac cp), weather+AQI dashboard (public APIs), finance tracker (multi-turn status).
+- R2 / QA2.3: Python CLI prj_xKH2gAasQzOo4LYxwbqswV — PASS: tool works, README + usage in chat, title from idea,
+  safety net posted the final text. Agent didn't run `dream status` (phase stayed "exploring", no kind).
+  Chrome extension prj_XZCCv9SuFZncDWfFRqbWLN — PASS: valid MV3 extension, status kept (kind "Chrome Extension",
+  phase live, headline with load instructions), clear load steps in chat.
