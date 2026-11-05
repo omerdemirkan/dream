@@ -29,7 +29,7 @@ import { Secrets } from "../db/Secrets.ts"
 import { randomToken } from "../lib/Ids.ts"
 import { importEs256Pem } from "../lib/Jwt.ts"
 import { ProjectClients, ProjectDirectory } from "../project/Client.ts"
-import { mintAppleJwt } from "./CredentialStore.ts"
+import { mintAppleJwt, RefreshMarginMs } from "./CredentialStore.ts"
 import { Google, hostsForScopes, labelForScopes } from "./Google.ts"
 import { OAuth, OAuthProviders, placeholderFor } from "./OAuth.ts"
 
@@ -188,8 +188,14 @@ export class Access extends Context.Service<
         const pending = yield* connections.takeOAuthState(state, now)
         if (Option.isNone(pending)) return yield* new InvalidRequest({ message: "expired" })
         const { user_id: userId, project_id: projectId, message_id: messageId, scopes_json: requested } = pending.value
-        const tokens = yield* google.exchangeCode(code)
-        if (tokens.refresh_token === undefined) {
+        const tokens = yield* google
+          .exchangeCode(code)
+          .pipe(
+            Effect.catchTag("OAuthRejected", (rejected) =>
+              Effect.fail(new InvalidRequest({ message: `Google refused the sign-in (${rejected.reason})` }))
+            )
+          )
+        if (tokens.refreshToken === undefined) {
           return yield* new UpstreamFailure({ service: "Google", message: "no refresh token" })
         }
         const email = tokens.email
@@ -205,10 +211,10 @@ export class Access extends Context.Service<
           placeholder: GooglePlaceholder
         })
         const credential: GoogleCredential = {
-          refreshToken: tokens.refresh_token,
-          accessToken: tokens.access_token,
-          accessExpiresAtMs: now + tokens.expires_in * 1000,
-          scope: tokens.scope ?? ""
+          refreshToken: tokens.refreshToken,
+          accessToken: tokens.accessToken,
+          accessExpiresAtMs: tokens.expiresAtMs ?? now + RefreshMarginMs,
+          scope: tokens.scopes?.join(" ") ?? ""
         }
         let row: IntegrationRow
         if (existing !== undefined) {

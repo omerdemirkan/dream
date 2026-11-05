@@ -1,12 +1,15 @@
 /**
  * Google: verifying Sign-In ID tokens (the iOS client), and the web OAuth
  * client behind the Google integration (authorize URL, code exchange, refresh).
+ * The token requests are `OAuth`'s, so Google's answers are read like every
+ * other provider's: only a refusal of the grant itself is `OAuthRejected`.
  */
-import { UpstreamFailure } from "@dream/domain"
+import { InvalidRequest, UpstreamFailure } from "@dream/domain"
 import { Clock, Context, Data, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 import { ApiConfig, required } from "../Config.ts"
 import { decodeUnverified, Jwks, verifyRs256 } from "../lib/Jwt.ts"
+import { OAuth, type OAuthProviderSpec, type OAuthRejected, type OAuthTokens, stringAt } from "./OAuth.ts"
 
 export class InvalidIdToken extends Data.TaggedError("InvalidIdToken")<{ readonly reason: string }> {}
 
@@ -21,22 +24,21 @@ export const GoogleIdentity = Schema.Struct({
 })
 export type GoogleIdentity = typeof GoogleIdentity.Type
 
-const TokenResponse = Schema.Struct({
-  access_token: Schema.String,
-  expires_in: Schema.Number,
-  refresh_token: Schema.optionalKey(Schema.String),
-  scope: Schema.optionalKey(Schema.String),
-  id_token: Schema.optionalKey(Schema.String),
-  token_type: Schema.optionalKey(Schema.String)
-})
-export type GoogleTokenResponse = typeof TokenResponse.Type
-
 const EmailClaim = Schema.Struct({ email: Schema.optionalKey(Schema.String) })
 
 const jwksUrl = "https://www.googleapis.com/oauth2/v3/certs"
 const authorizeEndpoint = "https://accounts.google.com/o/oauth2/v2/auth"
 const tokenEndpoint = "https://oauth2.googleapis.com/token"
 const revokeEndpoint = "https://oauth2.googleapis.com/revoke"
+
+/** Google's web client as `OAuth` sees it, for token requests. Its hosts follow the scopes (`hostsForScopes`). */
+export const GoogleOAuthSpec: OAuthProviderSpec = {
+  id: "google",
+  service: "Google",
+  authorizeUrl: authorizeEndpoint,
+  tokenUrl: tokenEndpoint,
+  hosts: []
+}
 
 /** Short scope names as the agent asks for them ("gmail.readonly") → Google's scope URLs. */
 export const scopeUrl = (scope: string): string =>
@@ -96,6 +98,11 @@ export class Google extends Context.Service<
   Google,
   {
     readonly verifyIdToken: (token: string) => Effect.Effect<GoogleIdentity, InvalidIdToken | UpstreamFailure>
+    /**
+     * Whether this deployment has Dream's Google web client. `InvalidRequest` (written for the agent) when it
+     * doesn't, so `dream access google` refuses before a card nobody can connect reaches them.
+     */
+    readonly configured: Effect.Effect<void, InvalidRequest>
     readonly authorizeUrl: (options: {
       readonly state: string
       readonly scopes: ReadonlyArray<string>
@@ -103,8 +110,12 @@ export class Google extends Context.Service<
     }) => Effect.Effect<string, UpstreamFailure>
     readonly exchangeCode: (
       code: string
-    ) => Effect.Effect<GoogleTokenResponse & { readonly email?: string }, UpstreamFailure>
-    readonly refresh: (refreshToken: string) => Effect.Effect<GoogleTokenResponse, UpstreamFailure>
+    ) => Effect.Effect<OAuthTokens & { readonly email?: string }, OAuthRejected | UpstreamFailure>
+    /**
+     * `OAuthRejected` when Google refuses the refresh token (they revoked Dream, or it lapsed); a network error, a
+     * 5xx or 429, or a refused client id (Dream's setup, not their grant) is `UpstreamFailure`, worth retrying.
+     */
+    readonly refresh: (refreshToken: string) => Effect.Effect<OAuthTokens, OAuthRejected | UpstreamFailure>
     readonly revoke: (token: string) => Effect.Effect<void>
   }
 >()("@dream/api/Google") {
@@ -113,7 +124,9 @@ export class Google extends Context.Service<
     Effect.gen(function* () {
       const config = yield* ApiConfig
       const http = yield* HttpClient.HttpClient
-      const redirectUri = `${config.apiUrl}/oauth/google/callback`
+      const oauth = yield* OAuth
+      // The same URL the code exchange sends.
+      const redirectUri = oauth.redirectUri(GoogleOAuthSpec)
 
       const upstream = (message: string) => () => new UpstreamFailure({ service: "Google", message })
 
@@ -163,26 +176,34 @@ export class Google extends Context.Service<
         return url.toString()
       })
 
-      const tokenRequest = (params: Record<string, string>) =>
-        Effect.gen(function* () {
-          const clientId = yield* required(config.googleClientId, "Google", "GOOGLE_CLIENT_ID")
-          const secret = yield* required(config.googleClientSecret, "Google", "GOOGLE_CLIENT_SECRET")
-          return yield* HttpClientRequest.post(tokenEndpoint).pipe(
-            HttpClientRequest.bodyUrlParams({ ...params, client_id: clientId, client_secret: Redacted.value(secret) }),
-            http.execute,
-            Effect.flatMap(HttpClientResponse.filterStatusOk),
-            Effect.flatMap(HttpClientResponse.schemaBodyJson(TokenResponse)),
-            Effect.mapError(upstream(`the token request (${params.grant_type}) failed`))
-          )
-        })
+      const configured =
+        Option.isSome(config.googleClientId) &&
+        Option.isSome(config.googleClientSecret) &&
+        Redacted.value(config.googleClientSecret.value).length > 0
+          ? Effect.void
+          : Effect.fail(
+              new InvalidRequest({
+                message:
+                  "Google sign-in isn't set up on this deployment of Dream yet: whoever runs it hasn't registered " +
+                  "Dream's Google app, so they can't connect Gmail, Calendar, Drive or any other Google API, and no " +
+                  "card was shown. For a service that hands out a lasting API key, use `dream access key`."
+              })
+            )
+
+      const client = Effect.gen(function* () {
+        const id = yield* required(config.googleClientId, "Google", "GOOGLE_CLIENT_ID")
+        const secret = yield* required(config.googleClientSecret, "Google", "GOOGLE_CLIENT_SECRET")
+        return { spec: GoogleOAuthSpec, client: { id, secret } }
+      })
 
       const exchangeCode = Effect.fn("Google.exchangeCode")(function* (code: string) {
-        const tokens = yield* tokenRequest({ grant_type: "authorization_code", code, redirect_uri: redirectUri })
+        const tokens = yield* oauth.exchangeCode(yield* client, code)
         // The ID token comes straight from Google over TLS, so its claims can be read without verifying it.
+        const idToken = stringAt(tokens.response, "id_token")
         const email =
-          tokens.id_token === undefined
+          idToken === undefined
             ? Option.none<string>()
-            : yield* decodeUnverified(tokens.id_token).pipe(
+            : yield* decodeUnverified(idToken).pipe(
                 Effect.flatMap((jwt) => Schema.decodeUnknownEffect(EmailClaim)(jwt.payload)),
                 Effect.map((claims) => Option.fromUndefinedOr(claims.email)),
                 Effect.orElseSucceed(() => Option.none<string>())
@@ -190,8 +211,9 @@ export class Google extends Context.Service<
         return Option.match(email, { onNone: () => tokens, onSome: (value) => ({ ...tokens, email: value }) })
       })
 
-      const refresh = (refreshToken: string) =>
-        tokenRequest({ grant_type: "refresh_token", refresh_token: refreshToken })
+      const refresh = Effect.fn("Google.refresh")(function* (refreshToken: string) {
+        return yield* oauth.refresh(yield* client, refreshToken)
+      })
 
       const revoke = (token: string) =>
         HttpClientRequest.post(revokeEndpoint).pipe(
@@ -200,7 +222,7 @@ export class Google extends Context.Service<
           Effect.ignore
         )
 
-      return Google.of({ verifyIdToken, authorizeUrl, exchangeCode, refresh, revoke })
+      return Google.of({ verifyIdToken, configured, authorizeUrl, exchangeCode, refresh, revoke })
     })
   )
 }

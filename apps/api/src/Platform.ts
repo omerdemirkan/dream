@@ -46,9 +46,8 @@ export const servicesLayer = Layer.mergeAll(
   Apns.layer,
   Browserbase.layer,
   Namespace.layer,
-  Google.layer,
+  Google.layer.pipe(Layer.provideMerge(OAuth.layer)),
   OAuthProviders.layer,
-  OAuth.layer,
   ChatGpt.layer,
   Tokens.layer
 )

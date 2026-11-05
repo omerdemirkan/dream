@@ -21,11 +21,12 @@ import {
 import { Secrets } from "../db/Secrets.ts"
 import { importEs256Pem, signEs256 } from "../lib/Jwt.ts"
 import { Google } from "./Google.ts"
-import { OAuth, OAuthProviders } from "./OAuth.ts"
+import { OAuth, OAuthProviders, type OAuthRejected } from "./OAuth.ts"
 
 /**
- * An OAuth provider refused the refresh token (they revoked it, or it lapsed): the integration is now failed, and
- * stays out of every sandbox until they connect it again. `failure` says what happened, in a clause.
+ * Google or another OAuth provider refused the refresh token (they revoked it, or it lapsed): the integration is
+ * now failed, and stays out of every sandbox until they connect it again. `failure` says what happened, in a
+ * clause.
  */
 export class ConnectionLapsed extends Data.TaggedError("ConnectionLapsed")<{
   readonly userId: UserId
@@ -57,12 +58,18 @@ export class CredentialStore extends Context.Service<
     readonly claude: (row: ModelConnectionRow) => Effect.Effect<ClaudeCredential>
     /** The ChatGPT tokens, refreshed if they expire soon (or `force`). */
     readonly chatGpt: (row: ModelConnectionRow, force?: boolean) => Effect.Effect<ChatGptCredential, UpstreamFailure>
-    readonly google: (row: IntegrationRow, force?: boolean) => Effect.Effect<GoogleCredential, UpstreamFailure>
+    /** The Google tokens, refreshed if they expire soon (or `force`). Failures are as for `oauth`. */
+    readonly google: (
+      row: IntegrationRow,
+      force?: boolean
+    ) => Effect.Effect<GoogleCredential, UpstreamFailure | ConnectionLapsed>
     readonly apiKey: (row: IntegrationRow) => Effect.Effect<ApiKeyCredential>
     /**
      * An OAuth provider's tokens, refreshed if they expire soon (or `force`). When the provider refuses the refresh
      * token (they revoked it, or it lapsed), the integration is marked failed and they have to connect again: that
-     * one refresh fails with `ConnectionLapsed`, so whoever saw it can tell the projects that use it.
+     * one refresh fails with `ConnectionLapsed`, so whoever saw it can tell the projects that use it. Anything else
+     * (the provider unreachable or erroring, Dream's client refused) is `UpstreamFailure` and leaves it connected,
+     * so the next refresh tries again.
      */
     readonly oauth: (
       row: IntegrationRow,
@@ -100,6 +107,22 @@ export class CredentialStore extends Context.Service<
           yield* Effect.sleep("2 seconds")
           return yield* reread
         })
+
+      /** Marks the integration failed: they have to connect it again. */
+      const lapse =
+        (row: IntegrationRow) =>
+        (rejected: OAuthRejected): Effect.Effect<never, ConnectionLapsed> =>
+          connections.updateIntegration(row.id, { status: "failed" }).pipe(
+            Effect.andThen(
+              Effect.fail(
+                new ConnectionLapsed({
+                  userId: row.user_id,
+                  integration: { ...toIntegration(row), status: "failed" },
+                  failure: `${rejected.service} refused to renew it (${rejected.reason})`
+                })
+              )
+            )
+          )
 
       const claude = (row: ModelConnectionRow) =>
         row.secret_id === null
@@ -148,14 +171,13 @@ export class CredentialStore extends Context.Service<
           Effect.gen(function* () {
             const latest = yield* secrets.get(row.secret_id, GoogleCredential)
             if (!force && latest.accessExpiresAtMs > now + RefreshMarginMs) return latest
-            const tokens = yield* google
-              .refresh(latest.refreshToken)
-              .pipe(Effect.tapError(() => connections.updateIntegration(row.id, { status: "failed" })))
+            const tokens = yield* google.refresh(latest.refreshToken).pipe(Effect.catchTag("OAuthRejected", lapse(row)))
             const fresh: GoogleCredential = {
-              refreshToken: tokens.refresh_token ?? latest.refreshToken,
-              accessToken: tokens.access_token,
-              accessExpiresAtMs: now + tokens.expires_in * 1000,
-              scope: tokens.scope ?? latest.scope
+              refreshToken: tokens.refreshToken ?? latest.refreshToken,
+              accessToken: tokens.accessToken,
+              // Google's access tokens always expire (in an hour); refreshing early if it ever stops saying is harmless.
+              accessExpiresAtMs: tokens.expiresAtMs ?? now + RefreshMarginMs,
+              scope: tokens.scopes?.join(" ") ?? latest.scope
             }
             yield* secrets.replace(row.secret_id, GoogleCredential, fresh)
             yield* connections.updateIntegration(row.id, { accessExpiresAtMs: fresh.accessExpiresAtMs })
@@ -184,21 +206,9 @@ export class CredentialStore extends Context.Service<
           Effect.gen(function* () {
             const latest = yield* secrets.get(row.secret_id, OAuthCredential)
             if (usable(latest) || latest.refreshToken === undefined) return latest
-            const tokens = yield* oauthClient.refresh(provider, latest.refreshToken).pipe(
-              Effect.catchTag("OAuthRejected", (rejected) =>
-                connections.updateIntegration(row.id, { status: "failed" }).pipe(
-                  Effect.andThen(
-                    Effect.fail(
-                      new ConnectionLapsed({
-                        userId: row.user_id,
-                        integration: { ...toIntegration(row), status: "failed" },
-                        failure: `${access.service} refused to renew it (${rejected.reason})`
-                      })
-                    )
-                  )
-                )
-              )
-            )
+            const tokens = yield* oauthClient
+              .refresh(provider, latest.refreshToken)
+              .pipe(Effect.catchTag("OAuthRejected", lapse(row)))
             // Providers that rotate refresh tokens send a new one; the rest keep the old one working.
             const fresh: OAuthCredential = {
               accessToken: tokens.accessToken,
@@ -245,18 +255,21 @@ export class CredentialStore extends Context.Service<
           if (Option.isSome(refreshed)) changed.add(row.user_id)
         }
         for (const row of yield* connections.expiringIntegrations(now + RefreshMarginMs)) {
+          // A refused refresh token takes the connection out of their sandboxes, via `lapsed`; any other failure
+          // leaves it for the next sweep.
+          const settle = (refresh: Effect.Effect<unknown, UpstreamFailure | ConnectionLapsed>) =>
+            refresh.pipe(
+              Effect.asVoid,
+              Effect.catchTag("ConnectionLapsed", (error) => Effect.sync(() => void lapsed.push(error))),
+              Effect.option
+            )
           const refreshed =
             row.kind === "google_oauth"
-              ? yield* googleCredential(row).pipe(Effect.asVoid, Effect.option)
+              ? yield* settle(googleCredential(row))
               : row.kind === "apple_asc"
                 ? yield* apple(row).pipe(Effect.asVoid, Effect.option)
                 : row.kind === "oauth"
-                  ? yield* oauth(row).pipe(
-                      Effect.asVoid,
-                      // A refused refresh token takes the connection out of their sandboxes, via `lapsed`.
-                      Effect.catchTag("ConnectionLapsed", (error) => Effect.sync(() => void lapsed.push(error))),
-                      Effect.option
-                    )
+                  ? yield* settle(oauth(row))
                   : Option.none()
           if (Option.isSome(refreshed) && !lapsed.some((error) => error.integration.id === row.id)) {
             changed.add(row.user_id)

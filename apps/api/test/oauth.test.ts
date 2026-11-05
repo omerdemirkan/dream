@@ -1,5 +1,5 @@
 /**
- * OAuth providers other than Google, end to end: the agent asks (`RequestAccess`), the phone starts the sign-in
+ * OAuth providers, end to end (Google, whose token requests are the same protocol, at the end): the agent asks (`RequestAccess`), the phone starts the sign-in
  * (`StartOAuthAccess`), the provider redirects to the Worker's callback, and the token becomes an egress rule in
  * every sandbox, refreshed centrally until the provider refuses it. Providers are the real `OAuth` client talking
  * to `world.oauthResponses`.
@@ -11,6 +11,7 @@ import { Connections } from "../src/db/Connections.ts"
 import * as HttpServerRequest from "effect/http/HttpServerRequest"
 import * as HttpServerResponse from "effect/http/HttpServerResponse"
 import { route } from "../src/http/Router.ts"
+import { GoogleOAuthSpec } from "../src/integrations/Google.ts"
 import { headersFor, OAuthCatalog, stringAt } from "../src/integrations/OAuth.ts"
 import { CredentialStore } from "../src/integrations/CredentialStore.ts"
 import { ProjectDirectory } from "../src/project/Client.ts"
@@ -465,4 +466,137 @@ describe("provider descriptions", () => {
       assert.isAbove(spec.hosts.length, 0, spec.id)
     }
   })
+})
+
+/** Asks for Gmail, starts it from the phone, and finishes Google's redirect. */
+const connectGoogle = (cloud: Cloud, dreamd: Effect.Success<ReturnType<Cloud["sandbox"]>>, projectId: ProjectId) =>
+  Effect.gen(function* () {
+    const request = yield* dreamd.RequestAccess({
+      request: { _tag: "Google", scopes: ["gmail.readonly"] },
+      why: "Find the cabin booking confirmations."
+    })
+    const { authorizeUrl } = yield* cloud.phone.StartGoogleAccess({ projectId, messageId: request.id })
+    const state = new URL(authorizeUrl).searchParams.get("state")!
+    const callback = yield* browser(cloud, `https://api.dream.test/oauth/google/callback?code=code-1&state=${state}`)
+    return { request, callback }
+  })
+
+const googleToken = `POST ${GoogleOAuthSpec.tokenUrl}`
+
+const cardOf = (cloud: Cloud, projectId: ProjectId, messageId: string) =>
+  Effect.map(cloud.phone.ListMessages({ projectId }), ({ messages }) =>
+    messages.find((m): m is AccessMessage => m._tag === "Access" && m.id === messageId)
+  )
+
+describe("Google", () => {
+  it.live("refuses, at the moment it asks, when this deployment has no Google client", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud({ googleClientId: Option.none() })
+      const { project, dreamd } = yield* setup(cloud)
+      const refused = yield* dreamd
+        .RequestAccess({ request: { _tag: "Google", scopes: ["gmail.send"] }, why: "Email the cabin host." })
+        .pipe(Effect.flip)
+      assert.strictEqual(refused._tag, "InvalidRequest")
+      assert.include(refused.message, "Google sign-in isn't set up on this deployment of Dream yet")
+      assert.include(refused.message, "no card was shown")
+      const history = yield* cloud.phone.ListMessages({ projectId: project.id })
+      assert.isFalse(history.messages.some((message) => message._tag === "Access"))
+      yield* cloud.close
+    })
+  )
+
+  it.live("retries what isn't a refusal; a refused refresh token fails it, the projects that asked hear", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      // A dreamd that knows `AccessRemoved` for connections other than OAuth providers'.
+      cloud.world.templateBuilds.set("dream-sandbox", { build: "b1", release: "r1" })
+      const google = cloud.world.oauthResponses.get(googleToken)!
+      const { project, dreamd } = yield* setup(cloud)
+      const { request, callback } = yield* connectGoogle(cloud, dreamd, project.id)
+      assert.strictEqual(new URL(callback.location).searchParams.get("status"), "connected")
+      const exchange = new URLSearchParams(cloud.world.oauthRequests.at(-1)!.body)
+      assert.strictEqual(exchange.get("grant_type"), "authorization_code")
+      assert.strictEqual(exchange.get("redirect_uri"), "https://api.dream.test/oauth/google/callback")
+      assert.strictEqual(exchange.get("client_secret"), "google-secret")
+      const bystander = yield* cloud.phone.CreateProject({ idea: "Something that never reads email." })
+      yield* cloud.alarm(bystander.id)
+      yield* cloud.alarm(project.id)
+
+      const [integration] = yield* dreamd.ListAccess()
+      assert.strictEqual(integration?.access._tag === "Google" && integration.access.email, "omer@example.com")
+      const connections = Context.get(cloud.workerContext, Connections)
+      const row = connections.integration(project.ownerId, integration!.id).pipe(Effect.map(Option.getOrThrow))
+      const gmailRule = () => sandboxOf(cloud, project.id).sandbox.rules["gmail.googleapis.com"]
+      assert.deepStrictEqual(gmailRule(), [{ transform: { headers: { Authorization: "Bearer google-access-1" } } }])
+
+      // A refresh that leaves the access token due again by the next sweep.
+      const renews = (access: string) => () => ({ body: { access_token: access, expires_in: 601 } })
+      cloud.world.oauthResponses.set(googleToken, renews("google-access-2"))
+      yield* Context.get(cloud.workerContext, CredentialStore).google(yield* row, true)
+      yield* Effect.sleep("1500 millis")
+
+      // Google erroring, unreachable, or refusing Dream's own client: none of it is their grant, so the connection
+      // stays, the agent hears nothing, and the next sweep tries again.
+      const before = cloud.world.delivered.length
+      const blips: ReadonlyArray<() => { status?: number; body: unknown }> = [
+        () => ({ status: 503, body: { error: "backend_error" } }),
+        () => ({ status: 429, body: { error: "rate_limit_exceeded" } }),
+        () => {
+          throw new TypeError("fetch failed")
+        },
+        () => ({ status: 401, body: { error: "invalid_client", error_description: "The OAuth client was not found." } })
+      ]
+      for (const blip of blips) {
+        cloud.world.oauthResponses.set(googleToken, blip)
+        const attempts = cloud.world.oauthRequests.length
+        yield* maintenance.pipe(Effect.provide(Layer.succeedContext(cloud.workerContext)))
+        assert.strictEqual(cloud.world.oauthRequests.length, attempts + 1)
+        assert.strictEqual((yield* row).status, "connected")
+      }
+      for (const id of [project.id, bystander.id]) yield* cloud.alarm(id)
+      assert.strictEqual(cloud.world.delivered.length, before)
+      assert.strictEqual((yield* cardOf(cloud, project.id, request.id))?.state._tag, "Connected")
+
+      // Google answers again: the sweep renews it and the sandbox gets the new token.
+      cloud.world.oauthResponses.set(googleToken, renews("google-access-3"))
+      yield* maintenance.pipe(Effect.provide(Layer.succeedContext(cloud.workerContext)))
+      assert.deepStrictEqual(gmailRule(), [{ transform: { headers: { Authorization: "Bearer google-access-3" } } }])
+      yield* Effect.sleep("1500 millis")
+
+      // They revoked Dream in their Google account: the refresh is refused, the connection fails and leaves the
+      // sandbox, the card says it stopped working, and only the project that asked for it hears why.
+      cloud.world.oauthResponses.set(googleToken, () => ({
+        status: 400,
+        body: { error: "invalid_grant", error_description: "Token has been expired or revoked." }
+      }))
+      yield* maintenance.pipe(Effect.provide(Layer.succeedContext(cloud.workerContext)))
+      assert.strictEqual((yield* row).status, "failed")
+      assert.deepStrictEqual(yield* dreamd.ListAccess(), [])
+      assert.isUndefined(gmailRule())
+      const card = yield* cardOf(cloud, project.id, request.id)
+      assert.deepStrictEqual(card?.state._tag === "Disconnected" && card.state.reason, "failed")
+      const lapsedAt = cloud.world.delivered.length
+      for (const id of [project.id, bystander.id]) yield* cloud.alarm(id)
+      const told = cloud.world.delivered.slice(lapsedAt)
+      assert.deepStrictEqual(
+        told.map((d) => d.sandboxId),
+        [sandboxOf(cloud, project.id).sandbox.access.sandboxId]
+      )
+      const event = told[0]!.events[0]
+      if (!Schema.is(AgentEvent)(event)) return yield* Effect.die("not an agent event")
+      assert.include(
+        renderAgentEvent(event),
+        "Their Gmail connection stopped working: Google refused to renew it (invalid_grant)."
+      )
+      assert.include(renderAgentEvent(event), "`dream access google`")
+
+      // They connect it again from the card: it's connected, and the token is back in the sandbox.
+      cloud.world.oauthResponses.set(googleToken, google)
+      yield* connectGoogle(cloud, dreamd, project.id).pipe(Effect.asVoid)
+      assert.strictEqual((yield* row).status, "connected")
+      yield* cloud.alarm(project.id)
+      assert.deepStrictEqual(gmailRule(), [{ transform: { headers: { Authorization: "Bearer google-access-1" } } }])
+      yield* cloud.close
+    })
+  )
 })
