@@ -3,7 +3,7 @@
  * composer at the bottom starts a new idea.
  */
 import type { ModelConnection, OpenAsk, ProjectSummary } from "@dream/domain"
-import { useAtomValue } from "@effect/atom-react"
+import { useAtomRefresh, useAtomValue } from "@effect/atom-react"
 import { Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
 import { Redirect, useRouter } from "expo-router"
@@ -14,7 +14,7 @@ import { phaseLabel, providerName, usageLeft, usageLine } from "../data/format.t
 import { modelConnectionsAtom, openAsksAtom, projectsAtom } from "../state/atoms.ts"
 import { Deck, Segments } from "../ui/Deck.tsx"
 import { usePendingAnswers } from "../ui/hooks.ts"
-import { Dot, Icon, IconButton, Orb, Tile } from "../ui/kit.tsx"
+import { Dot, Icon, IconButton, LinkButton, Orb, Tile } from "../ui/kit.tsx"
 import { color, gutter } from "../ui/theme.ts"
 
 const listOf = <A,>(result: AsyncResult.AsyncResult<ReadonlyArray<A>, unknown>) =>
@@ -26,13 +26,23 @@ export default function Home() {
   const projectsResult = useAtomValue(projectsAtom)
   const projects = listOf(projectsResult)
   const pending = usePendingAnswers()
-  const asks = listOf(useAtomValue(openAsksAtom)).filter(
+  const asksResult = useAtomValue(openAsksAtom)
+  const refreshProjects = useAtomRefresh(projectsAtom)
+  const refreshAsks = useAtomRefresh(openAsksAtom)
+  const asks = listOf(asksResult).filter(
     (ask) => !pending.has(ask.message.id) && !(ask.message._tag === "Access" && ask.message.when)
   )
   const connectionsResult = useAtomValue(modelConnectionsAtom)
   const connections = listOf(connectionsResult)
   const [answered, setAnswered] = useState(0)
   const needs = asks.length > 0
+  // Nothing to show and the last try failed (offline, the API down): say so rather than "All clear".
+  const unreachable =
+    !needs &&
+    projects.length === 0 &&
+    (AsyncResult.isFailure(projectsResult) || AsyncResult.isFailure(asksResult)) &&
+    !projectsResult.waiting &&
+    !asksResult.waiting
 
   // Nothing runs without a subscription: a new person connects one first.
   if (AsyncResult.isSuccess(connectionsResult) && connections.length === 0) return <Redirect href="/connect" />
@@ -62,11 +72,18 @@ export default function Home() {
           }}
         >
           <Text style={{ fontSize: 30, fontWeight: "700", letterSpacing: -1.2, lineHeight: 33, color: color.t1 }}>
-            {needs ? "Needs you" : "All clear"}
+            {needs ? "Needs you" : AsyncResult.isSuccess(asksResult) ? "All clear" : ""}
           </Text>
           {needs || answered > 0 ? <Segments done={answered} remaining={asks.length} /> : null}
         </View>
-        {needs ? (
+        {unreachable ? (
+          <Unreachable
+            onRetry={() => {
+              refreshProjects()
+              refreshAsks()
+            }}
+          />
+        ) : needs ? (
           <Deck asks={asks} onAnswered={() => setAnswered((n) => n + 1)} />
         ) : AsyncResult.isSuccess(projectsResult) || projects.length > 0 ? (
           <AllClear projects={projects} />
@@ -93,6 +110,31 @@ export default function Home() {
         }}
       />
       <Dock />
+    </View>
+  )
+}
+
+function Unreachable(props: { readonly onRetry: () => void }) {
+  return (
+    <View
+      style={{
+        borderWidth: 1,
+        borderColor: color.line,
+        borderRadius: 28,
+        paddingTop: 22,
+        paddingHorizontal: 22,
+        paddingBottom: 16,
+        backgroundColor: color.s1,
+        marginBottom: 26
+      }}
+    >
+      <Text style={{ fontSize: 20, fontWeight: "700", letterSpacing: -0.5, color: color.t1, marginBottom: 6 }}>
+        Can’t reach Dream
+      </Text>
+      <Text style={{ fontSize: 15, lineHeight: 21.75, color: color.t2 }}>
+        Your projects keep running. Check your connection and try again.
+      </Text>
+      <LinkButton title="Try again" onPress={props.onRetry} />
     </View>
   )
 }

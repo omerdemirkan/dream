@@ -6,11 +6,11 @@
 import { AppRpcs } from "@dream/domain"
 import { Effect, Layer } from "effect"
 import { RpcTest } from "effect/rpc"
-import { AppAuthClient, AppClient } from "../data/AppClient.ts"
+import { AppAuthClient, AppClient, signingOut } from "../data/AppClient.ts"
 import { LiveProjects } from "../data/LiveProjects.ts"
 import { FakeAppAuth, FakeBackend, FakeHandlers } from "./FakeBackend.ts"
 
-export const AppClientFake = Layer.effect(AppClient, RpcTest.makeClient(AppRpcs)).pipe(
+export const AppClientFake = Layer.effect(AppClient, RpcTest.makeClient(AppRpcs).pipe(Effect.flatMap(signingOut))).pipe(
   Layer.provide(Layer.mergeAll(FakeHandlers, FakeAppAuth, AppAuthClient))
 )
 

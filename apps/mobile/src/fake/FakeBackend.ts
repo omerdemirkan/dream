@@ -827,11 +827,15 @@ export class FakeBackend extends Context.Service<
   )
 }
 
-/** Server side of `AppAuth` for the fake: any bearer token is the fixture user. */
+/** Server side of `AppAuth` for the fake: any bearer token is the fixture user, except `expired`. */
 export const FakeAppAuth = Layer.succeed(AppAuth, (effect, { headers }) =>
-  Option.isSome(Headers.get(headers, "authorization"))
-    ? Effect.provideService(effect, CurrentUser, { userId: "usr_ada" as User["id"], email: "ada@example.com" })
-    : Effect.fail(new Unauthorized({ message: "Sign in first." }))
+  Option.match(Headers.get(headers, "authorization"), {
+    onNone: () => Effect.fail(new Unauthorized({ message: "Sign in first." })),
+    onSome: (value) =>
+      value === "Bearer expired"
+        ? Effect.fail(new Unauthorized({ message: "Your session expired. Sign in again." }))
+        : Effect.provideService(effect, CurrentUser, { userId: "usr_ada" as User["id"], email: "ada@example.com" })
+  })
 )
 
 /** The `AppRpcs` handlers the fake serves, for `RpcTest.makeClient`. */

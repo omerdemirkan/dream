@@ -125,6 +125,21 @@ describe("fixtures backend through the app's services", () => {
     )
   )
 
+  it.effect("signs out when the API no longer accepts the session", () =>
+    run(
+      Effect.gen(function* () {
+        yield* signIn
+        const session = yield* Session
+        const app = yield* AppClient
+        const signedIn = Option.getOrThrow(yield* SubscriptionRef.get(session.current))
+        yield* session.signIn({ ...signedIn, token: Redacted.make("expired") })
+        const error = yield* Effect.flip(app.ListProjects())
+        assert.strictEqual(error._tag, "Unauthorized")
+        assert.isTrue(Option.isNone(yield* session.token))
+      })
+    )
+  )
+
   it.effect("shows a message this build can't decode as the neutral row", () =>
     run(
       Effect.gen(function* () {
