@@ -324,3 +324,19 @@
   vault/object:describe (so `nsc vault export` can't resolve secrets there). Dream's key-application image:
   nscr.io/lso1fm36nm1rq/dream-asc-key-app@sha256:0c318ab18dda8ab8adc9f6f743c4bf3143ae540ca40a1a06b820a2cc523c86e4,
   pulled fine by CreateInstance with the namespace-compute token.
+- Namespace vault values are NOT masked (2026-11-05, dummy secret sec_kb618s8tsg): a `fromSecretId` value arrives
+  byte-exact but is in clear in /var/log/so.namespace.vmguest.log (shipped to Namespace's instance logs), in
+  /Volumes/guestdata/guestdata.json and in the `su` command line. So the vault path is not used for the ASC key, and
+  the nscr.io key-application image above is unused.
+- Namespace workload identity (2026-11-05): on a Mac, `NSC_TOKEN_FILE=/var/run/nsc/token.json /opt/nsc/bin/nsc auth
+  issue-id-token --audience <aud> --duration 5m -o json` → `{id_token}`, an RS256 JWT (kid in the JWKS) with iss
+  https://federation.namespaceapis.com, sub `<tenant_id>/<instance_id>`, aud [<aud>], tenant_id, instance_id,
+  iat/nbf/exp, jti; the duration is honored (30m → 1860 s). Discovery: /.well-known/openid-configuration, JWKS at
+  /.well-known/jwks.json (one RSA and one EC P-256 key). The workload token itself (`nscw_…`, not a JWT) is
+  world-readable on the Mac and carries `instance/*: *`, registry, builder and `federation/*: issue_token`
+  permissions: any Mac of the tenant can mint ID tokens for any audience and reach (SSH into) the tenant's other
+  instances. Dream's TestFlight key release (apps/api/src/http/Testflight.ts) therefore also requires an operator
+  grant per instance id and that the build Mac is the tenant's only instance. Verified end to end against a real
+  Mac with the release logic running locally (not deployed): released once to a granted Mac (dummy key arrived
+  byte-exact, 0600), 403 without a grant and on replay, the key absent from the guest log, app logs and process
+  list. ListInstances returns `instances` as bare InstanceMetadata (with `paginationCursor`).

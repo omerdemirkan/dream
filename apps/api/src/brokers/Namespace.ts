@@ -18,11 +18,16 @@ const Metadata = Schema.Struct({
   status: Schema.optionalKey(Schema.String),
   deadline: Schema.optionalKey(Schema.String),
   createdAt: Schema.optionalKey(Schema.String),
-  readyAt: Schema.optionalKey(Schema.String)
+  readyAt: Schema.optionalKey(Schema.String),
+  labels: Schema.optionalKey(Schema.Array(Schema.Struct({ name: Schema.String, value: Schema.String })))
 })
 
 const Created = Schema.Struct({ metadata: Metadata })
 const Described = Schema.Struct({ metadata: Metadata })
+const Listed = Schema.Struct({
+  instances: Schema.optionalKey(Schema.Array(Metadata)),
+  paginationCursor: Schema.optionalKey(Schema.String)
+})
 
 const SshConfig = Schema.Struct({
   sshPrivateKey: Schema.String,
@@ -35,6 +40,7 @@ export interface MacInstance {
   readonly instanceId: string
   readonly status: string
   readonly deadline?: DateTime.Utc | undefined
+  readonly labels?: Readonly<Record<string, string>> | undefined
 }
 
 export interface MacSsh {
@@ -48,7 +54,8 @@ export interface MacSsh {
 const toInstance = (metadata: typeof Metadata.Type): MacInstance => ({
   instanceId: metadata.instanceId,
   status: metadata.status ?? "STATUS_UNKNOWN",
-  deadline: metadata.deadline === undefined ? undefined : DateTime.makeUnsafe(metadata.deadline)
+  deadline: metadata.deadline === undefined ? undefined : DateTime.makeUnsafe(metadata.deadline),
+  labels: metadata.labels === undefined ? undefined : Object.fromEntries(metadata.labels.map((l) => [l.name, l.value]))
 })
 
 export class Namespace extends Context.Service<
@@ -60,6 +67,8 @@ export class Namespace extends Context.Service<
       deadline: DateTime.Utc
     ) => Effect.Effect<MacInstance, UpstreamFailure>
     readonly describe: (instanceId: string) => Effect.Effect<MacInstance, UpstreamFailure>
+    /** The workspace's current instances (every Mac, not only Dream's). */
+    readonly list: Effect.Effect<ReadonlyArray<MacInstance>, UpstreamFailure>
     readonly ssh: (instanceId: string) => Effect.Effect<MacSsh, UpstreamFailure>
     readonly extend: (instanceId: string, ensureMinimumSeconds: number) => Effect.Effect<void, UpstreamFailure>
     readonly destroy: (instanceId: string) => Effect.Effect<void, UpstreamFailure>
@@ -162,7 +171,18 @@ export class Namespace extends Context.Service<
           Effect.asVoid
         )
 
-      return Namespace.of({ start, describe: describeInstance, ssh, extend, destroy })
+      const list = Effect.gen(function* () {
+        const all: Array<MacInstance> = []
+        let cursor: string | undefined
+        do {
+          const page = yield* call("Listing Macs", "ListInstances", cursor ? { paginationCursor: cursor } : {}, Listed)
+          all.push(...(page.instances ?? []).map(toInstance))
+          cursor = page.paginationCursor || undefined
+        } while (cursor !== undefined)
+        return all
+      })
+
+      return Namespace.of({ start, describe: describeInstance, list, ssh, extend, destroy })
     })
   )
 }

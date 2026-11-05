@@ -7,80 +7,43 @@ so does a Namespace Mac created with the selector `macos.version=27.x` (macOS 27
 27.2; `build-ios.sh` picks 26.6). The `26.x` image stops at Xcode 26.3. Do [apple-developer.md](apple-developer.md) first, and
 ideally [apns.md](apns.md) and [google-oauth.md](google-oauth.md) too: their values are baked into the build.
 
-**No Mac of your own?** Do step 2, then follow **On a Namespace Mac** (after step 3) instead of steps 1
-and 3. I run the build, and the key goes from your Namespace vault straight onto the build Mac, never through Chat,
-my logs, or a Dream project.
+**No Mac of your own?** Do step 2, then follow **On a Namespace Mac**
 
-**1. One-time Mac setup**
+You store the key once, as a secret on Dream's Worker. Each build starts a fresh Mac. The Worker hands the key
+to that one Mac, encrypted so only that Mac can read it, after checking with Namespace that the request really
+comes from it. The Mac builds and uploads, then the key is deleted and the Mac destroyed. The key never passes
+through Chat, my logs, an env var, or a Dream project.
 
-```sh
-xcode-select -p                      # should point at Xcode 26.4+; if not: sudo xcode-select -s /Applications/Xcode.app
-brew install node@24 cocoapods
-curl -fsSL https://bun.sh/install | bash
-git clone <the Dream repo's code.storage URL> dream && cd dream
-bun install
-```
-
-**2. An App Store Connect API key (for signing and upload)**
-
-1. appstoreconnect.apple.com → **Users and Access** → **Integrations** → **App Store Connect API** → **Team Keys** →
-   **+**.
-2. Name "Dream builds", access **App Manager** → **Generate**.
-3. **Download** `AuthKey_<KEYID>.p8` (once only). Note the **Key ID** and the **Issuer ID** shown above the table.
-
-This is the same kind of key an agent asks for with `dream access apple` when it ships one of *your* apps. Making a
-separate key for each is fine, and lets you revoke one without the other.
-
-**3. Build and upload**
-
-From the repo root, on an up-to-date `main`:
-
-```sh
-DREAM_APPLE_TEAM_ID=AB12CD34EF \
-DREAM_BUNDLE_ID=build.omer.dream \
-DREAM_GOOGLE_IOS_CLIENT_ID=1234-abc.apps.googleusercontent.com \
-apps/mobile/scripts/build-ios.sh testflight \
-  --asc-key-path ~/Downloads/AuthKey_XXXXXXXXXX.p8 --asc-key-id XXXXXXXXXX --asc-issuer-id <issuer uuid>
-```
-
-- Leave out `DREAM_GOOGLE_IOS_CLIENT_ID` if Google isn't set up yet. You can still sign in with the dev secret
-  (below).
-- The script picks the live backend (`https://dream.omer.build`) and production push on its own.
-- It takes 10–20 minutes, and ends after the upload.
-
-**On a Namespace Mac**
-
-You paste the key into Namespace's vault once. Each build starts a fresh Mac with the key on it, builds, uploads, then
-deletes the key and destroys the Mac. Dream's Namespace token can start Macs that receive the key, but it can't read
-or list the vault.
-
-1. Open the `.p8` from step 2 (Dream's is `AuthKey_5G566N355S.p8`) in your password manager or a text editor, and copy
-   **all** of it, including the `-----BEGIN PRIVATE KEY-----` and `-----END PRIVATE KEY-----` lines.
-2. cloud.namespace.so → sign in → the same workspace Dream's Macs run in (`lso1fm36nm1rq`) → **Vault** (the page
-   is `cloud.namespace.so/<workspace>/vars`) → **New Secret**.
-   - **Description:** any label you'll recognize, for example `dream-asc-key-5G566N355S`. Only the id matters.
-   - **Value:** paste the key. If the box flattens the line breaks, that's fine.
-   - **Revealable:** leave it **off**. Then nobody can read the key back, not even through the API.
-   - Save it.
-3. The vault lists the new secret with an id like `sec_…`. Send me that id. It isn't secret: it only names the key,
-   and only this workspace's Macs can use it.
+1. Open the `.p8` from step 2 (Dream's is `AuthKey_5G566N355S.p8`) in your password manager or a text editor,
+   and copy **all** of it, including the `-----BEGIN PRIVATE KEY-----` and `-----END PRIVATE KEY-----` lines.
+2. dash.cloudflare.com → **Workers & Pages** → **dream-api** → **Settings** → **Variables and Secrets** →
+   **+ Add**.
+   - **Type:** Secret
+   - **Variable name:** `ASC_TESTFLIGHT_KEY_P8` (exactly this)
+   - **Value:** paste the key. If the line breaks turn into spaces, that's fine.
+   - **Deploy**.
+3. If you made the `dream-vault-dummy` secret in Namespace's vault for the earlier test, delete it there
+   (cloud.namespace.so → Vault → the secret → Delete). Don't put the real key in Namespace's vault: Namespace
+   writes vault values in clear into the build Mac's logs.
+4. Tell me it's in. You don't need to send anything else.
 
 Then I run, from the repo on an up-to-date `main`:
 
 ```sh
-DREAM_ASC_KEY_SECRET_ID=sec_… node apps/mobile/scripts/testflight-namespace.ts check       # ~1 min, builds nothing
-DREAM_ASC_KEY_SECRET_ID=sec_… node apps/mobile/scripts/testflight-namespace.ts testflight  # 15–25 min, uploads
+node apps/mobile/scripts/testflight-namespace.ts check       # ~1 min, builds nothing
+node apps/mobile/scripts/testflight-namespace.ts testflight  # 15–25 min, uploads
 ```
 
-`check` makes sure the key arrived intact, then signs one read-only App Store Connect call with it (it looks up the
-"Dream by Omer" record). It prints only the key's size, file mode and a hash prefix, never the key. `testflight`
-then builds and uploads, as step 3 would on your Mac.
+`check` makes sure the key arrives intact, then signs one read-only App Store Connect request with it (it looks
+up the "Dream by Omer" record). It prints only the key's size, file mode and a short hash, never the key.
+`testflight` then builds and uploads, as step 3 would on your Mac.
 
-- **New key:** in the vault, open the secret, set the new value, and keep the same id.
-- **Stop it:** delete the secret in the vault, or revoke the key in App Store Connect (Users and Access →
+- **New key:** set `ASC_TESTFLIGHT_KEY_P8` again in the same place.
+- **Stop it:** delete `ASC_TESTFLIGHT_KEY_P8`, or revoke the key in App Store Connect (Users and Access →
   Integrations → the key → Revoke). Either takes effect at once.
-- While a build runs, the key sits on that one Mac, readable only by the build. The Mac is destroyed afterwards,
-  including when a build fails.
+- **Who can get it:** only a Namespace Mac in Dream's workspace that I started for a build, within 15 minutes
+  of starting it, once, and only while it's the workspace's only Mac. Unlocking each build takes Dream's
+  operator secret, which project agents don't have.
 
 **4. TestFlight**
 

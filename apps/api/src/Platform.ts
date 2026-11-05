@@ -15,6 +15,7 @@ import { ChatGpt } from "./connect/ChatGpt.ts"
 import { Connections } from "./db/Connections.ts"
 import { Projects } from "./db/Projects.ts"
 import { Secrets } from "./db/Secrets.ts"
+import { TestflightGrants } from "./db/TestflightGrants.ts"
 import { Users } from "./db/Users.ts"
 import { Daemon } from "./e2b/Daemon.ts"
 import { E2B } from "./e2b/E2B.ts"
@@ -34,7 +35,7 @@ export interface PlatformBindings {
 
 /** D1 repositories over one D1 client. */
 export const databaseLayer = (d1: D1Database) =>
-  Layer.mergeAll(Users.layer, Projects.layer, Connections.layer, Secrets.layer).pipe(
+  Layer.mergeAll(Users.layer, Projects.layer, Connections.layer, Secrets.layer, TestflightGrants.layer).pipe(
     Layer.provide(D1Client.layer({ db: d1 }).pipe(Layer.orDie))
   )
 

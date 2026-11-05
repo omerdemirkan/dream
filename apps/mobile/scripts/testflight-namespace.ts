@@ -1,41 +1,41 @@
 /**
- * Builds Dream's iPhone app on a Namespace Mac and uploads it to TestFlight. The App Store Connect key
- * comes from the founder's Namespace Vault, straight onto that Mac: nothing on this side ever holds it.
- * Run from the repo root with Node 24:
+ * Builds Dream's iPhone app on a Namespace Mac and uploads it to TestFlight. The App Store Connect key is a
+ * Worker secret (ASC_TESTFLIGHT_KEY_P8, set by the founder in the Cloudflare dashboard) that the Worker releases
+ * only to this build Mac, encrypted to a key the Mac generated (see apps/api/src/http/Testflight.ts and
+ * packages/domain/src/Testflight.ts). The key never passes through the machine running this script, an env var,
+ * a command line, or a log. Run from the repo root with Node 24:
  *
- *   DREAM_ASC_KEY_SECRET_ID=sec_… node apps/mobile/scripts/testflight-namespace.ts check
- *       Starts a Mac, checks the key arrived (mode 0600, a P-256 key) and signs one read-only App Store
+ *   node apps/mobile/scripts/testflight-namespace.ts check
+ *       Starts a Mac, has it fetch the key, checks it (a P-256 key, mode 0600) and signs one read-only App Store
  *       Connect call with it (looks up the app record). Builds nothing. About 1 minute.
  *
- *   DREAM_ASC_KEY_SECRET_ID=sec_… node apps/mobile/scripts/testflight-namespace.ts testflight [--no-upload]
+ *   node apps/mobile/scripts/testflight-namespace.ts testflight [--no-upload]
  *       The same, then ships the committed tree (`git archive HEAD`) to the Mac and runs
  *       `apps/mobile/scripts/build-ios.sh testflight` there. --no-upload exports a signed .ipa on the Mac
  *       and stops there. 15–25 minutes.
  *
- * How the key travels: CreateInstance starts a tiny "application" on the Mac whose environment has
- * DREAM_ASC_KEY_P8 resolved by Namespace from the vault secret (`envVars[].fromSecretId`). The application
- * writes it to ~/.dream-asc (umask 077), drops it from its own environment and sleeps; it has to keep
- * running, because a Mac whose application exits is destroyed. Then, over SSH, the key is normalized to
- * AuthKey_<id>.p8 (0600), used, and deleted, and the Mac is destroyed, also on failure or Ctrl-C.
- * Namespace launches the application as `su -l runner -c 'VAR=… cmd'`, so for the Mac's lifetime the value
- * is also in that root process's arguments, readable to code on the build Mac (as the key file is anyway).
- * Namespace's guest agent also logs the application's environment to /var/log/so.namespace.vmguest.log,
- * which the Mac's Vector agent ships to Namespace's instance logs; see docs/setup/testflight.md for what
- * that means for a vault secret.
+ * How the key travels: this script creates the Mac (labeled dream=testflight) and grants its instance id with
+ * the operator's DEV_LOGIN_SECRET (`/admin/testflight/grants`; single use, 15 minutes). Over SSH, a script fed on
+ * stdin makes the Mac generate an ephemeral P-256 ECDH key, mint a Namespace ID token whose audience is bound to
+ * that key (`nsc auth issue-id-token`, 5 minutes), and POST both to `/testflight/asc-key`. The Worker checks the
+ * token against Namespace's JWKS, the tenant, the grant, and that this Mac is the workspace's only instance, then
+ * returns the .p8 encrypted to the Mac's key; the Mac decrypts it into ~/.dream-asc (0600 in a 0700 directory).
+ * After the build the key is deleted and the Mac destroyed, also on failure or Ctrl-C.
  *
  * Environment:
- *   DREAM_ASC_KEY_SECRET_ID   the vault secret holding AuthKey_<id>.p8 (its object id, `sec_…`; not secret)
  *   DREAM_ASC_KEY_ID          default 5G566N355S
  *   DREAM_ASC_ISSUER_ID       default 0e7009f1-c7f0-40f0-b12e-b76df2001875
+ *   DREAM_KEY_API_URL         the Worker that releases the key (default DREAM_API_URL, else https://dream.omer.build)
+ *   DREAM_DEV_SECRET          the operator secret for the grant; by default read from D1 `dream-ops` through the
+ *                             Cloudflare API (the workspace's cloudflare-api connection, or CLOUDFLARE_API_TOKEN)
  *   NAMESPACE_TOKEN           bearer token for the Compute API; unset in an Outerloop workspace, where the
  *                             namespace-compute connection adds it
  *   NAMESPACE_API_URL         default https://us.compute.namespaceapis.com
- *   DREAM_MAC_IMAGE           image the key application mounts (default: Dream's empty image in the
- *                             workspace registry, below; nothing from it runs)
  *   DREAM_APPLE_TEAM_ID, DREAM_BUNDLE_ID, DREAM_API_URL, DREAM_BACKEND, DREAM_GOOGLE_IOS_CLIENT_ID,
  *   DREAM_GOOGLE_WEB_CLIENT_ID, DREAM_APS_ENVIRONMENT, BUILD_NUMBER   passed to build-ios.sh (see there)
  *
- * It prints no secret: not the key, not the Mac's SSH key, not the App Store Connect token.
+ * It prints no secret: not the key, not the ID token, not the Mac's SSH key, not the App Store Connect token.
+ * Never put one on an SSH command line: Namespace logs every SSH command run on the Mac.
  */
 import { spawn } from "node:child_process"
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
@@ -48,11 +48,6 @@ if ((mode !== "check" && mode !== "testflight") || process.argv.slice(3).some((a
   console.error("usage: node apps/mobile/scripts/testflight-namespace.ts check | testflight [--no-upload]")
   process.exit(2)
 }
-const secretId = process.env.DREAM_ASC_KEY_SECRET_ID?.trim() ?? ""
-if (!/^[A-Za-z0-9_-]+$/.test(secretId)) {
-  console.error("set DREAM_ASC_KEY_SECRET_ID to the vault secret's object id (sec_…); see docs/setup/testflight.md")
-  process.exit(2)
-}
 const keyId = process.env.DREAM_ASC_KEY_ID ?? "5G566N355S"
 const issuerId = process.env.DREAM_ASC_ISSUER_ID ?? "0e7009f1-c7f0-40f0-b12e-b76df2001875"
 const bundleId = process.env.DREAM_BUNDLE_ID ?? "build.omer.dream"
@@ -60,7 +55,12 @@ if (!/^[A-Z0-9]{10}$/.test(keyId) || !/^[0-9a-f-]{36}$/.test(issuerId)) {
   console.error("DREAM_ASC_KEY_ID must be a 10-character key id and DREAM_ASC_ISSUER_ID a uuid")
   process.exit(2)
 }
+const keyApi = (process.env.DREAM_KEY_API_URL ?? process.env.DREAM_API_URL ?? "https://dream.omer.build").replace(
+  /\/+$/,
+  ""
+)
 const api = `${process.env.NAMESPACE_API_URL ?? "https://us.compute.namespaceapis.com"}/namespace.cloud.compute.v1beta.ComputeService`
+const cloudflareAccount = "2d98de7c4511e98d2f774c4fcc9b9b93"
 const passThrough = [
   "DREAM_APPLE_TEAM_ID",
   "DREAM_BUNDLE_ID",
@@ -91,54 +91,97 @@ const compute = async (method: string, body: object): Promise<Json> => {
   return json
 }
 
-/**
- * macOS applications must mount an image (CreateInstance rejects one without: "no support disk selectors
- * specified"), even though the key application only runs /bin/sh. This one is a single README in the
- * workspace's own registry (darwin/arm64, no expiry), pinned by digest. To recreate it, on a Namespace Mac:
- * `NSC_TOKEN_FILE=/var/run/nsc/token.json /opt/nsc/bin/nsc docker login`, then `crane append -f <tar of a
- * README> -t <repo>:base` and `crane mutate <repo>:base --set-platform darwin/arm64 -t <repo>:v1`.
- */
-const keyAppImage =
-  process.env.DREAM_MAC_IMAGE ??
-  "nscr.io/lso1fm36nm1rq/dream-asc-key-app@sha256:0c318ab18dda8ab8adc9f6f743c4bf3143ae540ca40a1a06b820a2cc523c86e4"
-
-/** Runs on the Mac (Node from Homebrew): normalizes the delivered key, checks it, and signs one read-only call. */
-const checkKeyOnMac = String.raw`
-const fs = require("node:fs"), crypto = require("node:crypto")
-const [keyId, issuerId, bundleId] = process.argv.slice(2)
-const dir = process.env.HOME + "/.dream-asc", delivered = dir + "/delivered", out = dir + "/AuthKey_" + keyId + ".p8"
-const report = (o) => { console.log(JSON.stringify(o)); process.exit(o.ok ? 0 : 1) }
-if (!fs.existsSync(delivered)) report({ ok: false, problem: "the key application didn't write the key" })
-const st = fs.statSync(delivered), raw = fs.readFileSync(delivered, "utf8")
-const facts = { bytes: raw.length, mode: (st.mode & 0o777).toString(8), dirMode: (fs.statSync(dir).mode & 0o777).toString(8),
-  sha256: crypto.createHash("sha256").update(raw).digest("hex").slice(0, 12) }
-// The vault may hold the .p8 as pasted (newlines possibly flattened to spaces) or base64 of the file.
-let text = raw
-if (!text.includes("-----BEGIN")) { try { text = Buffer.from(raw.trim(), "base64").toString("utf8") } catch {} }
-const m = text.match(/-----BEGIN PRIVATE KEY-----([\s\S]*?)-----END PRIVATE KEY-----/)
-if (!m) report({ ok: false, ...facts, problem: "not a .p8 (no BEGIN/END PRIVATE KEY)" })
-const body = m[1].replace(/\s+/g, "")
-const pem = "-----BEGIN PRIVATE KEY-----\n" + (body.match(/.{1,64}/g) || []).join("\n") + "\n-----END PRIVATE KEY-----\n"
-let key
-try { key = crypto.createPrivateKey(pem) } catch { report({ ok: false, ...facts, problem: "the .p8 doesn't parse" }) }
-if (key.asymmetricKeyType !== "ec" || key.asymmetricKeyDetails?.namedCurve !== "prime256v1")
-  report({ ok: false, ...facts, problem: "not an App Store Connect key (P-256)" })
-fs.writeFileSync(out, pem, { mode: 0o600 })
-fs.chmodSync(out, 0o600)
-const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url")
-const now = Math.floor(Date.now() / 1000)
-const unsigned = b64({ alg: "ES256", kid: keyId, typ: "JWT" }) + "." + b64({ iss: issuerId, iat: now, exp: now + 300, aud: "appstoreconnect-v1" })
-const jwt = unsigned + "." + crypto.sign("sha256", Buffer.from(unsigned), { key, dsaEncoding: "ieee-p1363" }).toString("base64url")
-fetch("https://api.appstoreconnect.apple.com/v1/apps?filter[bundleId]=" + bundleId + "&fields[apps]=name,bundleId",
-  { headers: { authorization: "Bearer " + jwt } })
-  .then(async (r) => {
-    const j = await r.json().catch(() => ({}))
-    const app = j.data?.[0]?.attributes
-    report({ ok: r.ok && !!app, ...facts, path: out, appStoreConnect: r.status, app: app?.name,
-      problem: r.ok ? (app ? undefined : "no app record for " + bundleId)
-        : "App Store Connect refused it (" + r.status + "): " + (j.errors?.[0]?.detail ?? "") })
+/** DEV_LOGIN_SECRET, from the operator's D1 `dream-ops` (see infra/scripts/dev-login.ts). */
+const devSecret = async (): Promise<string> => {
+  if (process.env.DREAM_DEV_SECRET) return process.env.DREAM_DEV_SECRET
+  const cf = async (path: string, init?: RequestInit): Promise<Json> => {
+    const token = process.env.CLOUDFLARE_API_TOKEN
+    const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${cloudflareAccount}${path}`, {
+      ...init,
+      headers: {
+        "content-type": "application/json",
+        ...(token && token !== "anything" ? { authorization: `Bearer ${token}` } : {})
+      }
+    })
+    const body: Json = await res.json().catch(() => ({}))
+    if (!body.success) throw new Error(`Cloudflare ${path}: ${res.status}`)
+    return body.result
+  }
+  const databases: Array<{ uuid: string; name: string }> = await cf("/d1/database?name=dream-ops")
+  const ops = databases.find((db) => db.name === "dream-ops")
+  if (!ops) throw new Error("No D1 dream-ops: run `node infra/scripts/dev-login.ts ensure`")
+  const [result] = await cf(`/d1/database/${ops.uuid}/query`, {
+    method: "POST",
+    body: JSON.stringify({ sql: "SELECT value FROM settings WHERE name = 'DEV_LOGIN_SECRET'" })
   })
-  .catch((e) => report({ ok: false, ...facts, problem: "App Store Connect unreachable: " + e.message }))
+  const value = result?.results?.[0]?.value
+  if (typeof value !== "string") throw new Error("DEV_LOGIN_SECRET isn't in dream-ops yet")
+  return value
+}
+
+/**
+ * Runs on the Mac (Node from Homebrew), fed on stdin. Fetches the key from the Worker (see the header), checks
+ * it, writes it 0600, and signs one read-only App Store Connect call with it. Prints one JSON line of facts.
+ */
+const fetchKeyOnMac = String.raw`
+const fs = require("node:fs"), crypto = require("node:crypto"), { execFileSync } = require("node:child_process")
+const [keyId, issuerId, bundleId, keyApi, instanceId] = process.argv.slice(2)
+const subtle = crypto.webcrypto.subtle
+const dir = process.env.HOME + "/.dream-asc", out = dir + "/AuthKey_" + keyId + ".p8"
+const report = (o) => { console.log(JSON.stringify(o)); process.exit(o.ok ? 0 : 1) }
+const b64u = (bytes) => Buffer.from(bytes).toString("base64url")
+;(async () => {
+  const pair = await subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, false, ["deriveBits"])
+  const raw = new Uint8Array(await subtle.exportKey("raw", pair.publicKey))
+  const audience = "dream-testflight:" + b64u(await subtle.digest("SHA-256", raw))
+  let idToken
+  try {
+    idToken = JSON.parse(execFileSync("/opt/nsc/bin/nsc",
+      ["auth", "issue-id-token", "--audience", audience, "--duration", "5m", "-o", "json"],
+      { env: { ...process.env, NSC_TOKEN_FILE: "/var/run/nsc/token.json" }, stdio: ["ignore", "pipe", "pipe"] })).id_token
+  } catch { report({ ok: false, problem: "nsc couldn't issue an ID token" }) }
+  const r = await fetch(keyApi + "/testflight/asc-key", { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ idToken, publicKey: b64u(raw) }) })
+  if (!r.ok) report({ ok: false, problem: "the Worker refused the key (" + r.status + "); its log says why" })
+  const sealed = await r.json()
+  const server = Buffer.from(sealed.serverPublicKey, "base64url")
+  const serverKey = await subtle.importKey("raw", server, { name: "ECDH", namedCurve: "P-256" }, false, [])
+  const shared = await subtle.deriveBits({ name: "ECDH", public: serverKey }, pair.privateKey, 256)
+  const hkdf = await subtle.importKey("raw", shared, "HKDF", false, ["deriveKey"])
+  const aes = await subtle.deriveKey({ name: "HKDF", hash: "SHA-256", salt: Buffer.concat([raw, server]),
+    info: Buffer.from("dream-testflight-asc-key/v1") }, hkdf, { name: "AES-GCM", length: 256 }, false, ["decrypt"])
+  let pem
+  try {
+    pem = Buffer.from(await subtle.decrypt({ name: "AES-GCM", iv: Buffer.from(sealed.iv, "base64url"),
+      additionalData: Buffer.from(instanceId) }, aes, Buffer.from(sealed.ciphertext, "base64url"))).toString("utf8")
+  } catch { report({ ok: false, problem: "couldn't decrypt what the Worker sent" }) }
+  const facts = { bytes: pem.length, sha256: crypto.createHash("sha256").update(pem).digest("hex").slice(0, 12) }
+  // Pasted into the dashboard, the .p8's line breaks may have become spaces; rebuild the PEM.
+  const m = pem.match(/-----BEGIN PRIVATE KEY-----([\s\S]*?)-----END PRIVATE KEY-----/)
+  if (!m) report({ ok: false, ...facts, problem: "ASC_TESTFLIGHT_KEY_P8 isn't a .p8 (no BEGIN/END PRIVATE KEY)" })
+  const body = m[1].replace(/\s+/g, "")
+  pem = "-----BEGIN PRIVATE KEY-----\n" + (body.match(/.{1,64}/g) || []).join("\n") + "\n-----END PRIVATE KEY-----\n"
+  let key
+  try { key = crypto.createPrivateKey(pem) } catch { report({ ok: false, ...facts, problem: "the .p8 doesn't parse" }) }
+  if (key.asymmetricKeyType !== "ec" || key.asymmetricKeyDetails?.namedCurve !== "prime256v1")
+    report({ ok: false, ...facts, problem: "not an App Store Connect key (P-256)" })
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
+  fs.chmodSync(dir, 0o700)
+  fs.writeFileSync(out, pem, { mode: 0o600 })
+  fs.chmodSync(out, 0o600)
+  Object.assign(facts, { mode: (fs.statSync(out).mode & 0o777).toString(8), dirMode: (fs.statSync(dir).mode & 0o777).toString(8) })
+  const seg = (o) => b64u(Buffer.from(JSON.stringify(o)))
+  const now = Math.floor(Date.now() / 1000)
+  const unsigned = seg({ alg: "ES256", kid: keyId, typ: "JWT" }) + "." + seg({ iss: issuerId, iat: now, exp: now + 300, aud: "appstoreconnect-v1" })
+  const jwt = unsigned + "." + b64u(crypto.sign("sha256", Buffer.from(unsigned), { key, dsaEncoding: "ieee-p1363" }))
+  const asc = await fetch("https://api.appstoreconnect.apple.com/v1/apps?filter[bundleId]=" + bundleId + "&fields[apps]=name,bundleId",
+    { headers: { authorization: "Bearer " + jwt } }).catch((e) => report({ ok: false, ...facts, problem: "App Store Connect unreachable: " + e.message }))
+  const j = await asc.json().catch(() => ({}))
+  const app = j.data?.[0]?.attributes
+  report({ ok: asc.ok && !!app, ...facts, path: out, appStoreConnect: asc.status, app: app?.name,
+    problem: asc.ok ? (app ? undefined : "no app record for " + bundleId)
+      : "App Store Connect refused it (" + asc.status + "): " + (j.errors?.[0]?.detail ?? "") })
+})().catch((e) => report({ ok: false, problem: e.message }))
 `
 
 let instanceId: string | undefined
@@ -179,36 +222,35 @@ const main = async () => {
   }
 
   const keyDir = "$HOME/.dream-asc"
+  const secret = await devSecret()
   const deadline = new Date(Date.now() + (mode === "check" ? 20 : 120) * 60_000).toISOString()
-  log("Starting a Mac (macos.version=27.x) with the key from the vault")
-  const created = await compute("CreateInstance", {
-    shape: {
-      virtualCpu: 6,
-      memoryMegabytes: 14336,
-      os: "macos",
-      machineArch: "arm64",
-      selectors: [{ name: "macos.version", value: "27.x" }]
-    },
-    documentedPurpose: "Dream: TestFlight build of the iPhone app",
-    labels: [{ name: "dream", value: "testflight" }],
-    deadline,
-    applications: [
-      {
-        name: "dream-asc-key",
-        imageRef: keyAppImage,
-        command: "/bin/sh",
-        args: [
-          "-c",
-          `umask 077; mkdir -p "${keyDir}"; printf '%s' "$DREAM_ASC_KEY_P8" > "${keyDir}/delivered"; exec env -u DREAM_ASC_KEY_P8 sleep 86400`
-        ],
-        envVars: [{ name: "DREAM_ASC_KEY_P8", fromSecretId: secretId }]
-      }
-    ]
-  }).catch((e: Error) => {
-    if (e.message.includes("instance limit"))
-      throw new Error(`${e.message}\nAnother Mac is running (one at a time on this plan); stop it first.`)
-    throw e
-  })
+  log("Starting a Mac (macos.version=27.x)")
+  const createMac = () =>
+    compute("CreateInstance", {
+      shape: {
+        virtualCpu: 6,
+        memoryMegabytes: 14336,
+        os: "macos",
+        machineArch: "arm64",
+        selectors: [{ name: "macos.version", value: "27.x" }]
+      },
+      documentedPurpose: "Dream: TestFlight build of the iPhone app",
+      labels: [{ name: "dream", value: "testflight" }],
+      deadline
+    })
+  // A Mac destroyed a moment ago still holds the plan's one slot for about half a minute.
+  let created: Json
+  for (let attempt = 1; ; attempt++) {
+    try {
+      created = await createMac()
+      break
+    } catch (e: any) {
+      if (!String(e.message).includes("instance limit")) throw e
+      if (attempt >= 5)
+        throw new Error(`${e.message}\nAnother Mac is running (one at a time on this plan); stop it first.`)
+      await sleep(15_000)
+    }
+  }
   instanceId = created.metadata.instanceId as string
   log(`Mac ${instanceId} created; waiting for it to run`)
 
@@ -217,11 +259,7 @@ const main = async () => {
     const status: string = described.metadata?.status ?? "UNKNOWN"
     if (status === "RUNNING") break
     if (status !== "PENDING" || i >= 60)
-      throw new Error(
-        status === "PENDING"
-          ? "The Mac stayed PENDING for 5 minutes. Namespace does that when the secret can't be resolved: check DREAM_ASC_KEY_SECRET_ID, and that the secret is in this workspace's vault."
-          : `The Mac ended up ${status}`
-      )
+      throw new Error(status === "PENDING" ? "The Mac stayed PENDING for 5 minutes" : `The Mac ended up ${status}`)
     await sleep(5_000)
   }
 
@@ -251,14 +289,18 @@ const main = async () => {
   ]
   const onMac = (script: string, input?: string | NodeJS.ReadableStream) => run("ssh", [...sshArgs, script], input)
 
-  // The application writes the key a moment after the Mac reports RUNNING.
-  for (let i = 0; i < 20; i++) {
-    if ((await onMac(`test -s ${keyDir}/delivered`)).code === 0) break
-    await sleep(3_000)
-  }
-  log("Checking the key on the Mac")
-  const checked = await onMac(`PATH=/opt/homebrew/bin:$PATH node - ${keyId} ${issuerId} ${bundleId}`, checkKeyOnMac)
-  const report: Json = JSON.parse(checked.stdout.trim().split("\n").pop() || "{}")
+  const granted = await fetch(`${keyApi}/admin/testflight/grants`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-dream-dev-secret": secret },
+    body: JSON.stringify({ instanceId })
+  })
+  if (!granted.ok) throw new Error(`Granting the Mac failed: ${granted.status} ${await granted.text()}`)
+  log(`Granted Mac ${instanceId} the key (once, 15 minutes); fetching it on the Mac`)
+  const fetched = await onMac(
+    `PATH=/opt/homebrew/bin:$PATH node --input-type=commonjs - ${keyId} ${issuerId} ${bundleId} ${keyApi} ${instanceId}`,
+    fetchKeyOnMac
+  )
+  const report: Json = JSON.parse(fetched.stdout.trim().split("\n").pop() || "{}")
   const facts = `${report.bytes ?? "?"} bytes, mode ${report.mode ?? "?"} in a ${report.dirMode ?? "?"} directory, sha256 ${report.sha256 ?? "?"}…`
   if (!report.ok) throw new Error(`The key isn't usable: ${report.problem ?? "unknown"} (${facts})`)
   log(`Key arrived (${facts}); App Store Connect answered ${report.appStoreConnect} for "${report.app}"`)

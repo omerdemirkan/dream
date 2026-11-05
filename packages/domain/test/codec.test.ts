@@ -27,6 +27,7 @@ import {
   UsageSnapshot
 } from "../src/index.ts"
 import * as Fixtures from "../src/fixtures.ts"
+import * as Domain from "../src/index.ts"
 
 const roundTrip = <S extends Schema.Codec<unknown, unknown, never, never>>(schema: S, value: S["Type"]) => {
   const codec = Schema.toCodecJson(schema)
@@ -305,5 +306,18 @@ describe("validation", () => {
     assert.isTrue(Redacted.isRedacted(decoded.secret))
     assert.strictEqual(Redacted.value(decoded.secret), "s3cret")
     assert.notInclude(String(decoded.secret), "s3cret")
+  })
+})
+
+describe("Testflight key release", () => {
+  it("keeps the ID token redacted and checks instance ids", () => {
+    const { TestflightKeyRequest, TestflightGrantRequest, TestflightKeyAudience } = Domain
+    const request = Schema.decodeUnknownSync(TestflightKeyRequest)({ idToken: "eyJ.a.b", publicKey: "BAAA" })
+    assert.isTrue(Redacted.isRedacted(request.idToken))
+    assert.strictEqual(String(request.idToken), "<redacted>")
+    assert.strictEqual(Redacted.value(request.idToken), "eyJ.a.b")
+    assert.isTrue(Exit.isSuccess(Schema.decodeUnknownExit(TestflightGrantRequest)({ instanceId: "td7323epiid34" })))
+    assert.isTrue(Exit.isFailure(Schema.decodeUnknownExit(TestflightGrantRequest)({ instanceId: "../x" })))
+    assert.strictEqual(TestflightKeyAudience("abc"), "dream-testflight:abc")
   })
 })

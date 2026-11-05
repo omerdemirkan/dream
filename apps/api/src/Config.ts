@@ -8,7 +8,7 @@
  * fails with `UpstreamFailure` naming what's missing, so the rest of the API
  * keeps working before every provider is configured.
  */
-import { UpstreamFailure } from "@dream/domain"
+import { NamespaceFederationIssuer, UpstreamFailure } from "@dream/domain"
 import { Config, Context, Duration, Effect, Layer, Option, Redacted } from "effect"
 
 const optionalSecret = (name: string) => Config.option(Config.Redacted(name))
@@ -68,6 +68,17 @@ export const ApiConfigSchema = Config.all({
   namespaceApiUrl: Config.NonEmptyString("NAMESPACE_API_URL").pipe(
     Config.withDefault("https://us.compute.namespaceapis.com")
   ),
+  /** Namespace workspace (tenant) whose build Macs may fetch `ascTestflightKey`. */
+  namespaceTenantId: Config.NonEmptyString("NAMESPACE_TENANT_ID").pipe(Config.withDefault("tenant_lso1fm36nm1rq")),
+  /** Namespace's federation issuer, whose JWKS signs build Macs' ID tokens. */
+  namespaceFederationUrl: Config.NonEmptyString("NAMESPACE_FEDERATION_URL").pipe(
+    Config.withDefault(NamespaceFederationIssuer)
+  ),
+  /**
+   * The App Store Connect API key (`AuthKey_<id>.p8` contents) for Dream's own TestFlight builds, set by the
+   * founder in the dashboard. Released only to a granted Namespace build Mac (http/Testflight.ts).
+   */
+  ascTestflightKey: optionalSecret("ASC_TESTFLIGHT_KEY_P8"),
   /** The app's URL scheme, for redirects back from OAuth. */
   appScheme: Config.NonEmptyString("APP_URL_SCHEME").pipe(Config.withDefault("dream"))
 })
@@ -117,6 +128,9 @@ export class ApiConfig extends Context.Service<ApiConfig, ApiConfigShape>()("@dr
         browserbaseProjectId: Option.none(),
         namespaceToken: Option.some(Redacted.make("ns-token")),
         namespaceApiUrl: "https://ns.test",
+        namespaceTenantId: "tenant_test",
+        namespaceFederationUrl: NamespaceFederationIssuer,
+        ascTestflightKey: Option.none(),
         appScheme: "dream"
       }),
       ...overrides

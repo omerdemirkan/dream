@@ -28,7 +28,11 @@ export const Routes = {
   oauthCallback: (provider: string) => `/oauth/${provider}/callback`,
   /** GET serves the token page for a `CreateConnectLink` URL (`?t=<ticket>`); POST submits it. */
   connect: (provider: ConnectLinkProvider) => `/connect/${provider}`,
-  daemon: "/daemon/rpc"
+  daemon: "/daemon/rpc",
+  /** POST a `TestflightKeyRequest` from a Namespace build Mac; see Testflight.ts. */
+  testflightKey: "/testflight/asc-key",
+  /** POST a `TestflightGrantRequest` with the operator's `x-dream-dev-secret`. */
+  testflightGrant: "/admin/testflight/grants"
 } as const
 
 /** HTTP RPC endpoints use NDJSON, which also carries streaming responses. */
