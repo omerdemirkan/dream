@@ -85,3 +85,9 @@ Other findings:
 - R2 / QA2.4: iOS tip calculator prj_PwQkmMO3vZje99blwmowRA — PASS: XcodeGen project, built, booted iPhone 15 simulator,
   three real simctl screenshots (1179×2556), Mac stopped at the end, final message with next steps. Didn't attach
   screenshots (media storage needs R2 anyway). Round 1's iOS failure modes are gone.
+- R2 / QA2.1: band site prj_jgPfLU7y4WthTVGLky8xi8 — PASS (published, dark theme as asked; the idea carried enough detail
+  that it built without questions; didn't open its own URL). Habit tracker prj_rRkhIPendhk5Vrw0q5Vlmx — FAIL: agent
+  published a Vite dev server, which rejects the gateway's Host (`3000-<id>.e2b.app`) with "Blocked request"; agent
+  said "live" without loading its own URL. It asked 4 good questions in plain text; the safety net delivered them.
+  Fix (skill facts, model-agnostic): published servers see Host = the e2b name (Vite must allow it), and the public URL
+  is reachable from inside the sandbox, so it can load exactly what they'll see. Ships with the next template build.
