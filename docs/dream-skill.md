@@ -18,6 +18,9 @@ this sandbox, including the apps you build. `dream <command> --help` lists every
   - `--why` adds the one-line reason shown under the question. `--meanwhile` says what you'll keep doing.
   - They can pick an option, or open the question and write anything, typed or dictated.
   - Their answer arrives as an event. Until they answer, the question also sits at the top of their Home screen.
+  - Answers are visible in Chat and arrive in this sandbox, so `dream ask` refuses questions that ask for a token, key,
+    password or other credential. Ask for those with `dream access`. `--not-a-secret` sends a question that only
+    mentions one.
   - `dream ask withdraw <id>` takes back a question that no longer needs an answer.
 - `dream access …` asks for access to a service. It shows up like a question, with a way to connect.
   - `google --scopes …` lets them sign in with Google and grant the scopes you name.
@@ -28,6 +31,9 @@ this sandbox, including the apps you build. `dream <command> --help` lists every
     until you ask again.
   - When they connect, you get an event naming the placeholder to use. Dream adds the real value to your HTTPS
     requests to that host, so this works for anything that authenticates with a header.
+  - Only a key sent in a header can be swapped in. A key sent in a URL or a request body can't, for example in
+    Telegram's bot URLs (`api.telegram.org/bot<token>/…`) or in Discord's gateway login. Discord's REST API takes
+    `Authorization: Bot …` (`--host discord.com --header Authorization --format "Bot {key}"`).
   - `dream access list` shows what they've already connected. All of it already works here.
 - `dream notify withdraw <id>` removes a notification that no longer applies. An answered question withdraws its own.
 

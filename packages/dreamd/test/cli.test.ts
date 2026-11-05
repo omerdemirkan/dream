@@ -1,7 +1,14 @@
 import { assert, describe, it } from "@effect/vitest"
 import { dreamSkill } from "@dream/agent-context"
-import { DateTime, Option, Result } from "effect"
+import { NodeServices } from "@effect/platform-node"
+import { ConfigProvider, DateTime, Effect, Layer, Option, Result } from "effect"
+import { CliOutput, Command } from "effect/cli"
+import { FetchHttpClient } from "effect/http"
+import { dream } from "../src/Cli.ts"
+import { Dream } from "../src/cli/Client.ts"
 import { checkCron, mediaType, parseAt, parseStep, planCopy } from "../src/cli/Parse.ts"
+import { requestedSecret } from "../src/cli/Secrets.ts"
+import { invalidInvocation } from "../src/cli/Usage.ts"
 import { requestedTags } from "../src/Servers.ts"
 import { parseSkill } from "../src/harness/Skill.ts"
 import { harnessAuth, harnessEnv } from "../src/harness/HarnessEnv.ts"
@@ -90,4 +97,126 @@ describe("the harness environment", () => {
     assert.include(skill.description, "Reaching the person and Dream")
     assert.isTrue(skill.content.startsWith("# `dream`"))
   })
+})
+
+/**
+ * Run `dream` with `args`, against a dreamd socket that doesn't exist: what an
+ * invalid invocation prints, or the message the command failed with.
+ */
+const run = (args: ReadonlyArray<string>) =>
+  Effect.gen(function* () {
+    const printed: Array<string> = []
+    const presenter = CliOutput.layerPresenter({
+      present: (event) =>
+        Effect.sync(() => {
+          if (event._tag === "InvalidInvocation") printed.push(invalidInvocation(event))
+        })
+    })
+    const failure = yield* Command.runWith(dream, { version: "test" })(args).pipe(
+      Effect.provide(presenter),
+      Effect.flip
+    )
+    return printed[0] ?? failure.message
+  }).pipe(
+    Effect.provide(
+      Layer.mergeAll(Dream.layer, FetchHttpClient.layer, NodeServices.layer).pipe(
+        Layer.provide(
+          ConfigProvider.layer(ConfigProvider.fromEnv({ env: { DREAM_SOCKET: "/nonexistent/dreamd.sock" } }))
+        )
+      )
+    )
+  )
+
+describe("dream usage errors", () => {
+  it.effect("lead with what's missing and how to fill it in, then an example, not the help text", () =>
+    Effect.gen(function* () {
+      const printed = yield* run([
+        "access",
+        "key",
+        "--service",
+        "Discord",
+        "--header",
+        "Authorization",
+        "--format",
+        "Bot {key}"
+      ])
+      const lines = printed.split("\n")
+      assert.strictEqual(lines[0], "--host is missing: the API host the key is sent to, like discord.com.")
+      assert.strictEqual(
+        lines[1],
+        'Example: dream access key --service Discord --host discord.com --header Authorization --format "Bot {key}" --why "Post quotes to your channel"'
+      )
+      assert.strictEqual(lines[2], "Usage: dream access key [flags]. All flags: `dream access key --help`.")
+      assert.lengthOf(lines, 3)
+    })
+  )
+
+  it.effect("name missing arguments and bad values the same way", () =>
+    Effect.gen(function* () {
+      assert.isTrue((yield* run(["wake", "cancel"])).startsWith("<wake-id> is missing.\nExample: dream wake cancel"))
+      assert.isTrue((yield* run(["publish", "--port", "abc"])).startsWith('Invalid value for flag --port: "abc".'))
+      assert.isTrue((yield* run(["acess"])).startsWith('Unknown subcommand "acess" for "dream"'))
+    })
+  )
+})
+
+describe("dream ask and secrets", () => {
+  const asks = (...texts: Array<string>) => Option.getOrUndefined(requestedSecret(texts))
+
+  it("spots questions that ask them for a credential", () => {
+    assert.strictEqual(asks("What's your Discord bot token?"), "bot token")
+    assert.strictEqual(asks("Paste the token from the Developer Portal here"), "token")
+    assert.strictEqual(asks("Do you have a Stripe API key?"), "api key")
+    assert.strictEqual(asks("Can you share the client secret for the Spotify app?"), "client secret")
+    assert.strictEqual(asks("What's the password for your router?", "", "I'll type it"), "password")
+    assert.strictEqual(asks("Please send the 2FA code you just got"), "2fa code")
+    assert.strictEqual(asks("Which account?", "I need your AWS secret access key to deploy"), "secret access key")
+    assert.strictEqual(asks("Ready to go?", "", "Yes, here's my private key"), "private key")
+    // From QA: markdown, and the request far from the credential.
+    assert.strictEqual(
+      asks(
+        "I need two things:\n\n1. **Discord Bot Token** — from the Developer Portal\n2. **Channel ID**\n\nOnce you provide these, I'll start.",
+        "",
+        "Ready to provide"
+      ),
+      "bot token"
+    )
+    assert.strictEqual(asks("Are you copying the **Bot Token** (not the Application ID)?"), "bot token")
+    assert.strictEqual(asks("Ready to save your credentials securely."), "credentials")
+  })
+
+  it("lets through questions that only mention credentials, or none", () => {
+    assert.isUndefined(asks("Which email provider do you use?"))
+    assert.isUndefined(asks("Should the API be public?"))
+    assert.isUndefined(asks("Should users sign in with a password or a magic link?"))
+    assert.isUndefined(asks("Should the app let users enter a password, or only use Google?"))
+    assert.isUndefined(asks("What's the minimum password length?"))
+    assert.isUndefined(asks("Should I send a password reset email?"))
+    assert.isUndefined(asks("Should your API use API keys or OAuth?"))
+    assert.isUndefined(asks("Which crypto token should your wallet show first?"))
+    assert.isUndefined(asks("Do you have a Discord server already?", "", "Yes", "No"))
+    assert.isUndefined(asks("Should design tokens follow your brand colors?"))
+    assert.isUndefined(asks("Do you use 1Password?"))
+    assert.isUndefined(asks("Which keyboard shortcuts should it have?"))
+  })
+
+  it.effect("refuses to send one, pointing at dream access key and the escape hatch", () =>
+    Effect.gen(function* () {
+      const refused = yield* run(["ask", "What's your Discord bot token?", "--option", "I'll paste it"])
+      assert.isTrue(refused.startsWith('Not sent: this asks them for a secret ("bot token").'))
+      assert.include(refused, "visible in Chat and arrive in this sandbox")
+      assert.include(
+        refused,
+        'dream access key --service Discord --host discord.com --header Authorization --format "Bot {key}"'
+      )
+      assert.include(refused, "--not-a-secret")
+    })
+  )
+
+  it.effect("sends it with --not-a-secret", () =>
+    Effect.gen(function* () {
+      const sent = yield* run(["ask", "What's your Discord bot token?", "--not-a-secret"])
+      assert.isTrue(sent.startsWith("Couldn't reach Dream through dreamd"), sent)
+    })
+  )
 })

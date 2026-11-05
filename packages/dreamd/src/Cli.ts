@@ -33,6 +33,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process"
 import { Dream, userFacing } from "./cli/Client.ts"
 import * as Format from "./cli/Format.ts"
 import * as Parse from "./cli/Parse.ts"
+import * as Secrets from "./cli/Secrets.ts"
 
 // ---------------------------------------------------------------------------
 // Shared pieces
@@ -164,7 +165,10 @@ const message = Command.make(
       const sent = yield* userFacing(dream.SendMessage({ text, media, notify: input.notify }))
       yield* show(input.json, TextMessage, sent, Format.sent(sent))
     })
-).pipe(Command.withDescription("Put a message in their Chat (markdown), optionally with media and a notification."))
+).pipe(
+  Command.withDescription("Put a message in their Chat (markdown), optionally with media and a notification."),
+  Command.withExamples([{ command: 'dream message "The first version is live: https://…" --media shot.png --notify' }])
+)
 
 const askWithdraw = Command.make("withdraw", { messageId: Argument.String("message-id"), json }, (input) =>
   Effect.gen(function* () {
@@ -172,7 +176,10 @@ const askWithdraw = Command.make("withdraw", { messageId: Argument.String("messa
     const question = yield* userFacing(dream.WithdrawQuestion({ messageId: input.messageId as MessageId }))
     yield* show(input.json, QuestionMessage, question, Format.withdrawn(question))
   })
-).pipe(Command.withDescription("Take back a question that no longer needs an answer."))
+).pipe(
+  Command.withDescription("Take back a question that no longer needs an answer."),
+  Command.withExamples([{ command: "dream ask withdraw msg_\u2026" }])
+)
 
 const ask = Command.make(
   "ask",
@@ -190,6 +197,10 @@ const ask = Command.make(
       Flag.withDescription('What you\'ll keep doing while you wait; "-" reads it from stdin.'),
       Flag.optional
     ),
+    notASecret: Flag.Boolean("not-a-secret").pipe(
+      Flag.withDescription("Send it even though it mentions a credential, because it doesn't ask them for one."),
+      Flag.withDefault(false)
+    ),
     json
   },
   (input) =>
@@ -206,6 +217,10 @@ const ask = Command.make(
       if (question.length === 0) return yield* fail("The question is empty.")
       const why = yield* readOptional(input.why)
       const meanwhile = yield* readOptional(input.meanwhile)
+      if (!input.notASecret) {
+        const secret = Secrets.requestedSecret([question, why ?? "", ...input.option])
+        if (Option.isSome(secret)) return yield* fail(Secrets.refusal(secret.value))
+      }
       const asked = yield* userFacing(
         dream.AskQuestion(
           defined({
@@ -219,7 +234,15 @@ const ask = Command.make(
       yield* show(input.json, QuestionMessage, asked, Format.asked(asked))
     })
 ).pipe(
-  Command.withDescription("Show them a question card and notify them. Their answer arrives as an event."),
+  Command.withDescription(
+    "Show them a question card and notify them. Their answer arrives as an event, and shows in Chat, so never ask for a secret here; use `dream access`."
+  ),
+  Command.withExamples([
+    {
+      command:
+        'dream ask "Which days should it post?" --option "Weekdays" --option "Every day" --why "So it fits your routine"'
+    }
+  ]),
   Command.withSubcommands([askWithdraw])
 )
 
@@ -246,6 +269,12 @@ const requestAccess = (
 
 const access = Command.make("access").pipe(
   Command.withDescription("Ask for access to a service. They connect it once; it works in all their projects."),
+  Command.withExamples([
+    {
+      command:
+        'dream access key --service Stripe --host api.stripe.com --header Authorization --format "Bearer {key}" --why "Take payments"'
+    }
+  ]),
   Command.withSubcommands([
     Command.make(
       "google",
@@ -263,14 +292,25 @@ const access = Command.make("access").pipe(
           ? fail("Name at least one scope, e.g. --scopes gmail.readonly")
           : requestAccess(AccessRequest.cases.Google.make({ scopes: [first, ...rest] }), input)
       }
-    ).pipe(Command.withDescription("Let them sign in with Google and grant these scopes.")),
+    ).pipe(
+      Command.withDescription("Let them sign in with Google and grant these scopes."),
+      Command.withExamples([
+        { command: 'dream access google --scopes gmail.readonly,calendar --why "Plan workouts around your calendar"' }
+      ])
+    ),
     Command.make(
       "key",
       {
-        service: Flag.String("service").pipe(Flag.withDescription("e.g. Stripe")),
-        host: Flag.String("host").pipe(Flag.withDescription("e.g. api.stripe.com")),
-        header: Flag.String("header").pipe(Flag.withDescription("e.g. Authorization")),
-        format: Flag.String("format").pipe(Flag.withDescription('How the key goes in the header, e.g. "Bearer {key}"')),
+        service: Flag.String("service").pipe(Flag.withDescription("The service's name, as they know it, like Discord")),
+        host: Flag.String("host").pipe(Flag.withDescription("The API host the key is sent to, like discord.com")),
+        header: Flag.String("header").pipe(
+          Flag.withDescription("The request header that carries the key, like Authorization")
+        ),
+        format: Flag.String("format").pipe(
+          Flag.withDescription(
+            'How the key is written in the header, with {key} for the key, like "Bot {key}" or "Bearer {key}"'
+          )
+        ),
         ...accessFlags
       },
       (input) =>
@@ -285,9 +325,24 @@ const access = Command.make("access").pipe(
               input
             )
           : fail('--format must contain {key}, e.g. "Bearer {key}".')
-    ).pipe(Command.withDescription("Let them paste an API key; Dream adds it to your HTTPS requests to --host.")),
+    ).pipe(
+      Command.withDescription("Let them paste an API key; Dream adds it to your HTTPS requests to --host."),
+      Command.withExamples([
+        {
+          command:
+            'dream access key --service Discord --host discord.com --header Authorization --format "Bot {key}" --why "Post quotes to your channel"'
+        },
+        {
+          command:
+            'dream access key --service Stripe --host api.stripe.com --header Authorization --format "Bearer {key}" --why "Take payments"'
+        }
+      ])
+    ),
     Command.make("apple", accessFlags, (input) => requestAccess(AccessRequest.cases.Apple.make({}), input)).pipe(
-      Command.withDescription("Ask for their App Store Connect API key, which TestFlight uploads need.")
+      Command.withDescription("Ask for their App Store Connect API key, which TestFlight uploads need."),
+      Command.withExamples([
+        { command: 'dream access apple --why "Put the app on TestFlight" --when "around Thursday"' }
+      ])
     ),
     Command.make("list", { json }, (input) =>
       Effect.gen(function* () {
@@ -308,7 +363,10 @@ const notify = Command.make("notify").pipe(
         yield* userFacing(dream.WithdrawNotification({ notificationId: input.notificationId as NotificationId }))
         yield* Console.log(`Withdrew notification ${input.notificationId}.`)
       })
-    ).pipe(Command.withDescription("Remove a notification that no longer applies."))
+    ).pipe(
+      Command.withDescription("Remove a notification that no longer applies."),
+      Command.withExamples([{ command: "dream notify withdraw <notification-id>" }])
+    )
   ])
 )
 
@@ -380,7 +438,12 @@ const status = Command.make(
           : yield* userFacing(dream.UpdateStatus(update))
       yield* show(input.json, StatusCard, card, Format.status(card, yield* now))
     })
-).pipe(Command.withDescription("Show the Status card, or update it with any of the flags."))
+).pipe(
+  Command.withDescription("Show the Status card, or update it with any of the flags."),
+  Command.withExamples([
+    { command: 'dream status --now "Building progress charts" --just-did "Set up sign-in" --next "Deploy"' }
+  ])
+)
 
 const liveFlags = {
   title: Flag.String("title").pipe(Flag.withDescription('The big line, e.g. "Building progress charts" (≤ 80).')),
@@ -422,14 +485,22 @@ const live = Command.make("live").pipe(
         yield* userFacing(dream.StartLiveActivity({ content: yield* liveContent(input) }))
         yield* Console.log("Started the Live Activity.")
       })
-    ).pipe(Command.withDescription("Start one (replacing any that's running).")),
+    ).pipe(
+      Command.withDescription("Start one (replacing any that's running)."),
+      Command.withExamples([
+        { command: 'dream live start --title "Building progress charts" --step 3/5 --badge "Day 3"' }
+      ])
+    ),
     Command.make("update", liveFlags, (input) =>
       Effect.gen(function* () {
         const dream = yield* Dream
         yield* userFacing(dream.UpdateLiveActivity({ content: yield* liveContent(input) }))
         yield* Console.log("Updated the Live Activity.")
       })
-    ).pipe(Command.withDescription("Change what it shows.")),
+    ).pipe(
+      Command.withDescription("Change what it shows."),
+      Command.withExamples([{ command: 'dream live update --title "Deploying" --step 4/5' }])
+    ),
     Command.make("end", { ...liveFlags, title: liveFlags.title.pipe(Flag.optional) }, (input) =>
       Effect.gen(function* () {
         const dream = yield* Dream
@@ -440,7 +511,10 @@ const live = Command.make("live").pipe(
         yield* userFacing(dream.EndLiveActivity(defined({ content })))
         yield* Console.log("Ended the Live Activity.")
       })
-    ).pipe(Command.withDescription("End it, optionally with final content."))
+    ).pipe(
+      Command.withDescription("End it, optionally with final content."),
+      Command.withExamples([{ command: 'dream live end --title "Done: progress charts are live"' }])
+    )
   ])
 )
 
@@ -462,7 +536,10 @@ const wakeCancel = Command.make("cancel", { wakeId: Argument.String("wake-id") }
     yield* userFacing(dream.CancelWake({ wakeId: input.wakeId as WakeId }))
     yield* Console.log(`Cancelled ${input.wakeId}.`)
   })
-).pipe(Command.withDescription("Remove a scheduled wake-up."))
+).pipe(
+  Command.withDescription("Remove a scheduled wake-up."),
+  Command.withExamples([{ command: "dream wake cancel wak_\u2026" }])
+)
 
 const wake = Command.make(
   "wake",
@@ -513,6 +590,10 @@ const wake = Command.make(
   Command.withDescription(
     'Wake the agent now (`dream wake "why"`, e.g. from an error handler), or schedule a wake-up with --at or --cron.'
   ),
+  Command.withExamples([
+    { command: 'dream wake --at 2h "Check the deploy"' },
+    { command: 'dream wake --cron "0 7 * * *" "Send the morning summary"' }
+  ]),
   Command.withSubcommands([wakeList, wakeCancel])
 )
 
@@ -534,7 +615,10 @@ const publish = Command.make(
         `Port ${input.port} is public at ${published.url}. Requests to it wake the sandbox.`
       )
     })
-).pipe(Command.withDescription("Give a port the project's stable public URL."))
+).pipe(
+  Command.withDescription("Give a port the project's stable public URL."),
+  Command.withExamples([{ command: "dream publish --port 3000" }])
+)
 
 const media = Command.make("media").pipe(
   Command.withDescription("Upload screenshots and recordings."),
@@ -551,7 +635,10 @@ const media = Command.make("media").pipe(
           const ref = yield* upload(input.file, Option.getOrUndefined(input.caption))
           yield* show(input.json, MediaRef, ref, `Uploaded ${Format.uploaded(ref)}.`)
         })
-    ).pipe(Command.withDescription("Upload a png, jpg or mp4 and print its media id."))
+    ).pipe(
+      Command.withDescription("Upload a png, jpg or mp4 and print its media id."),
+      Command.withExamples([{ command: 'dream media upload shot.png --caption "Home screen"' }])
+    )
   ])
 )
 
@@ -583,7 +670,10 @@ const browser = Command.make("browser", { json }, (input) =>
         yield* userFacing(dream.StopBrowser({ sessionId: input.sessionId as BrowserSessionId }))
         yield* Console.log(`Stopped ${input.sessionId}.`)
       })
-    ).pipe(Command.withDescription("End a browser session.")),
+    ).pipe(
+      Command.withDescription("End a browser session."),
+      Command.withExamples([{ command: "dream browser stop brs_\u2026" }])
+    ),
     Command.make(
       "recording",
       {
@@ -617,7 +707,10 @@ const browser = Command.make("browser", { json }, (input) =>
           void response
           yield* Console.log(`Saved the recording to ${out} (${recording.contentType}).`)
         })
-    ).pipe(Command.withDescription("Download a session's recording."))
+    ).pipe(
+      Command.withDescription("Download a session's recording."),
+      Command.withExamples([{ command: "dream browser recording brs_\u2026 --out run.mp4" }])
+    )
   ])
 )
 
@@ -669,7 +762,8 @@ const macSsh = Command.make(
 ).pipe(
   Command.withDescription(
     "Run a command on the Mac over a fresh short-lived SSH session; stdin is passed through (e.g. `tar c . | dream mac ssh -- tar x -C app`)."
-  )
+  ),
+  Command.withExamples([{ command: "dream mac ssh -- xcodebuild -version" }])
 )
 
 const macCp = Command.make(
@@ -698,7 +792,8 @@ const macCp = Command.make(
 ).pipe(
   Command.withDescription(
     "Copy files or directories to or from the Mac with scp: `dream mac cp app mac:app`, `dream mac cp mac:shot.png .`."
-  )
+  ),
+  Command.withExamples([{ command: "dream mac cp app mac:app" }])
 )
 
 const mac = Command.make("mac", { json }, (input) =>
