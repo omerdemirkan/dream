@@ -15,7 +15,7 @@ import {
   NotFound,
   UpstreamFailure
 } from "@dream/domain"
-import { Clock, Context, DateTime, Duration, Effect, Layer, Option, Redacted, Schedule, Semaphore } from "effect"
+import { Cause, Clock, Context, DateTime, Duration, Effect, Layer, Option, Redacted, Schedule, Semaphore } from "effect"
 import { Tokens } from "../auth/Tokens.ts"
 import { ApiConfig } from "../Config.ts"
 import { Projects } from "../db/Projects.ts"
@@ -252,12 +252,14 @@ export class SandboxManager extends Context.Service<
       const deliver = busy
         .withPermits(1)(deliverOnce)
         .pipe(
-          Effect.catch((error) =>
+          // Any failure, expected or not, leaves the events queued and schedules another try.
+          Effect.catchCause((cause) =>
             Effect.gen(function* () {
               const record = yield* core.sandbox
               const failures = record.failures + 1
-              yield* update((r) => ({ ...r, failures, lastError: error.message }))
-              yield* Effect.logWarning("delivery failed", { failures, error: error.message })
+              const message = Cause.pretty(cause).split("\n")[0] ?? "delivery failed"
+              yield* update((r) => ({ ...r, failures, lastError: message }))
+              yield* Effect.logWarning("delivery failed", { failures, cause })
               yield* scheduleRetry(failures)
             })
           ),

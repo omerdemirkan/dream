@@ -60,7 +60,7 @@ export const route = (raw: Request) =>
       return HttpServerResponse.text("Not found", { status: 404 })
     }
 
-    const path = url.pathname
+    const path = url.pathname.length > 1 ? url.pathname.replace(/\/+$/, "") : url.pathname
     if (path === "/health") return HttpServerResponse.text("ok")
     if (path === Routes.app && request.method === "POST") return yield* appRpc
     if (path === Routes.sandbox && request.method === "POST") return yield* sandboxRpc

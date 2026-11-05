@@ -88,7 +88,8 @@ export default class ProjectDO extends Cloudflare.DurableObject<ProjectDO>()(
       return {
         fetch: Effect.gen(function* () {
           const request = yield* HttpServerRequest
-          const path = new URL(request.url, "https://project").pathname
+          // The stub's fetch can add a trailing slash (`/internal/rpc/`).
+          const path = new URL(request.url, "https://project").pathname.replace(/\/+$/, "")
           if (path === LivePath) return yield* transport.fetch
           if (path === InternalRpcPath && request.method === "POST") return yield* internal
           return HttpServerResponse.text("Not found", { status: 404 })
