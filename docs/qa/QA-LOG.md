@@ -340,3 +340,8 @@ Other findings:
   prebuilt frameworks (SDWebImage coders, hermesvm). The founder's "certificate revoked" emails were the three test
   certificates and one development certificate revoked during the signing work. A dreamd test (daemon.test.ts) failed
   once in the check before that deploy and passed on three reruns: flaky, worth a look.
+- App Store Connect rejected build 26686125: ITMS-90683 (no NSPhotoLibraryUsageDescription; expo-image and
+  expo-file-system link photo-library APIs) and ITMS-90473 (app CFBundleVersion "1" vs widget 26686125). Fixed in
+  efa8507 (purpose string; build-ios.sh exports BUILD_NUMBER, app.config.ts sets ios.buildNumber). Uploaded build
+  26687269 from a Namespace Mac (two foreground runs; the second picked up the running build), reusing the stored
+  distribution certificate; key deleted, Mac destroyed.
