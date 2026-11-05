@@ -58,6 +58,15 @@ export const DeviceId = Schema.String.check(Schema.isUUID()).pipe(Schema.brand("
 export type DeviceId = typeof DeviceId.Type
 
 /**
+ * Client-generated UUID that makes a write safe to retry: the phone sends the
+ * same one again when it retries a request whose response it never got, and
+ * the API returns what the first attempt created instead of creating it twice.
+ * A new request (other text, another idea) gets a new one.
+ */
+export const RequestId = Schema.String.check(Schema.isUUID()).pipe(Schema.brand("RequestId"))
+export type RequestId = typeof RequestId.Type
+
+/**
  * A UUID that the Worker sends as the `apns-id` header, so the app can later
  * remove that delivered notification by identifier when it is withdrawn.
  */

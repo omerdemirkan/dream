@@ -43,7 +43,11 @@ export class ProjectRpcs extends RpcGroup.make(
     payload: { before: Schema.optionalKey(MessageId), limit: Schema.Int },
     success: Schema.Struct({ messages: Schema.Array(Message), hasEarlier: Schema.Boolean })
   }),
-  Rpc.make("SendUserMessage", { payload: { text: Schema.NonEmptyString }, success: TextMessage }),
+  /** With an `id` (derived from the phone's request id), posting it again returns the message already posted. */
+  Rpc.make("SendUserMessage", {
+    payload: { text: Schema.NonEmptyString, id: Schema.optionalKey(MessageId) },
+    success: TextMessage
+  }),
   Rpc.make("AnswerQuestion", {
     payload: { messageId: MessageId, answer: QuestionAnswer },
     success: QuestionMessage,

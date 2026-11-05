@@ -12,6 +12,7 @@ import {
   ModelConnectionId,
   NotificationId,
   ProjectId,
+  type RequestId,
   UserId,
   WakeId
 } from "@dream/domain"
@@ -48,3 +49,15 @@ export const newBrowserSessionId = make(BrowserSessionId, IdPrefix.browserSessio
 export const newSecretId = (): Effect.Effect<string> => Effect.sync(() => `sec_${randomToken(22)}`)
 export const newNotificationId = (): Effect.Effect<NotificationId> =>
   Effect.sync(() => Schema.decodeUnknownSync(NotificationId)(crypto.randomUUID()))
+
+/**
+ * The id a retryable write creates, derived from the phone's `RequestId`, so a
+ * retry looks up what the first attempt made instead of making another.
+ */
+const fromRequest =
+  <S extends Schema.Codec<any, string, never, never>>(schema: S, prefix: string) =>
+  (requestId: RequestId): S["Type"] =>
+    Schema.decodeUnknownSync(schema)(`${prefix}_${requestId.toLowerCase().replaceAll("-", "")}`)
+
+export const projectIdFor = fromRequest(ProjectId, IdPrefix.project)
+export const messageIdFor = fromRequest(MessageId, IdPrefix.message)

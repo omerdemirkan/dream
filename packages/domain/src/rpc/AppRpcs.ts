@@ -7,7 +7,7 @@ import { Rpc, RpcGroup } from "effect/rpc"
 import { AppAuth } from "../Auth.ts"
 import { ConnectLink, ConnectLinkProvider, Integration, ModelConnectFlow, ModelConnection } from "../Connections.ts"
 import { InvalidRequest, NoModelConnection, NotFound, NotInvited, Unauthorized, UpstreamFailure } from "../Errors.ts"
-import { DeviceId, IntegrationId, MessageId, ModelConnectionId, NotificationId, ProjectId } from "../Ids.ts"
+import { DeviceId, IntegrationId, MessageId, ModelConnectionId, NotificationId, ProjectId, RequestId } from "../Ids.ts"
 import { AccessMessage, AskMessage, Message, QuestionAnswer, QuestionMessage, TextMessage } from "../Message.ts"
 import { Harness, Project, ProjectSummary } from "../Project.ts"
 import { ModelProvider } from "../Usage.ts"
@@ -97,12 +97,17 @@ export class AuthedAppRpcs extends RpcGroup.make(
   /**
    * Start a project from an idea. The idea becomes its first message and the
    * agent's first event. `harness` defaults to the one their connected
-   * subscription runs.
+   * subscription runs. With a `requestId`, a retry returns the project the
+   * first attempt created (`InvalidRequest` if that id belongs to someone else).
    */
   Rpc.make("CreateProject", {
-    payload: { idea: Schema.NonEmptyString, harness: Schema.optionalKey(Harness) },
+    payload: {
+      idea: Schema.NonEmptyString,
+      harness: Schema.optionalKey(Harness),
+      requestId: Schema.optionalKey(RequestId)
+    },
     success: Project,
-    error: Schema.Union([NoModelConnection, UpstreamFailure])
+    error: Schema.Union([NoModelConnection, UpstreamFailure, InvalidRequest])
   }),
 
   // A project ----------------------------------------------------------------
@@ -125,12 +130,16 @@ export class AuthedAppRpcs extends RpcGroup.make(
     success: Schema.Struct({ messages: Schema.Array(Message), hasEarlier: Schema.Boolean }),
     error: NotFound
   }),
+  /** Post their message to Chat. With a `requestId`, a retry returns the message the first attempt posted. */
   Rpc.make("SendMessage", {
-    payload: { projectId: ProjectId, text: Schema.NonEmptyString },
+    payload: { projectId: ProjectId, text: Schema.NonEmptyString, requestId: Schema.optionalKey(RequestId) },
     success: TextMessage,
     error: NotFound
   }),
-  /** Answer, or change an answer. Fails with `InvalidRequest` if the question was withdrawn or the option isn't one of its options. */
+  /**
+   * Answer, or change an answer. Sending the answer it already has changes nothing (so a retry is safe).
+   * Fails with `InvalidRequest` if the question was withdrawn or the option isn't one of its options.
+   */
   Rpc.make("AnswerQuestion", {
     payload: { ...ProjectMessage, answer: QuestionAnswer },
     success: QuestionMessage,
@@ -164,6 +173,7 @@ export class AuthedAppRpcs extends RpcGroup.make(
     success: AccessMessage,
     error: Schema.Union([NotFound, InvalidRequest, UpstreamFailure])
   }),
+  /** "Not now" on an access request. Declining one that's already declined returns it unchanged. */
   Rpc.make("DeclineAccess", {
     payload: ProjectMessage,
     success: AccessMessage,

@@ -14,6 +14,7 @@ import {
   type Message,
   NotFound,
   ProjectLiveRpcs,
+  type QuestionAnswer,
   QuestionMessage,
   QuestionState,
   SandboxAuth,
@@ -41,6 +42,9 @@ import { SandboxManager } from "./SandboxManager.ts"
 import { Singletons, Store } from "./Store.ts"
 
 const notFound = (entity: string, id: string) => new NotFound({ entity, id })
+
+const sameAnswer = (a: QuestionAnswer, b: QuestionAnswer) =>
+  a._tag === "Choice" ? b._tag === "Choice" && a.option === b.option : b._tag === "Freeform" && a.text === b.text
 
 /** The next time a wake is due after `fromMs`, or none for a fired one-off / unparseable cron. */
 export const nextWakeAt = (when: WakeWhen, defaultTimeZone: string, fromMs: number): Option.Option<number> => {
@@ -109,11 +113,15 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
 
       ListMessages: ({ before, limit }) => store.messagesBefore(before, limit),
 
-      SendUserMessage: ({ text }) =>
+      SendUserMessage: ({ text, id }) =>
         Effect.gen(function* () {
+          if (id !== undefined) {
+            const posted = yield* core.message(id)
+            if (Option.isSome(posted) && posted.value._tag === "Text") return posted.value
+          }
           const project = yield* core.project.pipe(Effect.orDie)
           const message = TextMessage.make({
-            id: yield* newMessageId(),
+            id: id ?? (yield* newMessageId()),
             projectId: project.id,
             createdAt: yield* DateTime.now,
             from: "user",
@@ -140,6 +148,8 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
             return yield* new InvalidRequest({ message: `"${answer.option}" isn't one of this question's options.` })
           }
           const previous = message.state._tag === "Answered" ? message.state.answer : undefined
+          // The same answer again (a retry after a lost response) changes nothing and doesn't wake the agent twice.
+          if (previous !== undefined && sameAnswer(previous, answer)) return message
           const answered = QuestionMessage.make({
             ...message,
             state: QuestionState.cases.Answered.make({ answer, answeredAt: yield* DateTime.now })
@@ -197,6 +207,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
       DeclineAccess: ({ messageId }) =>
         Effect.gen(function* () {
           const message = yield* findAccess(messageId)
+          if (message.state._tag === "Declined") return message
           if (message.state._tag !== "Open") {
             return yield* new InvalidRequest({ message: "This access request isn't open anymore." })
           }

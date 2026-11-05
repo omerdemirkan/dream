@@ -8,6 +8,7 @@ import {
   AuthedAppRpcs,
   CurrentUser,
   type Harness,
+  InvalidRequest,
   NoModelConnection,
   NotFound,
   NotInvited,
@@ -31,7 +32,7 @@ import { Users } from "../db/Users.ts"
 import { Access } from "../integrations/Access.ts"
 import { Google } from "../integrations/Google.ts"
 import { timingSafeEqual } from "../lib/Bytes.ts"
-import { newProjectId } from "../lib/Ids.ts"
+import { messageIdFor, newProjectId, projectIdFor } from "../lib/Ids.ts"
 import { ProjectClients } from "../project/Client.ts"
 
 export const bearer = (headers: Headers.Headers): Option.Option<string> =>
@@ -173,14 +174,35 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
       ListProjects: () => Effect.flatMap(me, projects.summaries),
       ListOpenAsks: () => Effect.flatMap(me, projects.openAsks),
 
-      CreateProject: ({ idea, harness }) =>
+      CreateProject: ({ idea, harness, requestId }) =>
         Effect.gen(function* () {
           const userId = yield* me
+          const start = (project: Project) =>
+            clients
+              .use(project.id, (client) => client.Init({ project }))
+              .pipe(
+                Effect.catchDefect((defect) =>
+                  Effect.fail(
+                    new UpstreamFailure({ service: "Dream", message: `the project couldn't start: ${String(defect)}` })
+                  )
+                )
+              )
+          const id = requestId === undefined ? yield* newProjectId() : projectIdFor(requestId)
+          if (requestId !== undefined) {
+            // A retry: hand back what the first attempt created (Init is idempotent, so a half-started one starts now).
+            const existing = yield* projects.find(id)
+            if (Option.isSome(existing)) {
+              if (existing.value.ownerId !== userId) {
+                return yield* new InvalidRequest({ message: "That request id is already taken. Try again." })
+              }
+              return yield* start(existing.value)
+            }
+          }
           const chosen = yield* harnessFor(userId, harness)
           const { slug, host } = yield* projects.allocateHost(idea, config.domain)
           const now = yield* DateTime.now
           const project: Project = {
-            id: yield* newProjectId(),
+            id,
             ownerId: userId,
             title: titleFromIdea(idea),
             idea,
@@ -192,15 +214,7 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
             updatedAt: now
           }
           yield* projects.insert(project, host)
-          return yield* clients
-            .use(project.id, (client) => client.Init({ project }))
-            .pipe(
-              Effect.catchDefect((defect) =>
-                Effect.fail(
-                  new UpstreamFailure({ service: "Dream", message: `the project couldn't start: ${String(defect)}` })
-                )
-              )
-            )
+          return yield* start(project)
         }),
 
       GetLiveUrl: ({ projectId }) =>
@@ -220,10 +234,12 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
           )
         }),
 
-      SendMessage: ({ projectId, text }) =>
+      SendMessage: ({ projectId, text, requestId }) =>
         Effect.gen(function* () {
           yield* owned(projectId)
-          return yield* clients.use(projectId, (client) => client.SendUserMessage({ text }))
+          return yield* clients.use(projectId, (client) =>
+            client.SendUserMessage({ text, ...(requestId === undefined ? {} : { id: messageIdFor(requestId) }) })
+          )
         }),
 
       AnswerQuestion: ({ projectId, messageId, answer }) =>

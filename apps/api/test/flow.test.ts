@@ -4,7 +4,7 @@
  * fakes that record what they were asked.
  */
 import { assert, describe, it } from "@effect/vitest"
-import { DaemonEnvFile, type NotificationId, type ProjectId, QuestionAnswer } from "@dream/domain"
+import { DaemonEnvFile, type NotificationId, type ProjectId, QuestionAnswer, RequestId } from "@dream/domain"
 import { Context, DateTime, Effect, Exit, Fiber, Option, Redacted, Stream } from "effect"
 import { gateway } from "../src/http/Gateway.ts"
 import { ProjectClients } from "../src/project/Client.ts"
@@ -320,6 +320,70 @@ describe("a project, end to end", () => {
       assert.includeMembers(tags, ["StatusChanged"])
       const first = Exit.isSuccess(received) ? received.value[0] : undefined
       assert.strictEqual(first?._tag === "Snapshot" && first.messages[0]?._tag, "Text")
+      yield* cloud.close
+    })
+  )
+
+  it.live("retried writes (a lost response) don't post twice or wake the agent twice", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project } = yield* setup(cloud)
+      yield* cloud.alarm(project.id)
+      const dreamd = yield* cloud.sandbox(envFileOf(cloud, project.id).env.DREAM_PROJECT_TOKEN)
+
+      // A new idea, sent twice with one request id: one project.
+      const ideaRequest = RequestId.make("7d0b6f1e-2c4a-4e8b-9f3d-1a2b3c4d5e6f")
+      const idea = { idea: "A cabin booking site", requestId: ideaRequest }
+      const first = yield* cloud.phone.CreateProject(idea)
+      const again = yield* cloud.phone.CreateProject(idea)
+      assert.strictEqual(again.id, first.id)
+      assert.strictEqual((yield* cloud.phone.ListProjects()).length, 2)
+
+      // A message, sent twice with one request id: one message, one wake.
+      const before = cloud.world.delivered.length
+      const say = { projectId: project.id, text: "Track sets too", requestId: RequestId.make(crypto.randomUUID()) }
+      const sent = yield* cloud.phone.SendMessage(say)
+      const resent = yield* cloud.phone.SendMessage(say)
+      assert.strictEqual(resent.id, sent.id)
+      const history = yield* cloud.phone.ListMessages({ projectId: project.id })
+      assert.strictEqual(history.messages.filter((m) => m._tag === "Text" && m.text === "Track sets too").length, 1)
+      yield* cloud.alarm(project.id)
+      assert.strictEqual(cloud.world.delivered.length, before + 1)
+
+      // The same answer twice: answered once, delivered once.
+      const question = yield* dreamd.AskQuestion({ question: "Who'll use this?", options: ["Just me", "Friends"] })
+      const answer = {
+        projectId: project.id,
+        messageId: question.id,
+        answer: QuestionAnswer.cases.Choice.make({ option: "Just me" })
+      }
+      yield* cloud.phone.AnswerQuestion(answer)
+      yield* cloud.phone.AnswerQuestion(answer)
+      yield* cloud.alarm(project.id)
+      assert.deepStrictEqual(
+        cloud.world.delivered.at(-1)!.events.map((e: any) => e._tag),
+        ["QuestionAnswered"]
+      )
+      const delivered = cloud.world.delivered.length
+      yield* cloud.phone.AnswerQuestion(answer)
+      yield* cloud.alarm(project.id)
+      assert.strictEqual(cloud.world.delivered.length, delivered)
+
+      // Declining twice: the second returns the declined request instead of failing.
+      const request = yield* dreamd.RequestAccess({
+        request: {
+          _tag: "Key",
+          service: "Stripe",
+          host: "api.stripe.com",
+          header: "Authorization",
+          format: "Bearer {key}"
+        },
+        why: "Take payments."
+      })
+      const declined = yield* cloud.phone.DeclineAccess({ projectId: project.id, messageId: request.id })
+      const redeclined = yield* cloud.phone.DeclineAccess({ projectId: project.id, messageId: request.id })
+      assert.strictEqual(redeclined.state._tag, "Declined")
+      assert.deepStrictEqual(redeclined.state, declined.state)
       yield* cloud.close
     })
   )
