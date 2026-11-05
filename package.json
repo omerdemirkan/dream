@@ -14,9 +14,9 @@
     "test:watch": "vitest",
     "check": "bun run format:check && bun run typecheck && bun run test",
     "sync-prompts": "bun run --filter @dream/agent-context sync",
-    "infra:plan": "infra/node_modules/.bin/alchemy plan infra/alchemy.run.ts",
-    "infra:dev": "infra/node_modules/.bin/alchemy dev infra/alchemy.run.ts",
-    "infra:deploy": "infra/node_modules/.bin/alchemy deploy infra/alchemy.run.ts",
+    "infra:plan": "infra/node_modules/.bin/alchemy plan infra/alchemy.run.ts --stage prod",
+    "infra:dev": "infra/node_modules/.bin/alchemy dev infra/alchemy.run.ts --stage dev",
+    "infra:deploy": "infra/node_modules/.bin/alchemy deploy infra/alchemy.run.ts --stage prod --yes --adopt",
     "format": "biome format --write .",
     "format:check": "biome format ."
   },

@@ -13,7 +13,6 @@
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import type { D1Database, R2Bucket } from "@cloudflare/workers-types"
 import type { ProjectId } from "@dream/domain"
-import * as Alchemy from "alchemy"
 import { Config, Effect, Layer, Option } from "effect"
 import type { HttpClientRequest } from "effect/http"
 import * as HttpServerRequest from "effect/http/HttpServerRequest"
@@ -33,6 +32,9 @@ export const DreamDomain = Config.NonEmptyString("DREAM_DOMAIN")
 
 /** The API's hostname; defaults to `dream.<domain>`. */
 export const ApiHost = Config.option(Config.NonEmptyString("DREAM_API_HOST"))
+
+/** The Worker's script name, fixed so secrets set outside alchemy stay attached to it. */
+export const WorkerName = "dream-api"
 
 /** Set once R2 is enabled on the account; until then the Worker runs without media storage. */
 export const R2Enabled = Config.Boolean("DREAM_R2_ENABLED").pipe(Config.withDefault(false))
@@ -65,19 +67,15 @@ export default class Api extends Cloudflare.Worker<Api>()(
   Effect.gen(function* () {
     const domain = yield* DreamDomain
     const apiHost = Option.getOrElse(yield* ApiHost, () => `dream.${domain}`)
-    // Generated once and kept in alchemy's state: the master key for `secrets` and the token signing key.
-    const encryptionKey = yield* Alchemy.makeRandom("DreamEncryptionKey", { bytes: 32 })
-    const signingKey = yield* Alchemy.makeRandom("DreamSigningKey", { bytes: 32 })
+    // DREAM_ENCRYPTION_KEY and DREAM_SIGNING_KEY are Worker secrets generated once by
+    // infra/scripts/ensure-secrets.ts, outside alchemy's state, and never rotated by a deploy.
     return {
       main: import.meta.url,
+      name: WorkerName,
       domain: apiHost,
       routes: [{ pattern: `*.${domain}/*`, zoneName: domain }],
       workersDev: false,
-      env: {
-        DREAM_API_HOST: apiHost,
-        DREAM_ENCRYPTION_KEY: encryptionKey,
-        DREAM_SIGNING_KEY: signingKey
-      }
+      env: { DREAM_API_HOST: apiHost }
     }
   }),
   Effect.gen(function* () {

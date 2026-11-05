@@ -55,6 +55,15 @@ export const DaemonEnv = {
 export const DefaultDaemonPort = 4747
 export const DefaultDaemonSocket = "/tmp/dreamd.sock"
 
+/**
+ * Where the ProjectDO writes dreamd's environment, as `KEY=value` lines with
+ * the `DaemonEnv` names. The sandbox template's start command supervises
+ * dreamd, which waits for this file, reads it over its own environment, and
+ * restarts when it changes. Writing it again (on create or after rotating a
+ * token) is safe.
+ */
+export const DaemonEnvFile = "/home/user/.dream/dreamd.env"
+
 export const DaemonConfig = Config.all({
   apiUrl: Config.NonEmptyString(DaemonEnv.apiUrl),
   projectId: Config.schema(ProjectId, DaemonEnv.projectId),
@@ -64,3 +73,36 @@ export const DaemonConfig = Config.all({
   port: Config.Port(DaemonEnv.port).pipe(Config.withDefault(DefaultDaemonPort)),
   socket: Config.NonEmptyString(DaemonEnv.socket).pipe(Config.withDefault(DefaultDaemonSocket))
 })
+
+/**
+ * The sandbox only ever holds placeholder model credentials. The ProjectDO
+ * adds the real one with an E2B `network.rules` entry for `host`, whose
+ * transform sets `headers(credential)`. dreamd configures each harness so all
+ * of its model traffic goes to that host with an `Authorization` header to
+ * replace, and so nothing in the sandbox holds a refresh token.
+ *
+ * - Claude Code authenticates with `CLAUDE_CODE_OAUTH_TOKEN` (the long-lived
+ *   token from `claude setup-token`) and sends it as a bearer token to
+ *   api.anthropic.com, including its usage endpoint.
+ * - Codex runs against the ChatGPT backend (`https://chatgpt.com/backend-api/codex`)
+ *   as an API-key provider: a bearer access token plus the account header.
+ *   Dream refreshes the access token centrally and updates the rule.
+ */
+export const ModelEgress = {
+  "claude-code": {
+    host: "api.anthropic.com",
+    headers: (credential: { readonly oauthToken: string }): Record<string, string> => ({
+      Authorization: `Bearer ${credential.oauthToken}`
+    })
+  },
+  codex: {
+    host: "chatgpt.com",
+    headers: (credential: { readonly accessToken: string; readonly accountId: string }): Record<string, string> => ({
+      Authorization: `Bearer ${credential.accessToken}`,
+      "ChatGPT-Account-ID": credential.accountId
+    })
+  }
+} as const satisfies Record<
+  Harness,
+  { readonly host: string; readonly headers: (credential: never) => Record<string, string> }
+>
