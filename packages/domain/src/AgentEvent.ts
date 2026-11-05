@@ -50,7 +50,18 @@ export const AgentEvent = Schema.TaggedUnion({
   },
   /** `dream wake "why"` from anywhere in the sandbox, typically an app's error handler. */
   Alert: { ...EventFields, reason: Schema.String },
-  UsageReset: { ...EventFields, window: UsageWindowName }
+  UsageReset: { ...EventFields, window: UsageWindowName },
+  /**
+   * dreamd loaded the project's published URL after a turn and it looked broken (an error status, uncaught page
+   * errors, or no answer). Made by dreamd itself, never by the API, and only when the result changed.
+   */
+  PublishedUrlBroken: {
+    ...EventFields,
+    url: Schema.String,
+    port: Schema.Int,
+    /** What the check saw, as `dream publish` prints it. */
+    facts: Schema.String
+  }
 })
 export type AgentEvent = typeof AgentEvent.Type
 
@@ -121,7 +132,9 @@ export const renderAgentEvent = (event: AgentEvent, options: RenderOptions = {})
     },
     Alert: ({ reason }) => `Something in the sandbox called \`dream wake\`:\n${quote(reason)}`,
     UsageReset: ({ window }) =>
-      window === "fiveHour" ? "Their five-hour usage window has reset." : "Their weekly usage limit has reset."
+      window === "fiveHour" ? "Their five-hour usage window has reset." : "Their weekly usage limit has reset.",
+    PublishedUrlBroken: ({ url, port, facts }) =>
+      `When your last turn ended, Dream loaded your published URL ${url} (port ${port}):\n${quote(facts)}`
   })
   return `[${time}] ${body}`
 }

@@ -10,7 +10,7 @@
  *   project token, so the CLI never holds a credential and the API decides
  *   everything. The calls only dreamd makes (`ReportTurn`, `ReportUsage`) are
  *   refused there, so an app can't fake the agent's state. Calls that reach
- *   the person are counted (`Outreach`).
+ *   the person are counted (`Outreach`), and published ports noted (`Published`).
  */
 import { timingSafeEqual } from "node:crypto"
 import { chmod, rm } from "node:fs/promises"
@@ -32,6 +32,7 @@ import { Agent } from "./Agent.ts"
 import { DreamdConfig } from "./Config.ts"
 import { Inbox } from "./Inbox.ts"
 import { Outreach } from "./Outreach.ts"
+import { Published } from "./Published.ts"
 import { Shutdown } from "./Shutdown.ts"
 import { version } from "./version.ts"
 
@@ -111,6 +112,23 @@ export const requestedTags = (body: string): ReadonlyArray<string> =>
     .split("\n")
     .flatMap((line) => Option.match(decodeRequestLine(line), { onNone: () => [], onSome: ({ tag }) => [tag] }))
 
+const PublishLine = Schema.fromJsonString(
+  Schema.Struct({
+    _tag: Schema.Literal("Request"),
+    tag: Schema.Literal("Publish"),
+    payload: Schema.Struct({ port: Schema.Int })
+  })
+)
+const decodePublishLine = Schema.decodeUnknownOption(PublishLine)
+
+/** The ports `Publish` requests in an NDJSON request body ask for. */
+export const publishedPorts = (body: string): ReadonlyArray<number> =>
+  body
+    .split("\n")
+    .flatMap((line) =>
+      Option.match(decodePublishLine(line), { onNone: () => [], onSome: ({ payload }) => [payload.port] })
+    )
+
 const proxy = HttpRouter.add(
   "POST",
   Routes.sandbox,
@@ -118,6 +136,7 @@ const proxy = HttpRouter.add(
     const config = yield* DreamdConfig
     const client = yield* HttpClient.HttpClient
     const outreach = yield* Outreach
+    const published = yield* Published
     const request = yield* HttpServerRequest.HttpServerRequest
     const body = yield* request.text
     const tags = requestedTags(body)
@@ -132,7 +151,11 @@ const proxy = HttpRouter.add(
         headers: { authorization: `Bearer ${Redacted.value(config.projectToken)}` }
       })
       .pipe(
-        Effect.tap((response) => (response.status < 300 ? outreach.record(tags) : Effect.void)),
+        Effect.tap((response) =>
+          response.status < 300
+            ? Effect.andThen(outreach.record(tags), Effect.forEach(publishedPorts(body), published.noted))
+            : Effect.void
+        ),
         Effect.map((response) =>
           HttpServerResponse.stream(response.stream, {
             status: response.status,

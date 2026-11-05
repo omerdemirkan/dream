@@ -26,6 +26,7 @@ import { NodeHttpServer, NodeServices } from "@effect/platform-node"
 import { DateTime, Effect, Layer, Option, Ref } from "effect"
 import { FetchHttpClient, Headers, HttpRouter } from "effect/http"
 import { RpcClient, RpcMiddleware, RpcServer } from "effect/rpc"
+import { PageCheck } from "../src/cli/PageCheck.ts"
 import { DreamdConfig } from "../src/Config.ts"
 
 export const tempDir = (prefix = "dreamd-test-") => mkdtempSync(join(tmpdir(), prefix))
@@ -120,3 +121,6 @@ export const daemonClient = (port: number, token: string) =>
       )
     )
   )
+
+/** For tests where nothing should load a published URL. */
+export const noPageChecks = PageCheck.layerTest(Effect.die("no page checks here"))

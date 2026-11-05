@@ -12,6 +12,10 @@
  * The person sees only what goes through `dream`. Questions the model asks
  * through its harness go to their phone, and a turn that ends with something
  * to say, having sent them nothing, posts its final words to Chat.
+ *
+ * After a completed turn with nothing else queued, the published URL is
+ * loaded, and a new breakage there becomes an event for the agent (see
+ * `Published.ts`).
  */
 import { renderSteerPrompt, renderTurnPrompt } from "@dream/agent-context"
 import type { EventId, ModelProvider, TurnState } from "@dream/domain"
@@ -22,6 +26,7 @@ import { type QuestionOutcome, replyFromFinalText } from "./harness/PersonChanne
 import type { TurnHandlers } from "./harness/Turn.ts"
 import { Inbox, type InboxState, queuedCount } from "./Inbox.ts"
 import { Outreach } from "./Outreach.ts"
+import { Published } from "./Published.ts"
 import * as Usage from "./Usage.ts"
 
 /** Waits after consecutive failed turns: 15 s, 30 s, 1 min, … up to 10 min. */
@@ -47,6 +52,7 @@ export class Agent extends Context.Service<
       const harness = yield* Harness
       const api = yield* Api
       const outreach = yield* Outreach
+      const published = yield* Published
       const provider: ModelProvider = harness.name === "claude-code" ? "claude" : "chatgpt"
       const running = yield* Ref.make(false)
       const usage = yield* Ref.make<Usage.UsageReading>({})
@@ -166,6 +172,8 @@ export class Agent extends Context.Service<
         } else {
           yield* Effect.logInfo("Turn finished", { events: ids })
         }
+        // Look at the published app once the agent is done, unless more work is already waiting.
+        if (completed && !limited && !hasQueued(yield* inbox.state)) yield* published.checkAfterTurn
         // A limit is waited out before the next turn; other failures back off.
         return requeue && !limited
       }).pipe(Effect.ensuring(Ref.set(running, false)))

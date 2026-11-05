@@ -7,6 +7,7 @@ import { Harness, type HarnessError, type TurnResult, TurnOutcome } from "../src
 import type { TurnHandlers } from "../src/harness/Turn.ts"
 import { Inbox } from "../src/Inbox.ts"
 import { Outreach } from "../src/Outreach.ts"
+import { Published } from "../src/Published.ts"
 import { baseLayer, tempDir, usageReset, userMessage } from "./support.ts"
 
 type Script = (prompt: string, handlers: TurnHandlers) => Effect.Effect<TurnResult, HarnessError>
@@ -14,7 +15,7 @@ type Script = (prompt: string, handlers: TurnHandlers) => Effect.Effect<TurnResu
 const completed = (progressed = true): TurnResult => ({ outcome: TurnOutcome.Completed(), usage: {}, progressed })
 const saying = (finalText: string): TurnResult => ({ ...completed(), finalText })
 
-const setup = (options: { readonly steerable?: boolean } = {}) =>
+const setup = (options: { readonly steerable?: boolean; readonly published?: Layer.Layer<Published> } = {}) =>
   Effect.gen(function* () {
     const turns = yield* Queue.unbounded<Script>()
     const log = yield* Ref.make<ReadonlyArray<string>>([])
@@ -28,7 +29,8 @@ const setup = (options: { readonly steerable?: boolean } = {}) =>
             ...(options.steerable === undefined ? {} : { steerable: options.steerable })
           }),
           Api.layerTest(reports),
-          Outreach.layer
+          Outreach.layer,
+          options.published ?? Published.layerNone
         )
       ),
       Layer.provideMerge(Inbox.layer),
@@ -82,6 +84,24 @@ describe("Agent", () => {
       )
       assert.strictEqual((yield* inbox.state).entries.length, 0)
     }).pipe(Effect.scoped)
+  )
+
+  it.effect("looks at the published URL after a completed turn", () =>
+    Effect.gen(function* () {
+      const checks = yield* Ref.make(0)
+      const { turns, inbox, idle, reports } = yield* setup({
+        published: Layer.succeed(Published, {
+          noted: () => Effect.void,
+          checkAfterTurn: Ref.update(checks, (n) => n + 1)
+        })
+      })
+      yield* Queue.offer(turns, () => Effect.succeed(completed()))
+      yield* inbox.deliver([userMessage(1)])
+      while ((yield* Ref.get(checks)) === 0) yield* Effect.yieldNow
+      yield* idle
+      assert.isTrue((yield* Ref.get(reports)).some((report) => report._tag === "Turn" && report.state === "finished"))
+      assert.strictEqual(yield* Ref.get(checks), 1)
+    })
   )
 
   it.effect("hands events that arrive mid-turn to the running turn", () =>

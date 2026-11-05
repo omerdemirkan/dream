@@ -18,7 +18,7 @@ import { DreamdConfig } from "../src/Config.ts"
 import { layerWith } from "../src/Daemon.ts"
 import { Harness, type HarnessError, type TurnResult, TurnOutcome } from "../src/harness/Harness.ts"
 import { Shutdown } from "../src/Shutdown.ts"
-import { configRecord, daemonClient, fakeApi, freePort, tempDir, userMessage } from "./support.ts"
+import { configRecord, daemonClient, fakeApi, freePort, noPageChecks, tempDir, userMessage } from "./support.ts"
 
 const setup = Effect.gen(function* () {
   const dir = tempDir()
@@ -34,7 +34,7 @@ const setup = Effect.gen(function* () {
   const log = yield* Ref.make<ReadonlyArray<string>>([])
   yield* Layer.build(fakeApi(calls, apiPort))
   const context = yield* Layer.build(
-    layerWith(Layer.mergeAll(Harness.layerTest({ turns, log }), Shutdown.layerTest())).pipe(
+    layerWith(Layer.mergeAll(Harness.layerTest({ turns, log }), Shutdown.layerTest(), noPageChecks)).pipe(
       Layer.provideMerge(DreamdConfig.layerFromRecord(env)),
       Layer.provideMerge(NodeServices.layer)
     )
@@ -55,7 +55,7 @@ const setup = Effect.gen(function* () {
       while (!predicate(yield* Ref.get(calls))) yield* Effect.sleep("10 millis")
       return yield* Ref.get(calls)
     }).pipe(Effect.timeout("5 seconds"))
-  const cli = cliWith(PageCheck.layerTest(Effect.die("no page checks here")))
+  const cli = cliWith(noPageChecks)
   return { daemonPort, socket: env.DREAM_SOCKET!, calls, turns, log, cli, cliWith, waitFor, shutdown }
 })
 

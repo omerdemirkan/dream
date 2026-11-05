@@ -11,6 +11,7 @@
 import {
   type EventId,
   HttpRpcSerialization,
+  type InvalidRequest,
   type MessageId,
   Routes,
   SandboxAuth,
@@ -28,6 +29,7 @@ export type Report =
   | { readonly _tag: "Usage"; readonly usage: UsageSnapshot }
   | { readonly _tag: "Question"; readonly question: DreamQuestion }
   | { readonly _tag: "Message"; readonly text: string }
+  | { readonly _tag: "Publish"; readonly port: number }
 
 /** A call made for the agent didn't go through. */
 export class ApiError extends Data.TaggedError("ApiError")<{ readonly message: string }> {}
@@ -57,6 +59,11 @@ export class Api extends Context.Service<
     readonly askQuestion: (question: DreamQuestion) => Effect.Effect<MessageId, ApiError>
     /** `dream message` on the agent's behalf, without a notification. */
     readonly sendMessage: (text: string) => Effect.Effect<MessageId, ApiError>
+    /**
+     * The project's public URL, asking again for the port the agent published (`Publish` is idempotent).
+     * `InvalidRequest` means the API won't publish that port.
+     */
+    readonly publishedUrl: (port: number) => Effect.Effect<string, ApiError | InvalidRequest>
   }
 >()("@dream/dreamd/Api") {
   static readonly layer = Layer.effect(
@@ -83,7 +90,15 @@ export class Api extends Context.Service<
         sendMessage: (text) =>
           text.trim().length === 0
             ? Effect.fail(new ApiError({ message: "the message is empty" }))
-            : speak(client.SendMessage({ text, media: [], notify: false }))
+            : speak(client.SendMessage({ text, media: [], notify: false })),
+        publishedUrl: (port) =>
+          client.Publish({ port }).pipe(
+            Effect.map(({ url }) => url),
+            Effect.catchTags({
+              RpcClientError: (error) => Effect.fail(new ApiError({ message: error.message })),
+              Unauthorized: (error) => Effect.fail(new ApiError({ message: error.message }))
+            })
+          )
       })
     })
   ).pipe(Layer.provide(layerClient))
@@ -105,7 +120,11 @@ export class Api extends Context.Service<
           Ref.modify(reports, (all) => [
             `msg_${all.length + 1}` as MessageId,
             [...all, { _tag: "Message", text } satisfies Report]
-          ])
+          ]),
+        publishedUrl: (port) =>
+          Ref.update(reports, (all): ReadonlyArray<Report> => [...all, { _tag: "Publish", port }]).pipe(
+            Effect.as(`https://port-${port}.dream.test`)
+          )
       })
     )
 }

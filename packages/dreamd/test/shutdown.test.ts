@@ -15,7 +15,7 @@ import { layerWith, main } from "../src/Daemon.ts"
 import { Harness, type HarnessError, type TurnResult, TurnOutcome } from "../src/harness/Harness.ts"
 import { makeSpawned, stopAll } from "../src/harness/LocalSandbox.ts"
 import { Shutdown } from "../src/Shutdown.ts"
-import { configRecord, daemonClient, fakeApi, freePort, tempDir, userMessage } from "./support.ts"
+import { configRecord, daemonClient, fakeApi, freePort, noPageChecks, tempDir, userMessage } from "./support.ts"
 
 type Script = (prompt: string) => Effect.Effect<TurnResult, HarnessError>
 
@@ -30,10 +30,9 @@ const dreamd = (dir: string, envFile: string, apiPort: number, turns: Queue.Queu
     })
     const fiber = yield* main.pipe(
       Effect.provide(
-        layerWith(Layer.mergeAll(Harness.layerTest({ turns, log }), Shutdown.layerTest({ grace: "300 millis" }))).pipe(
-          Layer.provideMerge(DreamdConfig.layerFromRecord(env, envFile)),
-          Layer.provideMerge(NodeServices.layer)
-        )
+        layerWith(
+          Layer.mergeAll(Harness.layerTest({ turns, log }), Shutdown.layerTest({ grace: "300 millis" }), noPageChecks)
+        ).pipe(Layer.provideMerge(DreamdConfig.layerFromRecord(env, envFile)), Layer.provideMerge(NodeServices.layer))
       ),
       Effect.forkScoped
     )

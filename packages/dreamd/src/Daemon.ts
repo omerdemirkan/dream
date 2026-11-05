@@ -2,20 +2,24 @@
  * dreamd: the sandbox's event loop. It serves `DaemonRpcs` on
  * `DREAM_DAEMON_PORT` (the ProjectDO delivers events there), serves the
  * `dream` CLI on the `DREAM_SOCKET` Unix socket (forwarding to the API), runs
- * scheduled commands, and runs one harness turn at a time.
+ * scheduled commands, runs one harness turn at a time, and looks at the
+ * published URL after each.
  *
  * It exits when its env file changes, so its supervisor restarts it with the
  * new configuration, and it always exits promptly (see `Shutdown.ts`).
  */
 import { NodeServices } from "@effect/platform-node"
 import { Duration, Effect, Fiber, FileSystem, Layer, Option, Path, Stream } from "effect"
+import { FetchHttpClient } from "effect/http"
 import { Agent } from "./Agent.ts"
 import { Api } from "./Api.ts"
+import { PageCheck } from "./cli/PageCheck.ts"
 import { Commands } from "./Commands.ts"
 import { DreamdConfig } from "./Config.ts"
 import { Harness } from "./harness/Harness.ts"
 import { Inbox } from "./Inbox.ts"
 import { Outreach } from "./Outreach.ts"
+import { Published } from "./Published.ts"
 import { DaemonServer, SocketServer } from "./Servers.ts"
 import { Shutdown } from "./Shutdown.ts"
 import { version } from "./version.ts"
@@ -87,14 +91,17 @@ export const main = Effect.gen(function* () {
 })
 
 /** Everything `main` needs, given the harness, how to shut down, the config and the platform. */
-export const layerWith = <E, R>(base: Layer.Layer<Harness | Shutdown, E, R>) =>
+export const layerWith = <E, R>(base: Layer.Layer<Harness | Shutdown | PageCheck, E, R>) =>
   Layer.mergeAll(DaemonServer, SocketServer).pipe(
     Layer.provideMerge(Layer.mergeAll(Agent.layer, Commands.layer)),
+    Layer.provideMerge(Published.layer),
     Layer.provideMerge(Layer.mergeAll(Inbox.layer, Api.layer, Outreach.layer, base))
   )
 
 /** Everything `main` needs, given the config and the platform. */
-export const layerWithoutConfig = layerWith(Layer.mergeAll(Harness.layer, Shutdown.layer))
+export const layerWithoutConfig = layerWith(
+  Layer.mergeAll(Harness.layer, Shutdown.layer, PageCheck.layer.pipe(Layer.provide(FetchHttpClient.layer)))
+)
 
 export const layer = layerWithoutConfig.pipe(
   Layer.provideMerge(DreamdConfig.layer),

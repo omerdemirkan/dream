@@ -13,7 +13,7 @@ import { PageCheck, PageLoad } from "../src/cli/PageCheck.ts"
 import { checkCron, mediaType, parseAt, parseStep, planCopy } from "../src/cli/Parse.ts"
 import { requestedSecret } from "../src/cli/Secrets.ts"
 import { invalidInvocation } from "../src/cli/Usage.ts"
-import { requestedTags } from "../src/Servers.ts"
+import { publishedPorts, requestedTags } from "../src/Servers.ts"
 import { parseSkill } from "../src/harness/Skill.ts"
 import { harnessAuth, harnessEnv } from "../src/harness/HarnessEnv.ts"
 
@@ -75,6 +75,15 @@ describe("the CLI socket", () => {
       "not json"
     ].join("\n")
     assert.deepStrictEqual(requestedTags(body), ["SendMessage", "ReportUsage"])
+  })
+
+  it("sees which ports a request body publishes", () => {
+    const body = [
+      JSON.stringify({ _tag: "Request", id: "1", tag: "Publish", payload: { port: 5173 }, headers: [] }),
+      JSON.stringify({ _tag: "Request", id: "2", tag: "SendMessage", payload: { port: 1 }, headers: [] }),
+      JSON.stringify({ _tag: "Request", id: "3", tag: "Publish", payload: { port: "x" }, headers: [] })
+    ].join("\n")
+    assert.deepStrictEqual(publishedPorts(body), [5173])
   })
 })
 

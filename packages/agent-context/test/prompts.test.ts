@@ -71,7 +71,15 @@ What woke you:
         run: { command: "node send-digest.js", result: { exitCode: 1, outputTail: "Error: parser failed" } }
       },
       { ...base, _tag: "Alert", id: "evt_d" as EventId, reason: "Substack parser threw on 3 issues" },
-      { ...base, _tag: "UsageReset", id: "evt_e" as EventId, window: "fiveHour" }
+      { ...base, _tag: "UsageReset", id: "evt_e" as EventId, window: "fiveHour" },
+      {
+        ...base,
+        _tag: "PublishedUrlBroken",
+        id: "evt_f" as EventId,
+        url: "https://lift-log-x7k2.omer.build",
+        port: 5173,
+        facts: 'Loaded it from this sandbox in Chromium: 403 text/plain, "Blocked request."'
+      }
     ]
     const prompt = renderTurnPrompt({ events, now: base.at })
     assert.include(prompt, "They connected Gmail (gmail.readonly). HTTPS requests to gmail.googleapis.com")
@@ -80,6 +88,10 @@ What woke you:
     assert.include(prompt, "It ran `node send-digest.js`, which exited with code 1.")
     assert.include(prompt, "Something in the sandbox called `dream wake`:\n> Substack parser threw on 3 issues")
     assert.include(prompt, "Their five-hour usage window has reset.")
+    assert.include(
+      prompt,
+      'When your last turn ended, Dream loaded your published URL https://lift-log-x7k2.omer.build (port 5173):\n> Loaded it from this sandbox in Chromium: 403 text/plain, "Blocked request."'
+    )
     assert.include(prompt, "where they are (UTC)")
   })
 })
