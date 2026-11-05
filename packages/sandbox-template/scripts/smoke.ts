@@ -5,7 +5,8 @@
  * dreamd are running and the tools and both harness CLIs are installed. Given
  * an env file, it writes it where the ProjectDO would, waits for dreamd to
  * start, and prints dreamd's URL; the sandbox stays up for 15 minutes so
- * events can be delivered with `packages/dreamd/scripts/deliver.ts`.
+ * events can be delivered with `packages/dreamd/scripts/deliver.ts` (set
+ * E2B_TRAFFIC_TOKEN to the token it prints).
  * Without one, it kills the sandbox when the checks are done.
  */
 import { readFileSync } from "node:fs"
@@ -65,8 +66,10 @@ const smoke = Effect.gen(function* () {
     `for i in $(seq 1 60); do grep -q "dreamd started" ${log} && echo up && exit 0; sleep 1; done; tail -20 ${log}`
   )
   console.log(`--- dreamd after the env file\n${up}`)
+  // E2B requires this header on every port URL of a sandbox it created secured, which is the default.
   yield* Effect.logInfo(
-    `dreamd for sandbox ${sandbox.sandboxId} is at https://${sandbox.getHost(DefaultDaemonPort)} for 15 minutes`
+    `dreamd for sandbox ${sandbox.sandboxId} is at https://${sandbox.getHost(DefaultDaemonPort)} for 15 minutes`,
+    { E2B_TRAFFIC_TOKEN: sandbox.trafficAccessToken ?? "(none needed)" }
   )
 })
 
