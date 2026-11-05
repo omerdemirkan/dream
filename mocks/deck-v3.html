@@ -33,7 +33,7 @@ ul,ol{list-style:none}
 .strip{display:flex;gap:48px;padding:8px 64px 28px;overflow-x:auto;align-items:flex-start;scrollbar-color:#b9b6ae transparent}
 .fig{flex:none;zoom:var(--z,1)}
 .fig.gap{margin-left:28px}
-.fig figcaption{display:flex;gap:10px;align-items:flex-start;padding:0 6px 14px;max-width:410px;min-height:88px}
+.fig figcaption{display:flex;gap:10px;align-items:flex-start;padding:0 6px 14px;max-width:410px;min-height:92px}
 .fig .n{font-size:12px;font-weight:600;color:#8a877f;font-variant-numeric:tabular-nums}
 .fig .t{font-size:15px;font-weight:600;letter-spacing:-.01em}
 .fig .c{display:block;font-size:13px;line-height:1.4;color:#6b6962;margin-top:3px;font-weight:400}
@@ -50,6 +50,19 @@ ul,ol{list-style:none}
 .isl-x{border-radius:42px;background:#000;padding:16px 18px 18px;position:relative;overflow:hidden}
 .isl-m{width:37px;height:37px;border-radius:50%;background:#000;display:grid;place-items:center;margin:0 auto}
 .isl-row{display:flex;justify-content:center;gap:16px;align-items:center}
+
+/* option cards on the overview */
+.fig.opt figcaption{visibility:hidden}
+.optc{width:340px;height:864px;border-radius:44px;background:#F3F1EC;border:1px solid rgba(0,0,0,.07);padding:40px 32px;display:flex;flex-direction:column;gap:22px}
+.optc .L{font-size:72px;font-weight:700;letter-spacing:-.05em;line-height:.9}
+.optc h3{font-size:26px;letter-spacing:-.035em;font-weight:700;line-height:1.1}
+.optc p{font-size:15px;line-height:1.5;color:#55534d}
+.optc .k{display:block;font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#8a877f;margin-bottom:6px}
+.optc .k.why{color:#17171a}
+.optc .k.cost{color:#b5651d}
+.optc ul{display:grid;gap:8px;font-size:14px;line-height:1.45;color:#55534d}
+.optc li{padding-left:14px;position:relative}
+.optc li::before{content:"";position:absolute;left:0;top:8px;width:5px;height:5px;border-radius:50%;background:#8a877f}
 
 /* ───────── the phone ───────── */
 .scr{--bg:#0A0A0C;--s1:#141417;--s2:#1D1D21;--s3:#28282D;--line:rgba(255,255,255,.08);--line2:rgba(255,255,255,.15);
@@ -385,6 +398,67 @@ ul,ol{list-style:none}
 .snd2{width:56px;height:56px;border-radius:50%;background:var(--s2);border:1px solid var(--line2);display:grid;place-items:center;color:var(--t3);flex:none}
 .snd2.on{background:var(--t1);color:#000;border-color:var(--t1)}
 .snd2[disabled]{pointer-events:none}
+
+/* ───────── new idea · four options for a long, messy brain dump ───────── */
+.mu{white-space:pre-line}
+.dump{display:block;width:100%;margin-top:18px;font-size:19px;line-height:1.48;letter-spacing:-.012em;font-weight:400;color:var(--t1);min-height:120px;overflow:hidden;white-space:pre-wrap;user-select:text;-webkit-user-select:text;cursor:text}
+textarea.dump::placeholder{color:var(--t3)}
+.live p{margin:0;min-height:1.4em}
+.dump.live p+p{margin-top:1.48em}
+.live .int{color:var(--t3)}
+.live p.old{color:var(--t2)}
+.caret{display:inline-block;width:2px;height:1.15em;vertical-align:-.22em;margin-left:2px;border-radius:1px;background:var(--need)}
+.dbar{display:flex;align-items:center;gap:12px;height:56px}
+.dbar .mic{width:56px;height:56px;border-radius:50%;background:var(--s2);border:1px solid var(--line2);display:grid;place-items:center;flex:none;color:var(--t1)}
+.listening .dbar .mic,.listening .ccmp .mic{background:var(--need);color:var(--need-ink);border-color:var(--need)}
+.dbar .mid{flex:1;min-width:0;display:flex;align-items:center;gap:12px;font-size:14px;color:var(--t3)}
+.dz-l b,.c-lis b{color:var(--t1);font-weight:600;font-variant-numeric:tabular-nums;margin-right:4px}
+.quiet .wave .bars i{animation:none;height:4px;opacity:.6}
+.view:not(.has) .snd2{pointer-events:none}
+.has .snd2{background:var(--t1);color:#000;border-color:var(--t1)}
+/* B · talk it out */
+.b-mid{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:0 14px 30px}
+.b-orb{width:128px;height:128px;border-radius:50%;background:var(--t1);color:#000;display:grid;place-items:center;box-shadow:0 0 0 14px rgba(255,255,255,.05),0 0 0 30px rgba(255,255,255,.025);margin-bottom:52px;transition:transform .12s}
+.b-orb:active{transform:scale(.96)}
+.b-mid h2{font-size:30px;font-weight:700;letter-spacing:-.04em;line-height:1.1}
+.b-mid p{font-size:16px;line-height:1.45;color:var(--t2);margin-top:12px;max-width:300px}
+.b-foot{padding:0 0 calc(var(--hi) + 10px)}
+.b-time{text-align:center;margin-bottom:14px;font-size:13.5px;color:var(--t3)}
+.b-time b{display:block;font-size:22px;font-weight:600;color:var(--t1);font-variant-numeric:tabular-nums;letter-spacing:-.02em;margin-bottom:2px}
+.b-ctl{display:flex;align-items:center;justify-content:space-between;padding:0 6px}
+.b-side{width:56px;height:56px;background:var(--s2);border-color:var(--line2)}
+.b-stop{width:78px;height:78px;border-radius:50%;background:var(--need);color:var(--need-ink);display:grid;place-items:center;box-shadow:0 0 0 9px var(--need-bg)}
+.b-keep{flex:1;height:56px;border-radius:28px;background:var(--s2);border:1px solid var(--line2);display:flex;align-items:center;justify-content:center;gap:10px;font-weight:600;font-size:16px;letter-spacing:-.01em}
+.b-keep:active{background:var(--s3)}
+/* C · Dream asks */
+.opt-c .nav{position:sticky;top:0;z-index:4}
+.opt-c .nav::before{content:"";position:absolute;left:-20px;right:-20px;top:-70px;bottom:-14px;background:linear-gradient(var(--bg) 82%,rgba(10,10,12,0));z-index:-1}
+.c-op{margin-top:18px}
+.c-who{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:600}
+.c-q{font-size:26px;line-height:1.14;font-weight:650;letter-spacing:-.03em;margin:14px 0 8px}
+.c-t{font-size:16px;line-height:1.45;color:var(--t2)}
+.c-log{display:flex;flex-direction:column;gap:14px;margin-top:24px}
+.c-ack{color:var(--t2);font-size:15px}
+.c-ack b{color:var(--t1);font-weight:600}
+.ccmp{display:flex;align-items:flex-end;gap:8px;padding:8px 8px 8px 18px;border-radius:26px;background:var(--s2);border:1px solid var(--line2);box-shadow:0 10px 34px rgba(0,0,0,.55)}
+.ccmp .ctext{flex:1;min-width:0;font-size:16px;line-height:1.42;letter-spacing:-.01em;padding:9px 0;min-height:40px;max-height:300px;overflow-y:auto;scrollbar-width:none;white-space:pre-wrap;display:block;user-select:text;-webkit-user-select:text}
+.ccmp .ctext::placeholder{color:var(--t2)}
+.ctext.live p+p{margin-top:1.42em}
+.ccmp .mc{width:40px;height:40px;border-radius:50%;background:var(--s3);color:var(--t1);display:grid;place-items:center;flex:none}
+.ccmp .snd{display:none;background:var(--t1);color:#000}
+.has .ccmp .snd{display:grid}
+.listening .ccmp{border-color:var(--need-line);background:var(--s1)}
+.c-lis{display:flex;align-items:center;gap:10px;font-size:13.5px;color:var(--t3);margin:0 0 10px 18px}
+.startp{height:36px;padding:0 16px;border-radius:18px;background:var(--t1);color:#000;font-size:15px;font-weight:600;letter-spacing:-.01em}
+/* D · read-back */
+.heard{background:var(--s1);border:1px solid var(--line);border-radius:22px;padding:14px 16px 8px;margin-bottom:12px}
+.heard .lab{margin-bottom:4px}
+.hr{display:flex;gap:12px;align-items:flex-start;padding:6px 0}
+.hr .hk{width:20px;height:20px;border-radius:50%;border:1.5px dashed rgba(255,255,255,.26);flex:none;display:grid;place-items:center;margin-top:1px;color:#000;transition:background .3s}
+.hr.on .hk{background:var(--t1);border-color:var(--t1)}
+.hr b{display:block;font-size:14.5px;line-height:1.35;font-weight:500;color:var(--t3);letter-spacing:-.01em}
+.hr.on b{color:var(--t1)}
+.hr small{display:block;font-size:12px;color:var(--t3);margin-bottom:1px}
 
 /* ───────── prototype reactions ───────── */
 .pr-h{font-size:30px;line-height:1.1;font-weight:700;letter-spacing:-.04em;margin-top:14px}
@@ -1206,6 +1280,157 @@ MOUNT.idea = (ph, v, p) => {
   else if(ph.solo && !p.text) setTimeout(()=>t.focus({preventScroll:true}),350);
 };
 
+/* ═════════════ NEW IDEA · four options for a long, messy brain dump ═════════════
+   Shared: speech lands in the text itself (settled words white, words still being recognised gray, an amber caret);
+   a long pause starts a new paragraph and never stops listening; send takes everything, heard or typed. */
+IC.stop = '<rect x="6.5" y="6.5" width="11" height="11" rx="2.5"/>'; FILLED.add('stop');
+const DUMP_P = [
+  'Okay so, recipes. I cook a lot, from websites and from my mom’s old index cards, and whenever I’m cooking for a different number of people I end up doing math on the back of an envelope and getting it wrong.',
+  'What I want: paste a link or snap a photo of a card, say how many people, and it rewrites the whole recipe. Not just multiplied. Eggs don’t come in halves, a pinch stays a pinch, and a bigger pan changes the baking time.',
+  'My sister would use it too. She cooks for eight most weekends, and she’s in Berlin, so grams. I’m cups. It should flip between them without making either of us think.',
+  'Maybe it remembers the ones we make a lot? A shopping list would be nice, but that’s later, don’t get distracted by it.',
+  'What bugs me about the apps that exist: they’re full of ads, and they scale everything in a straight line, which is how you end up with three tablespoons of salt.'
+];
+const DUMP = DUMP_P.join('\n\n');
+const SP = [
+  'So the thing is, I cook a lot, mostly from websites and my mom’s old recipe cards, and every time I’m cooking for more people or fewer people I end up doing the math on a napkin and getting it wrong.',
+  'What I’d love is, I paste a link or take a photo of a card, I say how many people, and it just rewrites the whole thing. And not just times two. Like eggs don’t come in halves, a pinch is still a pinch, and if the pan’s bigger the baking time changes.',
+  'Oh and my sister would use it too. She cooks for eight most weekends, she’s in Berlin so everything’s in grams, and I’m cups, so it should kind of flip between them without either of us thinking.'
+];
+const SP_HEAD = SP[0]+'\n\n'+SP[1]+'\n\n'+'Oh and my sister would use it too. She cooks for eight most weekends, she’s in Berlin so everything’s in grams, and I’m ';
+const SP_INT = 'cups, so it should kind of flip between';
+const SPOKEN_ALL = SP.join(' ')+' Maybe it remembers the ones we make a lot? A shopping list would be nice too, but that’s later. What really bugs me about the apps out there is they’re full of ads, and they scale everything in a straight line, which is how you end up with three tablespoons of salt.';
+const SPOKEN_MORE = 'Oh, and another thing. When I scale something down for one person, it should tell me if the pan size matters, because half a cake in a full pan is a pancake.';
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const words = s => (String(s).trim().match(/\S+/g)||[]).length;
+const mmss = s => `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+const IDEA_OPTS = ['ideaA','ideaB','ideaC','ideaD'];
+IDEA_OPTS.forEach(n=>MODAL.add(n));
+
+/* dictation state lives on the phone while an option is listening: {said, int, secs, quiet, stream?} */
+const dzOf = (ph,p) => { if(!p.live) return null;
+  if(!ph.dz) ph.dz={said:p.said??SP_HEAD, int:p.int??SP_INT, secs:p.secs??161, quiet:!!p.quiet};
+  return ph.dz; };
+const liveInner = (dz, dimOld) => { const ps=dz.said.split(/\n{2,}/), last=ps.length-1;
+  return ps.map((x,i)=>`<p class="${dimOld&&i<last?'old':''}">${esc(x)}${i===last?`<span class="int">${esc(dz.int)}</span><i class="caret"></i>`:''}</p>`).join(''); };
+const dumpField = (ph,p,place) => { const dz=dzOf(ph,p);
+  return dz ? `<div class="dump live" data-act="dstop">${liveInner(dz)}</div>`
+    : `<textarea class="dump" rows="1" placeholder="${place}">${esc(p.text||'')}</textarea>`; };
+const dzLabel = (dz, on='Listening', quiet='Still listening') => `<span class="dz-s" data-on="${on}" data-quiet="${quiet}">${dz.quiet?quiet:on}</span>`;
+const listenLbl = (dz) => `<span class="wave">${BARS}</span><span class="dz-l"><b class="dz-t">${mmss(dz.secs)}</b>${dzLabel(dz)}</span>`;
+const draftOf = (ph,p) => ph.dz ? ph.dz.said+ph.dz.int : (p.text||'');
+const sendBtn = `<button class="snd2" data-act="dsend" aria-label="Send">${ico('up',22)}</button>`;
+const ideaNav = (right='<span style="width:40px"></span>', mid='New idea') => `<div class="nav"><button class="ib" data-back aria-label="Close">${ico('close',19)}</button><span class="nav-t">${mid}</span>${right}</div>`;
+const optCls = (ph,p,o) => `view ${o} ${draftOf(ph,p).trim()?'has':''} ${ph.dz?'listening':''} ${ph.dz&&ph.dz.quiet?'quiet':''}`;
+const countOf = t => { const n=words(t); return n>40?`${n} words`:''; };
+
+/* A · THE PAGE — one quiet page; typing and speech land in the same body text */
+VIEWS.ideaA = (ph,p) => { const dz=dzOf(ph,p);
+  return `<div class="${optCls(ph,p,'opt-a')}"><div class="scroll nodock" style="padding-bottom:150px">${ideaNav()}
+    ${dumpField(ph,p,'Start anywhere. Say everything on your mind, in any order — messy is fine.')}</div>
+  ${dock(`<div class="dbar"><button class="mic" data-act="dmic" aria-label="${dz?'Stop dictating':'Dictate'}">${ico('mic',22)}</button><span class="mid">${dz?listenLbl(dz):`<span class="dz-c">${countOf(p.text||'')}</span>`}</span>${sendBtn}</div>`)}</div>`; };
+
+/* B · TALK IT OUT — voice first; the transcript fills the screen and becomes editable when you stop */
+VIEWS.ideaB = (ph,p) => { const dz=dzOf(ph,p), mode = dz?'talk':(p.mode||((p.text||'').trim()?'edit':'start'));
+  if(mode==='start') return `<div class="view opt-b"><div class="p-view">${ideaNav()}
+    <div class="b-mid"><button class="b-orb" data-act="dmic" aria-label="Start talking">${ico('mic',40)}</button><h2>Tell me everything.</h2><p>Talk for as long as you like. Ramble, jump around, change your mind — I’ll make sense of it afterwards.</p></div>
+    <div class="b-foot"><button class="btn ghost-b" data-act="btype">${ico('kbd',20)}Type instead</button></div></div></div>`;
+  if(mode==='talk') return `<div class="${optCls(ph,p,'opt-b')}"><div class="scroll nodock" style="padding-bottom:260px">${ideaNav(undefined,'Listening')}
+    <div class="dump live b-live" data-act="dstop">${liveInner(dz,true)}</div></div>
+    ${dock(`<div class="b-time"><b class="dz-t">${mmss(dz.secs)}</b>${dzLabel(dz,'Pauses are fine. Tap stop when you’re done.','Still listening — take your time.')}</div>
+      <div class="b-ctl"><button class="ib b-side" data-act="dstop" data-focus="1" aria-label="Stop and edit">${ico('kbd',22)}</button><button class="b-stop" data-act="dmic" aria-label="Stop">${ico('stop',26)}</button>${sendBtn}</div>`)}</div>`;
+  const has=(p.text||'').trim();
+  return `<div class="${optCls(ph,p,'opt-b')}"><div class="scroll nodock" style="padding-bottom:150px">${ideaNav()}
+    <textarea class="dump" rows="1" placeholder="Type as much as you like.">${esc(p.text||'')}</textarea></div>
+    ${dock(`<div class="dbar"><button class="b-keep" data-act="dmic">${ico('mic',20)}${has?'Keep talking':'Talk instead'}</button>${sendBtn}</div>`)}</div>`; };
+
+/* C · DREAM ASKS — the guidance is Dream’s opening message; send the dump in pieces, then Start */
+VIEWS.ideaC = (ph,p) => { const dz=dzOf(ph,p), pcs=p.pieces||[];
+  const right = pcs.length?`<button class="startp" data-act="cstart">Start</button>`:'<span style="width:40px"></span>';
+  return `<div class="${optCls(ph,p,'opt-c')}"><div class="scroll nodock" style="padding-bottom:${dz?380:220}px">${ideaNav(right)}
+    <div class="c-op"><div class="c-who">${tile('fresh','sm',16)}<span>Dream</span></div><h2 class="c-q">What do you want to exist?</h2>
+      <p class="c-t">Tell me all of it: what it is, who it’s for, what bugs you about what’s out there. Ramble, jump around, send it in pieces. I’ll make sense of it.</p></div>
+    <div class="c-log">${pcs.map(x=>`<div class="mu-w"><div class="mu">${esc(x)}</div></div>`).join('')}${pcs.length?`<div class="ma c-ack">Got it. Keep going, or tap <b>Start</b> when that’s everything. I’ll look into it and come back with questions, usually within a few minutes.</div>`:''}</div></div>
+  ${dock(`${dz?`<div class="c-lis"><span class="wave">${BARS}</span><span><b class="dz-t">${mmss(dz.secs)}</b>${dzLabel(dz)}</span></div>`:''}<div class="ccmp">${dz?`<div class="ctext live" data-act="dstop">${liveInner(dz)}</div>`:`<textarea class="ctext" rows="1" placeholder="${pcs.length?'Keep going…':'Tell me about it…'}">${esc(p.text||'')}</textarea>`}<button class="mc mic" data-act="dmic" aria-label="Dictate">${ico('mic',19)}</button><button class="mc snd" data-act="dsend" aria-label="Send this piece">${ico('up',19)}</button></div>`)}</div>`; };
+
+/* D · READ-BACK — a page, plus Dream’s running note of what it has picked up (made by a model in the real thing) */
+const COVER = [
+  {k:'what', t:'What it is',                      s:'Rescales recipes from a link or a photo'},
+  {k:'who',  t:'Who it’s for',  re:/sister|family|kids|friends|for eight/i, s:'You, and your sister, who cooks for eight'},
+  {k:'pain', t:'What bugs you about what exists', re:/bugs|annoy|\bads\b|hate/i, s:'Ads, and scaling in a straight line'},
+  {k:'wait', t:'What can wait', re:/later|not now|distracted/i, s:'A shopping list'}
+];
+const heardHTML = (t) => { const n=words(t), cs=COVER.map(c=>Object.assign({on:c.re?n>=8&&c.re.test(t):n>=25},c)), any=cs.some(c=>c.on);
+  return `<div class="lab">${any?'What I’m hearing':'Worth mentioning, in any order'}</div>${cs.map(c=>`<div class="hr ${c.on?'on':''}"><i class="hk">${c.on?ico('check',13):''}</i><span>${c.on?`<small>${c.t}</small><b>${c.s}</b>`:`<b>${c.t}</b>`}</span></div>`).join('')}`; };
+VIEWS.ideaD = (ph,p) => { const dz=dzOf(ph,p);
+  return `<div class="${optCls(ph,p,'opt-d')}"><div class="scroll nodock" style="padding-bottom:350px">${ideaNav()}${dumpField(ph,p,'Start anywhere.')}</div>
+  ${dock(`<div class="heard">${heardHTML(draftOf(ph,p))}</div><div class="dbar"><button class="mic" data-act="dmic" aria-label="${dz?'Stop dictating':'Dictate'}">${ico('mic',22)}</button><span class="mid">${dz?listenLbl(dz):''}</span>${sendBtn}</div>`)}</div>`; };
+
+/* shared behaviour */
+const padForDock = (v) => { const d=v.querySelector('.dock'), sc=v.querySelector('.scroll'); if(d&&sc) sc.style.paddingBottom=(d.offsetHeight+24)+'px'; };
+function dzRefresh(ph){ const v=ph.host.lastElementChild; if(!v) return; const p=ph.cur.params, dz=ph.dz, t=draftOf(ph,p);
+  v.classList.toggle('has', !!t.trim()); v.classList.toggle('quiet', !!(dz&&dz.quiet));
+  const c=v.querySelector('.dz-c'); if(c) c.textContent=countOf(t);
+  const h=v.querySelector('.heard'); if(h) h.innerHTML=heardHTML(t);
+  padForDock(v);
+  if(!dz) return;
+  const L=v.querySelector('.live'); if(L){ L.innerHTML=liveInner(dz, L.classList.contains('b-live')); L.scrollTop=L.scrollHeight; }
+  v.querySelectorAll('.dz-t').forEach(e=>e.textContent=mmss(dz.secs));
+  v.querySelectorAll('.dz-s').forEach(e=>e.textContent=dz.quiet?e.dataset.quiet:e.dataset.on);
+  const sc=v.querySelector('.scroll'); if(sc) sc.scrollTop=sc.scrollHeight;
+}
+function dzRun(ph){ const dz=ph.dz; (ph.timers=ph.timers||[]).push(setInterval(()=>{ dz.secs++; dzRefresh(ph); },1000));
+  const step=()=>{ if(ph.dz!==dz) return;
+    if(dz.i>=dz.stream.length){ if(dz.int){ dz.said+=dz.int+' '; dz.int=''; } dz.quiet=true; dzRefresh(ph); return; }
+    const w=dz.stream[dz.i++]; let wait=110+Math.random()*90; dz.quiet=false; dz.int+=(dz.int?' ':'')+w;
+    if(/[.?!]$/.test(w)){ dz.said+=dz.int+' '; dz.int=''; if(++dz.n%2===0){ dz.said=dz.said.trimEnd()+'\n\n'; dz.quiet=true; wait=1700; } }
+    else { const iw=dz.int.split(' '); if(iw.length>5){ dz.said+=iw.slice(0,-4).join(' ')+' '; dz.int=iw.slice(-4).join(' '); } }
+    dzRefresh(ph); ph.after(wait, step); };
+  ph.after(500, step);
+}
+function dzStart(ph){ const p=ph.cur.params, cur=p.text||'';
+  ph.dz={said:cur.trim()?cur.trimEnd()+' ':'', int:'', secs:0, quiet:false, stream:(cur.trim()?SPOKEN_MORE:SPOKEN_ALL).split(' '), i:0, n:0};
+  p.live=1; ph.draw('none'); }
+function dzStop(ph, focus){ const dz=ph.dz, p=ph.cur.params; if(!dz) return;
+  p.text=(dz.said+dz.int).trimEnd(); ph.dz=null; p.live=0; p.mode='edit'; ph.draw('none');
+  if(focus){ const t=ph.host.querySelector('textarea'); if(t){ t.focus({preventScroll:true}); t.setSelectionRange(t.value.length,t.value.length); } } }
+function ideaSend(ph, start){ const p=ph.cur.params, t=draftOf(ph,p).trim(); ph.dz=null; p.live=0;
+  if(ph.cur.name==='ideaC' && !start){ if(!t) return; p.pieces=(p.pieces||[]).concat([t]); p.text=''; ph.draw('none'); return; }
+  const all=ph.cur.name==='ideaC' ? (p.pieces||[]).concat(t?[t]:[]).join('\n\n') : t; if(!all) return;
+  ph.st.newIdea={text:all}; ph.stack=[HOME(), CHATP('fresh')]; ph.draw('fwd'); }
+const mountIdea = (ph,v,p) => {
+  v.querySelectorAll('textarea').forEach(t=>ph.fit(t)); padForDock(v);
+  v.addEventListener('input', e=>{ const t=e.target; if(!t.matches('textarea')) return; ph.fit(t); ph.cur.params.text=t.value; dzRefresh(ph); });
+  if(ph.dz){ dzRefresh(ph); if(ph.dz.stream) dzRun(ph); }
+  else if(p.end){ const sc=v.querySelector('.scroll'); sc.scrollTop=sc.scrollHeight; }
+  else if(ph.solo && !p.text && v.querySelector('textarea')) setTimeout(()=>v.querySelector('textarea')?.focus({preventScroll:true}),350);
+};
+IDEA_OPTS.forEach(n=>MOUNT[n]=mountIdea);
+Object.assign(ACT, {
+  dmic:(ph)=>ph.dz?dzStop(ph):dzStart(ph),
+  dstop:(ph,t)=>dzStop(ph, true),
+  dsend:(ph)=>ideaSend(ph),
+  cstart:(ph)=>ideaSend(ph, true),
+  btype:(ph)=>{ ph.cur.params.mode='edit'; ph.draw('none'); ph.host.querySelector('textarea')?.focus({preventScroll:true}); }
+});
+/* a dictation belongs to the screen it started on */
+{ const draw=Phone.prototype.draw, reset=Phone.prototype.reset;
+  Phone.prototype.draw=function(...a){ if(!IDEA_OPTS.includes(this.cur.name)) this.dz=null; return draw.apply(this,a); };
+  Phone.prototype.reset=function(){ this.dz=null; return reset.call(this); }; }
+Object.assign(ROUTES, {
+  optA:()=>[HOME(),E('ideaA',{})], optALong:()=>[HOME(),E('ideaA',{text:DUMP})], optADict:()=>[HOME(),E('ideaA',{live:1})],
+  optB:()=>[HOME(),E('ideaB',{})], optBLong:()=>[HOME(),E('ideaB',{text:DUMP})],
+  optBDict:()=>[HOME(),E('ideaB',{live:1,said:SP.join('\n\n')+'\n\n',int:'',quiet:1,secs:174})],
+  optC:()=>[HOME(),E('ideaC',{})],
+  optCLong:()=>[HOME(),E('ideaC',{pieces:[DUMP_P[0]+'\n\n'+DUMP_P[1], DUMP_P[2]], text:DUMP_P[3]+'\n\n'+DUMP_P[4], end:1})],
+  optCDict:()=>[HOME(),E('ideaC',{pieces:[DUMP_P[0]], live:1, said:'What I’d love is, I paste a link or take a photo of a card, I say how many people, and it just rewrites the whole thing. And not just times two.\n\nLike eggs don’t come in halves, a pinch is still a pinch, and ', int:'if the pan’s bigger the baking', secs:48})],
+  optD:()=>[HOME(),E('ideaD',{})], optDLong:()=>[HOME(),E('ideaD',{text:[DUMP_P[0],DUMP_P[1],DUMP_P[2],DUMP_P[4]].join('\n\n')})], optDDict:()=>[HOME(),E('ideaD',{live:1})]
+});
+Object.assign(nameOf, {optA:'New idea · A · empty', optALong:'New idea · A · long', optADict:'New idea · A · dictating',
+  optB:'New idea · B · empty', optBLong:'New idea · B · long', optBDict:'New idea · B · dictating',
+  optC:'New idea · C · empty', optCLong:'New idea · C · long', optCDict:'New idea · C · dictating',
+  optD:'New idea · D · empty', optDLong:'New idea · D · long', optDDict:'New idea · D · dictating'});
+
 /* PROTOTYPE REACTIONS */
 VIEWS.protos = (ph) => {
   const rs={no:'Not it',maybe:'Maybe',yes:'This one'}; const n=Object.keys(ph.st.react).length;
@@ -1242,6 +1467,23 @@ const FRAMES = [
   {n:'11', t:'Project · Lift Log · Status', c:'Status is still the live roadmap. The pinned Apple need opens the same expanded request.', r:'lift'},
   {n:'12', t:'New idea', c:'A plain composer. Type, or tap the mic to dictate into the field, then send.', r:'ideaText'},
   {n:'13', t:'New idea · dictating', c:'Speech becomes text in the field. Nothing is sent until you tap send.', r:'dictating'},
+  {card:'intro', k:'New idea · after TestFlight', t:'Four ways to ramble', body:['12 and 13 read as a title and a body: a 32 pt bold line, then fine print the founder tried to tap into. And “a sentence is enough” asks for the opposite of what they want: to talk or type for as long as they like and let Dream make sense of it.','Four genuinely different directions follow, each shown empty, with a long typed brain dump, and dictating mid-ramble. Every phone is live: type, tap the mic, send.'], list:['All four: one text size for everything you write (19 pt body, or chat size), no grey line under a field.','Speech lands in the text itself, as it’s heard. Settled words are white; words still being recognised are grey, ahead of an amber caret.','A pause never stops listening; a long one starts a new paragraph. Send takes everything, typed or heard.','Sending still lands in the new project’s Chat (14).']},
+  {card:'A', t:'The page', gap:1, what:'One quiet page, like Notes. What you type and what you say land in the same body text, so nothing reads as a title, and the only guidance is the placeholder itself.', why:'Fixes both confusions with the smallest change to what shipped; the other three build on it.', cost:'A blank page gives no nudge. Some people will still write one line, and nothing tells them what happens after send until they land in Chat.'},
+  {n:'A1', t:'A · Empty', c:'The only grey text is the placeholder, set in the same 19 pt as what you write, so it reads as the field. Nothing sits under it.', r:'optA'},
+  {n:'A2', t:'A · Long brain dump', c:'Five paragraphs read like a note, not a headline. The nav scrolls away; send stays in reach. A word count appears once it’s long: reassurance, not a limit.', r:'optALong'},
+  {n:'A3', t:'A · Dictating mid-ramble', c:'Speech lands at the caret. A long pause starts a new paragraph. Tap the text to stop and edit by hand; the mic carries on from the end.', r:'optADict'},
+  {card:'B', t:'Talk it out', gap:1, what:'Voice first. One big button and “Tell me everything.” The transcript fills the screen as you talk and keeps listening through silences until you tap stop; then it’s an editable page.', why:'Rambling comes naturally out loud, and it’s how the founder wanted to use it. A whole screen of transcript makes it obvious all of it is kept.', cost:'Typing is one tap further away, talking isn’t always possible, and the screen changes shape between talking and editing.'},
+  {n:'B1', t:'B · Empty', c:'No field on screen, so nothing to mistake for one. The heading is an invitation, not an input. Type instead is there for the train.', r:'optB'},
+  {n:'B2', t:'B · Long brain dump', c:'After stopping, or after Type instead: the whole dump as one editable page. Keep talking adds to the end; send takes all of it.', r:'optBLong'},
+  {n:'B3', t:'B · Dictating, mid-pause', c:'Silence doesn’t stop it: Still listening, and a new paragraph. Earlier ones dim. Stop, or the keyboard, turns it into text to edit.', r:'optBDict'},
+  {card:'C', t:'Dream asks', gap:1, what:'The screen opens as a conversation. Dream asks the question, so the guidance is a message in its voice, never fine print under a field. Send the dump in as many pieces as you like, then tap Start.', why:'No pressure to get it all out in one go: thoughts arrive in pieces, and each piece is visibly kept. Dream says what happens next.', cost:'Two actions to learn (send a piece, Start), and Dream waits for Start. It looks like any chatbot, which Deck v3 otherwise keeps secondary.'},
+  {n:'C1', t:'C · Empty', c:'Dream’s opening message carries all the guidance. The composer at the bottom is the only place to write.', r:'optC'},
+  {n:'C2', t:'C · Long brain dump', c:'Two pieces sent, a third typed. Dream explains Start once. Start (top right) begins the project with every piece as its first message.', r:'optCLong'},
+  {n:'C3', t:'C · Dictating mid-ramble', c:'Dictation grows the composer to half the screen, every word visible. Send it as a piece, or keep going.', r:'optCDict'},
+  {card:'D', t:'Read-back', gap:1, what:'A page like A, plus Dream’s short list of what’s worth mentioning, in any order. As you ramble it ticks each one off with what it understood.', why:'Proof that rambling works: Dream visibly makes sense of the mess as you go, and an open item nudges without imposing an order.', cost:'Needs a live model call while you type (a new RPC, and cost). A checklist can still feel like a form, and it takes room from the text.'},
+  {n:'D1', t:'D · Empty', c:'A plain page and a checklist that belongs to Dream: circles, no carets, nothing to tap. It is not a set of fields.', r:'optD'},
+  {n:'D2', t:'D · Long brain dump', c:'Three of four picked up, each in Dream’s words. “What can wait” stays open, a nudge, not a requirement. Send any time.', r:'optDLong'},
+  {n:'D3', t:'D · Dictating mid-ramble', c:'The list updates as sentences settle: here it has caught what it is and who it’s for; the rest is still to come.', r:'optDDict'},
   {n:'14', t:'After sending · Chat', c:'You land in the new project’s Chat with your message. The first reply can take minutes.', r:'sentChat'},
   {n:'15', t:'After sending · Status', c:'A quiet line says it’s looking into things. No spinner, nothing to wait for.', r:'sentStatus'},
   {n:'16', t:'Recipe Scaler · Chat', c:'Minutes later: the first sharp question, answerable with a tap.', r:'recipeChat'},
@@ -1264,10 +1506,18 @@ function islandSpec(n){
     <div><h5>When a project needs you</h5><div class="isl-x" style="padding:14px 16px"><div class="la-top"><span class="la-mark" style="background:var(--need-c,#FFB35C);color:#1B1204;border-radius:50%">${ico('cabin',15)}</span><b>Cabin</b><span class="la-day" style="background:#FFB35C;color:#1B1204">Needs you</span></div><div class="la-sub" style="margin-top:10px;font-size:15px;color:#fff;font-weight:550">Who gets a weekend two relatives want?</div></div></div>
   </div></div></div>`;
 }
+/* a card on the overview introducing a group of screens (the New idea options) */
+function optCard(f){
+  const head = f.card==='intro' ? `<span class="k">${f.k}</span><h3>${f.t}</h3>` : `<div class="L">${f.card}</div><h3>${f.t}</h3>`;
+  const body = f.card==='intro' ? `${f.body.map(x=>`<p>${x}</p>`).join('')}<ul>${f.list.map(x=>`<li>${x}</li>`).join('')}</ul>`
+    : `<p>${f.what}</p><div><span class="k why">Why</span><p>${f.why}</p></div><div><span class="k cost">Trade-off</span><p>${f.cost}</p></div>`;
+  return `<figure class="fig opt${f.gap||f.card==='intro'?' gap':''}"><figcaption><span class="n">&nbsp;</span></figcaption><div class="optc">${head}${body}</div></figure>`;
+}
 function fitZoom(){ const z=Math.max(.72, Math.min(1, (innerHeight-250)/880)); document.documentElement.style.setProperty('--z', z.toFixed(3)); }
 function mountBoard(){
   phones.length=0; const strip=document.getElementById('strip'); strip.innerHTML='';
   FRAMES.forEach((f,idx)=>{
+    if(f.card){ strip.insertAdjacentHTML('beforeend', optCard(f)); return; }
     const fig=document.createElement('figure'); fig.className='fig'+(f.gap?' gap':'');
     fig.innerHTML=`<figcaption><span class="n">${f.n}</span><span><span class="t">${f.t}</span><span class="c">${f.c}</span></span><button class="rs">Reset</button></figcaption><div class="dev"></div>`;
     strip.appendChild(fig);
