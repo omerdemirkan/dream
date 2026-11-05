@@ -40,8 +40,22 @@ const cf = async (path: string, init?: RequestInit): Promise<Json> => {
   return body.result
 }
 
+/** Retries transient network failures (the dev proxy sometimes cancels a request). */
+const retrying = async <A>(attempt: () => Promise<A>, tries = 4): Promise<A> => {
+  for (let i = 1; ; i++) {
+    try {
+      return await attempt()
+    } catch (e: any) {
+      if (i >= tries || !String(e?.message ?? e).includes("fetch failed")) throw e
+      await new Promise((r) => setTimeout(r, 2_000 * i))
+    }
+  }
+}
+
 let rpcId = 0
-const rpcRaw = async (tag: string, payload: unknown, token?: string): Promise<Json> => {
+const rpcRaw = (tag: string, payload: unknown, token?: string): Promise<Json> =>
+  retrying(() => rpcOnce(tag, payload, token))
+const rpcOnce = async (tag: string, payload: unknown, token?: string): Promise<Json> => {
   const res = await fetch(`${Api}/rpc`, {
     method: "POST",
     headers: { "content-type": "application/ndjson", ...(token ? { authorization: `Bearer ${token}` } : {}) },
@@ -100,8 +114,8 @@ const findSandbox = async (projectId: string) => {
   return found as { sandboxId: string; state: string }
 }
 const inSandbox = async (projectId: string, command: string, timeoutMs = 60_000) => {
-  const { sandboxId } = await findSandbox(projectId)
-  const sbx = await Sandbox.connect(sandboxId, { proxy: Proxy } as never)
+  const { sandboxId } = await retrying(() => findSandbox(projectId))
+  const sbx = await retrying(() => Sandbox.connect(sandboxId, { proxy: Proxy } as never))
   try {
     const r = await sbx.commands.run(command, { timeoutMs })
     return `${r.stdout}${r.stderr}`
@@ -160,7 +174,9 @@ const main = async () => {
       let idleChecks = 0
       while (Date.now() < deadline) {
         await new Promise((r) => setTimeout(r, 20_000))
-        const log = await inSandbox(a, "tail -n 5 /home/user/.dream/logs/dreamd.log").catch(() => "")
+        // Counts only a log we actually read: a failed read says nothing about the turn.
+        const log = await inSandbox(a, "tail -n 5 /home/user/.dream/logs/dreamd.log").catch(() => undefined)
+        if (log === undefined || !log.includes("INFO")) continue
         const lastStart = log.lastIndexOf("Turn started")
         const lastEnd = Math.max(log.lastIndexOf("Turn finished"), log.lastIndexOf("Turn failed"))
         idleChecks = lastEnd > lastStart || lastStart === -1 ? idleChecks + 1 : 0
