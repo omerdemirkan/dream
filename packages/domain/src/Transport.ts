@@ -31,6 +31,8 @@ export const Routes = {
   daemon: "/daemon/rpc",
   /** POST a `TestflightKeyRequest` from a Namespace build Mac; see Testflight.ts. */
   testflightKey: "/testflight/asc-key",
+  /** POST a `TestflightIdentityUpload` from the build Mac that was just released the key. */
+  testflightIdentity: "/testflight/signing-identity",
   /** POST a `TestflightGrantRequest` with the operator's `x-dream-dev-secret`. */
   testflightGrant: "/admin/testflight/grants"
 } as const

@@ -20,7 +20,7 @@ import { gateway } from "./Gateway.ts"
 import { downloadMedia, uploadMedia } from "./Media.ts"
 import { homePage, privacyPage } from "./PublicPages.ts"
 import { SandboxAuthServer, WorkerSandboxHandlers } from "./SandboxHandlers.ts"
-import { grantAscKey, releaseAscKey } from "./Testflight.ts"
+import { grantAscKey, releaseAscKey, storeSigningIdentity } from "./Testflight.ts"
 
 export class LiveForwarder extends Context.Service<
   LiveForwarder,
@@ -129,6 +129,23 @@ export const route = (raw: Request) =>
         ),
         Effect.catchTag("UpstreamFailure", (e) =>
           Effect.logWarning("couldn't release the App Store Connect key", e.message).pipe(
+            Effect.as(HttpServerResponse.text("Unavailable", { status: 503 }))
+          )
+        )
+      )
+    }
+
+    if (path === Routes.testflightIdentity && request.method === "POST") {
+      const body = yield* request.json.pipe(Effect.orElseSucceed(() => null))
+      return yield* storeSigningIdentity(body).pipe(
+        Effect.map((certificateId) => HttpServerResponse.jsonUnsafe({ stored: certificateId })),
+        Effect.catchTag("TestflightDenied", (e) =>
+          Effect.logWarning("refused a TestFlight signing identity", e.reason).pipe(
+            Effect.as(HttpServerResponse.text("Forbidden", { status: 403 }))
+          )
+        ),
+        Effect.catchTag("UpstreamFailure", (e) =>
+          Effect.logWarning("couldn't store the TestFlight signing identity", e.message).pipe(
             Effect.as(HttpServerResponse.text("Unavailable", { status: 503 }))
           )
         )

@@ -41,6 +41,12 @@ If the run is interrupted after the build started, rerunning `testflight` picks 
 up the "Dream by Omer" record). It prints only the key's size, file mode and a short hash, never the key.
 `testflight` then builds and uploads, as step 3 would on your Mac.
 
+- **Signing:** the first build creates one **Apple Distribution** certificate for the team (developer.apple.com
+  → Certificates shows it as "Apple Distribution: Omer Demirkan"), plus App Store profiles named
+  "Dream TestFlight build.omer.dream" and "… .widget". Dream's Worker keeps that certificate's private key,
+  encrypted, and every build reuses it, so the team stays within Apple's few distribution certificates. Don't
+  revoke it while builds signed with it are in TestFlight: they can stop installing. If it's revoked or expires
+  (after a year), the next build makes a new one.
 - **New key:** set `ASC_TESTFLIGHT_KEY_P8` again in the same place.
 - **Stop it:** delete `ASC_TESTFLIGHT_KEY_P8`, or revoke the key in App Store Connect (Users and Access →
   Integrations → the key → Revoke). Either takes effect at once.

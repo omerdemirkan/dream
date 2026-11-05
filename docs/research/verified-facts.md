@@ -416,3 +416,16 @@ subscription with real models. No ChatGPT account is connected, so nothing on Co
 - Subagents inherit the config: a gpt-6-luna child spawned by gpt-6.1-sol ran at 828,400 too. No separate limit
   needed; a model with a smaller max is clamped to its own. The harness check reports the windows the rollouts
   used and fails if any is the 272k default.
+- TestFlight signing on a Namespace Mac (2026-11-05): automatic signing fails there for two reasons. An SSH session
+  searches only the common and system keychain lists (`security list-keychains` shows System; the user domain's
+  list, login keychain included, is ignored), so Xcode can't install or find certificates ("Write permissions
+  error", -61); and the team has 0 devices, so the iOS App Development profiles automatic archiving wants can't
+  exist. Cloud-managed distribution certificates need an Admin API key (App Manager gets "Cloud signing permission
+  error"). The App Manager key can use the provisioning API: it created an Apple Distribution certificate
+  (POST /v1/certificates, DISTRIBUTION, from a CSR made with /usr/bin/openssl), registered build.omer.dream.widget,
+  and created IOS_APP_STORE profiles (no devices). Manual signing works from a temporary keychain added to the
+  common domain's search list with `sudo security list-keychains -d common -s …` (each SSH connection is its own
+  security session, so the build re-unlocks it). Revoking a distribution certificate leaves App Store apps alone,
+  but forum reports say TestFlight builds signed with it can stop installing, so Dream keeps one certificate
+  (private key sealed in D1 `testflight_identity`) and reuses it. `xcodeproj` (1.28) is usable through CocoaPods'
+  gems (`GEM_HOME=/opt/homebrew/Cellar/cocoapods/<v>/libexec`).

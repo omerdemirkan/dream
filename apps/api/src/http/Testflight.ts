@@ -12,20 +12,29 @@
  *   15 minutes, and the grant hasn't been used;
  * - the Mac is RUNNING, labeled `dream=testflight`, and the tenant's only instance (Namespace's own listing,
  *   through the Worker's token), so no other Mac, an agent's included, is up to reach it.
+ *
+ * The release also carries the distribution signing identity (certificate and private key) the builds reuse, if
+ * one is stored. The first build Mac creates it and stores it with `storeSigningIdentity`, under the same checks
+ * except that its grant must have been used in the last 30 minutes (it was just released the key).
  */
 import {
   TestflightGrantRequest,
-  UpstreamFailure,
+  TestflightIdentityAudience,
+  TestflightIdentityUpload,
   TestflightKeyAudience,
   TestflightKeyInfo,
   type TestflightKeyRelease,
-  TestflightKeyRequest
+  TestflightKeyRequest,
+  TestflightSigningIdentity,
+  UpstreamFailure
 } from "@dream/domain"
 import { Data, DateTime, Effect, Option, Redacted, Schema } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 import { Namespace } from "../brokers/Namespace.ts"
 import { ApiConfig, required } from "../Config.ts"
+import { jsonCodec } from "../db/Sql.ts"
 import { TestflightGrants } from "../db/TestflightGrants.ts"
+import { TestflightIdentity } from "../db/TestflightIdentity.ts"
 import { describe, okOrFail } from "../e2b/E2B.ts"
 import { fromBase64Url, randomBytes, toBase64Url, utf8 } from "../lib/Bytes.ts"
 import { AnyJwk, AnyJwks, verifyJwt } from "../lib/Jwt.ts"
@@ -65,10 +74,20 @@ export const decodePublicKey = (publicKey: string): Effect.Effect<Uint8Array<Arr
     )
   )
 
-/** Checks a Namespace ID token for a build Mac of `tenantId` bound to `publicKey`; returns its instance id. */
+/** The audience binding a key-release token to `publicKey`. */
+export const keyAudience = (publicKey: Uint8Array<ArrayBuffer>) =>
+  sha256(publicKey).pipe(Effect.map((digest) => TestflightKeyAudience(toBase64Url(digest))))
+
+/** The audience binding an identity-upload token to `identity`. */
+export const identityAudience = (identity: TestflightSigningIdentity) =>
+  sha256(utf8(`${identity.certificateId}\n${identity.certificate}\n${Redacted.value(identity.privateKey)}`)).pipe(
+    Effect.map((digest) => TestflightIdentityAudience(toBase64Url(digest)))
+  )
+
+/** Checks a Namespace ID token for a build Mac of `tenantId` issued for `audience`; returns its instance id. */
 export const verifyBuildMacToken = (
   idToken: string,
-  publicKey: Uint8Array<ArrayBuffer>,
+  audience: string,
   keys: ReadonlyArray<AnyJwk>,
   options: { readonly issuer: string; readonly tenantId: string; readonly nowSec: number }
 ): Effect.Effect<string, TestflightDenied> =>
@@ -83,9 +102,8 @@ export const verifyBuildMacToken = (
     if (claims.iss !== options.issuer) return yield* deny("ID token: wrong issuer")
     if (claims.tenant_id !== options.tenantId || claims.sub !== `${options.tenantId}/${claims.instance_id}`)
       return yield* deny("ID token: another workspace")
-    const audience = TestflightKeyAudience(toBase64Url(yield* sha256(publicKey)))
     const audiences = typeof claims.aud === "string" ? [claims.aud] : claims.aud
-    if (!audiences.includes(audience)) return yield* deny("ID token: not bound to this public key")
+    if (!audiences.includes(audience)) return yield* deny("ID token: not bound to this request")
     if (claims.exp <= nowSec || (claims.nbf ?? claims.iat) > nowSec + skewSec) return yield* deny("ID token: expired")
     if (claims.exp - claims.iat > maxTokenLifetimeSec) return yield* deny("ID token: lives too long")
     return claims.instance_id
@@ -97,11 +115,13 @@ type CryptoKey = Awaited<ReturnType<typeof crypto.subtle.importKey>>
 /**
  * Encrypts `plaintext` to the Mac's ECDH public key: a fresh Worker key pair, HKDF-SHA256 over the shared
  * secret (salt = Mac key ‖ Worker key, info `TestflightKeyInfo`), AES-256-GCM with the instance id as AAD.
+ * `identity` (JSON) is encrypted with the same key under its own nonce, AAD `<instance id>:identity`.
  */
 export const sealForMac = (
   macPublicKey: Uint8Array<ArrayBuffer>,
   instanceId: string,
-  plaintext: string
+  plaintext: string,
+  identity?: string
 ): Effect.Effect<TestflightKeyRelease, TestflightDenied> =>
   Effect.tryPromise({
     try: async () => {
@@ -129,10 +149,22 @@ export const sealForMac = (
         aes,
         utf8(plaintext)
       )
-      return {
+      const release: TestflightKeyRelease = {
         serverPublicKey: toBase64Url(server),
         iv: toBase64Url(iv),
         ciphertext: toBase64Url(new Uint8Array(ciphertext))
+      }
+      if (identity === undefined) return release
+      const identityIv = randomBytes(12)
+      const sealed = await subtle.encrypt(
+        { name: "AES-GCM", iv: identityIv, additionalData: utf8(`${instanceId}:identity`) },
+        aes,
+        utf8(identity)
+      )
+      return {
+        ...release,
+        identityIv: toBase64Url(identityIv),
+        identityCiphertext: toBase64Url(new Uint8Array(sealed))
       }
     },
     catch: () => new TestflightDenied({ reason: "bad public key" })
@@ -152,30 +184,73 @@ const fetchJwks = Effect.gen(function* () {
   return jwks.keys.flatMap((key) => Option.toArray(Schema.decodeUnknownOption(AnyJwk)(key)))
 })
 
-/** `Routes.testflightKey`: a granted build Mac gets the `.p8`, encrypted to its key. */
+/** Verifies the token and that its Mac is a running build Mac and the tenant's only instance. */
+const buildMac = (idToken: string, audience: string) =>
+  Effect.gen(function* () {
+    const config = yield* ApiConfig
+    const namespace = yield* Namespace
+    const now = yield* DateTime.now
+    const instanceId = yield* verifyBuildMacToken(idToken, audience, yield* fetchJwks, {
+      issuer: config.namespaceFederationUrl,
+      tenantId: config.namespaceTenantId,
+      nowSec: Math.floor(DateTime.toEpochMillis(now) / 1000)
+    })
+    const instances = yield* namespace.list
+    const self = instances.find((i) => i.instanceId === instanceId)
+    if (self?.status !== "RUNNING" || self.labels?.dream !== "testflight") return yield* deny("not a running build Mac")
+    if (instances.some((i) => i.instanceId !== instanceId && i.status !== "DESTROYED"))
+      return yield* deny("another instance is running")
+    return { instanceId, nowMs: DateTime.toEpochMillis(now) }
+  })
+
+/** `Routes.testflightKey`: a granted build Mac gets the `.p8` (and the signing identity), encrypted to its key. */
 export const releaseAscKey = Effect.fn("Testflight.releaseAscKey")(function* (body: unknown) {
   const config = yield* ApiConfig
-  const namespace = yield* Namespace
   const grants = yield* TestflightGrants
+  const identities = yield* TestflightIdentity
   const pem = yield* required(config.ascTestflightKey, "App Store Connect", "ASC_TESTFLIGHT_KEY_P8")
   const request = yield* Schema.decodeUnknownEffect(TestflightKeyRequest)(body).pipe(
     Effect.mapError(() => new TestflightDenied({ reason: "malformed request" }))
   )
   const publicKey = yield* decodePublicKey(request.publicKey)
-  const now = yield* DateTime.now
-  const instanceId = yield* verifyBuildMacToken(Redacted.value(request.idToken), publicKey, yield* fetchJwks, {
-    issuer: config.namespaceFederationUrl,
-    tenantId: config.namespaceTenantId,
-    nowSec: Math.floor(DateTime.toEpochMillis(now) / 1000)
+  const { instanceId, nowMs } = yield* buildMac(Redacted.value(request.idToken), yield* keyAudience(publicKey))
+  if (!(yield* grants.consume(instanceId, nowMs))) return yield* deny("no grant")
+  const identity = yield* identities.get
+  const identityJson = Option.isSome(identity)
+    ? yield* Schema.encodeEffect(jsonCodec(TestflightSigningIdentity))(identity.value).pipe(Effect.orDie)
+    : undefined
+  yield* Effect.logInfo("released the App Store Connect key to a build Mac", {
+    instanceId,
+    withIdentity: identityJson !== undefined
   })
-  const instances = yield* namespace.list
-  const self = instances.find((i) => i.instanceId === instanceId)
-  if (self?.status !== "RUNNING" || self.labels?.dream !== "testflight") return yield* deny("not a running build Mac")
-  if (instances.some((i) => i.instanceId !== instanceId && i.status !== "DESTROYED"))
-    return yield* deny("another instance is running")
-  if (!(yield* grants.consume(instanceId, DateTime.toEpochMillis(now)))) return yield* deny("no grant")
-  yield* Effect.logInfo("released the App Store Connect key to a build Mac", { instanceId })
-  return yield* sealForMac(publicKey, instanceId, Redacted.value(pem))
+  return yield* sealForMac(publicKey, instanceId, Redacted.value(pem), identityJson)
+})
+
+/** How recently a Mac must have been released the key to store a signing identity. */
+const identityWindowMs = 30 * 60_000
+
+/** `Routes.testflightIdentity`: the build Mac that was just released the key stores the identity it created. */
+export const storeSigningIdentity = Effect.fn("Testflight.storeSigningIdentity")(function* (body: unknown) {
+  const grants = yield* TestflightGrants
+  const identities = yield* TestflightIdentity
+  const upload = yield* Schema.decodeUnknownEffect(TestflightIdentityUpload)(body).pipe(
+    Effect.mapError(() => new TestflightDenied({ reason: "malformed request" }))
+  )
+  const { identity } = upload
+  if (
+    !/^[A-Z0-9]{6,20}$/.test(identity.certificateId) ||
+    identity.certificate.length > 16_384 ||
+    !Redacted.value(identity.privateKey).includes("-----BEGIN PRIVATE KEY-----")
+  )
+    return yield* deny("malformed identity")
+  const { instanceId, nowMs } = yield* buildMac(Redacted.value(upload.idToken), yield* identityAudience(identity))
+  if (!(yield* grants.usedSince(instanceId, nowMs - identityWindowMs))) return yield* deny("no recent release")
+  yield* identities.put(identity)
+  yield* Effect.logInfo("stored the TestFlight signing identity", {
+    instanceId,
+    certificateId: identity.certificateId
+  })
+  return identity.certificateId
 })
 
 /** `Routes.testflightGrant` (operator): lets one build Mac fetch the key once in the next 15 minutes. */

@@ -10,7 +10,15 @@ import { FetchHttpClient } from "effect/http"
 import { Namespace } from "../src/brokers/Namespace.ts"
 import { ApiConfig } from "../src/Config.ts"
 import { TestflightGrants } from "../src/db/TestflightGrants.ts"
-import { grantAscKey, releaseAscKey, sealForMac, verifyBuildMacToken } from "../src/http/Testflight.ts"
+import { TestflightIdentity } from "../src/db/TestflightIdentity.ts"
+import {
+  grantAscKey,
+  identityAudience,
+  releaseAscKey,
+  sealForMac,
+  storeSigningIdentity,
+  verifyBuildMacToken
+} from "../src/http/Testflight.ts"
 import { fromBase64Url, fromUtf8, toBase64Url, utf8, type WebCryptoKey } from "../src/lib/Bytes.ts"
 import type { AnyJwk } from "../src/lib/Jwt.ts"
 import { makeD1 } from "./support/Sqlite.ts"
@@ -52,7 +60,8 @@ const macKey = Effect.promise(async () => {
 const openOnMac = (
   mac: { privateKey: unknown; raw: Uint8Array<ArrayBuffer> },
   instanceId: string,
-  r: TestflightKeyRelease
+  r: TestflightKeyRelease,
+  part: "key" | "identity" = "key"
 ) =>
   Effect.promise(async () => {
     const server = fromBase64Url(r.serverPublicKey)
@@ -67,10 +76,14 @@ const openOnMac = (
       false,
       ["decrypt"]
     )
+    const [iv, ciphertext, aad] =
+      part === "key"
+        ? [r.iv, r.ciphertext, instanceId]
+        : [r.identityIv ?? "", r.identityCiphertext ?? "", `${instanceId}:identity`]
     const plain = await subtle.decrypt(
-      { name: "AES-GCM", iv: fromBase64Url(r.iv), additionalData: utf8(instanceId) },
+      { name: "AES-GCM", iv: fromBase64Url(iv), additionalData: utf8(aad) },
       aes,
-      fromBase64Url(r.ciphertext)
+      fromBase64Url(ciphertext)
     )
     return fromUtf8(new Uint8Array(plain))
   })
@@ -96,14 +109,14 @@ describe("verifyBuildMacToken", () => {
       const options = { issuer, tenantId: tenant, nowSec: nowSec() }
       const check = (claims: object, keys: ReadonlyArray<AnyJwk> = [jwk]) =>
         mintToken(privateKey, claims).pipe(
-          Effect.flatMap((token) => verifyBuildMacToken(token, mac.raw, keys, options)),
+          Effect.flatMap((token) => verifyBuildMacToken(token, mac.audience, keys, options)),
           Effect.match({ onSuccess: (id) => id, onFailure: (e) => e.reason })
         )
 
       assert.strictEqual(yield* check(claimsFor("buildmac0001", mac.audience)), "buildmac0001")
       assert.strictEqual(
         yield* check(claimsFor("buildmac0001", "dream-testflight:other")),
-        "ID token: not bound to this public key"
+        "ID token: not bound to this request"
       )
       assert.strictEqual(
         yield* check(
@@ -168,11 +181,15 @@ describe("releaseAscKey", () => {
         headers: { "content-type": "application/json" }
       })
     }) as typeof fetch)
+    const config = ApiConfig.layerTest({ ascTestflightKey: Option.some(Redacted.make(pem)), namespaceTenantId: tenant })
     return Layer.mergeAll(
-      TestflightGrants.layer.pipe(Layer.provide(D1Client.layer({ db: d1 }).pipe(Layer.orDie))),
+      Layer.mergeAll(TestflightGrants.layer, TestflightIdentity.layer).pipe(
+        Layer.provide(D1Client.layer({ db: d1 }).pipe(Layer.orDie)),
+        Layer.provide(config)
+      ),
       namespace,
       FetchHttpClient.layer.pipe(Layer.provide(jwks)),
-      ApiConfig.layerTest({ ascTestflightKey: Option.some(Redacted.make(pem)), namespaceTenantId: tenant })
+      config
     )
   }
 
@@ -209,6 +226,52 @@ describe("releaseAscKey", () => {
         yield* grantAscKey({ instanceId: "buildmac0001" })
         assert.strictEqual(yield* outcome, "not a running build Mac")
       }).pipe(Effect.provide(world([{ instanceId: "buildmac0001", status: "RUNNING" }], jwk)))
+    })
+  )
+  it.live("stores the identity the just-released Mac created, and releases it with the key from then on", () =>
+    Effect.gen(function* () {
+      const { privateKey, jwk } = yield* issuerKey
+      const mac = yield* macKey
+      const instances = [{ instanceId: "buildmac0001", status: "RUNNING", labels: { dream: "testflight" } }]
+      const identity = {
+        certificateId: "ABCDEF1234",
+        certificate: "MIIBcert",
+        privateKey: Redacted.make("-----BEGIN PRIVATE KEY-----\nMIIEkey\n-----END PRIVATE KEY-----\n")
+      }
+      const upload = (audience: string) =>
+        mintToken(privateKey, claimsFor("buildmac0001", audience)).pipe(
+          Effect.flatMap((idToken) =>
+            storeSigningIdentity({
+              idToken,
+              identity: { ...identity, privateKey: Redacted.value(identity.privateKey) }
+            })
+          ),
+          Effect.match({ onSuccess: (id) => id, onFailure: (e) => (e._tag === "TestflightDenied" ? e.reason : e._tag) })
+        )
+      const release = Effect.gen(function* () {
+        const request = {
+          idToken: yield* mintToken(privateKey, claimsFor("buildmac0001", mac.audience)),
+          publicKey: toBase64Url(mac.raw)
+        }
+        return yield* releaseAscKey(request)
+      })
+
+      yield* Effect.gen(function* () {
+        const audience = yield* identityAudience(identity)
+        // Only a Mac that was just released the key may store one.
+        assert.strictEqual(yield* upload(audience), "no recent release")
+        yield* grantAscKey({ instanceId: "buildmac0001" })
+        const first = yield* release
+        assert.strictEqual(first.identityCiphertext, undefined)
+        // A token bound to some other identity doesn't store this one.
+        assert.strictEqual(yield* upload("dream-testflight-identity:other"), "ID token: not bound to this request")
+        assert.strictEqual(yield* upload(audience), "ABCDEF1234")
+        yield* grantAscKey({ instanceId: "buildmac0001" })
+        const second = yield* release
+        const opened = JSON.parse(yield* openOnMac(mac, "buildmac0001", second, "identity"))
+        assert.deepStrictEqual(opened, { ...identity, privateKey: Redacted.value(identity.privateKey) })
+        assert.strictEqual(yield* openOnMac(mac, "buildmac0001", second), pem)
+      }).pipe(Effect.provide(world(instances, jwk)))
     })
   )
 })

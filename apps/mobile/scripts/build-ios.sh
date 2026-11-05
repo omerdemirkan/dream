@@ -11,8 +11,11 @@
 #       Archives with automatic signing (Xcode creates or updates the App IDs and
 #       profiles through the App Store Connect API key) and uploads the build to
 #       App Store Connect for TestFlight. ASC_EXPORT_ONLY=1 stops at a signed .ipa in build/export.
+#       ASC_SIGNING=manual signs with an Apple Distribution identity already in DREAM_SIGN_KEYCHAIN and the
+#       App Store profiles named DREAM_PROFILE_APP and DREAM_PROFILE_WIDGET (the widget's bundle id is
+#       DREAM_WIDGET_BUNDLE_ID, default <bundle id>.widget); testflight-namespace.ts sets these up.
 #
-#   On a Namespace Mac, with the key from the founder's Namespace Vault: scripts/testflight-namespace.ts.
+#   On a Namespace Mac, with the key released by Dream's Worker: scripts/testflight-namespace.ts.
 #
 # Environment (app.config.ts reads the DREAM_* values at prebuild):
 #   DREAM_APPLE_TEAM_ID         default ZY6RS9293V (Dream's team)
@@ -39,7 +42,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 if [[ "$mode" != "simulator" && "$mode" != "testflight" ]]; then
-  sed -n '2,28p' "$0"; exit 2
+  sed -n '2,31p' "$0"; exit 2
 fi
 
 app_dir="$(cd "$(dirname "$0")/.." && pwd)"
@@ -99,13 +102,62 @@ auth=(-allowProvisioningUpdates
   -authenticationKeyPath "$key_path"
   -authenticationKeyID "$key_id"
   -authenticationKeyIssuerID "$issuer_id")
+widget_bundle_id="${DREAM_WIDGET_BUNDLE_ID:-${DREAM_BUNDLE_ID:-build.omer.dream}.widget}"
+
+if [[ "${ASC_SIGNING:-automatic}" == "manual" ]]; then
+  : "${DREAM_PROFILE_APP:?set DREAM_PROFILE_APP}" "${DREAM_PROFILE_WIDGET:?set DREAM_PROFILE_WIDGET}"
+  echo "› Signing manually with Apple Distribution (profiles \"$DREAM_PROFILE_APP\", \"$DREAM_PROFILE_WIDGET\")"
+  # Per-target signing for the app and the widget (xcodebuild's command-line settings would hit every target,
+  # Pods included). xcodeproj ships with CocoaPods.
+  GEM_HOME="$(ls -d "$(brew --prefix 2>/dev/null || echo /opt/homebrew)"/Cellar/cocoapods/*/libexec 2>/dev/null | tail -n1)" \
+  APP_ID="${DREAM_BUNDLE_ID:-build.omer.dream}" WIDGET_ID="$widget_bundle_id" \
+  ruby -e '
+    require "xcodeproj"
+    project = Xcodeproj::Project.open(ARGV[0])
+    profiles = { ENV["APP_ID"] => ENV["DREAM_PROFILE_APP"], ENV["WIDGET_ID"] => ENV["DREAM_PROFILE_WIDGET"] }
+    signed = []
+    project.targets.each do |target|
+      target.build_configurations.each do |config|
+        profile = profiles[config.build_settings["PRODUCT_BUNDLE_IDENTIFIER"]]
+        next unless profile
+        config.build_settings["CODE_SIGN_STYLE"] = "Manual"
+        config.build_settings["CODE_SIGN_IDENTITY"] = "Apple Distribution"
+        config.build_settings["CODE_SIGN_IDENTITY[sdk=iphoneos*]"] = "Apple Distribution"
+        config.build_settings["PROVISIONING_PROFILE_SPECIFIER"] = profile
+        config.build_settings["DEVELOPMENT_TEAM"] = ENV["DREAM_APPLE_TEAM_ID"]
+        signed << "#{target.name}/#{config.name}" if config.name == "Release"
+      end
+    end
+    abort "expected the app and the widget, signed: #{signed.inspect}" unless signed.size == 2
+    project.save
+    puts "› Manual signing for #{signed.join(", ")}"
+  ' "$(ls -d "$app_dir"/ios/*.xcodeproj | head -n1)"
+  archive_signing=(OTHER_CODE_SIGN_FLAGS="--keychain ${DREAM_SIGN_KEYCHAIN:?set DREAM_SIGN_KEYCHAIN}")
+  export_signing="
+  <key>signingStyle</key><string>manual</string>
+  <key>signingCertificate</key><string>Apple Distribution</string>
+  <key>provisioningProfiles</key>
+  <dict>
+    <key>${DREAM_BUNDLE_ID:-build.omer.dream}</key><string>$DREAM_PROFILE_APP</string>
+    <key>$widget_bundle_id</key><string>$DREAM_PROFILE_WIDGET</string>
+  </dict>
+  <key>manageAppVersionAndBuildNumber</key><false/>"
+  # Exporting to a file needs no Apple account; uploading does.
+  export_auth=()
+  [[ -n "${ASC_EXPORT_ONLY:-}" ]] || export_auth=("${auth[@]}")
+else
+  archive_signing=(CODE_SIGN_STYLE=Automatic "${auth[@]}")
+  export_signing="
+  <key>signingStyle</key><string>automatic</string>"
+  export_auth=("${auth[@]}")
+fi
 
 echo "› Archiving $scheme (build $build_number)"
 xcodebuild -workspace "$workspace" -scheme "$scheme" -configuration Release \
   -destination 'generic/platform=iOS' -archivePath "$build_dir/$scheme.xcarchive" \
-  DEVELOPMENT_TEAM="$DREAM_APPLE_TEAM_ID" CODE_SIGN_STYLE=Automatic \
+  DEVELOPMENT_TEAM="$DREAM_APPLE_TEAM_ID" \
   CURRENT_PROJECT_VERSION="$build_number" \
-  "${auth[@]}" archive | (command -v xcbeautify >/dev/null && xcbeautify || cat)
+  "${archive_signing[@]}" archive | (command -v xcbeautify >/dev/null && xcbeautify || cat)
 
 cat > "$build_dir/ExportOptions.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -114,8 +166,7 @@ cat > "$build_dir/ExportOptions.plist" <<PLIST
 <dict>
   <key>method</key><string>app-store-connect</string>
   <key>destination</key><string>$([[ -n "${ASC_EXPORT_ONLY:-}" ]] && echo export || echo upload)</string>
-  <key>teamID</key><string>$DREAM_APPLE_TEAM_ID</string>
-  <key>signingStyle</key><string>automatic</string>
+  <key>teamID</key><string>$DREAM_APPLE_TEAM_ID</string>$export_signing
   <key>uploadSymbols</key><true/>
   <key>testFlightInternalTestingOnly</key><false/>
 </dict>
@@ -125,10 +176,19 @@ PLIST
 echo "› Exporting$([[ -n "${ASC_EXPORT_ONLY:-}" ]] || echo " and uploading to App Store Connect")"
 xcodebuild -exportArchive -archivePath "$build_dir/$scheme.xcarchive" \
   -exportOptionsPlist "$build_dir/ExportOptions.plist" -exportPath "$build_dir/export" \
-  "${auth[@]}"
+  ${export_auth[@]+"${export_auth[@]}"}
 
 if [[ -n "${ASC_EXPORT_ONLY:-}" ]]; then
-  echo "› Exported $(ls "$build_dir"/export/*.ipa | head -n1) (not uploaded)"; exit 0
+  ipa="$(ls "$build_dir"/export/*.ipa | head -n1)"
+  echo "› Exported $ipa (not uploaded)"
+  if [[ "${ASC_SIGNING:-automatic}" == "manual" ]]; then
+    rm -rf "$build_dir/ipa-check" && mkdir -p "$build_dir/ipa-check" && (cd "$build_dir/ipa-check" && unzip -q "$ipa")
+    for bundle in "$build_dir"/ipa-check/Payload/*.app "$build_dir"/ipa-check/Payload/*.app/PlugIns/*.appex; do
+      codesign --verify --strict "$bundle" && echo "› $(basename "$bundle"): $(codesign -dvv "$bundle" 2>&1 | grep -m1 '^Authority=')," \
+        "aps-environment $(codesign -d --entitlements :- "$bundle" 2>/dev/null | plutil -extract aps-environment raw -o - - 2>/dev/null || echo none)"
+    done
+  fi
+  exit 0
 fi
 
 echo "› Uploaded build $build_number. It shows in TestFlight once App Store Connect finishes processing."

@@ -20,6 +20,11 @@
  * that key (`nsc auth issue-id-token`, 5 minutes), and POST both to `/testflight/asc-key`. The Worker checks the
  * token against Namespace's JWKS, the tenant, the grant, and that this Mac is the workspace's only instance, then
  * returns the .p8 encrypted to the Mac's key; the Mac decrypts it into ~/.dream-asc (0600 in a 0700 directory).
+ * Signing is manual, with Dream's one Apple Distribution certificate: the Worker releases it with the key (it
+ * keeps the private key sealed), the first build Mac creates it through the App Store Connect API and stores it
+ * (see setupSigningOnMac), and App Store profiles need no devices. Automatic signing can't work here (no usable
+ * keychain over SSH, no devices for development profiles) and would mint certificates; cloud signing needs an
+ * Admin key.
  * The build runs detached on the Mac (its own session, log at ~/dream-build/build.log, exit code in
  * ~/dream-build/exit); the launcher starts it and follows it in short SSH calls, retried, and every Compute API,
  * Cloudflare and Worker call is retried on network failures, because this environment drops requests now and
@@ -38,6 +43,7 @@
  *   DREAM_ASC_KEY_ID          default 5G566N355S
  *   DREAM_ASC_ISSUER_ID       default 0e7009f1-c7f0-40f0-b12e-b76df2001875
  *   DREAM_KEY_API_URL         the Worker that releases the key (default DREAM_API_URL, else https://dream.omer.build)
+ *   DREAM_IDENTITY_API_URL    where a newly created signing identity is stored (default DREAM_KEY_API_URL)
  *   DREAM_DEV_SECRET          the operator secret for the grant; by default read from D1 `dream-ops` through the
  *                             Cloudflare API (the workspace's cloudflare-api connection, or CLOUDFLARE_API_TOKEN)
  *   NAMESPACE_TOKEN           bearer token for the Compute API; unset in an Outerloop workspace, where the
@@ -78,6 +84,7 @@ const keyApi = (process.env.DREAM_KEY_API_URL ?? process.env.DREAM_API_URL ?? "h
   /\/+$/,
   ""
 )
+const identityApi = (process.env.DREAM_IDENTITY_API_URL ?? keyApi).replace(/\/+$/, "")
 const api = `${process.env.NAMESPACE_API_URL ?? "https://us.compute.namespaceapis.com"}/namespace.cloud.compute.v1beta.ComputeService`
 const cloudflareAccount = "2d98de7c4511e98d2f774c4fcc9b9b93"
 const passThrough = [
@@ -234,6 +241,15 @@ const b64u = (bytes) => Buffer.from(bytes).toString("base64url")
   fs.chmodSync(dir, 0o700)
   fs.writeFileSync(out, pem, { mode: 0o600 })
   fs.chmodSync(out, 0o600)
+  // The stored distribution signing identity, if the Worker has one (see setupSigningOnMac).
+  if (sealed.identityIv && sealed.identityCiphertext) {
+    try {
+      const identity = Buffer.from(await subtle.decrypt({ name: "AES-GCM", iv: Buffer.from(sealed.identityIv, "base64url"),
+        additionalData: Buffer.from(instanceId + ":identity") }, aes, Buffer.from(sealed.identityCiphertext, "base64url")))
+      fs.writeFileSync(dir + "/identity.json", identity, { mode: 0o600 })
+      facts.identity = true
+    } catch { report({ ok: false, problem: "couldn't decrypt the signing identity the Worker sent" }) }
+  }
   Object.assign(facts, { mode: (fs.statSync(out).mode & 0o777).toString(8), dirMode: (fs.statSync(dir).mode & 0o777).toString(8) })
   const seg = (o) => b64u(Buffer.from(JSON.stringify(o)))
   const now = Math.floor(Date.now() / 1000)
@@ -249,6 +265,153 @@ const b64u = (bytes) => Buffer.from(bytes).toString("base64url")
 })().catch((e) => report({ ok: false, problem: e.message }))
 `
 
+/**
+ * Runs on the Mac after the key arrived, fed on stdin: sets up manual distribution signing that stays within
+ * Apple's certificate limit. It reuses the one Apple Distribution certificate the Worker keeps (released with the
+ * key into ~/.dream-asc/identity.json); if there is none yet, or it's gone or about to expire, it creates one
+ * through the App Store Connect API from a key generated here and stores it with the Worker
+ * (`/testflight/signing-identity`). It registers the bundle ids, creates or reuses App Store provisioning
+ * profiles (no devices needed), and imports the identity into a temporary unlocked keychain, since an SSH session
+ * has no usable login keychain. Writes ~/dream-build/signing.env for build-ios.sh. Prints one JSON line.
+ */
+const setupSigningOnMac = String.raw`
+const fs = require("node:fs"), crypto = require("node:crypto"), { execFileSync } = require("node:child_process")
+const [keyId, issuerId, keyApi, teamId, appBundle, widgetBundle] = process.argv.slice(2)
+const identityApi = process.argv[8] || keyApi
+const home = process.env.HOME, dir = home + "/.dream-asc", buildDir = home + "/dream-build"
+const report = (o) => { console.log(JSON.stringify(o)); process.exit(o.ok ? 0 : 1) }
+const b64u = (b) => Buffer.from(b).toString("base64url")
+const sh = (cmd, args) => execFileSync(cmd, args, { stdio: ["ignore", "pipe", "pipe"] }).toString()
+const ascKey = crypto.createPrivateKey(fs.readFileSync(dir + "/AuthKey_" + keyId + ".p8"))
+const jwt = () => {
+  const now = Math.floor(Date.now() / 1000), seg = (o) => b64u(JSON.stringify(o))
+  const u = seg({ alg: "ES256", kid: keyId, typ: "JWT" }) + "." + seg({ iss: issuerId, iat: now, exp: now + 600, aud: "appstoreconnect-v1" })
+  return u + "." + b64u(crypto.sign("sha256", Buffer.from(u), { key: ascKey, dsaEncoding: "ieee-p1363" }))
+}
+const asc = async (method, path, body) => {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const r = await fetch("https://api.appstoreconnect.apple.com" + path, { method,
+        headers: { authorization: "Bearer " + jwt(), ...(body ? { "content-type": "application/json" } : {}) },
+        body: body ? JSON.stringify(body) : undefined })
+      if (r.status >= 500 && attempt < 4) continue
+      const json = r.status === 204 ? {} : await r.json().catch(() => ({}))
+      return { status: r.status, body: json, detail: json.errors?.[0]?.detail ?? "" }
+    } catch (e) { if (attempt >= 4) throw e }
+  }
+}
+;(async () => {
+  // 1. The distribution certificate: reuse the stored one while App Store Connect still has it.
+  let identity = fs.existsSync(dir + "/identity.json") ? JSON.parse(fs.readFileSync(dir + "/identity.json", "utf8")) : undefined
+  let created = false
+  if (identity) {
+    const r = await asc("GET", "/v1/certificates/" + identity.certificateId + "?fields[certificates]=certificateType,expirationDate")
+    const expires = r.body.data?.attributes?.expirationDate
+    if (r.status !== 200 || !expires || Date.parse(expires) < Date.now() + 14 * 86400e3) identity = undefined
+  }
+  if (!identity) {
+    const { privateKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 })
+    const keyPem = privateKey.export({ type: "pkcs8", format: "pem" })
+    fs.writeFileSync(dir + "/dist.key", keyPem, { mode: 0o600 })
+    const csr = sh("/usr/bin/openssl", ["req", "-new", "-key", dir + "/dist.key", "-subj", "/CN=Dream TestFlight/O=" + teamId])
+    const csrContent = csr.replace(/-----[A-Z ]+-----/g, "").replace(/\s+/g, "")
+    const r = await asc("POST", "/v1/certificates", { data: { type: "certificates", attributes: { certificateType: "DISTRIBUTION", csrContent } } })
+    if (r.status !== 201) report({ ok: false, problem: "creating the Apple Distribution certificate failed (" + r.status + "): " + r.detail })
+    identity = { certificateId: r.body.data.id, certificate: r.body.data.attributes.certificateContent, privateKey: keyPem }
+    created = true
+    // Also here, so a rerun of this step on this Mac (a picked-up build) reuses it instead of creating another.
+    fs.writeFileSync(dir + "/identity.json", JSON.stringify(identity), { mode: 0o600 })
+    // Keep it with the Worker for the next builds; without that it would be one more certificate per build.
+    const digest = crypto.createHash("sha256").update(identity.certificateId + "\n" + identity.certificate + "\n" + identity.privateKey).digest()
+    let stored = false
+    try {
+      const idToken = JSON.parse(execFileSync("/opt/nsc/bin/nsc",
+        ["auth", "issue-id-token", "--audience", "dream-testflight-identity:" + b64u(digest), "--duration", "5m", "-o", "json"],
+        { env: { ...process.env, NSC_TOKEN_FILE: "/var/run/nsc/token.json" }, stdio: ["ignore", "pipe", "pipe"] })).id_token
+      for (let attempt = 1; attempt <= 4 && !stored; attempt++) {
+        const up = await fetch(identityApi + "/testflight/signing-identity", { method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ idToken, identity }) }).catch(() => undefined)
+        stored = !!up && up.ok
+        if (up && up.status < 500 && !up.ok) break
+      }
+    } catch {}
+    if (!stored) {
+      fs.rmSync(dir + "/identity.json", { force: true })
+      await asc("DELETE", "/v1/certificates/" + identity.certificateId)
+      report({ ok: false, problem: "the Worker didn't store the new certificate, so it was revoked again" })
+    }
+  }
+  // 2. Bundle ids (the widget's is registered on first use).
+  const bundleId = async (identifier, name) => {
+    const r = await asc("GET", "/v1/bundleIds?filter[identifier]=" + identifier + "&fields[bundleIds]=identifier&limit=50")
+    const found = (r.body.data ?? []).find((b) => b.attributes.identifier === identifier)
+    if (found) return found.id
+    const c = await asc("POST", "/v1/bundleIds", { data: { type: "bundleIds", attributes: { identifier, name, platform: "IOS" } } })
+    if (c.status !== 201) report({ ok: false, problem: "registering " + identifier + " failed (" + c.status + "): " + c.detail })
+    return c.body.data.id
+  }
+  // 3. App Store profiles for the certificate, reused while valid.
+  const profilesDirs = [home + "/Library/MobileDevice/Provisioning Profiles", home + "/Library/Developer/Xcode/UserData/Provisioning Profiles"]
+  const profile = async (identifier, name) => {
+    const id = await bundleId(identifier, name)
+    const profileName = "Dream TestFlight " + identifier
+    const r = await asc("GET", "/v1/profiles?filter[name]=" + encodeURIComponent(profileName) + "&include=certificates&limit=20")
+    const mine = (r.body.data ?? []).filter((p) => p.attributes.name === profileName)
+    let p = mine.find((p) => p.attributes.profileState === "ACTIVE" && Date.parse(p.attributes.expirationDate) > Date.now() + 86400e3 &&
+      (p.relationships?.certificates?.data ?? []).some((c) => c.id === identity.certificateId))
+    if (!p) {
+      for (const old of mine) await asc("DELETE", "/v1/profiles/" + old.id)
+      const c = await asc("POST", "/v1/profiles", { data: { type: "profiles", attributes: { name: profileName, profileType: "IOS_APP_STORE" },
+        relationships: { bundleId: { data: { type: "bundleIds", id } }, certificates: { data: [{ type: "certificates", id: identity.certificateId }] } } } })
+      if (c.status !== 201) report({ ok: false, problem: "creating the profile for " + identifier + " failed (" + c.status + "): " + c.detail })
+      p = c.body.data
+    }
+    for (const d of profilesDirs) {
+      fs.mkdirSync(d, { recursive: true })
+      fs.writeFileSync(d + "/" + p.attributes.uuid + ".mobileprovision", Buffer.from(p.attributes.profileContent, "base64"))
+    }
+    return profileName
+  }
+  const appProfile = await profile(appBundle, "Dream")
+  const widgetProfile = await profile(widgetBundle, "Dream Widget")
+  // 4. A temporary keychain holding only the identity, unlocked for the build.
+  const kc = home + "/Library/Keychains/dream-build.keychain-db"
+  const pw = crypto.randomBytes(24).toString("hex")
+  try { sh("/usr/bin/security", ["delete-keychain", kc]) } catch {}
+  sh("/usr/bin/security", ["create-keychain", "-p", pw, kc])
+  sh("/usr/bin/security", ["set-keychain-settings", "-lut", "21600", kc])
+  sh("/usr/bin/security", ["unlock-keychain", "-p", pw, kc])
+  fs.writeFileSync(dir + "/dist.key", identity.privateKey, { mode: 0o600 })
+  fs.writeFileSync(dir + "/dist.cer", Buffer.from(identity.certificate, "base64"))
+  sh("/usr/bin/openssl", ["x509", "-inform", "DER", "-in", dir + "/dist.cer", "-out", dir + "/dist.pem"])
+  sh("/usr/bin/openssl", ["pkcs12", "-export", "-inkey", dir + "/dist.key", "-in", dir + "/dist.pem", "-out", dir + "/dist.p12", "-passout", "pass:" + pw])
+  sh("/usr/bin/security", ["import", dir + "/dist.p12", "-k", kc, "-P", pw, "-T", "/usr/bin/codesign", "-T", "/usr/bin/security"])
+  for (const f of ["dist.key", "dist.p12", "dist.cer", "dist.pem"]) fs.rmSync(dir + "/" + f, { force: true })
+  for (const ca of ["AppleWWDRCAG3.cer", "AppleWWDRCAG6.cer"]) {
+    try {
+      const r = await fetch("https://www.apple.com/certificateauthority/" + ca)
+      if (r.ok) { fs.writeFileSync(buildDir + "/" + ca, Buffer.from(await r.arrayBuffer())); sh("/usr/bin/security", ["import", buildDir + "/" + ca, "-k", kc]) }
+    } catch {}
+  }
+  sh("/usr/bin/security", ["set-key-partition-list", "-S", "apple-tool:,apple:,codesign:", "-s", "-k", pw, kc])
+  // An SSH session searches only the common and system keychain lists (not the user's), so the build adds the
+  // keychain there and unlocks it again in its own session (run.sh); the password stays in ~/.dream-asc.
+  sh("/usr/bin/security", ["list-keychains", "-d", "user", "-s", kc, home + "/Library/Keychains/login.keychain-db"])
+  sh("/usr/bin/sudo", ["-n", "/usr/bin/security", "list-keychains", "-d", "common", "-s", kc, "/Library/Keychains/System.keychain"])
+  fs.writeFileSync(dir + "/keychain.pw", pw, { mode: 0o600 })
+  const found = sh("/usr/bin/security", ["find-identity", "-v", "-p", "codesigning", kc])
+  const name = (found.match(/"(Apple Distribution: [^"]+)"/) || [])[1]
+  if (!name) report({ ok: false, problem: "the keychain has no valid signing identity: " + found.trim().split("\n").pop() })
+  fs.writeFileSync(buildDir + "/signing.env", [
+    "export ASC_SIGNING=manual",
+    "export DREAM_SIGN_KEYCHAIN='" + kc + "'",
+    "export DREAM_WIDGET_BUNDLE_ID='" + widgetBundle + "'",
+    "export DREAM_PROFILE_APP='" + appProfile + "'",
+    "export DREAM_PROFILE_WIDGET='" + widgetProfile + "'", ""].join("\n"))
+  report({ ok: true, certificateId: identity.certificateId, created, identity: name, profiles: [appProfile, widgetProfile] })
+})().catch((e) => report({ ok: false, problem: e.message }))
+`
+
 let instanceId: string | undefined
 let workDir: string | undefined
 /** Set once the build runs detached on the Mac: from then on only its outcome (or the deadline) ends the Mac. */
@@ -258,10 +421,22 @@ const destroy = async () => {
   if (instanceId) {
     const id = instanceId
     instanceId = undefined
-    await compute("DestroyInstance", { instanceId: id }).then(
-      () => log(`Destroyed Mac ${id}`),
-      (e) => console.error(`Destroying Mac ${id} failed (${e.message}): destroy it in the Namespace dashboard`)
-    )
+    // Keep trying for about ten minutes: the network here can be gone for minutes, and a Mac left running costs.
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await compute("DestroyInstance", { instanceId: id })
+        log(`Destroyed Mac ${id}`)
+        break
+      } catch (e: any) {
+        if (attempt >= 4) {
+          console.error(
+            `Destroying Mac ${id} failed (${e.message}): run \`node apps/mobile/scripts/testflight-namespace.ts destroy\` (its deadline ends it otherwise)`
+          )
+          break
+        }
+        await sleep(30_000)
+      }
+    }
   }
   if (workDir) rmSync(workDir, { recursive: true, force: true })
 }
@@ -454,6 +629,18 @@ const main = async () => {
   }
 
   if (state === "fresh" || state === "keyed") {
+    log("Setting up distribution signing on the Mac")
+    const teamId = process.env.DREAM_APPLE_TEAM_ID ?? "ZY6RS9293V"
+    const signing = await onMac(
+      `mkdir -p ${buildDir} && PATH=/opt/homebrew/bin:$PATH node --input-type=commonjs - ${keyId} ${issuerId} ${keyApi} ${teamId} ${bundleId} ${bundleId}.widget ${identityApi}`,
+      setupSigningOnMac
+    )
+    const signed: Json = JSON.parse(signing.stdout.trim().split("\n").pop() || "{}")
+    if (!signed.ok) throw new Error(`Signing setup failed: ${signed.problem ?? "unknown"}`)
+    log(
+      `Signing with "${signed.identity}" (certificate ${signed.certificateId}, ${signed.created ? "created now and stored with the Worker" : "reused"}); profiles ${signed.profiles.join(", ")}`
+    )
+
     log("Shipping HEAD to the Mac")
     const tarball = join(workDir, "dream.tar")
     const archived = await run("git", ["archive", "--format=tar", "-o", tarball, "HEAD"])
@@ -476,6 +663,9 @@ const main = async () => {
       "#!/bin/bash",
       "set -uo pipefail",
       'export PATH="$HOME/.bun/bin:/opt/homebrew/bin:$PATH"',
+      `. "${buildDir}/signing.env"`,
+      `/usr/bin/security unlock-keychain -p "$(cat "${keyDir}/keychain.pw")" "$DREAM_SIGN_KEYCHAIN"`,
+      '/usr/bin/sudo -n /usr/bin/security list-keychains -d common -s "$DREAM_SIGN_KEYCHAIN" /Library/Keychains/System.keychain',
       `rm -rf "$HOME/dream" && mkdir "$HOME/dream" && tar -xf "${buildDir}/dream.tar" -C "$HOME/dream"`,
       "(",
       "  set -e",
@@ -488,6 +678,8 @@ const main = async () => {
       ")",
       "code=$?",
       `rm -rf "${keyDir}"`,
+      '/usr/bin/security delete-keychain "$DREAM_SIGN_KEYCHAIN" 2>/dev/null',
+      "/usr/bin/sudo -n /usr/bin/security list-keychains -d common -s /Library/Keychains/System.keychain",
       `echo $code > "${buildDir}/exit.tmp" && mv "${buildDir}/exit.tmp" "${buildDir}/exit"`,
       ""
     ].join("\n")

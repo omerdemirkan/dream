@@ -2,9 +2,11 @@
  * The `testflight_grants` table: which Namespace build Mac may fetch the App Store Connect key, once, before
  * when (see http/Testflight.ts).
  */
-import { Context, Effect, Layer } from "effect"
+import { Context, DateTime, Effect, Layer, Schema } from "effect"
 import { SqlClient } from "effect/sql"
-import { exec, nowIso } from "./Sql.ts"
+import { decodeFirst, exec, IsoDate, nowIso } from "./Sql.ts"
+
+const UsedRow = Schema.Struct({ used_at: Schema.NullOr(IsoDate) })
 
 export class TestflightGrants extends Context.Service<
   TestflightGrants,
@@ -13,6 +15,8 @@ export class TestflightGrants extends Context.Service<
     readonly grant: (instanceId: string, expiresAtMs: number) => Effect.Effect<void>
     /** Uses up the grant for `instanceId`; false if there is none, it expired, or it was used. */
     readonly consume: (instanceId: string, nowMs: number) => Effect.Effect<boolean>
+    /** Whether `instanceId`'s grant was used at or after `sinceMs`. */
+    readonly usedSince: (instanceId: string, sinceMs: number) => Effect.Effect<boolean>
   }
 >()("@dream/api/TestflightGrants") {
   static readonly layer = Layer.effect(
@@ -39,7 +43,14 @@ export class TestflightGrants extends Context.Service<
         )
       })
 
-      return TestflightGrants.of({ grant, consume })
+      const usedSince = Effect.fn("TestflightGrants.usedSince")(function* (instanceId: string, sinceMs: number) {
+        const row = yield* sql`SELECT used_at FROM testflight_grants WHERE instance_id = ${instanceId}`.pipe(
+          decodeFirst(UsedRow)
+        )
+        return row?.used_at != null && DateTime.toEpochMillis(row.used_at) >= sinceMs
+      })
+
+      return TestflightGrants.of({ grant, consume, usedSince })
     })
   )
 }

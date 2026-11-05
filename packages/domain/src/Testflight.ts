@@ -38,9 +38,44 @@ export const TestflightKeyRelease = Schema.Struct({
   /** AES-GCM nonce, 12 bytes. */
   iv: Schema.NonEmptyString,
   /** AES-256-GCM ciphertext and tag of the `.p8` (PEM text). */
-  ciphertext: Schema.NonEmptyString
+  ciphertext: Schema.NonEmptyString,
+  /**
+   * The stored distribution signing identity, if there is one: a `TestflightSigningIdentity` as JSON, AES-256-GCM
+   * with the same key, nonce `identityIv`, additional data `<instance id>:identity`.
+   */
+  identityIv: Schema.optionalKey(Schema.NonEmptyString),
+  identityCiphertext: Schema.optionalKey(Schema.NonEmptyString)
 })
 export type TestflightKeyRelease = typeof TestflightKeyRelease.Type
+
+/**
+ * The Apple Distribution certificate Dream's builds sign with, and its private key. Created once on a build Mac
+ * (through the App Store Connect API) and kept by the Worker, encrypted, so every build reuses it instead of
+ * minting a new certificate (Apple allows only a few per team).
+ */
+export const TestflightSigningIdentity = Schema.Struct({
+  /** App Store Connect certificate id. */
+  certificateId: Schema.NonEmptyString,
+  /** The certificate, DER, base64. */
+  certificate: Schema.NonEmptyString,
+  /** Its RSA private key, PKCS#8 PEM. */
+  privateKey: Schema.RedactedFromValue(Schema.NonEmptyString)
+})
+export type TestflightSigningIdentity = typeof TestflightSigningIdentity.Type
+
+/**
+ * The ID token's audience for storing `identity`: `dream-testflight-identity:` + base64url(SHA-256 of
+ * `${certificateId}\n${certificate}\n${privateKey}`), which binds the token to what it stores.
+ */
+export const TestflightIdentityAudience = (identitySha256Base64Url: string) =>
+  `dream-testflight-identity:${identitySha256Base64Url}`
+
+/** POST `Routes.testflightIdentity`, JSON, from the build Mac that was just released the key. */
+export const TestflightIdentityUpload = Schema.Struct({
+  idToken: Schema.RedactedFromValue(Schema.NonEmptyString),
+  identity: TestflightSigningIdentity
+})
+export type TestflightIdentityUpload = typeof TestflightIdentityUpload.Type
 
 /** POST `Routes.testflightGrant`, JSON, with the operator's `x-dream-dev-secret`: lets one Mac fetch the key once. */
 export const TestflightGrantRequest = Schema.Struct({
