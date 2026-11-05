@@ -4,7 +4,7 @@
  * lock-screen replies, removing withdrawn notifications, and refreshing when
  * the app comes back to the foreground.
  */
-import { NotificationId, ProjectId } from "@dream/domain"
+import { NotificationId, ProjectId, RequestId } from "@dream/domain"
 import { useAtomMount, useAtomSet, useAtomValue } from "@effect/atom-react"
 import { Effect, Option, Schema } from "effect"
 import * as Notifications from "expo-notifications"
@@ -12,6 +12,7 @@ import { useRouter } from "expo-router"
 import { useEffect, useRef } from "react"
 import { AppState } from "react-native"
 import { DreamNative } from "../../modules/dream-native/index.ts"
+import { randomUuid } from "../data/Session.ts"
 import * as Push from "../platform/push.ts"
 import {
   answerNowFn,
@@ -25,6 +26,7 @@ import {
   sendMessageFn
 } from "../state/atoms.ts"
 import { askPushAtom, landingAtom } from "../state/ui.ts"
+import { useAction } from "./actions.ts"
 import { useOpenMessage } from "./hooks.ts"
 
 Notifications.setNotificationHandler({
@@ -45,8 +47,9 @@ export function DeviceHost() {
   const refreshHome = useAtomSet(refreshHomeFn)
   const reconnect = useAtomSet(reconnectProjectsFn)
   const flush = useAtomSet(flushAnswersFn)
-  const answer = useAtomSet(answerNowFn)
-  const send = useAtomSet(sendMessageFn)
+  // Replies typed into a notification: a failure shows as a toast once the app is open.
+  const answer = useAction(answerNowFn).run
+  const send = useAction(sendMessageFn).run
   const tokens = useRef<{ apnsToken?: string; pushToStartToken?: string }>({})
   useAtomMount(fixturePushesAtom)
 
@@ -112,7 +115,7 @@ export function DeviceHost() {
     if (lastResponse.actionIdentifier === Push.ReplyAction && text) {
       if (category === Push.Category.question) {
         answer({ projectId, messageId, answer: { _tag: "Freeform", text } })
-      } else send({ projectId, text })
+      } else send({ projectId, text, requestId: RequestId.make(randomUuid()) })
       return
     }
     if (category === Push.Category.question || category === Push.Category.access) {

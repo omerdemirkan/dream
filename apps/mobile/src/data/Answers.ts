@@ -11,7 +11,7 @@ import type { MessageId, ProjectId, QuestionAnswer, QuestionMessage } from "@dre
 import { Context, Duration, Effect, FiberMap, Layer, PubSub, Stream, SubscriptionRef } from "effect"
 import { Reactivity } from "effect/reactivity"
 import { AppClient } from "./AppClient.ts"
-import { describeError } from "./errors.ts"
+import { describeError, withWriteTimeout } from "./errors.ts"
 
 export interface AnswerInput {
   readonly projectId: ProjectId
@@ -63,9 +63,11 @@ export class Answers extends Context.Service<
         })
 
       const answerNow = Effect.fn("Answers.answerNow")(function* (input: AnswerInput) {
-        const result = yield* app
-          .AnswerQuestion(input)
-          .pipe(Effect.mapError((error): AnswerFailure => ({ input, message: describeError(error) })))
+        // The API ignores an answer the question already has, so a retry after a timeout is safe.
+        const result = yield* app.AnswerQuestion(input).pipe(
+          withWriteTimeout,
+          Effect.mapError((error): AnswerFailure => ({ input, message: describeError(error) }))
+        )
         yield* reactivity.invalidate(asksChanged)
         return result
       })

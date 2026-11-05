@@ -15,6 +15,7 @@ import {
   NotificationId,
   type ProjectId,
   type QuestionAnswer,
+  type RequestId,
   type User
 } from "@dream/domain"
 import * as Application from "expo-application"
@@ -23,6 +24,7 @@ import { Effect, Option, Redacted, Schema, Stream } from "effect"
 import { Atom } from "effect/reactivity"
 import { AppClient } from "../data/AppClient.ts"
 import { type AnswerInput, Answers, asksChanged } from "../data/Answers.ts"
+import { withWriteTimeout } from "../data/errors.ts"
 import { ProjectStates } from "../data/ProjectStates.ts"
 import { Session } from "../data/Session.ts"
 import { FakeBackend, type Scenario } from "../fake/FakeBackend.ts"
@@ -96,10 +98,11 @@ export const refreshHomeFn = appRuntime.fn(
   { reactivityKeys: ["projects", "asks", "connections"] }
 )
 
+/** `requestId` stays the same when they retry the same idea, so a retry can't start a second project. */
 export const createProjectFn = appRuntime.fn(
-  Effect.fn(function* (idea: string) {
+  Effect.fn(function* (input: { readonly idea: string; readonly requestId: RequestId }) {
     const app = yield* AppClient
-    return yield* app.CreateProject({ idea })
+    return yield* app.CreateProject(input).pipe(withWriteTimeout)
   }),
   { reactivityKeys: ["projects"] }
 )
@@ -129,10 +132,11 @@ export const reconnectProjectsFn = appRuntime.fn(
 
 const received = (message: Message) => ProjectStates.use((states) => states.receive(message))
 
+/** `requestId` stays the same when they retry the same text, so a retry can't post it twice. */
 export const sendMessageFn = appRuntime.fn(
-  Effect.fn(function* (input: { readonly projectId: ProjectId; readonly text: string }) {
+  Effect.fn(function* (input: { readonly projectId: ProjectId; readonly text: string; readonly requestId: RequestId }) {
     const app = yield* AppClient
-    const message = yield* app.SendMessage(input)
+    const message = yield* app.SendMessage(input).pipe(withWriteTimeout)
     yield* received(message)
     return message
   }),
@@ -204,7 +208,7 @@ const receivedAccess = (message: AccessMessage) => received(message).pipe(Effect
 export const submitKeyAccessFn = appRuntime.fn(
   Effect.fn(function* (input: AccessRef & { readonly key: string }) {
     const app = yield* AppClient
-    const message = yield* app.SubmitKeyAccess({ ...input, key: Redacted.make(input.key) })
+    const message = yield* app.SubmitKeyAccess({ ...input, key: Redacted.make(input.key) }).pipe(withWriteTimeout)
     return yield* receivedAccess(message)
   }),
   accessChanged
@@ -215,7 +219,9 @@ export const submitAppleAccessFn = appRuntime.fn(
     input: AccessRef & { readonly issuerId: string; readonly keyId: string; readonly privateKey: string }
   ) {
     const app = yield* AppClient
-    const message = yield* app.SubmitAppleAccess({ ...input, privateKey: Redacted.make(input.privateKey) })
+    const message = yield* app
+      .SubmitAppleAccess({ ...input, privateKey: Redacted.make(input.privateKey) })
+      .pipe(withWriteTimeout)
     return yield* receivedAccess(message)
   }),
   accessChanged
@@ -224,7 +230,7 @@ export const submitAppleAccessFn = appRuntime.fn(
 export const declineAccessFn = appRuntime.fn(
   Effect.fn(function* (input: AccessRef) {
     const app = yield* AppClient
-    return yield* receivedAccess(yield* app.DeclineAccess(input))
+    return yield* receivedAccess(yield* app.DeclineAccess(input).pipe(withWriteTimeout))
   }),
   accessChanged
 )

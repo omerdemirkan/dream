@@ -18,7 +18,8 @@ import { useDictation } from "../platform/dictation.ts"
 import { useAtomSet } from "@effect/atom-react"
 import { createProjectFn } from "../state/atoms.ts"
 import { askPushAtom } from "../state/ui.ts"
-import { useAction } from "../ui/actions.ts"
+import { useAction, useToast } from "../ui/actions.ts"
+import { useRequestId } from "../ui/hooks.ts"
 import { Bars, Icon, IconButton } from "../ui/kit.tsx"
 import { color, gutter } from "../ui/theme.ts"
 
@@ -29,6 +30,8 @@ export default function NewIdea() {
   const [text, setText] = useState(params.text ?? "")
   const input = useRef<TextInputInstance>(null)
   const create = useAction(createProjectFn)
+  const requestId = useRequestId()
+  const toast = useToast()
   const askPush = useAtomSet(askPushAtom)
   const dictation = useDictation(
     (heard) => setText((current) => (current.trim() ? `${current.trimEnd()} ${heard}` : heard)),
@@ -50,19 +53,25 @@ export default function NewIdea() {
   const send = () => {
     if (!has || create.busy) return
     dictation.stop()
-    create.run(text.trim(), {
-      onSuccess: (project) => {
-        // Its first question can take minutes: now is when notifications make sense.
-        askPush((n) => n + 1)
-        // The composer gives way to the new project's Chat, with Home behind it.
-        router.replace({ pathname: "/project/[id]", params: { id: project.id, tab: "chat" } })
-      },
-      onFailure: (_, error) => {
-        if (typeof error === "object" && error !== null && "_tag" in error && error._tag === "NoModelConnection") {
-          router.push("/connect")
+    const idea = text.trim()
+    create.run(
+      { idea, requestId: requestId.for(idea) },
+      {
+        onSuccess: (project) => {
+          requestId.done()
+          // Its first question can take minutes: now is when notifications make sense.
+          askPush((n) => n + 1)
+          // The composer gives way to the new project's Chat, with Home behind it.
+          router.replace({ pathname: "/project/[id]", params: { id: project.id, tab: "chat" } })
+        },
+        // The idea stays in the field, so they can send it again.
+        onFailure: (message, error) => {
+          if (typeof error === "object" && error !== null && "_tag" in error && error._tag === "NoModelConnection") {
+            router.push("/connect")
+          } else toast(message)
         }
       }
-    })
+    )
   }
 
   return (

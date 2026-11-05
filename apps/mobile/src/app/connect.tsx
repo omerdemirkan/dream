@@ -40,6 +40,7 @@ export default function Connect() {
   const insets = useSafeAreaInsets()
   const [step, setStep] = useState<Step>({ _tag: "Choose" })
   const start = useAction(startModelConnectionFn)
+  const toast = useToast()
   const [starting, setStarting] = useState<ModelProvider | undefined>(undefined)
 
   const choose = (provider: ModelProvider) => {
@@ -49,7 +50,10 @@ export default function Connect() {
         setStarting(undefined)
         setStep({ _tag: "Flow", provider, connection, flow })
       },
-      onFailure: () => setStarting(undefined)
+      onFailure: (message) => {
+        setStarting(undefined)
+        toast(message)
+      }
     })
   }
 

@@ -109,14 +109,19 @@ export function ExpandedQuestion(props: {
   const [changing, setChanging] = useState(false)
   const [picked, setPicked] = useState<string | undefined>(undefined)
   useEffect(() => setChanging(false), [m.state._tag])
+  // The API ignores an answer the question already has, so retrying after a failure can't answer twice.
   const send = (
-    input: { readonly _tag: "Choice"; readonly option: string } | { readonly _tag: "Freeform"; readonly text: string }
+    input: { readonly _tag: "Choice"; readonly option: string } | { readonly _tag: "Freeform"; readonly text: string },
+    sent?: () => void
   ) => {
     if (input._tag === "Choice") setPicked(input.option)
     answer.run(
       { projectId: m.projectId, messageId: m.id, answer: input },
       {
-        onSuccess: () => setChanging(false),
+        onSuccess: () => {
+          setChanging(false)
+          sent?.()
+        },
         onFailure: (message) => {
           setPicked(undefined)
           toast(message)
@@ -229,7 +234,7 @@ export function ExpandedQuestion(props: {
             onPick={(option) => send({ _tag: "Choice", option })}
           />
           <View style={{ height: 10 }} />
-          <ElseComposer large onSend={(text) => send({ _tag: "Freeform", text })} />
+          <ElseComposer large busy={answer.busy} onSend={(text, sent) => send({ _tag: "Freeform", text }, sent)} />
         </>
       }
     />

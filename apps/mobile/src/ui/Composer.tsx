@@ -37,19 +37,28 @@ function Listening(props: { readonly heard: string; readonly inset: number; read
   )
 }
 
-export function ChatComposer(props: {
-  readonly onSend: (text: string) => void
-  readonly sample?: string
-  readonly busy?: boolean
-}) {
-  const [text, setText] = useState("")
-  const dictation = useDictation((heard) => setText((current) => join(current, heard)), props.sample)
+/**
+ * Sending hands the text to `onSend` with a `sent` callback. The field keeps
+ * the text until the write goes through, so a failed or timed-out send leaves
+ * it there to try again.
+ */
+type Send = (text: string, sent: () => void) => void
+
+/** Sends what's in the field unless a send is already in flight; clears it on `sent` unless they've edited it since. */
+const useSend = (text: string, setText: (update: (current: string) => string) => void, onSend: Send, busy: boolean) => {
   const has = text.trim().length > 0
   const send = () => {
-    if (!has) return
-    props.onSend(text.trim())
-    setText("")
+    if (!has || busy) return
+    const sending = text.trim()
+    onSend(sending, () => setText((current) => (current.trim() === sending ? "" : current)))
   }
+  return { has, send }
+}
+
+export function ChatComposer(props: { readonly onSend: Send; readonly sample?: string; readonly busy?: boolean }) {
+  const [text, setText] = useState("")
+  const dictation = useDictation((heard) => setText((current) => join(current, heard)), props.sample)
+  const { has, send } = useSend(text, setText, props.onSend, props.busy === true)
   return (
     <View
       style={{
@@ -94,20 +103,16 @@ export function ChatComposer(props: {
 }
 
 export function ElseComposer(props: {
-  readonly onSend: (text: string) => void
+  readonly onSend: Send
   readonly sample?: string
   readonly large?: boolean
+  readonly busy?: boolean
 }) {
   const [text, setText] = useState("")
   const dictation = useDictation((heard) => setText((current) => join(current, heard)), props.sample)
-  const has = text.trim().length > 0
+  const { has, send } = useSend(text, setText, props.onSend, props.busy === true)
   const height = props.large ? 58 : 48
   const button = props.large ? 42 : 36
-  const send = () => {
-    if (!has) return
-    props.onSend(text.trim())
-    setText("")
-  }
   return (
     <View
       style={{
@@ -137,7 +142,7 @@ export function ElseComposer(props: {
       />
       {dictation.listening ? <Listening heard={dictation.heard} inset={16} radius={props.large ? 18 : 16} /> : null}
       {has && !dictation.listening ? (
-        <IconButton icon="up" tone="need" size={button} label="Send" onPress={send} />
+        <IconButton icon="up" tone="need" size={button} label="Send" onPress={send} disabled={props.busy === true} />
       ) : dictation.available ? (
         <IconButton
           icon="mic"

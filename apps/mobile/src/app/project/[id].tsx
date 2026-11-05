@@ -17,7 +17,7 @@ import { landingAtom } from "../../state/ui.ts"
 import { useAction } from "../../ui/actions.ts"
 import { ChatTab } from "../../ui/Chat.tsx"
 import { ChatComposer } from "../../ui/Composer.tsx"
-import { useOpenMessage, useProject } from "../../ui/hooks.ts"
+import { useOpenMessage, useProject, useRequestId } from "../../ui/hooks.ts"
 import { Dot, IconButton, Tile } from "../../ui/kit.tsx"
 import { StatusTab } from "../../ui/Status.tsx"
 import { color, gutter } from "../../ui/theme.ts"
@@ -54,6 +54,7 @@ function Project(props: {
   const summaries = Option.getOrUndefined(AsyncResult.value(useAtomValue(projectsAtom)))
   const project = state?.project ?? summaries?.find((s) => s.project.id === props.projectId)?.project
   const send = useAction(sendMessageFn)
+  const requestId = useRequestId()
   const setLanding = useAtomSet(landingAtom)
 
   useEffect(() => {
@@ -83,7 +84,20 @@ function Project(props: {
           <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
             <ChatTab state={state} topInset={top + header} bottomInset={24} />
             <View style={{ paddingHorizontal: 16, paddingBottom: Math.max(insets.bottom, 12) + 2, paddingTop: 10 }}>
-              <ChatComposer busy={send.busy} onSend={(text) => send.run({ projectId: props.projectId, text })} />
+              <ChatComposer
+                busy={send.busy}
+                onSend={(text, sent) =>
+                  send.run(
+                    { projectId: props.projectId, text, requestId: requestId.for(text) },
+                    {
+                      onSuccess: () => {
+                        requestId.done()
+                        sent()
+                      }
+                    }
+                  )
+                }
+              />
             </View>
           </KeyboardAvoidingView>
         ) : (

@@ -2,14 +2,15 @@
  * Hooks shared by the screens: reading a project and its messages with held
  * answers folded in, opening the expanded view, and the current time.
  */
-import type { AskMessage, Message, MessageId, ProjectId } from "@dream/domain"
+import { type AskMessage, type Message, type MessageId, type ProjectId, RequestId } from "@dream/domain"
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
 import { DateTime, Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
-import { type RefObject, useCallback, useEffect, useState } from "react"
+import { type RefObject, useCallback, useEffect, useRef, useState } from "react"
 import type { HostInstance } from "react-native"
 import type { AnswerInput } from "../data/Answers.ts"
 import type { ProjectState } from "../data/projectState.ts"
+import { randomUuid } from "../data/Session.ts"
 import { openAsksAtom, pendingAnswersAtom, projectAtom } from "../state/atoms.ts"
 import { focusAtom } from "../state/ui.ts"
 
@@ -75,4 +76,22 @@ export function useOpenMessage() {
     },
     [setFocus]
   )
+}
+
+/**
+ * A request id for a write they may retry: the same id for as long as they
+ * retry the same thing (`key`, e.g. the text), a new one once it went through
+ * (`done`) or they changed it. The API uses it so a retry can't post twice.
+ */
+export function useRequestId() {
+  const current = useRef<{ readonly key: string; readonly id: RequestId } | undefined>(undefined)
+  return {
+    for: (key: string): RequestId => {
+      if (current.current?.key !== key) current.current = { key, id: RequestId.make(randomUuid()) }
+      return current.current.id
+    },
+    done: () => {
+      current.current = undefined
+    }
+  }
 }

@@ -9,7 +9,7 @@ import { forwardRef, type ReactNode, useState } from "react"
 import { type HostInstance, Pressable, Text, View, useWindowDimensions } from "react-native"
 import { answerNowFn, submitKeyAccessFn } from "../state/atoms.ts"
 import { accessExplainer, accessLabel, accessScope, isOAuth, whenTag } from "./describe.ts"
-import { useAction, useGoogleAccess } from "./actions.ts"
+import { useAction, useGoogleAccess, useToast } from "./actions.ts"
 import { GoogleButton, Choices, Icon } from "./kit.tsx"
 import { Markdown } from "./Markdown.tsx"
 import { MediaTile } from "./Media.tsx"
@@ -255,6 +255,7 @@ export const QuestionCard = forwardRef<
 >(function QuestionCard(props, ref) {
   const m = props.message
   const answer = useAction(answerNowFn)
+  const toast = useToast()
   const [picked, setPicked] = useState<string | undefined>(undefined)
   if (m.state._tag === "Answered") {
     const said = m.state.answer._tag === "Choice" ? "You chose" : "You said"
@@ -300,7 +301,12 @@ export const QuestionCard = forwardRef<
           setPicked(option)
           answer.run(
             { projectId: m.projectId, messageId: m.id, answer: { _tag: "Choice", option } },
-            { onFailure: () => setPicked(undefined) }
+            {
+              onFailure: (message) => {
+                setPicked(undefined)
+                toast(message)
+              }
+            }
           )
         }}
       />
