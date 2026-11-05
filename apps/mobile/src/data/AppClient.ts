@@ -12,18 +12,19 @@ import { RpcClient, RpcMiddleware } from "effect/rpc"
 import type { RpcClientError } from "effect/rpc/RpcClientError"
 import { AppConfig } from "./AppConfig.ts"
 import { Session } from "./Session.ts"
+import { PhoneAppRpcs } from "./Tolerant.ts"
 
 export type AppRpcClient = RpcClient.FromGroup<typeof AppRpcs, RpcClientError>
 
 export class AppClient extends Context.Service<AppClient, AppRpcClient>()("@dream/mobile/AppClient") {
   /**
    * Over HTTP to the real API. Expects `FetchHttpClient.Fetch` to be a fetch that
-   * can stream response bodies (`expo/fetch` on the phone).
+   * can stream response bodies (`expo/fetch` on the phone). Lists decode leniently (`Tolerant.ts`).
    */
   static readonly layerHttp = Layer.unwrap(
     Effect.gen(function* () {
       const { apiUrl } = yield* AppConfig
-      return Layer.effect(AppClient, RpcClient.make(AppRpcs)).pipe(
+      return Layer.effect(AppClient, RpcClient.make(PhoneAppRpcs)).pipe(
         Layer.provide(RpcClient.layerProtocolHttp({ url: `${apiUrl}${Routes.app}` })),
         Layer.provide(Layer.mergeAll(FetchHttpClient.layer, HttpRpcSerialization)),
         Layer.provide(AppAuthClient)

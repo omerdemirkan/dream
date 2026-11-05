@@ -4,16 +4,18 @@
  * memory: snapshot then changes, and a fresh ticket and snapshot after the
  * server drops the connection (as a ProjectDO does when it is evicted).
  */
-import { type ProjectEvent, type ProjectId, ProjectLiveRpcs, SocketRpcSerialization } from "@dream/domain"
+import { type MessageId, ProjectEvent, type ProjectId, ProjectLiveRpcs, SocketRpcSerialization } from "@dream/domain"
+import * as Fx from "@dream/domain/fixtures"
 import { assert, describe, it } from "@effect/vitest"
-import { type Duration, Effect, Fiber, Layer, Queue, Redacted, Stream } from "effect"
+import { type Duration, Effect, Fiber, Layer, Queue, Redacted, Schema, Stream } from "effect"
 import { NetAddress } from "effect/net"
-import { RpcServer } from "effect/rpc"
+import { Rpc, RpcGroup, RpcServer } from "effect/rpc"
 import { Socket, SocketServer } from "effect/socket"
 import { TestClock } from "effect/testing"
 import { AppClient } from "../src/data/AppClient.ts"
 import { LiveProjects } from "../src/data/LiveProjects.ts"
 import { SecureStorage } from "../src/data/SecureStorage.ts"
+import { unsupportedText } from "../src/data/Tolerant.ts"
 import { Session } from "../src/data/Session.ts"
 import { FakeBackend } from "../src/fake/FakeBackend.ts"
 import { AppClientFake } from "../src/fake/layers.ts"
@@ -77,6 +79,21 @@ class FakeWebSocket implements Socket.WebSocketLike {
 
 const projectId = "prj_liftlog" as ProjectId
 
+/** A snapshot's fields but its messages, as JSON. */
+const {
+  _tag: _,
+  messages: _m,
+  ...snapshotJson
+} = Schema.encodeSync(Schema.toCodecJson(ProjectEvent))(
+  ProjectEvent.cases.Snapshot.make({
+    project: Fx.liftLog,
+    status: Fx.liftLogStatus,
+    messages: [],
+    hasEarlierMessages: false,
+    working: false
+  })
+) as Record<string, unknown>
+
 /** Lets in-memory sockets deliver (they use microtasks), then moves the test clock. */
 const settle = (duration: Duration.Input) =>
   Effect.gen(function* () {
@@ -86,37 +103,42 @@ const settle = (duration: Duration.Input) =>
     }
   })
 
+/** In-memory WebSockets: the client dials through `constructor`, and the server side of each pair goes to `socketServer`. */
+const memorySockets = Effect.gen(function* () {
+  const urls: Array<string> = []
+  const servers: Array<FakeWebSocket> = []
+  const incoming = yield* Queue.unbounded<FakeWebSocket>()
+
+  const constructor = Layer.succeed(Socket.WebSocketConstructor, (url: string) => {
+    urls.push(url)
+    const client = new FakeWebSocket(url)
+    const server = new FakeWebSocket(url)
+    client.peer = server
+    server.peer = client
+    server.readyState = 1
+    servers.push(server)
+    Queue.offerUnsafe(incoming, server)
+    queueMicrotask(() => client.open())
+    return client
+  })
+
+  const socketServer = Layer.succeed(SocketServer.SocketServer, {
+    address: NetAddress.unixPathAddress("memory"),
+    run: (handler) =>
+      Effect.forever(
+        Queue.take(incoming).pipe(
+          Effect.flatMap((ws) => Socket.fromWebSocket(Effect.succeed(ws))),
+          Effect.flatMap((socket) => Effect.forkDetach(Effect.scoped(handler(socket))))
+        )
+      )
+  })
+  return { urls, servers, constructor, socketServer }
+})
+
 describe("LiveProjects over a WebSocket", () => {
   it.effect("streams snapshot then changes, and resubscribes with a fresh ticket after a drop", () =>
     Effect.gen(function* () {
-      const urls: Array<string> = []
-      const servers: Array<FakeWebSocket> = []
-      const incoming = yield* Queue.unbounded<FakeWebSocket>()
-
-      // The client dials through this constructor; the server side of each pair goes to the server.
-      const constructor = Layer.succeed(Socket.WebSocketConstructor, (url: string) => {
-        urls.push(url)
-        const client = new FakeWebSocket(url)
-        const server = new FakeWebSocket(url)
-        client.peer = server
-        server.peer = client
-        server.readyState = 1
-        servers.push(server)
-        Queue.offerUnsafe(incoming, server)
-        queueMicrotask(() => client.open())
-        return client
-      })
-
-      const socketServer = Layer.succeed(SocketServer.SocketServer, {
-        address: NetAddress.unixPathAddress("memory"),
-        run: (handler) =>
-          Effect.forever(
-            Queue.take(incoming).pipe(
-              Effect.flatMap((ws) => Socket.fromWebSocket(Effect.succeed(ws))),
-              Effect.flatMap((socket) => Effect.forkDetach(Effect.scoped(handler(socket))))
-            )
-          )
-      })
+      const { urls, servers, constructor, socketServer } = yield* memorySockets
 
       const data = Layer.mergeAll(AppClientFake).pipe(
         Layer.provideMerge(FakeBackend.layer),
@@ -169,6 +191,66 @@ describe("LiveProjects over a WebSocket", () => {
         assert.strictEqual(urls.length, 2)
         assert.notStrictEqual(urls[0], urls[1])
         assert.deepStrictEqual(events, ["Snapshot", "StatusChanged", "WorkingChanged", "Snapshot"])
+        yield* Fiber.interrupt(fiber)
+      }).pipe(Effect.provide(layer))
+    })
+  )
+
+  it.effect("skips events this build doesn't know, and shows messages it doesn't know as a neutral row", () =>
+    Effect.gen(function* () {
+      const { constructor, socketServer } = yield* memorySockets
+      const header = { projectId, createdAt: "2026-11-05T10:00:00.000Z" }
+      const known = ProjectEvent.cases.WorkingChanged.make({ working: true })
+      // A newer ProjectDO: whatever JSON it sends goes out as is.
+      const FutureLiveRpcs = RpcGroup.make(Rpc.make("Subscribe", { success: Schema.Unknown, stream: true }))
+      const server = RpcServer.layer(FutureLiveRpcs).pipe(
+        Layer.provide(
+          FutureLiveRpcs.toLayer({
+            Subscribe: () =>
+              Stream.fromIterable<unknown>([
+                { _tag: "Snapshot", ...snapshotJson, messages: [{ _tag: "Poll", id: "msg_poll", ...header }] },
+                { _tag: "TypingStarted", by: "agent" },
+                {
+                  _tag: "MessageAdded",
+                  message: { _tag: "Access", id: "msg_passkey", ...header, request: { _tag: "Passkey" } }
+                },
+                Schema.encodeSync(Schema.toCodecJson(ProjectEvent))(known)
+              ]).pipe(Stream.concat(Stream.never))
+          })
+        ),
+        Layer.provide(RpcServer.layerProtocolSocketServer),
+        Layer.provide(Layer.mergeAll(SocketRpcSerialization, socketServer))
+      )
+      const data = Layer.mergeAll(AppClientFake).pipe(
+        Layer.provideMerge(FakeBackend.layer),
+        Layer.provideMerge(Session.layer),
+        Layer.provideMerge(SecureStorage.layerMemory())
+      )
+      const layer = Layer.mergeAll(LiveProjects.layerSocket, server).pipe(
+        Layer.provide(constructor),
+        Layer.provideMerge(data)
+      )
+      yield* Effect.gen(function* () {
+        const app = yield* AppClient
+        const session = yield* Session
+        const signedIn = yield* app.DevSignIn({ email: "ada@example.com", secret: Redacted.make("x") })
+        yield* session.signIn({ token: signedIn.sessionToken, user: signedIn.user })
+        const events: Array<ProjectEvent> = []
+        const fiber = yield* (yield* LiveProjects).subscribe(projectId).pipe(
+          Stream.runForEach((event) => Effect.sync(() => events.push(event))),
+          Effect.forkChild
+        )
+        yield* settle("10 millis")
+        assert.deepStrictEqual(
+          events.map((event) => event._tag),
+          ["Snapshot", "MessageAdded", "WorkingChanged"]
+        )
+        const [snapshot, added] = events
+        assert.strictEqual(
+          snapshot?._tag === "Snapshot" && snapshot.messages[0]?._tag === "Text" && snapshot.messages[0].text,
+          unsupportedText
+        )
+        assert.strictEqual(added?._tag === "MessageAdded" && added.message.id, "msg_passkey" as MessageId)
         yield* Fiber.interrupt(fiber)
       }).pipe(Effect.provide(layer))
     })

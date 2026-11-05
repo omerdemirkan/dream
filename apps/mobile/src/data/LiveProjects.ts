@@ -6,13 +6,14 @@
  * sockets when it is evicted, and iOS drops them in the background, so any
  * close or failure means: wait a little, fetch a new URL, subscribe again. The
  * first event of every subscription is a `Snapshot`, which replaces what the
- * phone holds.
+ * phone holds. Events this build doesn't know are skipped (`Tolerant.ts`).
  */
-import { type ProjectEvent, type ProjectId, ProjectLiveRpcs, SocketRpcSerialization } from "@dream/domain"
+import { type ProjectEvent, type ProjectId, SocketRpcSerialization } from "@dream/domain"
 import { Context, Effect, Layer, Schedule, Stream } from "effect"
 import { RpcClient } from "effect/rpc"
 import { Socket } from "effect/socket"
 import { AppClient } from "./AppClient.ts"
+import { PhoneProjectLiveRpcs } from "./Tolerant.ts"
 
 export class LiveProjects extends Context.Service<
   LiveProjects,
@@ -42,8 +43,8 @@ export class LiveProjects extends Context.Service<
             )
             // Built into the stream's scope: the socket lives exactly as long as this subscription.
             const services = yield* Layer.build(protocol)
-            const client = yield* RpcClient.make(ProjectLiveRpcs).pipe(Effect.provide(services))
-            return client.Subscribe()
+            const client = yield* RpcClient.make(PhoneProjectLiveRpcs).pipe(Effect.provide(services))
+            return client.Subscribe().pipe(Stream.filter((event): event is ProjectEvent => event !== null))
           })
         )
 
