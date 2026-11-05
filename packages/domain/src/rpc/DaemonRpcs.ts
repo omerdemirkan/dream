@@ -8,6 +8,7 @@ import { Rpc, RpcGroup } from "effect/rpc"
 import { AgentEvent } from "../AgentEvent.ts"
 import { DaemonAuth } from "../Auth.ts"
 import { EventId } from "../Ids.ts"
+import { TimeZone } from "../User.ts"
 
 export const TurnState = Schema.Literals(["idle", "running"])
 export type TurnState = typeof TurnState.Type
@@ -17,9 +18,12 @@ export class DaemonRpcs extends RpcGroup.make(
    * Hand events to dreamd. It persists them before replying, so the DO can
    * mark exactly the `accepted` ids delivered and redeliver the rest later.
    * Duplicate ids are accepted and ignored.
+   *
+   * `timeZone` is their current time zone; turn prompts show times in it.
+   * dreamd keeps the last one it was given.
    */
   Rpc.make("Deliver", {
-    payload: { events: Schema.NonEmptyArray(AgentEvent) },
+    payload: { events: Schema.NonEmptyArray(AgentEvent), timeZone: Schema.optionalKey(TimeZone) },
     success: Schema.Struct({ accepted: Schema.Array(EventId) })
   }),
   Rpc.make("Health", {
