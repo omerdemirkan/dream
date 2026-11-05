@@ -36,7 +36,9 @@ import * as JsonFile from "../JsonFile.ts"
 import * as Usage from "../Usage.ts"
 import { agentEnv, harnessAuth } from "./HarnessEnv.ts"
 import { killAllNow, makeLocalSandboxSession, makeSpawned, stopAll } from "./LocalSandbox.ts"
+import { claudeSettings } from "./PersonChannel.ts"
 import * as Skill from "./Skill.ts"
+import { drive, type Part, type TurnHandlers } from "./Turn.ts"
 
 /** How a turn ended. Limits show up in `usage.limit`, whatever the outcome. */
 export type TurnOutcome = Data.TaggedEnum<{
@@ -50,6 +52,8 @@ export interface TurnResult {
   readonly usage: Usage.UsageReading
   /** Whether the agent did anything (wrote, reasoned or used a tool) before the turn ended. */
   readonly progressed: boolean
+  /** The text of the turn's last step: what the model said last, which only the session saw. */
+  readonly finalText?: string
 }
 
 /** The harness couldn't run a turn at all (it didn't start, or crashed outside a turn). */
@@ -65,8 +69,11 @@ export class Harness extends Context.Service<
   Harness,
   {
     readonly name: HarnessName
-    /** Run one turn to its end. Interrupting it stops the turn, within a few seconds. */
-    readonly turn: (prompt: string) => Effect.Effect<TurnResult, HarnessError>
+    /**
+     * Run one turn to its end. Interrupting it stops the turn, within a few
+     * seconds. Questions the model asks through its harness go to `handlers`.
+     */
+    readonly turn: (prompt: string, handlers: TurnHandlers) => Effect.Effect<TurnResult, HarnessError>
     /** Give the running turn more input, e.g. a message that arrived while it works. */
     readonly steer: (text: string) => Effect.Effect<void, SteerUnavailable>
   }
@@ -78,12 +85,12 @@ export class Harness extends Context.Service<
 
   /**
    * A scripted harness: each turn takes the next script from `turns` and
-   * runs it (it can sleep, steer-check, fail, …); prompts and steering are
+   * runs it (it can sleep, steer-check, ask questions through `handlers`, fail, …); prompts and steering are
    * recorded in `log`.
    */
   static readonly layerTest = (options: {
     readonly name?: HarnessName
-    readonly turns: Queue.Dequeue<(prompt: string) => Effect.Effect<TurnResult, HarnessError>>
+    readonly turns: Queue.Dequeue<(prompt: string, handlers: TurnHandlers) => Effect.Effect<TurnResult, HarnessError>>
     readonly log: Ref.Ref<ReadonlyArray<string>>
     readonly steerable?: boolean
   }) =>
@@ -93,11 +100,11 @@ export class Harness extends Context.Service<
         const running = yield* Ref.make(false)
         return Harness.of({
           name: options.name ?? "claude-code",
-          turn: (prompt) =>
+          turn: (prompt, handlers) =>
             Ref.set(running, true).pipe(
               Effect.andThen(Ref.update(options.log, (log) => [...log, `turn: ${prompt}`])),
               Effect.andThen(Queue.take(options.turns)),
-              Effect.flatMap((script) => script(prompt)),
+              Effect.flatMap((script) => script(prompt, handlers)),
               Effect.ensuring(Ref.set(running, false))
             ),
           steer: (text) =>
@@ -130,6 +137,20 @@ const SavedSession = Schema.Struct({
 })
 type SavedSession = typeof SavedSession.Type
 
+/** Turn off Claude Code's built-ins that can't work here (see `PersonChannel.ts`), keeping any other settings. */
+const writeClaudeSettings = (file: string) => {
+  const settings = JsonFile.make(Schema.Json, file)
+  return settings.read.pipe(
+    Effect.catch((error) =>
+      Effect.logWarning("Couldn't read Claude Code's settings; replacing them", { error: error.message }).pipe(
+        Effect.as(Option.none())
+      )
+    ),
+    Effect.flatMap((existing) => settings.write(claudeSettings(Option.getOrUndefined(existing)))),
+    Effect.catch((error) => Effect.logError("Couldn't write Claude Code's settings", { error: error.message }))
+  )
+}
+
 /** How long detaching from the session may take. */
 const detachTimeout = Duration.seconds(5)
 
@@ -152,6 +173,7 @@ const make = Effect.gen(function* () {
     () => Effect.promise(() => stopAll(spawned)).pipe(Effect.ensuring(Effect.sync(() => process.off("exit", onExit))))
   )
   const name = config.harness
+  if (name === "claude-code") yield* provide(writeClaudeSettings(path.join(config.home, ".claude", "settings.json")))
   const auth = {
     ...harnessAuth(name),
     ...(name === "codex"
@@ -256,7 +278,7 @@ const make = Effect.gen(function* () {
       )
     )
 
-  const turn = Effect.fn("Harness.turn")(function* (prompt: string) {
+  const turn = Effect.fn("Harness.turn")(function* (prompt: string, handlers: TurnHandlers) {
     const startedAt = yield* DateTime.now
     const session = yield* open()
     const usage = yield* Ref.make<Usage.UsageReading>({})
@@ -264,45 +286,63 @@ const make = Effect.gen(function* () {
     const progressed = yield* Ref.make(false)
     const controller = new AbortController()
 
-    const consume = Effect.gen(function* () {
-      const result = yield* Effect.tryPromise(() => agent.stream({ session, prompt, abortSignal: controller.signal }))
-      yield* Ref.set(active, Option.some(session))
-      yield* Stream.fromAsyncIterable(result.fullStream, (cause) => cause).pipe(
-        Stream.runForEach((part) =>
-          Effect.gen(function* () {
-            switch (part.type) {
-              case "raw": {
-                const reading = Usage.fromClaudeRaw(part.rawValue, yield* DateTime.now)
-                if (Option.isSome(reading)) {
-                  yield* Ref.update(usage, (previous) => Usage.merge(previous, reading.value))
-                  if (reading.value.limit !== undefined) {
-                    yield* Effect.logWarning("Usage limit reached; stopping the turn", {
-                      window: reading.value.limit.window,
-                      until: DateTime.formatIso(reading.value.limit.until)
-                    })
-                    controller.abort(new Error("usage limit reached"))
-                  }
-                }
-                return
-              }
-              case "error":
-                yield* Ref.set(lastError, Option.some(String(part.error)))
-                return
-              case "tool-call":
-                yield* Ref.set(progressed, true)
-                yield* Effect.logDebug("tool call", { tool: part.toolName })
-                return
-              case "text-delta":
-              case "reasoning-delta":
-                yield* Ref.set(progressed, true)
-                return
-              default:
-                return
-            }
-          })
+    const finalText = yield* Ref.make("")
+
+    const streamOf = (start: () => ReturnType<typeof agent.stream>) =>
+      Stream.unwrap(
+        Effect.tryPromise(start).pipe(
+          Effect.tap(() => Ref.set(active, Option.some(session))),
+          Effect.map((result) => Stream.fromAsyncIterable(result.fullStream, (cause) => cause))
         )
       )
-    })
+    const onPart = (part: Part) =>
+      Effect.gen(function* () {
+        switch (part.type) {
+          case "raw": {
+            const reading = Usage.fromClaudeRaw(part.rawValue, yield* DateTime.now)
+            if (Option.isSome(reading)) {
+              yield* Ref.update(usage, (previous) => Usage.merge(previous, reading.value))
+              if (reading.value.limit !== undefined) {
+                yield* Effect.logWarning("Usage limit reached; stopping the turn", {
+                  window: reading.value.limit.window,
+                  until: DateTime.formatIso(reading.value.limit.until)
+                })
+                controller.abort(new Error("usage limit reached"))
+              }
+            }
+            return
+          }
+          case "error":
+            yield* Ref.set(lastError, Option.some(String(part.error)))
+            return
+          case "tool-call":
+            yield* Ref.set(progressed, true)
+            yield* Effect.logDebug("tool call", { tool: part.toolName })
+            return
+          case "text-delta":
+          case "reasoning-delta":
+            yield* Ref.set(progressed, true)
+            return
+          default:
+            return
+        }
+      })
+    const consume = drive(
+      {
+        start: streamOf(() => agent.stream({ session, prompt, abortSignal: controller.signal })),
+        // A tool message ending the input continues the paused turn instead of starting one.
+        answer: (results) =>
+          streamOf(() =>
+            agent.stream({
+              session,
+              messages: [{ role: "tool", content: [...results] }],
+              abortSignal: controller.signal
+            })
+          )
+      },
+      handlers,
+      onPart
+    ).pipe(Effect.flatMap((result) => Ref.set(finalText, result.finalText)))
 
     const exit = yield* consume.pipe(
       Effect.onInterrupt(() => Effect.sync(() => controller.abort(new Error("dreamd interrupted the turn")))),
@@ -330,7 +370,8 @@ const make = Effect.gen(function* () {
       usage: unreadLimit
         ? Usage.merge(reading, { limit: Usage.fallbackLimit("fiveHour", yield* DateTime.now) })
         : reading,
-      progressed: yield* Ref.get(progressed)
+      progressed: yield* Ref.get(progressed),
+      finalText: yield* Ref.get(finalText)
     } satisfies TurnResult
   })
 

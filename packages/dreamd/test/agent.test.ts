@@ -4,12 +4,15 @@ import { TestClock } from "effect/testing"
 import { Agent, backoff } from "../src/Agent.ts"
 import { Api, type Report } from "../src/Api.ts"
 import { Harness, type HarnessError, type TurnResult, TurnOutcome } from "../src/harness/Harness.ts"
+import type { TurnHandlers } from "../src/harness/Turn.ts"
 import { Inbox } from "../src/Inbox.ts"
+import { Outreach } from "../src/Outreach.ts"
 import { baseLayer, tempDir, usageReset, userMessage } from "./support.ts"
 
-type Script = (prompt: string) => Effect.Effect<TurnResult, HarnessError>
+type Script = (prompt: string, handlers: TurnHandlers) => Effect.Effect<TurnResult, HarnessError>
 
 const completed = (progressed = true): TurnResult => ({ outcome: TurnOutcome.Completed(), usage: {}, progressed })
+const saying = (finalText: string): TurnResult => ({ ...completed(), finalText })
 
 const setup = (options: { readonly steerable?: boolean } = {}) =>
   Effect.gen(function* () {
@@ -24,7 +27,8 @@ const setup = (options: { readonly steerable?: boolean } = {}) =>
             log,
             ...(options.steerable === undefined ? {} : { steerable: options.steerable })
           }),
-          Api.layerTest(reports)
+          Api.layerTest(reports),
+          Outreach.layer
         )
       ),
       Layer.provideMerge(Inbox.layer),
@@ -33,6 +37,7 @@ const setup = (options: { readonly steerable?: boolean } = {}) =>
     const context = yield* Layer.build(layer)
     const inbox = Context.get(context, Inbox)
     const agent = Context.get(context, Agent)
+    const outreach = Context.get(context, Outreach)
     yield* Effect.forkScoped(agent.run)
     /** Wait until the scripted harness has recorded `n` entries. */
     const logged = (n: number) =>
@@ -47,7 +52,14 @@ const setup = (options: { readonly steerable?: boolean } = {}) =>
         yield* Effect.yieldNow
       }
     })
-    return { turns, log, reports, inbox, agent, logged, idle }
+    /** Wait for the turn to be reported finished, then return what the person got. */
+    const sent = Effect.gen(function* () {
+      while (!(yield* Ref.get(reports)).some((report) => report._tag === "Turn" && report.state === "finished")) {
+        yield* Effect.yieldNow
+      }
+      return (yield* Ref.get(reports)).filter((report) => report._tag === "Question" || report._tag === "Message")
+    })
+    return { turns, log, reports, inbox, agent, outreach, logged, idle, sent }
   })
 
 describe("Agent", () => {
@@ -166,4 +178,83 @@ describe("Agent", () => {
       assert.include(after[1], "Their five-hour usage window has reset.")
     }).pipe(Effect.scoped)
   )
+
+  describe("when the agent talks where the person can't see", () => {
+    it.effect("posts the final text of a turn that sent nothing, once", () =>
+      Effect.gen(function* () {
+        const { turns, inbox, sent } = yield* setup()
+        yield* Queue.offer(turns, () => Effect.succeed(saying("  What's the priority — fast or polished?\n")))
+        yield* inbox.deliver([userMessage(1, "Build me a band site")])
+        assert.deepStrictEqual(yield* sent, [{ _tag: "Message", text: "What's the priority — fast or polished?" }])
+      }).pipe(Effect.scoped)
+    )
+
+    it.effect("leaves the final text alone when the turn sent them something", () =>
+      Effect.gen(function* () {
+        const { turns, inbox, outreach, sent } = yield* setup()
+        yield* Queue.offer(turns, () =>
+          // `dream message` went through the CLI socket during the turn.
+          outreach.record(["SendMessage"]).pipe(Effect.as(saying("I've sent them the plan.")))
+        )
+        yield* inbox.deliver([userMessage(1)])
+        assert.deepStrictEqual(yield* sent, [])
+      }).pipe(Effect.scoped)
+    )
+
+    it.effect("doesn't count calls that don't reach the person", () =>
+      Effect.gen(function* () {
+        const { turns, inbox, outreach, sent } = yield* setup()
+        yield* Queue.offer(turns, () =>
+          outreach.record(["ListWakes", "GetStatus"]).pipe(Effect.as(saying("Here's what's scheduled.")))
+        )
+        yield* inbox.deliver([userMessage(1)])
+        assert.deepStrictEqual(yield* sent, [{ _tag: "Message", text: "Here's what's scheduled." }])
+      }).pipe(Effect.scoped)
+    )
+
+    it.effect("skips empty and boilerplate final text", () =>
+      Effect.gen(function* () {
+        const { turns, inbox, reports, sent } = yield* setup()
+        yield* Queue.offer(turns, () => Effect.succeed(saying("No response requested.")))
+        yield* inbox.deliver([userMessage(1)])
+        assert.deepStrictEqual(yield* sent, [])
+        yield* Ref.set(reports, [])
+        yield* Queue.offer(turns, () => Effect.succeed(saying("  \n")))
+        yield* inbox.deliver([userMessage(2)])
+        assert.deepStrictEqual(yield* sent, [])
+      }).pipe(Effect.scoped)
+    )
+
+    it.effect("doesn't post the text of a turn that failed", () =>
+      Effect.gen(function* () {
+        const { turns, inbox, sent } = yield* setup()
+        yield* Queue.offer(turns, () =>
+          Effect.succeed({ ...saying("Halfway through the"), outcome: TurnOutcome.Failed({ message: "crashed" }) })
+        )
+        yield* inbox.deliver([userMessage(1)])
+        assert.deepStrictEqual(yield* sent, [])
+      }).pipe(Effect.scoped)
+    )
+
+    it.effect("sends questions asked through the harness, and they count as reaching the person", () =>
+      Effect.gen(function* () {
+        const { turns, inbox, sent } = yield* setup()
+        const outcome = yield* Deferred.make<unknown>()
+        yield* Queue.offer(turns, (_, handlers) =>
+          handlers.ask({ question: "Fast or polished?", options: ["Fast", "Polished"], why: "Priority" }).pipe(
+            Effect.flatMap((result) => Deferred.succeed(outcome, result)),
+            Effect.as(saying("I asked them about the priority."))
+          )
+        )
+        yield* inbox.deliver([userMessage(1)])
+        assert.deepStrictEqual(yield* sent, [
+          {
+            _tag: "Question",
+            question: { question: "Fast or polished?", options: ["Fast", "Polished"], why: "Priority" }
+          }
+        ])
+        assert.deepStrictEqual(yield* Deferred.await(outcome), { _tag: "Sent", messageId: "msg_2" })
+      }).pipe(Effect.scoped)
+    )
+  })
 })

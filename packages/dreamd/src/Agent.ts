@@ -8,13 +8,20 @@
  * next try, after a backoff. One that hit a usage limit stops, reports the
  * limit (the API pauses the project and wakes the agent when it resets), and
  * no turn starts until the reset passes or a `UsageReset` arrives.
+ *
+ * The person sees only what goes through `dream`. Questions the model asks
+ * through its harness go to their phone, and a turn that ends with something
+ * to say, having sent them nothing, posts its final words to Chat.
  */
 import { renderSteerPrompt, renderTurnPrompt } from "@dream/agent-context"
 import type { EventId, ModelProvider, TurnState } from "@dream/domain"
-import { Context, DateTime, Duration, Effect, Exit, Layer, Ref, Stream } from "effect"
+import { Context, DateTime, Duration, Effect, Exit, Layer, Option, Ref, Stream } from "effect"
 import { Api } from "./Api.ts"
-import { Harness, TurnOutcome } from "./harness/Harness.ts"
+import { Harness, type TurnResult, TurnOutcome } from "./harness/Harness.ts"
+import { type QuestionOutcome, replyFromFinalText } from "./harness/PersonChannel.ts"
+import type { TurnHandlers } from "./harness/Turn.ts"
 import { Inbox, type InboxState, queuedCount } from "./Inbox.ts"
+import { Outreach } from "./Outreach.ts"
 import * as Usage from "./Usage.ts"
 
 /** Waits after consecutive failed turns: 15 s, 30 s, 1 min, … up to 10 min. */
@@ -39,6 +46,7 @@ export class Agent extends Context.Service<
       const inbox = yield* Inbox
       const harness = yield* Harness
       const api = yield* Api
+      const outreach = yield* Outreach
       const provider: ModelProvider = harness.name === "claude-code" ? "claude" : "chatgpt"
       const running = yield* Ref.make(false)
       const usage = yield* Ref.make<Usage.UsageReading>({})
@@ -87,6 +95,34 @@ export class Agent extends Context.Service<
           Stream.runDrain
         )
 
+      const handlers: TurnHandlers = {
+        ask: (question) =>
+          api.askQuestion(question).pipe(
+            Effect.tap(() => outreach.record(["AskQuestion"])),
+            Effect.map((messageId): QuestionOutcome => ({ _tag: "Sent", messageId })),
+            Effect.catch((error) =>
+              Effect.logWarning("Couldn't send the agent's question", { error: error.message }).pipe(
+                Effect.as<QuestionOutcome>({ _tag: "NotSent", reason: `Dream couldn't send it (${error.message})` })
+              )
+            )
+          )
+      }
+
+      /** A completed turn that sent them nothing but ended with something to say: put that in Chat. */
+      const replyIfSilent = (result: TurnResult, reachedBefore: number) =>
+        Effect.gen(function* () {
+          if (result.outcome._tag !== "Completed") return
+          const reply = replyFromFinalText(result.finalText ?? "")
+          if (Option.isNone(reply) || (yield* outreach.count) !== reachedBefore) return
+          yield* api.sendMessage(reply.value).pipe(
+            Effect.tap(() => outreach.record(["SendMessage"])),
+            Effect.tap((messageId) =>
+              Effect.logInfo("The turn sent nothing; posted its final text to Chat", { messageId })
+            ),
+            Effect.catch((error) => Effect.logWarning("Couldn't post the turn's final text", { error: error.message }))
+          )
+        })
+
       /** Run one turn with everything queued. Returns whether it should be retried. */
       const turn = Effect.gen(function* () {
         const events = yield* inbox.take
@@ -98,12 +134,14 @@ export class Agent extends Context.Service<
         yield* Effect.logInfo("Turn started", { events: yield* Ref.get(taken) })
 
         const prompt = renderTurnPrompt({ events, now: yield* DateTime.now, timeZone })
+        const reachedBefore = yield* outreach.count
         const exit = yield* Effect.scoped(
           Effect.gen(function* () {
             yield* Effect.forkScoped(steer(taken, timeZone))
-            return yield* harness.turn(prompt)
+            return yield* harness.turn(prompt, handlers)
           })
         ).pipe(Effect.exit)
+        if (Exit.isSuccess(exit)) yield* replyIfSilent(exit.value, reachedBefore)
 
         const ids = yield* Ref.get(taken)
         const result = Exit.isSuccess(exit) ? exit.value : undefined

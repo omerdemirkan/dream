@@ -121,4 +121,32 @@ describe("dreamd", () => {
       assert.isFalse((yield* Ref.get(calls)).some((call) => call.startsWith("ReportUsage")))
     }).pipe(Effect.scoped)
   )
+
+  it.live("posts a turn's final text only when the agent sent nothing through `dream`", () =>
+    Effect.gen(function* () {
+      const { daemonPort, turns, cli, waitFor } = yield* setup
+      const said = (finalText: string): TurnResult => ({
+        outcome: TurnOutcome.Completed(),
+        usage: {},
+        progressed: true,
+        finalText
+      })
+      yield* Queue.offer(turns, () =>
+        cli("message", "The tour page is up").pipe(Effect.orDie, Effect.as(said("Sent.")))
+      )
+      yield* Queue.offer(turns, () => Effect.succeed(said("Which colour should the header be?")))
+      const client = yield* daemonClient(daemonPort, "daemon-token")
+      yield* client.Deliver({ events: [userMessage(1)] })
+      yield* waitFor((calls) => calls.filter((call) => call.includes('"finished"')).length === 1)
+      yield* client.Deliver({ events: [userMessage(2)] })
+      const calls = yield* waitFor((calls) => calls.filter((call) => call.includes('"finished"')).length === 2)
+      assert.deepStrictEqual(
+        calls.filter((call) => call.startsWith("SendMessage")),
+        [
+          'SendMessage {"text":"The tour page is up","media":[],"notify":false}',
+          'SendMessage {"text":"Which colour should the header be?","media":[],"notify":false}'
+        ]
+      )
+    }).pipe(Effect.scoped)
+  )
 })

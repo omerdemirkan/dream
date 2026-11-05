@@ -15,6 +15,7 @@ import { Commands } from "./Commands.ts"
 import { DreamdConfig } from "./Config.ts"
 import { Harness } from "./harness/Harness.ts"
 import { Inbox } from "./Inbox.ts"
+import { Outreach } from "./Outreach.ts"
 import { DaemonServer, SocketServer } from "./Servers.ts"
 import { Shutdown } from "./Shutdown.ts"
 import { version } from "./version.ts"
@@ -89,7 +90,7 @@ export const main = Effect.gen(function* () {
 export const layerWith = <E, R>(base: Layer.Layer<Harness | Shutdown, E, R>) =>
   Layer.mergeAll(DaemonServer, SocketServer).pipe(
     Layer.provideMerge(Layer.mergeAll(Agent.layer, Commands.layer)),
-    Layer.provideMerge(Layer.mergeAll(Inbox.layer, Api.layer, base))
+    Layer.provideMerge(Layer.mergeAll(Inbox.layer, Api.layer, Outreach.layer, base))
   )
 
 /** Everything `main` needs, given the config and the platform. */

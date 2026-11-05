@@ -9,7 +9,8 @@
  *   It forwards `SandboxRpcs` requests to the API unchanged, adding the
  *   project token, so the CLI never holds a credential and the API decides
  *   everything. The calls only dreamd makes (`ReportTurn`, `ReportUsage`) are
- *   refused there, so an app can't fake the agent's state.
+ *   refused there, so an app can't fake the agent's state. Calls that reach
+ *   the person are counted (`Outreach`).
  */
 import { timingSafeEqual } from "node:crypto"
 import { chmod, rm } from "node:fs/promises"
@@ -30,6 +31,7 @@ import { RpcServer } from "effect/rpc"
 import { Agent } from "./Agent.ts"
 import { DreamdConfig } from "./Config.ts"
 import { Inbox } from "./Inbox.ts"
+import { Outreach } from "./Outreach.ts"
 import { Shutdown } from "./Shutdown.ts"
 import { version } from "./version.ts"
 
@@ -115,9 +117,11 @@ const proxy = HttpRouter.add(
   Effect.gen(function* () {
     const config = yield* DreamdConfig
     const client = yield* HttpClient.HttpClient
+    const outreach = yield* Outreach
     const request = yield* HttpServerRequest.HttpServerRequest
     const body = yield* request.text
-    const refused = requestedTags(body).filter((tag) => dreamdOnly.has(tag))
+    const tags = requestedTags(body)
+    const refused = tags.filter((tag) => dreamdOnly.has(tag))
     if (refused.length > 0) {
       return HttpServerResponse.text(`${refused.join(", ")} can only be called by dreamd.`, { status: 403 })
     }
@@ -128,6 +132,7 @@ const proxy = HttpRouter.add(
         headers: { authorization: `Bearer ${Redacted.value(config.projectToken)}` }
       })
       .pipe(
+        Effect.tap((response) => (response.status < 300 ? outreach.record(tags) : Effect.void)),
         Effect.map((response) =>
           HttpServerResponse.stream(response.stream, {
             status: response.status,
