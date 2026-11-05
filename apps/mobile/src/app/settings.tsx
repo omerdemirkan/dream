@@ -248,7 +248,8 @@ function IntegrationRow(props: {
                     toast(
                       i.access._tag === "File"
                         ? `New ${i.label} key saved. The project will pick it up.`
-                        : `New ${i.label} key saved.`
+                        : `New ${i.label} key saved.`,
+                      { done: true }
                     )
                   }
                 }
