@@ -35,6 +35,19 @@ export class PublicAppRpcs extends RpcGroup.make(
       user: User
     }),
     error: Schema.Union([Unauthorized, NotInvited])
+  }),
+  /**
+   * Sign in without Google, for development and end-to-end tests. Works only when the
+   * deployment has a DEV_LOGIN_SECRET and `secret` matches it; otherwise Unauthorized.
+   */
+  Rpc.make("DevSignIn", {
+    payload: {
+      email: Schema.NonEmptyString,
+      name: Schema.optionalKey(Schema.String),
+      secret: Schema.RedactedFromValue(Schema.NonEmptyString)
+    },
+    success: Schema.Struct({ sessionToken: Schema.RedactedFromValue(Schema.String), user: User }),
+    error: Schema.Union([Unauthorized, NotInvited])
   })
 ) {}
 

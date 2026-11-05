@@ -3,7 +3,7 @@
  * These tests push representative values through exactly that path.
  */
 import { assert, describe, it } from "@effect/vitest"
-import { DateTime, Exit, Schema } from "effect"
+import { DateTime, Exit, Redacted, Schema } from "effect"
 import {
   AccessRequest,
   AgentEvent,
@@ -12,6 +12,7 @@ import {
   Message,
   ProjectEvent,
   ProjectSummary,
+  PublicAppRpcs,
   PushData,
   StatusCard,
   UsageSnapshot
@@ -108,5 +109,16 @@ describe("validation", () => {
     const base = { provider: "claude", observedAt: DateTime.formatIso(DateTime.makeUnsafe(0)) }
     assert.isTrue(Exit.isSuccess(decode({ ...base, weekly: { usedPercent: 62 } })))
     assert.isTrue(Exit.isFailure(decode({ ...base, weekly: { usedPercent: 140 } })))
+  })
+
+  it("keeps the dev sign-in secret redacted after decoding", () => {
+    const rpc = PublicAppRpcs.requests.get("DevSignIn")!
+    const decoded = Schema.decodeUnknownSync(Schema.toCodecJson(rpc.payloadSchema))({
+      email: "omer@example.com",
+      secret: "s3cret"
+    }) as { readonly secret: Redacted.Redacted<string> }
+    assert.isTrue(Redacted.isRedacted(decoded.secret))
+    assert.strictEqual(Redacted.value(decoded.secret), "s3cret")
+    assert.notInclude(String(decoded.secret), "s3cret")
   })
 })

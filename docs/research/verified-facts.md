@@ -191,3 +191,36 @@
   ("0th instance limit ... used all of 6 vCPU 14 GB RAM"), so only one 6x14 Mac at a time. 8x14 is rejected (429).
   Mac image has Homebrew, node 25, CocoaPods 1.16.2, xcbeautify, ruby 3.4, git; NO rsync (use tar over ssh), no bun.
   New workspace connections DO appear in an existing child thread on its next turn.
+
+## Control plane research (2026-11-05, ws/control-plane; source-read and run against real binaries/APIs)
+- E2B (live): a background process started over envd `process.Process/Start` (Connect+JSON) keeps running after the
+  stream is dropped. `PUT /sandboxes/{id}/network` on a PAUSED sandbox → 404 (update rules only while running; the
+  ProjectDO marks rules dirty and pushes them on the next resume). `GET /sandboxes/{id}` echoes the rules, values included.
+- Codex 0.166.0 (codex-rs): device auth prints to stdout (no TTY needed): URL https://auth.openai.com/codex/device and
+  code like `054Q-3BC5A` (15 min); exit 0 + stderr "Successfully logged in"; writes $CODEX_HOME/auth.json (dir must exist).
+  Refresh: POST https://auth.openai.com/oauth/token JSON {client_id:"app_EMoamEEZ73f0CkXaXp7hrann",
+  grant_type:"refresh_token", refresh_token, refresh_reason} → {id_token?, access_token?, refresh_token?}; refresh
+  tokens are single-use (`refresh_token_reused`). Env CODEX_REFRESH_TOKEN_URL_OVERRIDE redirects Codex's own refreshes.
+  Placeholder auth.json that never refreshes and still sends the header: access_token = JWT-shaped with exp 4102444800,
+  id_token = any valid 3-part JWT carrying the REAL chatgpt_account_id/plan/email claims (no signature check),
+  account_id = real id, last_refresh = any RFC 3339 time (if absent, NO Authorization header is sent). A backend 401
+  → Codex refreshes via the override URL; if that fails the turn dies. Model traffic: chatgpt.com/backend-api
+  (codex/responses tries a WebSocket first, then HTTPS), headers `authorization: Bearer <access>` and
+  `chatgpt-account-id`. GET /backend-api/wham/accounts/check must list the account id.
+- Claude Code 2.1.318: `claude setup-token` needs a PTY (no flags); headless it prints the URL at once:
+  https://claude.com/cai/oauth/authorize?code=true&client_id=9d1c250a-e61b-44d9-88ed-5944d1962f5e&…; wrapped lines are
+  OSC 8 hyperlinks carrying the full URL; prompt "Paste code here if prompted >"; paste `CODE#STATE` + CR (masked);
+  success prints "Your OAuth token (valid for 1 year):" then the `sk-ant-oat…` token; exit 0. With
+  CLAUDE_CODE_OAUTH_TOKEN set (no local validation) all bearer traffic goes to api.anthropic.com
+  (`authorization: Bearer`, `anthropic-beta: …oauth-2025-04-20…`).
+- Browserbase (live): projectId optional on create (inferred from key); recording on by default; connectUrl embeds a
+  signing key (no API key needed to connect); GET /v1/sessions/{id}/debug → debuggerFullscreenUrl (shareable, ≤6 h);
+  POST /v1/sessions/{id} {status:"REQUEST_RELEASE"} is synchronous and idempotent. rrweb recordings are GONE (410):
+  MP4 via POST /v1/sessions/{id}/recording/downloads (202) then GET same path until COMPLETED → signed downloadUrl (6 h,
+  no key), only after the session ended. Billing per minute, 1-minute minimum.
+- Namespace (live): shape {virtualCpu:4, memoryMegabytes:7168, os:"macos", machineArch:"arm64",
+  selectors:[{name:"macos.version",value:"26.x"}]}; CreateInstance is non-blocking (RUNNING in 8–18 s; poll
+  DescribeInstance); GetSSHConfig → {sshPrivateKey (b64), username (= instance id), endpoint "ssh.<site>.namespace.so",
+  sshHostKeys[b64]}, no expiry, same key per instance; ExtendInstance {instanceId, ensureMinimum:"1800s"};
+  DestroyInstance idempotent. No idle auto-stop: only `deadline` (Developer plan max 3 h). macOS allowed on every plan
+  (Developer: 12 vCPU / 28 GB concurrent).

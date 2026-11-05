@@ -1,23 +1,120 @@
 /**
- * One Durable Object per project (SQLite-backed): chat, questions, status
- * card, schedules, sandbox state, Live Activity, sent notifications, and the
- * agent's event inbox. Alarms fire scheduled wakes; it also serves
- * `ProjectLiveRpcs` to the phone over a WebSocket.
+ * One Durable Object per project (SQLite-backed): chat, questions and access
+ * requests, the Status card, scheduled wakes, the sandbox, the Live Activity,
+ * sent notifications, and the agent's event inbox. Its alarm fires wakes and
+ * retries delivery.
  *
- * Skeleton only: the control-plane workstream fills this in.
+ * Two separate surfaces on `fetch`:
+ * - `LivePath`: WebSocket upgrades (forwarded by the Worker after it checks
+ *   the ticket), served by a `ProjectLiveRpcs`-only RPC server, hibernatable.
+ * - `InternalRpcPath`: HTTP RPC for `ProjectRpcs` + `SandboxRpcs`, called only
+ *   by the Worker, which never forwards phone requests there.
  */
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import * as Effect from "effect/Effect"
+import * as RpcWebSocket from "@alchemy.run/cloudflare/Workers/RpcWebSocket"
+import type { DurableObjectStorage } from "@cloudflare/workers-types"
+import { HttpRpcSerialization, type ProjectId, ProjectLiveRpcs, SocketRpcSerialization } from "@dream/domain"
+import * as SqliteClient from "@effect/sql-sqlite-do/SqliteClient"
+import { RuntimeContext } from "alchemy/RuntimeContext"
+import { Context, Effect, Fiber, Layer, Scope } from "effect"
+import type { HttpClientRequest } from "effect/http"
+import { HttpServerRequest } from "effect/http/HttpServerRequest"
+import * as HttpServerResponse from "effect/http/HttpServerResponse"
+import { RpcMiddleware, RpcServer } from "effect/rpc"
+import { platformLayer } from "./Platform.ts"
+import { Alarm, NativeAlarm } from "./project/Alarm.ts"
+import type { ProjectFetch } from "./project/Client.ts"
+import { DoRpcs } from "./project/Client.ts"
+import { Core } from "./project/Core.ts"
+import { AgentHandlers, LiveHandlers, ProjectHandlers, SandboxAuthServer } from "./project/Handlers.ts"
+import { LiveFeed } from "./project/Live.ts"
+import { Machines } from "./project/Machines.ts"
+import { Notifier } from "./project/Notifier.ts"
+import { InternalRpcPath, LivePath } from "./project/ProjectRpcs.ts"
+import { SandboxManager } from "./project/SandboxManager.ts"
+import { Scheduler } from "./project/Scheduler.ts"
+import { migrate, Store } from "./project/Store.ts"
+import { Database } from "./Resources.ts"
+
+/** The project's own services over its SQLite storage. */
+export const projectLayer = (storage: DurableObjectStorage) => {
+  const sql = SqliteClient.layer({ storage })
+  const store = Layer.mergeAll(Store.layer, Layer.effectDiscard(migrate)).pipe(Layer.provide(sql))
+  const alarm = Alarm.layer.pipe(Layer.provide(NativeAlarm.fromStorage(storage)))
+  const core = Core.layer.pipe(Layer.provideMerge(Layer.mergeAll(LiveFeed.layer, alarm)))
+  const domain = Layer.mergeAll(Notifier.layer, SandboxManager.layer, Machines.layer).pipe(Layer.provideMerge(core))
+  return Scheduler.layer.pipe(Layer.provideMerge(domain), Layer.provideMerge(store))
+}
+
+/** Keeps the object alive while an RPC on the socket is in flight (as alchemy's RpcDurableObject does). */
+class RequestLifetime extends RpcMiddleware.Service<RequestLifetime>()("@dream/api/ProjectDO/RequestLifetime") {}
 
 export default class ProjectDO extends Cloudflare.DurableObject<ProjectDO>()(
   "ProjectDO",
   Effect.gen(function* () {
     const state = yield* Cloudflare.DurableObjectState
+    const db = yield* Cloudflare.D1.QueryDatabase(Database)
+    const self = yield* Cloudflare.DurableObject
+
     return Effect.gen(function* () {
+      const d1 = yield* db.raw
+      const runtime = yield* RuntimeContext
+      const fetchProject: ProjectFetch = (projectId: ProjectId, request: HttpClientRequest.HttpClientRequest) =>
+        (
+          self.getByName(projectId).fetch as unknown as ProjectFetch extends (id: any, r: infer R) => infer O
+            ? (r: R) => O
+            : never
+        )(request)
+
+      const services = projectLayer(state.raw.storage as unknown as DurableObjectStorage).pipe(
+        Layer.provideMerge(platformLayer({ d1: d1 as any, fetchProject }))
+      )
+      const handlers = Layer.mergeAll(ProjectHandlers, AgentHandlers, SandboxAuthServer, LiveHandlers).pipe(
+        Layer.provideMerge(services)
+      )
+
+      // The services outlive this constructor; they are built once per activation.
+      const instanceScope = yield* Scope.make()
+      const context = yield* Layer.buildWithScope(handlers, instanceScope)
+      const provided = Layer.succeedContext(context)
+
+      const lifetime = Layer.succeed(RequestLifetime, (effect) =>
+        Effect.withFiber((fiber) =>
+          state
+            .waitUntil(Fiber.await(fiber))
+            .pipe(Effect.provideService(RuntimeContext, runtime), Effect.andThen(effect))
+        )
+      )
+      const transport = yield* RpcWebSocket.make.pipe(Effect.provide(SocketRpcSerialization))
+      yield* Layer.buildWithScope(
+        RpcServer.layer(ProjectLiveRpcs.middleware(RequestLifetime)).pipe(
+          Layer.provide(Layer.mergeAll(provided, lifetime, Layer.succeed(RpcServer.Protocol, transport.protocol)))
+        ),
+        instanceScope
+      )
+
+      const internal = Effect.gen(function* () {
+        const handler = yield* RpcServer.toHttpEffect(DoRpcs).pipe(
+          Effect.provide(Layer.mergeAll(provided, HttpRpcSerialization))
+        )
+        return yield* handler
+      })
+
+      const scheduler = Context.get(context, Scheduler)
+
       return {
-        /** Placeholder RPC so the namespace has a typed stub. */
-        ping: () => state.storage.get<number>("created").pipe(Effect.map(() => "pong" as const))
+        fetch: Effect.gen(function* () {
+          const request = yield* HttpServerRequest
+          const path = new URL(request.url, "https://project").pathname
+          if (path === LivePath) return yield* transport.fetch
+          if (path === InternalRpcPath && request.method === "POST") return yield* internal
+          return HttpServerResponse.text("Not found", { status: 404 })
+        }),
+        alarm: () => scheduler.run.pipe(Effect.catchCause((cause) => Effect.logError("alarm failed", cause))),
+        webSocketMessage: transport.webSocketMessage,
+        webSocketClose: (socket: Cloudflare.WebSocket) => transport.webSocketClose(socket),
+        webSocketError: (socket: Cloudflare.WebSocket, error: unknown) => transport.webSocketError(socket, error)
       }
     })
-  })
+  }).pipe(Effect.provide(Cloudflare.D1.QueryDatabaseBinding))
 ) {}
