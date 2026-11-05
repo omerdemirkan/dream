@@ -59,6 +59,9 @@ this sandbox, including the apps you build. `dream <command> --help` lists every
 
 - `dream publish --port <port>` gives a port a stable public URL, `https://<slug>-<random>.<domain>`. A request to it
   wakes the sandbox. From their phone it opens in Safari.
+  - Requests reach your server with `Host` set to the sandbox's internal name (`<port>-<sandbox id>.e2b.app`), so a
+    server that checks hosts (Vite's dev server does) has to allow it.
+  - The public URL works from inside this sandbox too, so you can load exactly what they'll see.
 
 ## Beyond this sandbox
 
