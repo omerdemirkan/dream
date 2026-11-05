@@ -239,3 +239,7 @@ Other findings:
 - dream-sandbox rebuilt from main @ 6585d37 (build 6bff64eb-017e-447a-a085-d601b2852533; the first attempt from a
   background job failed on the dev network, the rerun passed) and smoke-tested: supervisor, dreamd, tools, both
   harness CLIs. Ships the skill facts on lasting keys / OAuth-only services and on --host, and the CLI host check.
+- OAuth-only service on the new template (Strava weekly summary prj_RLFTHBXWJ4cIO6ouIUlos5): the agent read the skill,
+  then tried `dream ask "… paste your Client ID and Secret here"`, which the credential guard refused, and sent a
+  message asking for the client id instead ("I'll guide you to set up the credentials securely"). The guard held; the
+  new fact (Strava can't be connected yet) was read and not applied. Haiku; the fact stays as written.
