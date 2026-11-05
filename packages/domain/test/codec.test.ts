@@ -6,6 +6,7 @@ import { assert, describe, it } from "@effect/vitest"
 import { DateTime, Exit, Redacted, Schema } from "effect"
 import {
   AccessRequest,
+  accessHostProblem,
   AgentEvent,
   AuthedAppRpcs,
   ConnectLink,
@@ -120,6 +121,31 @@ describe("validation", () => {
     }
     assert.isTrue(Exit.isSuccess(decodeAccess(valid)))
     assert.isTrue(Exit.isFailure(decodeAccess({ ...valid, format: "Bearer" })))
+  })
+
+  it("accepts bare DNS names as key hosts, and says what's wrong with anything else", () => {
+    for (const host of ["api.stripe.com", "discord.com", "API.Spotify.com", "xn--bcher-kva.example"]) {
+      assert.isUndefined(accessHostProblem(host), host)
+    }
+    const problems: Array<[string, string]> = [
+      ["spotify-oauth", "isn't a hostname that requests go to"],
+      ["localhost", "isn't a hostname that requests go to"],
+      ["", "is empty"],
+      ["api.spotify .com", "contains spaces"],
+      ["*.stripe.com", "is a wildcard; name the exact host the requests go to, like api.stripe.com"],
+      ["https://api.spotify.com/v1/me", "should be just the hostname: --host api.spotify.com"],
+      ["api.spotify.com:443", "should be just the hostname: --host api.spotify.com"],
+      ["api.spotify.com/v1", "should be just the hostname: --host api.spotify.com"],
+      ["10.0.0.1", "isn't a valid hostname"],
+      ["-bad.example.com", "isn't a valid hostname"],
+      ["api..example.com", "isn't a valid hostname"]
+    ]
+    for (const [host, problem] of problems) assert.include(accessHostProblem(host), problem, host)
+  })
+
+  it("still decodes a stored key card whose host is no hostname", () => {
+    const stored = { _tag: "Key", service: "Spotify", host: "spotify-oauth", header: "X", format: "{key}" }
+    assert.isTrue(Exit.isSuccess(decodeAccess(stored)))
   })
 
   it("requires at least one Google scope", () => {

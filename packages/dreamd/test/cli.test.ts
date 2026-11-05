@@ -159,13 +159,40 @@ describe("dream usage errors", () => {
         "Bot {key}"
       ])
       const lines = printed.split("\n")
-      assert.strictEqual(lines[0], "--host is missing: the API host the key is sent to, like discord.com.")
+      assert.strictEqual(
+        lines[0],
+        "--host is missing: the API host the key is sent to, like discord.com: a bare DNS name, no https:// or path."
+      )
       assert.strictEqual(
         lines[1],
         'Example: dream access key --service Discord --host discord.com --header Authorization --format "Bot {key}" --why "Post quotes to your channel"'
       )
       assert.strictEqual(lines[2], "Usage: dream access key [flags]. All flags: `dream access key --help`.")
       assert.lengthOf(lines, 3)
+    })
+  )
+
+  it.effect("refuse a key host that no request goes to, before asking them", () =>
+    Effect.gen(function* () {
+      const key = (host: string) =>
+        run(
+          ["access", "key", "--service", "Spotify", "--host", host, "--header", "Authorization"].concat([
+            "--format",
+            "Bearer {key}",
+            "--why",
+            "Play your playlists"
+          ])
+        )
+      assert.strictEqual(
+        yield* key("spotify-oauth"),
+        "--host \"spotify-oauth\" isn't a hostname that requests go to; it should be a bare DNS name like api.stripe.com (no scheme, path, port or spaces, at least one dot), the API's real host."
+      )
+      assert.strictEqual(
+        yield* key("https://api.spotify.com/v1"),
+        '--host "https://api.spotify.com/v1" should be just the hostname: --host api.spotify.com.'
+      )
+      // A good host gets past the check, to the socket (absent here).
+      assert.notInclude(yield* key("api.spotify.com"), "--host")
     })
   )
 

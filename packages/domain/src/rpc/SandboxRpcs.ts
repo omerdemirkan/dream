@@ -54,14 +54,18 @@ export class SandboxRpcs extends RpcGroup.make(
     success: QuestionMessage,
     error: Schema.Union([NotFound, InvalidRequest])
   }),
-  /** `dream access google|key|apple … --why "…" [--when "…"]`. Notifies unless `when` is set. */
+  /**
+   * `dream access google|key|apple … --why "…" [--when "…"]`. Notifies unless `when` is set.
+   * `InvalidRequest` when a key's host can't be an egress target (`accessHostProblem`).
+   */
   Rpc.make("RequestAccess", {
     payload: {
       request: AccessRequest,
       why: Schema.NonEmptyString,
       when: Schema.optionalKey(Schema.String)
     },
-    success: AccessMessage
+    success: AccessMessage,
+    error: InvalidRequest
   }),
   /** `dream access list`: everything they've connected, usable from every project. */
   Rpc.make("ListAccess", { success: Schema.Array(Integration) }),

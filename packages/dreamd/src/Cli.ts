@@ -7,6 +7,7 @@
 import {
   AccessMessage,
   AccessRequest,
+  accessHostProblem,
   BrowserSession,
   type BrowserSessionId,
   Integration,
@@ -303,7 +304,11 @@ const access = Command.make("access").pipe(
       "key",
       {
         service: Flag.String("service").pipe(Flag.withDescription("The service's name, as they know it, like Discord")),
-        host: Flag.String("host").pipe(Flag.withDescription("The API host the key is sent to, like discord.com")),
+        host: Flag.String("host").pipe(
+          Flag.withDescription(
+            "The API host the key is sent to, like discord.com: a bare DNS name, no https:// or path"
+          )
+        ),
         header: Flag.String("header").pipe(
           Flag.withDescription("The request header that carries the key, like Authorization")
         ),
@@ -314,8 +319,10 @@ const access = Command.make("access").pipe(
         ),
         ...accessFlags
       },
-      (input) =>
-        input.format.includes("{key}")
+      (input) => {
+        const hostProblem = accessHostProblem(input.host)
+        if (hostProblem !== undefined) return fail(hostProblem)
+        return input.format.includes("{key}")
           ? requestAccess(
               AccessRequest.cases.Key.make({
                 service: input.service,
@@ -326,6 +333,7 @@ const access = Command.make("access").pipe(
               input
             )
           : fail('--format must contain {key}, e.g. "Bearer {key}".')
+      }
     ).pipe(
       Command.withDescription("Let them paste an API key; Dream adds it to your HTTPS requests to --host."),
       Command.withExamples([

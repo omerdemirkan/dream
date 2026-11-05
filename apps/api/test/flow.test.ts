@@ -388,6 +388,32 @@ describe("a project, end to end", () => {
     })
   )
 
+  it.live("access requests: a key for a host no request goes to is refused, not shown", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project } = yield* setup(cloud)
+      yield* cloud.alarm(project.id)
+      const dreamd = yield* cloud.sandbox(envFileOf(cloud, project.id).env.DREAM_PROJECT_TOKEN)
+      const error = yield* dreamd
+        .RequestAccess({
+          request: {
+            _tag: "Key",
+            service: "Spotify",
+            host: "spotify-oauth",
+            header: "Authorization",
+            format: "Bearer {key}"
+          },
+          why: "Keep your client id and secret."
+        })
+        .pipe(Effect.flip)
+      assert.strictEqual(error._tag, "InvalidRequest")
+      assert.include(error.message, '--host "spotify-oauth"')
+      const history = yield* cloud.phone.ListMessages({ projectId: project.id })
+      assert.isFalse(history.messages.some((message) => message._tag === "Access"))
+      yield* cloud.close
+    })
+  )
+
   it.live("access requests: a pasted key becomes an egress rule in every sandbox", () =>
     Effect.gen(function* () {
       const cloud = yield* makeCloud()

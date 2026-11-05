@@ -25,7 +25,8 @@ this sandbox, including the apps you build. `dream <command> --help` lists every
 - `dream access …` asks for access to a service. It shows up like a question, with a way to connect.
   - `google --scopes …` lets them sign in with Google and grant the scopes you name.
   - `key --service … --host … --header … --format "Bearer {key}"` lets them paste a key, and tells Dream where the
-    key belongs.
+    key belongs. `--host` is the real host your requests go to, like `api.stripe.com`. A key card isn't a place to
+    keep values you'd send some other way.
   - `apple` asks for their App Store Connect API key, which TestFlight needs.
   - `--when "around Thursday"` marks a need for later. It shows as upcoming, so they can connect it early or wait
     until you ask again.

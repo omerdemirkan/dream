@@ -84,6 +84,42 @@ export const AccessRequest = Schema.TaggedUnion({
 })
 export type AccessRequest = typeof AccessRequest.Type
 
+const dnsLabel = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/
+
+/**
+ * Why `host` can't be a `Key` request's host, or `undefined` if it can. E2B matches egress rule keys against
+ * the DNS name of each HTTPS request, so anything but a bare name like api.stripe.com is a card whose key never
+ * reaches a request. Wildcards (`*.example.com`) are refused: they don't match the apex, and they send the key to
+ * every subdomain. Checked when a request is made, not when one is decoded, so stored cards keep loading.
+ */
+export const accessHostProblem = (host: string): string | undefined => {
+  const example = "a bare DNS name like api.stripe.com (no scheme, path, port or spaces, at least one dot)"
+  if (host.trim().length === 0) return `--host is empty; it should be ${example}.`
+  if (/\s/.test(host)) return `--host "${host}" contains spaces; it should be ${example}.`
+  if (host.startsWith("*")) {
+    return `--host "${host}" is a wildcard; name the exact host the requests go to, like ${host.replace(/^\*\.?/, "api.")}.`
+  }
+  // Recover the host from a URL or host:port, to suggest it.
+  const bare = host
+    .replace(/^[a-z][a-z0-9+.-]*:\/\//i, "")
+    .replace(/[/?#].*$/, "")
+    .replace(/^.*@/, "")
+    .replace(/:\d*$/, "")
+    .replace(/\.$/, "")
+  const labels = bare.toLowerCase().split(".")
+  const valid =
+    bare.length <= 253 &&
+    labels.length >= 2 &&
+    labels.every((label) => dnsLabel.test(label)) &&
+    !/^\d+$/.test(labels.at(-1) ?? "")
+  if (valid && bare === host) return undefined
+  if (valid) return `--host "${host}" should be just the hostname: --host ${bare}.`
+  if (!bare.includes(".")) {
+    return `--host "${host}" isn't a hostname that requests go to; it should be ${example}, the API's real host.`
+  }
+  return `--host "${host}" isn't a valid hostname; it should be ${example}.`
+}
+
 export const AccessState = Schema.TaggedUnion({
   Open: {},
   Connected: { integrationId: IntegrationId, connectedAt: Schema.DateTimeUtc },

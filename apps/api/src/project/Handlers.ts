@@ -4,6 +4,7 @@
  * dreamd and the Worker), plus `ProjectLiveRpcs` for the phone's socket.
  */
 import {
+  accessHostProblem,
   AccessMessage,
   AccessState,
   AgentEvent,
@@ -390,6 +391,9 @@ export const AgentHandlers = SandboxRpcs.toLayer(
 
       RequestAccess: ({ request, why, when }) =>
         Effect.gen(function* () {
+          // An old dreamd doesn't check the host, and a card for a host no request goes to can never work.
+          const hostProblem = request._tag === "Key" ? accessHostProblem(request.host) : undefined
+          if (hostProblem !== undefined) return yield* new InvalidRequest({ message: hostProblem })
           const current = yield* project
           const notificationId = when === undefined ? yield* newNotificationId() : undefined
           const message = AccessMessage.make({
