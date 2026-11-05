@@ -297,3 +297,10 @@ Other findings:
   that asked, and `dream access google` is refused when Google isn't configured. Deployed; dream-sandbox rebuilt
   (release a2da26a3b154905d). Verified live from the cabin sandbox: "Google sign-in isn't set up on this deployment of
   Dream yet … no card was shown", exit 1, nothing new in Chat.
+- Merged fix/ios-build-and-pass: Dream's iOS build works unchanged on Namespace's `macos.version=27.x` image (macOS
+  27.2, Xcode 26.6/27.0/27.1/27.2): Release simulator build ~7 min, unsigned archive with the widget ~4 min. Simulator
+  pass of the new screens (OAuth card, file-key card, "update Dream" row, timeouts, Settings rows) plus a live run;
+  fixed a session the API rejects never signing out, "All clear" before data loads, error toasts with a ✓, no
+  in-flight state on Send. Moved agents' Macs to the 27.x image too (apps/api/src/brokers/Namespace.ts) and added a
+  skill fact about the Xcodes there; deployed and rebuilt (release d61699a9202eacf3). Verified: `dream mac start` from
+  a sandbox → macOS 27.2, default Xcode 27.0, Xcode_26.6 … Xcode_27.2 in /Applications; `dream mac stop`.

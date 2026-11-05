@@ -7,6 +7,9 @@ so does a Namespace Mac created with the selector `macos.version=27.x` (macOS 27
 27.2; `build-ios.sh` picks 26.6). The `26.x` image stops at Xcode 26.3. Do [apple-developer.md](apple-developer.md) first, and
 ideally [apns.md](apns.md) and [google-oauth.md](google-oauth.md) too: their values are baked into the build.
 
+**No Mac of your own?** Tell me and I'll run steps 1 and 3 on a Namespace Mac. The App Store Connect key from step 2
+then has to reach that Mac without passing through Chat or my logs, so we'd set that up together first.
+
 **1. One-time Mac setup**
 
 ```sh
