@@ -70,3 +70,11 @@ Other findings:
   plan mode, push notifications, …); `dream` skill kept. Verified on a real Haiku project.
 - Kept the prompt sentence "anything you write here … never reaches them": it shapes the right behaviour; the safety
   net is a fallback, not a channel.
+
+## 6. Round 2 started (04:14 UTC)
+- main @ 8e2e652 deployed (Worker) and dream-sandbox rebuilt from main (build 92928ef1-15e7-422d-af6f-6f89cc3c771a):
+  restart fix, session channel fix, status defaults, sandbox env (stdin messages, local Chromium, fonts, PIL,
+  `dream mac cp`), two prompt context lines (session never reaches them; honest "not yet").
+- Five Haiku QA threads, 9 projects: band site (questions + Home deck), habit tracker (pause/resume persistence),
+  HN email worker (cron + decline), Discord bot (pasted fake key → connected), Python CLI, Chrome extension,
+  iOS tip calculator (XcodeGen/simctl/mac cp), weather+AQI dashboard (public APIs), finance tracker (multi-turn status).
