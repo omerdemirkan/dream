@@ -215,6 +215,15 @@ const publish = async () => {
   const env = { ...channelEnv(), CI: "1" }
   const runtime = runtimeVersion(env)
   log(`Channel ${channel}, runtime version ${runtime}, commit ${commit.slice(0, 7)}`)
+  // The Worker checks this too; asking first saves an export when the answer is no.
+  const known = (await call(UpdatesStatus, `${Routes.updatesStatus}?channel=${channel}`)).runtimes.some(
+    (r) => r.runtimeVersion === runtime && r.checkIn !== undefined
+  )
+  if (!known && !flag("force"))
+    fail(
+      `No build on channel ${channel} has asked for updates with runtime version ${runtime}: the builds out there have ` +
+        "different native code (see `status`), so this update can't reach them. Pass --force if the build isn't out yet."
+    )
   const expoClient = JSON.parse(run(bin("expo"), ["config", "--type", "public", "--json"], { cwd: appDir, env }))
   const out = mkdtempSync(join(tmpdir(), "dream-update-"))
   try {

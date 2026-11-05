@@ -194,6 +194,9 @@ the other workstreams to agree first.
   APNs payload as `trigger.payload` (taps) and `data` (background task). The Swift widget and `modules/dream-native`
   both define `DreamActivityAttributes` matching `LiveActivityAttributes`/`LiveActivityContent`; keep the two copies
   identical. iOS builds: `apps/mobile/scripts/build-ios.sh` (expo prebuild + xcodebuild, Simulator or TestFlight).
+  JavaScript-only changes ship over the air: stock expo-updates against the Worker's Expo Updates protocol routes
+  (`apps/api/src/http/Updates.ts`), fingerprint runtime versions, updates signed by a key only the Worker holds,
+  channels `production` (TestFlight), `development`, `fixtures`. See "Over-the-air updates" in its README.
 
 ## Deploying (live at https://dream.omer.build)
 
@@ -210,3 +213,5 @@ the other workstreams to agree first.
   To roll every sandbox back, make an older build current again:
   `bun run template:build promote <release>` (releases are the build's `release-…` tags).
 - End-to-end checks against the live API: `node packages/sandbox-template/scripts/qa.ts` (see its header).
+- The iPhone app's JavaScript: `node apps/mobile/scripts/updates.ts publish` from main (rollback and status too;
+  see apps/mobile/README.md). Native changes still need a TestFlight build, and `publish` says so.

@@ -4,7 +4,7 @@
  * runtime version, so a JavaScript update can't land on a build missing native code it needs.
  *
  * Left out, because they don't change native code: version and build number (every TestFlight upload has a new
- * one) and `extra` (the JavaScript reads it from the update itself).
+ * one), `extra` (the JavaScript reads it from the update itself) and package.json scripts.
  */
 const { existsSync, readFileSync } = require("node:fs")
 const { resolve } = require("node:path")
@@ -13,7 +13,17 @@ const certificate = resolve(__dirname, process.env.DREAM_UPDATES_CERTIFICATE ?? 
 
 /** @type {import('@expo/fingerprint').Config} */
 module.exports = {
-  sourceSkips: ["ExpoConfigVersions", "ExpoConfigExtraSection"],
+  // Expo's default ("balanced") skips, plus `extra`, and all package.json scripts: `expo prebuild` rewrites the
+  // "ios" script on the build Mac, which would otherwise give the build another runtime version than publishing.
+  sourceSkips: [
+    "ExpoConfigVersions",
+    "ExpoConfigRuntimeVersionIfString",
+    "EasJson",
+    "Easignore",
+    "AutolinkingConfigPaths",
+    "ExpoConfigExtraSection",
+    "PackageJsonScriptsAll"
+  ],
   extraSources: existsSync(certificate)
     ? [
         {
