@@ -10,11 +10,14 @@ import { ChatGpt } from "../../src/connect/ChatGpt.ts"
 import { Daemon } from "../../src/e2b/Daemon.ts"
 import { E2B, type NetworkRules, type SandboxAccess, SandboxGone } from "../../src/e2b/E2B.ts"
 import { Envd, type ProcessOutput } from "../../src/e2b/Envd.ts"
-import { Google } from "../../src/integrations/Google.ts"
+import { Google, GoogleOAuthSpec } from "../../src/integrations/Google.ts"
 import { OAuth, OAuthProviders } from "../../src/integrations/OAuth.ts"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Apns } from "../../src/push/Apns.ts"
 import { Tokens } from "../../src/auth/Tokens.ts"
+
+const base64Url = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url")
+const unsignedJwt = (claims: object) => `${base64Url({ alg: "RS256", typ: "JWT" })}.${base64Url(claims)}.c2ln`
 
 export interface FakeSandbox {
   readonly access: SandboxAccess
@@ -80,8 +83,33 @@ export class FakeWorld {
   oauthConfigured: ReadonlyArray<string> = ["spotify", "github", "slack", "notion", "dropbox"]
   /** Every request to an OAuth provider, with its form or JSON body. */
   readonly oauthRequests: Array<{ url: string; method: string; headers: Record<string, string>; body: string }> = []
-  /** How providers answer, by `METHOD url` (without the query); unset ones answer 404. */
-  readonly oauthResponses = new Map<string, () => { status?: number; body: unknown }>()
+  /**
+   * How providers answer, by `METHOD url` (without the query); unset ones answer 404. Google's token endpoint
+   * answers a code with google-access-1 / google-refresh-1 for omer@example.com, and each refresh with the next
+   * access token (counted in `googleRefreshes`).
+   */
+  readonly oauthResponses = new Map<string, (request: { readonly body: string }) => { status?: number; body: unknown }>(
+    [
+      [
+        `POST ${GoogleOAuthSpec.tokenUrl}`,
+        ({ body }) => {
+          if (new URLSearchParams(body).get("grant_type") === "refresh_token") {
+            this.googleRefreshes++
+            return { body: { access_token: `google-access-${this.googleRefreshes + 1}`, expires_in: 3600 } }
+          }
+          return {
+            body: {
+              access_token: "google-access-1",
+              expires_in: 3600,
+              refresh_token: "google-refresh-1",
+              scope: "https://www.googleapis.com/auth/gmail.readonly",
+              id_token: unsignedJwt({ email: "omer@example.com" })
+            }
+          }
+        }
+      ]
+    ]
+  )
   private counter = 0
   nextId = (prefix: string) => `${prefix}${++this.counter}`
 }
@@ -353,67 +381,64 @@ export const fakeNamespace = (world: FakeWorld) =>
     })
   )
 
-export const fakeGoogle = (world: FakeWorld) =>
-  Layer.succeed(
-    Google,
-    Google.of({
-      verifyIdToken: (token) =>
-        token.startsWith("valid:")
-          ? Effect.succeed({
-              iss: "https://accounts.google.com" as const,
-              aud: "ios-client.apps.googleusercontent.com",
-              sub: `google-${token.slice(6)}`,
-              email: token.slice(6),
-              exp: 4102444800
-            })
-          : (Effect.fail(new UpstreamFailure({ service: "Google", message: "bad token" })) as never),
-      authorizeUrl: ({ state, scopes }) =>
-        Effect.succeed(`https://accounts.google.test/auth?state=${state}&scope=${scopes.join(",")}`),
-      exchangeCode: () =>
-        Effect.succeed({
-          access_token: "google-access-1",
-          expires_in: 3600,
-          refresh_token: "google-refresh-1",
-          scope: "https://www.googleapis.com/auth/gmail.readonly",
-          email: "omer@example.com"
-        }),
-      refresh: () =>
-        Effect.sync(() => {
-          world.googleRefreshes++
-          return { access_token: `google-access-${world.googleRefreshes + 1}`, expires_in: 3600 }
-        }),
-      revoke: () => Effect.void
-    })
-  )
-
-/** The real OAuth client, talking to `world.oauthResponses` instead of the providers. */
-export const fakeOAuth = (world: FakeWorld) => {
+/** HTTP that answers from `world.oauthResponses` (recording each request) instead of reaching the providers. */
+const providerHttp = (world: FakeWorld) => {
   const fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const request = new Request(input, init)
     const url = new URL(request.url)
+    const body = await request.text()
     world.oauthRequests.push({
       url: request.url,
       method: request.method,
       headers: Object.fromEntries(request.headers.entries()),
-      body: await request.text()
+      body
     })
     const answer = world.oauthResponses.get(`${request.method} ${url.origin}${url.pathname}`)
     if (answer === undefined) return new Response("not found", { status: 404 })
-    const { status, body } = answer()
-    return new Response(status === 204 ? null : JSON.stringify(body), {
+    const { status, body: answered } = answer({ body })
+    return new Response(status === 204 ? null : JSON.stringify(answered), {
       status: status ?? 200,
       headers: { "content-type": "application/json" }
     })
   }) as typeof globalThis.fetch
   // `Fetch` is read from the running fiber, so it's provided around each request.
-  const client = Layer.effect(
+  return Layer.effect(
     HttpClient.HttpClient,
     Effect.map(HttpClient.HttpClient, (http) =>
       http.pipe(HttpClient.transformResponse(Effect.provideService(FetchHttpClient.Fetch, fetch)))
     )
   ).pipe(Layer.provide(FetchHttpClient.layer))
-  return OAuth.layer.pipe(Layer.provide(client))
 }
+
+/** The real OAuth client, talking to `world.oauthResponses` instead of the providers. */
+export const fakeOAuth = (world: FakeWorld) => OAuth.layer.pipe(Layer.provide(providerHttp(world)))
+
+/**
+ * The real Google client, its token requests going to `world.oauthResponses` through the real OAuth client; only
+ * Sign-In ID tokens ("valid:<email>") and the authorize URL are faked.
+ */
+export const fakeGoogle = (world: FakeWorld) =>
+  Layer.effect(
+    Google,
+    Effect.map(Google, (real) =>
+      Google.of({
+        ...real,
+        verifyIdToken: (token) =>
+          token.startsWith("valid:")
+            ? Effect.succeed({
+                iss: "https://accounts.google.com" as const,
+                aud: "ios-client.apps.googleusercontent.com",
+                sub: `google-${token.slice(6)}`,
+                email: token.slice(6),
+                exp: 4102444800
+              })
+            : Effect.fail(new UpstreamFailure({ service: "Google", message: "bad token" })),
+        authorizeUrl: ({ state, scopes }) =>
+          Effect.succeed(`https://accounts.google.test/auth?state=${state}&scope=${scopes.join(",")}`),
+        revoke: () => Effect.void
+      })
+    )
+  ).pipe(Layer.provide(Google.layer), Layer.provide(fakeOAuth(world)), Layer.provide(providerHttp(world)))
 
 export const fakeChatGpt = (world: FakeWorld) =>
   Layer.succeed(

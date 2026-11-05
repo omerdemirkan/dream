@@ -20,6 +20,7 @@ import { Tokens } from "../auth/Tokens.ts"
 import { ApiConfig } from "../Config.ts"
 import { Connections, toIntegration } from "../db/Connections.ts"
 import { Projects } from "../db/Projects.ts"
+import { Google } from "../integrations/Google.ts"
 import { KeyFiles } from "../integrations/KeyFiles.ts"
 import { OAuthProviders, scopesFor } from "../integrations/OAuth.ts"
 import { newMediaId } from "../lib/Ids.ts"
@@ -56,6 +57,7 @@ export const WorkerSandboxHandlers = SandboxRpcs.toLayer(
     const media = yield* MediaStore
     const keyFiles = yield* KeyFiles
     const providers = yield* OAuthProviders
+    const google = yield* Google
 
     const current = Effect.gen(function* () {
       return yield* CurrentProject
@@ -81,8 +83,9 @@ export const WorkerSandboxHandlers = SandboxRpcs.toLayer(
       RequestAccess: (payload) =>
         Effect.gen(function* () {
           const request = payload.request
-          if (request._tag !== "OAuth") return yield* forwardUnlessLeaking(payload, (c) => c.RequestAccess(payload))
           // Said at the moment it asks, so the agent never shows a card nobody can connect.
+          if (request._tag === "Google") yield* google.configured
+          if (request._tag !== "OAuth") return yield* forwardUnlessLeaking(payload, (c) => c.RequestAccess(payload))
           const { spec } = yield* providers.configured(request.provider)
           const oauth = AccessRequest.cases.OAuth.make({
             provider: spec.id,

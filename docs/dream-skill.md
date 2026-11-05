@@ -23,7 +23,9 @@ this sandbox, including the apps you build. `dream <command> --help` lists every
     mentions one.
   - `dream ask withdraw <id>` takes back a question that no longer needs an answer.
 - `dream access …` asks for access to a service. It shows up like a question, with a way to connect.
-  - `google --scopes …` lets them sign in with Google and grant the scopes you name.
+  - `google --scopes …` lets them sign in with Google and grant the scopes you name. Like `oauth` below, it works
+    only once whoever runs Dream has registered Dream's Google app, and when they haven't, `dream access google` says
+    so before any card reaches them.
   - `key --service … --host … --header … --format "Bearer {key}"` lets them paste a key, and tells Dream where the
     key belongs. `--host` is the real host your requests go to, like `api.stripe.com`. A key card isn't a place to
     keep values you'd send some other way.

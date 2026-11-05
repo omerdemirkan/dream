@@ -10,7 +10,7 @@ import { idTokenClaims } from "../connect/ChatGpt.ts"
 import { Connections } from "../db/Connections.ts"
 import type { NetworkRules } from "../e2b/E2B.ts"
 import { toHex, utf8 } from "../lib/Bytes.ts"
-import { CredentialStore } from "./CredentialStore.ts"
+import { type ConnectionLapsed, CredentialStore } from "./CredentialStore.ts"
 import { ProjectDirectory } from "../project/Client.ts"
 import { headersFor, OAuthProviders } from "./OAuth.ts"
 
@@ -48,6 +48,10 @@ export class SandboxCredentials extends Context.Service<
       const providers = yield* OAuthProviders
       const directory = yield* ProjectDirectory
 
+      // Told apart from this delivery: this project's own DO may be the one asking.
+      const lapsed = ({ userId, integration, failure }: ConnectionLapsed) =>
+        directory.integrationGone(userId, integration, failure).pipe(Effect.forkDetach, Effect.asVoid)
+
       const setup = Effect.fn("SandboxCredentials.setup")(function* (userId: UserId, harness: Harness) {
         const rules: Record<string, ReturnType<typeof header>> = {}
 
@@ -61,6 +65,7 @@ export class SandboxCredentials extends Context.Service<
                   for (const host of access.hosts)
                     rules[host] = header({ Authorization: `Bearer ${credential.accessToken}` })
                 }),
+                Effect.catchTag("ConnectionLapsed", lapsed),
                 Effect.catch((error) => Effect.logWarning("Google credential unavailable", error.message))
               ),
             Key: (access) =>
@@ -89,10 +94,7 @@ export class SandboxCredentials extends Context.Service<
                   for (const [host, name, value] of headersFor(spec, credential.accessToken))
                     rules[host] = header({ [name]: value })
                 }),
-                Effect.catchTag("ConnectionLapsed", ({ userId, integration, failure }) =>
-                  // Told apart from this delivery: this project's own DO may be the one asking.
-                  directory.integrationGone(userId, integration, failure).pipe(Effect.forkDetach, Effect.asVoid)
-                ),
+                Effect.catchTag("ConnectionLapsed", lapsed),
                 Effect.catch((error) => Effect.logWarning(`${access.service} credential unavailable`, error.message))
               )
           })
