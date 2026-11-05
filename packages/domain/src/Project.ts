@@ -21,7 +21,7 @@ export const Project = Schema.Struct({
   title: Schema.String,
   /** Short label under the title, e.g. "iOS app" or "Background worker". Set by the agent. */
   kind: Schema.optionalKey(Schema.String),
-  /** SF Symbol name for the project tile, e.g. "dumbbell". Set by the agent. */
+  /** SF Symbol name for the project tile, e.g. "dumbbell" (agents also use an emoji; the app shows either). Set by the agent. */
   icon: Schema.optionalKey(Schema.String),
   /** What they first asked for, verbatim. */
   idea: Schema.String,

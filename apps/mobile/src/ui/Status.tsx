@@ -6,7 +6,7 @@
 import type { AccessMessage, AskMessage, Message, MessageId, Milestone, Need, StatusCard } from "@dream/domain"
 import { isOpenAsk } from "@dream/domain"
 import { DateTime } from "effect"
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import { type HostInstance, Linking, Pressable, Text, View } from "react-native"
 import Animated, {
   cancelAnimation,
@@ -489,6 +489,20 @@ const earlyNote = (phase: StatusCard["phase"]) =>
     ? "I’m looking into this before I ask you anything. That can take a few minutes, so there’s no need to wait around — I’ll send a notification when I have a question."
     : "Thanks. I’m shaping the first version around your answer, and I’ll write when there’s something to look at."
 
+/** The idea as they wrote it, which can run to a paragraph: three lines, and the rest on a tap. */
+function Idea(props: { readonly text: string }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <Text
+      onPress={() => setOpen((o) => !o)}
+      numberOfLines={open ? undefined : 3}
+      style={{ marginTop: 2, fontSize: 16, lineHeight: 23, color: color.t2 }}
+    >
+      {props.text}
+    </Text>
+  )
+}
+
 export function StatusTab(props: { readonly state: ProjectState }) {
   const { project, status, messages, working } = props.state
   const byId = new Map(messages.map((m) => [m.id, m] as const))
@@ -499,7 +513,7 @@ export function StatusTab(props: { readonly state: ProjectState }) {
   const connected = messages.filter((m): m is AccessMessage => m._tag === "Access" && m.state._tag === "Connected")
   return (
     <View>
-      <Text style={{ marginTop: 2, fontSize: 16, lineHeight: 23, color: color.t2 }}>{project.idea}</Text>
+      <Idea text={project.idea} />
       <StatusLine state={props.state} />
       {status.milestones.length === 0 ? (
         <View>

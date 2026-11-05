@@ -90,6 +90,9 @@ export function Icon(props: {
 const symbolName = (name: string | undefined): SymbolViewProps["name"] =>
   (name && name.length > 0 ? name : "sparkle") as SymbolViewProps["name"]
 
+/** SF Symbol names are lowercase ASCII words joined by dots; agents often pick an emoji instead. */
+const isSymbolName = (name: string | undefined) => name === undefined || /^[a-z0-9]+(\.[a-z0-9]+)*$/.test(name)
+
 // ---------------------------------------------------------------------------
 // Tiles, dots, the orb
 // ---------------------------------------------------------------------------
@@ -115,16 +118,22 @@ export function Tile(props: { readonly icon: string | undefined; readonly size?:
         justifyContent: "center"
       }}
     >
-      <SymbolView
-        name={symbolName(props.icon)}
-        size={s.glyph}
-        tintColor={color.t2}
-        weight="medium"
-        accessible={false}
-        accessibilityElementsHidden
-        importantForAccessibility="no-hide-descendants"
-        style={{ width: s.glyph, height: s.glyph }}
-      />
+      {isSymbolName(props.icon) ? (
+        <SymbolView
+          name={symbolName(props.icon)}
+          size={s.glyph}
+          tintColor={color.t2}
+          weight="medium"
+          accessible={false}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          style={{ width: s.glyph, height: s.glyph }}
+        />
+      ) : (
+        <Text accessible={false} style={{ fontSize: s.glyph, lineHeight: s.glyph * 1.25 }}>
+          {props.icon}
+        </Text>
+      )}
     </View>
   )
 }
