@@ -4,7 +4,7 @@
  * - `ChatComposer`: "Message Dream" at the bottom of Chat (`.compose.quiet`).
  * - `ElseComposer`: "Something else…" in the expanded question (`.else`).
  */
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { StyleSheet, Text, TextInput, View } from "react-native"
 import { useDictation } from "../platform/dictation.ts"
 import { Bars, IconButton } from "./kit.tsx"
@@ -55,8 +55,20 @@ const useSend = (text: string, setText: (update: (current: string) => string) =>
   return { has, send }
 }
 
-export function ChatComposer(props: { readonly onSend: Send; readonly sample?: string; readonly busy?: boolean }) {
+/** Puts a kept draft (a reply that didn't send from a notification) into the field, unless they've typed. */
+const useDraft = (draft: string | undefined, setText: (update: (current: string) => string) => void) =>
+  useEffect(() => {
+    if (draft) setText((current) => (current.trim() ? current : draft))
+  }, [draft, setText])
+
+export function ChatComposer(props: {
+  readonly onSend: Send
+  readonly sample?: string
+  readonly busy?: boolean
+  readonly draft?: string | undefined
+}) {
   const [text, setText] = useState("")
+  useDraft(props.draft, setText)
   const dictation = useDictation((heard) => setText((current) => join(current, heard)), props.sample)
   const { has, send } = useSend(text, setText, props.onSend, props.busy === true)
   return (
@@ -107,8 +119,10 @@ export function ElseComposer(props: {
   readonly sample?: string
   readonly large?: boolean
   readonly busy?: boolean
+  readonly draft?: string | undefined
 }) {
   const [text, setText] = useState("")
+  useDraft(props.draft, setText)
   const dictation = useDictation((heard) => setText((current) => join(current, heard)), props.sample)
   const { has, send } = useSend(text, setText, props.onSend, props.busy === true)
   const height = props.large ? 58 : 48

@@ -89,6 +89,12 @@ export class Access extends Context.Service<
       messageId: MessageId
     ) => Effect.Effect<AccessMessage, NotFound | InvalidRequest>
     readonly list: (userId: UserId) => Effect.Effect<ReadonlyArray<Integration>>
+    /** A new key for a `Key` or `File` integration, from Settings. */
+    readonly replaceKey: (
+      userId: UserId,
+      id: Integration["id"],
+      key: string
+    ) => Effect.Effect<Integration, NotFound | InvalidRequest>
     readonly disconnect: (userId: UserId, id: Integration["id"]) => Effect.Effect<void, NotFound>
   }
 >()("@dream/api/Access") {
@@ -113,18 +119,43 @@ export class Access extends Context.Service<
           })
         )
 
-      const openAccess = (userId: UserId, projectId: ProjectId, messageId: MessageId) =>
+      /**
+       * The access request, and whether it's already connected. Open, declined and disconnected requests can be
+       * connected; so can a card still marked connected to an integration that's gone (from before cards were told).
+       */
+      const accessFor = (userId: UserId, projectId: ProjectId, messageId: MessageId) =>
         Effect.gen(function* () {
           yield* owned(userId, projectId)
-          return yield* clients.use(projectId, (client) => client.GetOpenAccess({ messageId }))
+          const message = yield* clients.use(projectId, (client) => client.GetAccess({ messageId }))
+          const connected =
+            message.state._tag === "Connected" &&
+            Option.isSome(yield* connections.integration(userId, message.state.integrationId))
+          return { message, connected }
         })
 
-      /** Tells the project, and refreshes every sandbox of theirs (a file key concerns only the project). */
-      const announce = (userId: UserId, projectId: ProjectId, messageId: MessageId, row: IntegrationRow) =>
+      /** For starting a sign-in, which a connected request doesn't need. */
+      const openAccess = (userId: UserId, projectId: ProjectId, messageId: MessageId) =>
         Effect.gen(function* () {
-          const message = yield* clients.use(projectId, (client) =>
-            client.AccessConnected({ messageId, integration: toIntegration(row) })
-          )
+          const { message, connected } = yield* accessFor(userId, projectId, messageId)
+          if (connected) return yield* new InvalidRequest({ message: "This is connected already." })
+          return message
+        })
+
+      /**
+       * Tells the project, and refreshes every sandbox of theirs (a file key concerns only the project). When the
+       * connection had stopped working (`wasFailed`), every project's cards for it are connected again instead.
+       */
+      const announce = (
+        userId: UserId,
+        projectId: ProjectId,
+        messageId: MessageId,
+        row: IntegrationRow,
+        wasFailed = false
+      ) =>
+        Effect.gen(function* () {
+          const integration = toIntegration(row)
+          const message = yield* clients.use(projectId, (client) => client.AccessConnected({ messageId, integration }))
+          if (wasFailed) yield* directory.integrationRestored(userId, integration, projectId)
           if (row.kind !== "sandbox_file") yield* directory.credentialsChanged(userId)
           return message
         })
@@ -200,7 +231,7 @@ export class Access extends Context.Service<
             accessExpiresAtMs: credential.accessExpiresAtMs
           })
         }
-        yield* announce(userId, projectId, messageId, row).pipe(
+        yield* announce(userId, projectId, messageId, row, existing?.status === "failed").pipe(
           Effect.catchTag("NotFound", () => Effect.fail(new InvalidRequest({ message: "the request is gone" })))
         )
         return { projectId, messageId }
@@ -344,7 +375,7 @@ export class Access extends Context.Service<
             accessExpiresAtMs: credential.accessExpiresAtMs
           })
         }
-        yield* announce(userId, projectId, messageId, row).pipe(
+        yield* announce(userId, projectId, messageId, row, existing?.status === "failed").pipe(
           Effect.catchTag("NotFound", () => Effect.fail(new InvalidRequest({ message: "the request is gone" })))
         )
         return { projectId, messageId }
@@ -356,7 +387,9 @@ export class Access extends Context.Service<
         messageId: MessageId,
         key: string
       ) {
-        const message = yield* openAccess(userId, projectId, messageId)
+        const { message, connected } = yield* accessFor(userId, projectId, messageId)
+        // A retry of a submission that went through (its response was lost): nothing more to do.
+        if (connected) return message
         if (message.request._tag === "File") {
           return yield* submitFileKey(userId, projectId, messageId, message.request, key)
         }
@@ -397,7 +430,8 @@ export class Access extends Context.Service<
         messageId: MessageId,
         apple: { readonly issuerId: string; readonly keyId: string; readonly privateKey: string }
       ) {
-        const message = yield* openAccess(userId, projectId, messageId)
+        const { message, connected } = yield* accessFor(userId, projectId, messageId)
+        if (connected) return message
         if (message.request._tag !== "Apple") {
           return yield* new InvalidRequest({ message: "This access request isn't for App Store Connect." })
         }
@@ -463,6 +497,30 @@ export class Access extends Context.Service<
 
       const list = (userId: UserId) => Effect.map(connections.integrations(userId), (rows) => rows.map(toIntegration))
 
+      const replaceKey = Effect.fn("Access.replaceKey")(function* (userId: UserId, id: Integration["id"], key: string) {
+        const found = yield* connections.integration(userId, id)
+        if (Option.isNone(found)) return yield* new NotFound({ entity: "integration", id })
+        const row = found.value
+        if (row.kind !== "api_key" && row.kind !== "sandbox_file") {
+          return yield* new InvalidRequest({ message: `${row.label} isn't a key; connect it again from a project.` })
+        }
+        const credential = { key: key.trim() }
+        if (credential.key.length === 0) return yield* new InvalidRequest({ message: "The key is empty." })
+        const integration = toIntegration(row)
+        // The same key again (a retry after a lost response) changes nothing, and the agent doesn't hear twice.
+        if ((yield* secrets.get(row.secret_id, ApiKeyCredential)).key === credential.key) return integration
+        yield* secrets.replace(row.secret_id, ApiKeyCredential, credential)
+        if (row.access_json._tag === "File") {
+          // Its project rewrites the file before the agent hears. An archived project has no sandbox to write to.
+          yield* clients
+            .use(row.access_json.projectId, (client) => client.KeyFileReplaced({ integration }))
+            .pipe(Effect.catchCause((cause) => Effect.logWarning("couldn't tell the project its key changed", cause)))
+        } else {
+          yield* directory.credentialsChanged(userId)
+        }
+        return integration
+      })
+
       const disconnect = Effect.fn("Access.disconnect")(function* (userId: UserId, id: Integration["id"]) {
         const row = yield* connections.integration(userId, id)
         if (Option.isNone(row)) return yield* new NotFound({ entity: "integration", id })
@@ -478,13 +536,15 @@ export class Access extends Context.Service<
         yield* connections.deleteIntegration(id)
         yield* secrets.remove(row.value.secret_id)
         const access = row.value.access_json
+        const integration = toIntegration(row.value)
         if (access._tag === "File") {
           // Its project deletes the file and tells the agent. An archived project's sandbox is already gone.
           yield* clients
-            .use(access.projectId, (client) => client.KeyFileRemoved({ integration: toIntegration(row.value) }))
+            .use(access.projectId, (client) => client.IntegrationGone({ integration }))
             .pipe(Effect.catchCause((cause) => Effect.logWarning("couldn't tell the project a key file went", cause)))
         } else {
-          yield* directory.credentialsChanged(userId)
+          // Every sandbox drops its rules; the projects that asked for it mark their cards and tell their agents.
+          yield* directory.integrationGone(userId, integration)
         }
       })
 
@@ -497,6 +557,7 @@ export class Access extends Context.Service<
         submitApple,
         decline,
         list,
+        replaceKey,
         disconnect
       })
     })

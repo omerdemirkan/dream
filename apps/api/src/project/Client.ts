@@ -6,6 +6,7 @@
  */
 import {
   HttpRpcSerialization,
+  type Integration,
   type ProjectId,
   SandboxAuth,
   SandboxRpcs,
@@ -66,6 +67,13 @@ export class ProjectDirectory extends Context.Service<
   ProjectDirectory,
   {
     readonly credentialsChanged: (userId: UserId) => Effect.Effect<void>
+    /**
+     * An integration that had stopped working was connected again through `answered`'s card: every project's cards
+     * for it say so, and the agents of the others that had heard it stopped hear it's back.
+     */
+    readonly integrationRestored: (userId: UserId, integration: Integration, answered: ProjectId) => Effect.Effect<void>
+    /** An integration other than a file key is gone (see `ProjectRpcs.IntegrationGone`). */
+    readonly integrationGone: (userId: UserId, integration: Integration, failure?: string) => Effect.Effect<void>
     readonly usageLimited: (
       userId: UserId,
       window: UsageWindowName,
@@ -93,6 +101,18 @@ export class ProjectDirectory extends Context.Service<
       return ProjectDirectory.of({
         credentialsChanged: (userId) =>
           each(userId, (projectId) => clients.use(projectId, (client) => client.CredentialsChanged())),
+        integrationRestored: (userId, integration, answered) =>
+          each(userId, (projectId) =>
+            clients.use(projectId, (client) =>
+              client.IntegrationRestored({ integration, tell: projectId !== answered })
+            )
+          ),
+        integrationGone: (userId, integration, failure) =>
+          each(userId, (projectId) =>
+            clients.use(projectId, (client) =>
+              client.IntegrationGone({ integration, ...(failure === undefined ? {} : { failure }) })
+            )
+          ),
         usageLimited: (userId, window, until, except) =>
           each(userId, (projectId) =>
             projectId === except

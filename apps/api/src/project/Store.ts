@@ -5,8 +5,10 @@
  * alarm. Singletons are one-row tables holding a JSON value.
  */
 import {
+  type AccessMessage,
   AgentEvent,
   EventId,
+  type IntegrationId,
   LiveActivityAttributes,
   LiveActivityContent,
   Message,
@@ -214,6 +216,8 @@ export class Store extends Context.Service<
       limit: number
     ) => Effect.Effect<{ readonly messages: ReadonlyArray<Message>; readonly hasEarlier: boolean }>
     readonly openAsks: Effect.Effect<ReadonlyArray<Message>>
+    /** Access requests that are, or were, connected to this integration (Connected or Disconnected), oldest first. */
+    readonly accessMessagesFor: (integrationId: IntegrationId) => Effect.Effect<ReadonlyArray<AccessMessage>>
 
     readonly putWake: (wake: Wake, nextAtMs: number | undefined) => Effect.Effect<void>
     readonly wakes: Effect.Effect<ReadonlyArray<Wake>>
@@ -301,6 +305,19 @@ export class Store extends Context.Service<
         decodeRows(JsonRow),
         Effect.map((rows) => rows.map((row) => decodeMessage(row.json)))
       )
+
+      const accessMessagesFor = (integrationId: IntegrationId) =>
+        sql`SELECT json FROM messages
+            WHERE json_extract(json, '$._tag') = 'Access' AND json_extract(json, '$.state.integrationId') = ${integrationId}
+            ORDER BY seq`.pipe(
+          decodeRows(JsonRow),
+          Effect.map((rows) =>
+            rows.flatMap((row) => {
+              const message = decodeMessage(row.json)
+              return message._tag === "Access" ? [message] : []
+            })
+          )
+        )
 
       const putWake = (wake: Wake, nextAtMs: number | undefined) =>
         exec(sql`
@@ -419,6 +436,7 @@ export class Store extends Context.Service<
         message,
         messagesBefore,
         openAsks,
+        accessMessagesFor,
         putWake,
         wakes,
         wake,

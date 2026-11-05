@@ -14,6 +14,7 @@ import { AppConfig, type AppConfigShape } from "./AppConfig.ts"
 import { Answers } from "./Answers.ts"
 import { LiveProjects } from "./LiveProjects.ts"
 import { ProjectStates } from "./ProjectStates.ts"
+import { Replies } from "./Replies.ts"
 import type { SecureStorage } from "./SecureStorage.ts"
 import { Session } from "./Session.ts"
 
@@ -32,7 +33,7 @@ const backendLayer = (config: AppConfigShape, platform: Platform) =>
       )
 
 export const makeAppLayer = (config: AppConfigShape, platform: Platform) =>
-  Layer.mergeAll(Answers.layer, ProjectStates.layer).pipe(
+  Layer.mergeAll(Answers.layer, ProjectStates.layer, Replies.layer).pipe(
     Layer.provideMerge(backendLayer(config, platform)),
     Layer.provideMerge(Session.layer),
     Layer.provideMerge(Layer.mergeAll(AppConfig.layer(config), platform.storage))

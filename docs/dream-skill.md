@@ -52,7 +52,9 @@ this sandbox, including the apps you build. `dream <command> --help` lists every
     - Their card warns them that the key will live in this sandbox, where any code that runs here can read it, so
       it's worth asking only when no header can carry it.
     - It belongs to this project alone. Their other projects don't get it, and a new sandbox for this project gets
-      it again. Entering it again replaces the file. If they remove it, Dream deletes the file and you get an event.
+      it again. Entering it again replaces the file, from your card or from their Settings; after a change in
+      Settings you get an event, and anything that read the old key needs a restart. If they remove it, Dream
+      deletes the file and you get an event.
     - Have your code read the file each time it starts. Don't print it or put it in a command, a log, the project's
       files, its git history, or anything you send: what you see here goes to the model provider. `dream` refuses
       to send text that contains it. Under Claude Code, reading the folder or naming it in a command is refused,
@@ -63,6 +65,9 @@ this sandbox, including the apps you build. `dream <command> --help` lists every
   - `dream access list` shows what they've already connected. All of it already works here. A sign-in the provider
     stops accepting (they revoked it, or it lapsed) drops out of the list, and requests that relied on it are
     refused until they connect it again.
+  - When something this project asked for goes away, because they removed it in Settings or its provider stopped
+    accepting it, you get an event, and your card for it says so; they can connect it again from that card. If it
+    stopped working and they connect it again from another project, you get an event saying it's back.
 - `dream notify withdraw <id>` removes a notification that no longer applies. An answered question withdraws its own.
 
 ## Status

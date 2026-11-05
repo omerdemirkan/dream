@@ -12,7 +12,8 @@ import { useLocalSearchParams, useRouter } from "expo-router"
 import { useEffect } from "react"
 import { KeyboardAvoidingView, Pressable, ScrollView, Text, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
-import { projectsAtom, sendMessageFn } from "../../state/atoms.ts"
+import { draftKey } from "../../data/Replies.ts"
+import { clearDraftFn, draftAtom, projectsAtom, sendMessageFn } from "../../state/atoms.ts"
 import { landingAtom } from "../../state/ui.ts"
 import { useAction } from "../../ui/actions.ts"
 import { ChatTab } from "../../ui/Chat.tsx"
@@ -55,6 +56,13 @@ function Project(props: {
   const project = state?.project ?? summaries?.find((s) => s.project.id === props.projectId)?.project
   const send = useAction(sendMessageFn)
   const requestId = useRequestId()
+  // A reply typed into a notification that didn't send waits here, with the request id it was sent with.
+  const chat = { _tag: "Chat", projectId: props.projectId } as const
+  const draft = Option.getOrUndefined(Option.flatten(AsyncResult.value(useAtomValue(draftAtom(draftKey(chat))))))
+  const clearDraft = useAtomSet(clearDraftFn)
+  useEffect(() => {
+    if (draft?.requestId) requestId.adopt(draft.text, draft.requestId)
+  }, [draft])
   const setLanding = useAtomSet(landingAtom)
 
   useEffect(() => {
@@ -86,12 +94,14 @@ function Project(props: {
             <View style={{ paddingHorizontal: 16, paddingBottom: Math.max(insets.bottom, 12) + 2, paddingTop: 10 }}>
               <ChatComposer
                 busy={send.busy}
+                draft={draft?.text}
                 onSend={(text, sent) =>
                   send.run(
                     { projectId: props.projectId, text, requestId: requestId.for(text) },
                     {
                       onSuccess: () => {
                         requestId.done()
+                        if (draft) clearDraft(chat)
                         sent()
                       }
                     }

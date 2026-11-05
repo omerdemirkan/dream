@@ -86,6 +86,26 @@ export const accessExplainer = (message: AccessMessage) => {
   }
 }
 
+/** What a disconnected request's card says: what happened, and that it connects again from here. */
+export const disconnectedNote = (message: AccessMessage) => {
+  if (message.state._tag !== "Disconnected") return undefined
+  const label = accessLabel(message.request)
+  const removed = message.state.reason === "removed"
+  return {
+    eyebrow: removed ? "Access · removed" : "Access · stopped working",
+    title: removed ? `${label} removed` : `${label} stopped working`,
+    detail: removed
+      ? isKeyFile(message.request)
+        ? "You removed this key in Settings. Tap to enter it again."
+        : "You removed it in Settings. Tap to connect it again."
+      : `${label} stopped accepting Dream’s sign-in. Tap to connect it again.`,
+    /** The expanded view's first line, above how connecting works. */
+    lead: removed
+      ? "You removed this in Settings, so nothing here uses it now. Connect it again if you want it back."
+      : `${label} stopped accepting Dream’s sign-in, maybe because it was revoked there. Connect it again to keep using it.`
+  }
+}
+
 export const accessScope = (request: AccessRequest) =>
   request._tag === "Google" ? scopeSummary(request.scopes) : undefined
 

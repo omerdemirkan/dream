@@ -8,7 +8,7 @@ import * as Application from "expo-application"
 import { Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
 import { useRouter } from "expo-router"
-import type { ReactNode } from "react"
+import { type ReactNode, useState } from "react"
 import { Pressable, ScrollView, Text, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { providerName, resetLabel, usageDetail } from "../data/format.ts"
@@ -18,12 +18,14 @@ import {
   integrationsAtom,
   modelConnectionsAtom,
   projectsAtom,
+  replaceKeyFn,
   sessionAtom,
   signOutFn
 } from "../state/atoms.ts"
 import { appConfig } from "../state/runtime.ts"
-import { useAction } from "../ui/actions.ts"
+import { useAction, useToast } from "../ui/actions.ts"
 import { integrationReach, integrationSummary } from "../ui/describe.ts"
+import { SecretField } from "../ui/Expanded.tsx"
 import { Button, Icon, IconButton, Lab } from "../ui/kit.tsx"
 import { color, gutter } from "../ui/theme.ts"
 
@@ -130,6 +132,9 @@ function Row(props: {
   readonly action?: string
   readonly busy?: boolean
   readonly onAction?: () => void
+  /** A second, quieter action before the main one. */
+  readonly secondary?: string | undefined
+  readonly onSecondary?: () => void
   readonly icon?: "lock" | "key" | "spark"
 }) {
   return (
@@ -150,6 +155,11 @@ function Row(props: {
           <Text style={{ fontSize: 13.5, lineHeight: 19, color: color.t2, marginTop: 2 }}>{props.subtitle}</Text>
         ) : null}
       </View>
+      {props.secondary ? (
+        <Pressable accessibilityRole="button" onPress={props.onSecondary} hitSlop={8}>
+          <Text style={{ fontSize: 15, fontWeight: "600", color: color.t2 }}>{props.secondary}</Text>
+        </Pressable>
+      ) : null}
       {props.action ? (
         <Pressable accessibilityRole="button" onPress={props.onAction} disabled={props.busy === true} hitSlop={8}>
           <Text style={{ fontSize: 15, fontWeight: "600", color: props.busy ? color.t3 : color.t2 }}>
@@ -200,19 +210,54 @@ function IntegrationRow(props: {
   readonly projectTitle: (id: ProjectId) => string | undefined
 }) {
   const disconnect = useAction(disconnectIntegrationFn)
+  const replace = useAction(replaceKeyFn)
+  const toast = useToast()
+  const [key, setKey] = useState<string | undefined>(undefined)
   const i = props.integration
+  // Pasted keys and file keys can be swapped for a new one here; sign-ins reconnect from a project's card.
+  const replaceable = i.access._tag === "Key" || i.access._tag === "File"
   return (
-    <Row
-      icon={i.access._tag === "Google" || i.access._tag === "OAuth" ? "lock" : "key"}
-      title={i.label}
-      subtitle={
-        i.status === "connected"
-          ? integrationReach(i, props.projectTitle)
-          : `${integrationSummary(i)} · stopped working; it reconnects the next time a project asks`
-      }
-      action={i.access._tag === "File" ? "Remove" : "Disconnect"}
-      busy={disconnect.busy}
-      onAction={() => disconnect.run(i.id)}
-    />
+    <View>
+      <Row
+        icon={i.access._tag === "Google" || i.access._tag === "OAuth" ? "lock" : "key"}
+        title={i.label}
+        subtitle={
+          i.status === "connected"
+            ? integrationReach(i, props.projectTitle)
+            : `${integrationSummary(i)} · stopped working; connect it again from the project’s card`
+        }
+        action={i.access._tag === "File" ? "Remove" : "Disconnect"}
+        busy={disconnect.busy}
+        onAction={() => disconnect.run(i.id)}
+        secondary={replaceable && key === undefined ? "Replace" : undefined}
+        onSecondary={() => setKey("")}
+      />
+      {key === undefined ? null : (
+        <View style={{ paddingTop: 12, paddingBottom: 4, borderBottomWidth: 1, borderColor: color.line }}>
+          <SecretField value={key} onChange={setKey} placeholder={`New ${i.label} key`} />
+          <Button
+            title={i.access._tag === "File" ? "Save to this project" : "Save to vault"}
+            disabled={!key.trim()}
+            busy={replace.busy}
+            onPress={() =>
+              replace.run(
+                { integrationId: i.id, key },
+                {
+                  onSuccess: () => {
+                    setKey(undefined)
+                    toast(
+                      i.access._tag === "File"
+                        ? `New ${i.label} key saved. The project will pick it up.`
+                        : `New ${i.label} key saved.`
+                    )
+                  }
+                }
+              )
+            }
+          />
+          <Button title="Cancel" variant="ghost" onPress={() => setKey(undefined)} style={{ marginTop: 10 }} />
+        </View>
+      )}
+    </View>
   )
 }

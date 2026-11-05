@@ -5,7 +5,7 @@
  * to `world.oauthResponses`.
  */
 import { assert, describe, it } from "@effect/vitest"
-import { AgentEvent, DaemonEnvFile, type ProjectId, renderAgentEvent } from "@dream/domain"
+import { type AccessMessage, AgentEvent, DaemonEnvFile, type ProjectId, renderAgentEvent } from "@dream/domain"
 import { Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { Connections } from "../src/db/Connections.ts"
 import * as HttpServerRequest from "effect/http/HttpServerRequest"
@@ -13,6 +13,7 @@ import * as HttpServerResponse from "effect/http/HttpServerResponse"
 import { route } from "../src/http/Router.ts"
 import { headersFor, OAuthCatalog, stringAt } from "../src/integrations/OAuth.ts"
 import { CredentialStore } from "../src/integrations/CredentialStore.ts"
+import { ProjectDirectory } from "../src/project/Client.ts"
 import { maintenance } from "../src/WorkerLayer.ts"
 import { makeCloud } from "./support/Cloud.ts"
 
@@ -231,7 +232,7 @@ describe("OAuth providers", () => {
 
       // The cron refreshes what expires within the margin and pushes it to the sandbox; Spotify kept the refresh token.
       cloud.world.oauthResponses.set("POST https://accounts.spotify.com/api/token", () => ({
-        body: spotifyTokens("spotify-access-3", undefined)
+        body: spotifyTokens("spotify-access-3", undefined, 601)
       }))
       yield* Effect.sleep("1500 millis")
       yield* maintenance.pipe(Effect.provide(Layer.succeedContext(cloud.workerContext)))
@@ -243,16 +244,91 @@ describe("OAuth providers", () => {
         { transform: { headers: { Authorization: "Bearer spotify-access-3" } } }
       ])
 
-      // They revoked Dream at Spotify: the refresh is refused, the connection fails, and the rule goes.
+      // They revoked Dream at Spotify: the cron's refresh is refused, the connection fails, and the rule goes.
       cloud.world.oauthResponses.set("POST https://accounts.spotify.com/api/token", () => ({
         status: 400,
         body: { error: "invalid_grant", error_description: "Refresh token revoked" }
       }))
-      const failed = yield* store.oauth(yield* row, true).pipe(Effect.flip)
-      assert.include(failed.message, "Spotify refused the refresh token (invalid_grant)")
-      assert.strictEqual((yield* row).status, "failed")
+      yield* Effect.sleep("1500 millis")
       yield* maintenance.pipe(Effect.provide(Layer.succeedContext(cloud.workerContext)))
+      assert.strictEqual((yield* row).status, "failed")
       assert.deepStrictEqual(yield* dreamd.ListAccess(), [])
+      assert.isUndefined(sandboxOf(cloud, project.id).sandbox.rules["api.spotify.com"])
+      yield* cloud.close
+    })
+  )
+
+  it.live("a connection the provider stops renewing: the projects that asked hear, and hear when it's back", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project, dreamd } = yield* setup(cloud)
+      spotifyRoutes(cloud)
+      // An access token that's due for a refresh as soon as anything builds a sandbox's rules.
+      cloud.world.oauthResponses.set("POST https://accounts.spotify.com/api/token", () => ({
+        body: spotifyTokens("spotify-access-1", "spotify-refresh-1", 601)
+      }))
+      const { request } = yield* connectSpotify(cloud, dreamd, project.id)
+      const other = yield* cloud.phone.CreateProject({ idea: "A wake-up song that fits the weather." })
+      yield* cloud.alarm(other.id)
+      const otherDreamd = yield* cloud.sandbox(sandboxOf(cloud, other.id).env.DREAM_PROJECT_TOKEN!)
+      const bystander = yield* cloud.phone.CreateProject({ idea: "Something that never plays music." })
+      yield* cloud.alarm(bystander.id)
+      yield* cloud.alarm(project.id)
+      const [integration] = yield* dreamd.ListAccess()
+      const connections = Context.get(cloud.workerContext, Connections)
+      const row = connections.integration(project.ownerId, integration!.id).pipe(Effect.map(Option.getOrThrow))
+      const cardOf = (projectId: ProjectId, messageId: string) =>
+        Effect.map(cloud.phone.ListMessages({ projectId }), ({ messages }) =>
+          messages.find((m): m is AccessMessage => m._tag === "Access" && m.id === messageId)
+        )
+
+      // They revoked Dream at Spotify, and a project's DO is the first to refresh (building its sandbox's rules),
+      // not the cron.
+      cloud.world.oauthResponses.set("POST https://accounts.spotify.com/api/token", () => ({
+        status: 400,
+        body: { error: "invalid_grant", error_description: "Refresh token revoked" }
+      }))
+      yield* Effect.sleep("1500 millis")
+      const before = cloud.world.delivered.length
+      yield* Context.get(cloud.workerContext, ProjectDirectory).credentialsChanged(project.ownerId)
+      yield* Effect.sleep("300 millis")
+      assert.strictEqual((yield* row).status, "failed")
+      const card = yield* cardOf(project.id, request.id)
+      assert.deepStrictEqual(card?.state._tag === "Disconnected" && card.state.reason, "failed")
+      for (const id of [project.id, other.id, bystander.id]) yield* cloud.alarm(id)
+      const told = cloud.world.delivered.slice(before)
+      assert.deepStrictEqual(
+        told.map((d) => d.sandboxId),
+        [sandboxOf(cloud, project.id).sandbox.access.sandboxId]
+      )
+      const event = told[0]!.events[0]
+      if (!Schema.is(AgentEvent)(event)) return yield* Effect.die("not an agent event")
+      assert.include(
+        renderAgentEvent(event),
+        "Their Spotify connection stopped working: Spotify refused to renew it (invalid_grant). HTTPS requests to " +
+          "api.spotify.com no longer carry their credential."
+      )
+      assert.include(renderAgentEvent(event), "`dream access oauth spotify`")
+
+      // The other project asks for it, and they connect it from there: its card answers, and the first project's
+      // card is connected again, with its agent told it's back.
+      spotifyRoutes(cloud)
+      const { request: otherRequest } = yield* connectSpotify(cloud, otherDreamd, other.id)
+      assert.strictEqual((yield* cardOf(other.id, otherRequest.id))?.state._tag, "Connected")
+      assert.strictEqual((yield* cardOf(project.id, request.id))?.state._tag, "Connected")
+      const back = cloud.world.delivered.length
+      yield* cloud.alarm(project.id)
+      yield* cloud.alarm(other.id)
+      const restored = cloud.world.delivered.slice(back).map((d) => d.events.map((e: any) => [e._tag, e.change]))
+      assert.deepStrictEqual(restored, [[["AccessConnected", "restored"]], [["AccessConnected", undefined]]])
+      assert.deepStrictEqual(sandboxOf(cloud, project.id).sandbox.rules["api.spotify.com"], [
+        { transform: { headers: { Authorization: "Bearer spotify-access-1" } } }
+      ])
+      // Settings replaces only pasted keys.
+      const notKey = yield* cloud.phone
+        .ReplaceKey({ integrationId: integration!.id, key: Redacted.make("BQ-pasted") })
+        .pipe(Effect.flip)
+      assert.strictEqual(notKey._tag, "InvalidRequest")
       yield* cloud.close
     })
   )

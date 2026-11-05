@@ -28,11 +28,17 @@ export const workerLayer = (bindings: WorkerBindings, overrides: PlatformOverrid
     Layer.provideMerge(Layer.succeed(LiveForwarder, LiveForwarder.of({ forward: bindings.forwardLive })))
   )
 
-/** Every five minutes: refresh credentials that expire soon, push them to sandboxes, end abandoned sign-ins. */
+/**
+ * Every five minutes: refresh credentials that expire soon, push them to sandboxes, tell projects about OAuth
+ * connections whose provider stopped renewing them, end abandoned sign-ins.
+ */
 export const maintenance = Effect.gen(function* () {
   const store = yield* CredentialStore
   const directory = yield* ProjectDirectory
   const modelConnect = yield* ModelConnect
-  for (const userId of yield* store.sweep) yield* directory.credentialsChanged(userId)
+  const { changed, lapsed } = yield* store.sweep
+  for (const userId of changed) yield* directory.credentialsChanged(userId)
+  // Every sandbox of theirs drops it; the projects that asked for it hear why.
+  for (const { userId, integration, failure } of lapsed) yield* directory.integrationGone(userId, integration, failure)
   yield* modelConnect.cleanup
 }).pipe(Effect.withSpan("maintenance"))

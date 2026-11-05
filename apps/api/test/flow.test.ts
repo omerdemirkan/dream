@@ -4,7 +4,15 @@
  * fakes that record what they were asked.
  */
 import { assert, describe, it } from "@effect/vitest"
-import { DaemonEnvFile, type NotificationId, type ProjectId, QuestionAnswer, RequestId } from "@dream/domain"
+import {
+  type AgentEvent,
+  DaemonEnvFile,
+  type NotificationId,
+  type ProjectId,
+  QuestionAnswer,
+  RequestId,
+  renderAgentEvent
+} from "@dream/domain"
 import { Context, DateTime, Effect, Exit, Fiber, Option, Redacted, Stream } from "effect"
 import { gateway } from "../src/http/Gateway.ts"
 import { ProjectClients } from "../src/project/Client.ts"
@@ -453,6 +461,107 @@ describe("a project, end to end", () => {
     })
   )
 
+  it.live("access requests: a retried key is no error, and a removed key's card says so and connects again", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project } = yield* setup(cloud)
+      // This project's sandbox runs a dreamd from before releases were reported; the others' report one.
+      yield* cloud.alarm(project.id)
+      const dreamd = yield* cloud.sandbox(envFileOf(cloud, project.id).env.DREAM_PROJECT_TOKEN)
+      const stripe = {
+        _tag: "Key" as const,
+        service: "Stripe",
+        host: "api.stripe.com",
+        header: "Authorization",
+        format: "Bearer {key}"
+      }
+      const request = yield* dreamd.RequestAccess({ request: stripe, why: "Take payments for cabin weekends." })
+      const submit = { projectId: project.id, messageId: request.id, key: Redacted.make("sk_live_123") }
+      const connected = yield* cloud.phone.SubmitKeyAccess(submit)
+      // The response was lost and the phone sends it again: the card as it is, and the agent hears once.
+      const retried = yield* cloud.phone.SubmitKeyAccess(submit)
+      assert.deepStrictEqual(retried.state, connected.state)
+      yield* cloud.alarm(project.id)
+      assert.deepStrictEqual(
+        cloud.world.delivered.at(-1)!.events.map((e: any) => e._tag),
+        ["AccessConnected"]
+      )
+      cloud.world.templateBuilds.set("dream-sandbox", { build: "b1", release: "r1" })
+      const other = yield* cloud.phone.CreateProject({ idea: "A shop for the cabin's firewood." })
+      yield* cloud.alarm(other.id)
+      const otherEnv = envFileOf(cloud, other.id)
+      const otherDreamd = yield* cloud.sandbox(otherEnv.env.DREAM_PROJECT_TOKEN)
+      const bystander = yield* cloud.phone.CreateProject({ idea: "Something that never needs Stripe." })
+      yield* cloud.alarm(bystander.id)
+      const bystanderSandbox = envFileOf(cloud, bystander.id).sandbox.access.sandboxId
+      const otherRequest = yield* otherDreamd.RequestAccess({ request: stripe, why: "Sell firewood." })
+      yield* cloud.phone.SubmitKeyAccess({ projectId: other.id, messageId: otherRequest.id, key: Redacted.make("k2") })
+      yield* cloud.alarm(other.id)
+
+      // Removed in Settings: both cards say so, every sandbox loses the rule, and the agents that asked hear,
+      // except one whose dreamd is too old to know the event.
+      const before = cloud.world.delivered.length
+      if (connected.state._tag !== "Connected") return yield* Effect.die("not connected")
+      yield* cloud.phone.DisconnectIntegration({ integrationId: connected.state.integrationId })
+      const card = (yield* cloud.phone.ListMessages({ projectId: project.id })).messages.find(
+        (m) => m.id === request.id
+      )!
+      assert.strictEqual(card._tag === "Access" && card.state._tag === "Disconnected" && card.state.reason, "removed")
+      const otherCard = (yield* cloud.phone.ListMessages({ projectId: other.id })).messages.find(
+        (m) => m.id === otherRequest.id
+      )!
+      assert.strictEqual(otherCard._tag === "Access" && otherCard.state._tag, "Disconnected")
+      assert.isUndefined(envFileOf(cloud, project.id).sandbox.rules["api.stripe.com"])
+      assert.isUndefined(otherEnv.sandbox.rules["api.stripe.com"])
+      yield* cloud.alarm(project.id)
+      yield* cloud.alarm(other.id)
+      yield* cloud.alarm(bystander.id)
+      const since = cloud.world.delivered.slice(before)
+      assert.deepStrictEqual(
+        since.map((d) => [d.sandboxId, d.events.map((e: any) => e._tag)]),
+        [[otherEnv.sandbox.access.sandboxId, ["AccessRemoved"]]]
+      )
+      assert.isFalse(since.some((d) => d.sandboxId === bystanderSandbox))
+      assert.include(
+        renderAgentEvent(since[0]!.events[0] as AgentEvent),
+        "They disconnected Stripe in Settings. HTTPS requests to api.stripe.com no longer carry their credential."
+      )
+
+      // The card still connects: a new key from it is a new connection, and the agent hears.
+      const again = yield* cloud.phone.SubmitKeyAccess({ ...submit, key: Redacted.make("sk_live_456") })
+      assert.strictEqual(again.state._tag, "Connected")
+      assert.deepStrictEqual(envFileOf(cloud, project.id).sandbox.rules["api.stripe.com"], [
+        { transform: { headers: { Authorization: "Bearer sk_live_456" } } }
+      ])
+      yield* cloud.alarm(project.id)
+      assert.strictEqual((cloud.world.delivered.at(-1)!.events[0] as any)._tag, "AccessConnected")
+
+      // So does one they declined.
+      const later = yield* dreamd.RequestAccess({
+        request: { ...stripe, service: "Resend", host: "api.resend.com" },
+        why: "Email the booking confirmations."
+      })
+      yield* cloud.phone.DeclineAccess({ projectId: project.id, messageId: later.id })
+      const anyway = yield* cloud.phone.SubmitKeyAccess({
+        projectId: project.id,
+        messageId: later.id,
+        key: Redacted.make("re_123")
+      })
+      assert.strictEqual(anyway.state._tag, "Connected")
+
+      // A new key from Settings goes into every sandbox's rules, quietly.
+      const integration = (yield* cloud.phone.ListIntegrations()).find((i) => i.label === "Resend")!
+      const delivered = cloud.world.delivered.length
+      yield* cloud.phone.ReplaceKey({ integrationId: integration.id, key: Redacted.make("re_rotated") })
+      assert.deepStrictEqual(otherEnv.sandbox.rules["api.resend.com"], [
+        { transform: { headers: { Authorization: "Bearer re_rotated" } } }
+      ])
+      yield* cloud.alarm(other.id)
+      assert.strictEqual(cloud.world.delivered.length, delivered)
+      yield* cloud.close
+    })
+  )
+
   it.live("access requests: a file key goes into its project's sandbox only, and nowhere it could be shown", () =>
     Effect.gen(function* () {
       const cloud = yield* makeCloud()
@@ -552,8 +661,24 @@ describe("a project, end to end", () => {
       assert.notStrictEqual(recreated.access.sandboxId, sandbox.access.sandboxId)
       assert.strictEqual(recreated.files.get(path), "654321:FAKE-rotated")
 
-      // Removing it in Settings deletes the file and tells the agent.
+      // A new key from Settings rewrites the file before the agent hears, naming the card it came through.
       const integration = (yield* cloud.phone.ListIntegrations()).find((i) => i.access._tag === "File")!
+      const fresh = { integrationId: integration.id, key: Redacted.make("777:FAKE-from-settings") }
+      yield* cloud.phone.ReplaceKey(fresh)
+      yield* cloud.phone.ReplaceKey(fresh)
+      const deliveries = cloud.world.delivered.length
+      yield* cloud.alarm(project.id)
+      assert.strictEqual(cloud.world.delivered.length, deliveries + 1)
+      assert.strictEqual(cloud.world.delivered.at(-1)!.events.length, 1)
+      assert.strictEqual(recreated.files.get(path), "777:FAKE-from-settings")
+      const replaced: any = cloud.world.delivered.at(-1)!.events.at(-1)
+      assert.strictEqual(replaced._tag, "AccessConnected")
+      assert.strictEqual(replaced.change, "replaced")
+      assert.strictEqual(replaced.messageId, again.id)
+      assert.include(renderAgentEvent(replaced), "restart it so it reads the file again")
+      assert.isFalse(cloud.world.processes.some((p) => p.command.includes("777:FAKE-from-settings")))
+
+      // Removing it in Settings deletes the file, tells the agent, and both its cards say so.
       yield* cloud.phone.DisconnectIntegration({ integrationId: integration.id })
       yield* cloud.alarm(project.id)
       assert.isUndefined(recreated.files.get(path))
@@ -561,6 +686,17 @@ describe("a project, end to end", () => {
       assert.strictEqual(removed._tag, "AccessRemoved")
       assert.strictEqual(removed.access.path, path)
       assert.deepStrictEqual(yield* dreamd.ListAccess(), [])
+      const cards = (yield* cloud.phone.ListMessages({ projectId: project.id })).messages.filter(
+        (m) => m._tag === "Access"
+      )
+      assert.deepStrictEqual(
+        cards.map((m) => m._tag === "Access" && m.state._tag),
+        ["Disconnected", "Disconnected"]
+      )
+      const gone = yield* cloud.phone
+        .ReplaceKey({ integrationId: integration.id, key: Redacted.make("x") })
+        .pipe(Effect.flip)
+      assert.strictEqual(gone._tag, "NotFound")
       yield* cloud.close
     })
   )

@@ -4,6 +4,9 @@
  * fastest ways to answer. "Something else…" (typed or dictated) lives only here.
  */
 import type { AccessMessage, Project, QuestionMessage } from "@dream/domain"
+import { useAtomSet, useAtomValue } from "@effect/atom-react"
+import { Option } from "effect"
+import { AsyncResult } from "effect/reactivity"
 import * as Clipboard from "expo-clipboard"
 import * as DocumentPicker from "expo-document-picker"
 import { File } from "expo-file-system"
@@ -18,16 +21,28 @@ import Animated, {
   withTiming
 } from "react-native-reanimated"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
+import { draftKey } from "../data/Replies.ts"
 import {
   answerNowFn,
+  clearDraftFn,
   declineAccessFn,
+  draftAtom,
   disconnectIntegrationFn,
   submitAppleAccessFn,
   submitKeyAccessFn
 } from "../state/atoms.ts"
 import { useAction, useSignInAccess, useToast } from "./actions.ts"
 import { ElseComposer } from "./Composer.tsx"
-import { accessExplainer, accessLabel, accessReach, accessScope, isKeyFile, isOAuth, whenTag } from "./describe.ts"
+import {
+  accessExplainer,
+  accessLabel,
+  accessReach,
+  accessScope,
+  disconnectedNote,
+  isKeyFile,
+  isOAuth,
+  whenTag
+} from "./describe.ts"
 import { BackPill, Button, Choices, Dot, GoogleButton, Icon, Lab, LinkButton, SignInButton, Tile } from "./kit.tsx"
 import { answerText } from "./Messages.tsx"
 import { color, gutter } from "./theme.ts"
@@ -109,6 +124,10 @@ export function ExpandedQuestion(props: {
   const [changing, setChanging] = useState(false)
   const [picked, setPicked] = useState<string | undefined>(undefined)
   useEffect(() => setChanging(false), [m.state._tag])
+  // An answer typed into the notification that didn't send waits in "Something else…".
+  const target = { _tag: "Answer", projectId: m.projectId, messageId: m.id } as const
+  const draft = Option.getOrUndefined(Option.flatten(AsyncResult.value(useAtomValue(draftAtom(draftKey(target))))))
+  const clearDraft = useAtomSet(clearDraftFn)
   // The API ignores an answer the question already has, so retrying after a failure can't answer twice.
   const send = (
     input: { readonly _tag: "Choice"; readonly option: string } | { readonly _tag: "Freeform"; readonly text: string },
@@ -120,6 +139,7 @@ export function ExpandedQuestion(props: {
       {
         onSuccess: () => {
           setChanging(false)
+          if (draft) clearDraft(target)
           sent?.()
         },
         onFailure: (message) => {
@@ -234,7 +254,12 @@ export function ExpandedQuestion(props: {
             onPick={(option) => send({ _tag: "Choice", option })}
           />
           <View style={{ height: 10 }} />
-          <ElseComposer large busy={answer.busy} onSend={(text, sent) => send({ _tag: "Freeform", text }, sent)} />
+          <ElseComposer
+            large
+            busy={answer.busy}
+            draft={draft?.text}
+            onSend={(text, sent) => send({ _tag: "Freeform", text }, sent)}
+          />
         </>
       }
     />
@@ -347,7 +372,7 @@ function Shared(props: { readonly oauth: boolean }) {
 }
 
 /** `.secure`: a paste-first secret field. */
-function SecretField(props: {
+export function SecretField(props: {
   readonly value: string
   readonly onChange: (value: string) => void
   readonly placeholder: string
@@ -519,7 +544,9 @@ function AppleForm(props: { readonly message: AccessMessage; readonly onBack: ()
 }
 
 function NotNow(props: { readonly message: AccessMessage; readonly onBack: () => void; readonly decline: () => void }) {
-  return props.message.when || props.message.state._tag === "Declined" ? (
+  return props.message.when ||
+    props.message.state._tag === "Declined" ||
+    props.message.state._tag === "Disconnected" ? (
     <LinkButton title="Not yet" onPress={props.onBack} />
   ) : (
     <LinkButton title="Don’t connect" onPress={props.decline} />
@@ -615,6 +642,7 @@ export function ExpandedAccess(props: {
   }
 
   const later = m.when !== undefined && m.state._tag === "Open"
+  const gone = disconnectedNote(m)
   return (
     <Shell
       project={props.project}
@@ -622,7 +650,15 @@ export function ExpandedAccess(props: {
       eyebrow={
         <>
           <Eyebrow
-            text={m.state._tag === "Declined" ? "Access · not connected" : later ? "Access · later" : "Access"}
+            text={
+              gone
+                ? gone.eyebrow
+                : m.state._tag === "Declined"
+                  ? "Access · not connected"
+                  : later
+                    ? "Access · later"
+                    : "Access"
+            }
             need={!later && m.state._tag === "Open"}
           />
           {m.when ? (
@@ -650,6 +686,7 @@ export function ExpandedAccess(props: {
       titleSize={titleSize}
       body={
         <>
+          {gone ? <Lead style={{ marginBottom: 12 }}>{gone.lead}</Lead> : null}
           <Lead>{accessExplainer(m)}</Lead>
           {keyFile ? <KeyFileWarning /> : <Shared oauth={oauth} />}
           {oauth ? <Vault /> : null}

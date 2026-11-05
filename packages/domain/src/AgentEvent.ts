@@ -36,16 +36,33 @@ export const AgentEvent = Schema.TaggedUnion({
   },
   AccessConnected: {
     ...EventFields,
+    /** The request it answers, or for a `change`, the request it was connected through. */
     messageId: MessageId,
     label: Schema.String,
-    access: IntegrationAccess
+    access: IntegrationAccess,
+    /**
+     * Present when this isn't a request being answered: `replaced`, they entered a new key in Settings (for a `File`
+     * key, Dream rewrote the file); `restored`, a connection that stopped working was connected again from another
+     * project. Older dreamd builds ignore it and read it as an answer.
+     */
+    change: Schema.optionalKey(Schema.Literals(["replaced", "restored"]))
   },
   AccessDeclined: { ...EventFields, messageId: MessageId },
   /**
-   * They removed something they had connected. Sent for `File` keys, whose file Dream deleted from this sandbox;
-   * only dreamd builds that can request one ever receive it.
+   * Something they had connected is gone. Sent for `File` keys, whose file Dream deleted from this sandbox, and for
+   * any other connection this project asked for (a card it sent was connected to it). Only dreamd builds that know
+   * this event receive it: ones that can request a `File` key or an `OAuth` sign-in, or that report a release.
    */
-  AccessRemoved: { ...EventFields, label: Schema.String, access: IntegrationAccess },
+  AccessRemoved: {
+    ...EventFields,
+    label: Schema.String,
+    access: IntegrationAccess,
+    /**
+     * Present when they didn't remove it: the service stopped accepting it (they revoked it there, or it lapsed), in
+     * a sentence. Older dreamd builds ignore it and say they disconnected it.
+     */
+    failure: Schema.optionalKey(Schema.String)
+  },
   /** A wake the agent scheduled came due. With `run`, the agent only sees it if the command failed. */
   WakeDue: {
     ...EventFields,
@@ -124,11 +141,52 @@ const renderAccess = (label: string, access: IntegrationAccess): string =>
       `placeholder "${placeholder}"; never refresh it yourself.${notes === undefined ? "" : ` ${notes}`}`
   })
 
-const renderRemoved = (label: string, access: IntegrationAccess): string =>
+const renderReplaced = (label: string, access: IntegrationAccess): string =>
   access._tag === "File"
-    ? `They removed their ${access.service} key, and Dream deleted ${access.path}. Code that reads it fails until ` +
+    ? `They entered a new ${access.service} key in Settings, and Dream rewrote ${access.path} with it. Anything ` +
+      "that read the old key when it started still has it: restart it so it reads the file again."
+    : `They replaced their ${label} key in Settings. Requests carry the new one already; nothing needs to change.`
+
+/** The hosts whose requests carried a connection's credential. */
+const hostsOf = (access: IntegrationAccess): ReadonlyArray<string> =>
+  IntegrationAccess.match(access, {
+    Google: ({ hosts }) => hosts,
+    Key: ({ host }) => [host],
+    File: () => [],
+    Apple: () => ["api.appstoreconnect.apple.com"],
+    OAuth: ({ hosts }) => hosts
+  })
+
+const renderRemoved = (label: string, access: IntegrationAccess, failure: string | undefined): string => {
+  if (failure !== undefined) {
+    const hosts = hostsOf(access)
+    const again =
+      access._tag === "OAuth"
+        ? `\`dream access oauth ${access.provider}\``
+        : access._tag === "Google"
+          ? "`dream access google`"
+          : "`dream access`"
+    return (
+      `Their ${label} connection stopped working: ${failure}.` +
+      (hosts.length === 0 ? "" : ` HTTPS requests to ${hosts.join(", ")} no longer carry their credential.`) +
+      " Nothing that relies on it works until they connect it again. Your card for it now says it stopped " +
+      `working, and they can connect it from there; if this project needs it soon, ask with ${again} so a fresh ` +
+      "card reaches them."
+    )
+  }
+  if (access._tag === "File") {
+    return (
+      `They removed their ${access.service} key, and Dream deleted ${access.path}. Code that reads it fails until ` +
       "they enter one again."
-    : `They disconnected ${label}.`
+    )
+  }
+  const hosts = hostsOf(access)
+  return (
+    `They disconnected ${label} in Settings.` +
+    (hosts.length === 0 ? "" : ` HTTPS requests to ${hosts.join(", ")} no longer carry their credential.`) +
+    " If this project still needs it, say why when you ask for it again; they chose to remove it."
+  )
+}
 
 /** One event as a paragraph of the turn prompt. Message and wake ids are included so the agent can refer to them. */
 export const renderAgentEvent = (event: AgentEvent, options: RenderOptions = {}): string => {
@@ -138,10 +196,14 @@ export const renderAgentEvent = (event: AgentEvent, options: RenderOptions = {})
     QuestionAnswered: ({ messageId, question, answer, previous }) =>
       `They answered your question ${messageId}, "${question}", ${renderAnswer(answer)}` +
       (previous === undefined ? "" : `\n(This replaces their earlier answer, ${renderAnswer(previous)}.)`),
-    AccessConnected: ({ messageId, label, access }) =>
-      `${renderAccess(label, access)} This answers your request ${messageId}.`,
+    AccessConnected: ({ messageId, label, access, change }) =>
+      change === "replaced"
+        ? renderReplaced(label, access)
+        : change === "restored"
+          ? `Their ${label} connection works again: they connected it again. ${renderAccess(label, access)}`
+          : `${renderAccess(label, access)} This answers your request ${messageId}.`,
     AccessDeclined: ({ messageId }) => `They declined your access request ${messageId}.`,
-    AccessRemoved: ({ label, access }) => renderRemoved(label, access),
+    AccessRemoved: ({ label, access, failure }) => renderRemoved(label, access, failure),
     WakeDue: ({ wakeId, why, run }) => {
       const head = `A wake-up you scheduled came due (${wakeId}): "${why}".`
       if (run === undefined) return head

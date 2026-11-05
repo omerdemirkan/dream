@@ -6,10 +6,10 @@
  * one goes into a sandbox's egress rules it is refreshed here, under a D1 lock
  * so two isolates never spend the same refresh token.
  */
-import { UpstreamFailure, type UserId } from "@dream/domain"
-import { Clock, Context, Effect, Layer, Option } from "effect"
+import { type Integration, UpstreamFailure, type UserId } from "@dream/domain"
+import { Clock, Context, Data, Effect, Layer, Option } from "effect"
 import { ChatGpt } from "../connect/ChatGpt.ts"
-import { Connections, type IntegrationRow, type ModelConnectionRow } from "../db/Connections.ts"
+import { Connections, type IntegrationRow, type ModelConnectionRow, toIntegration } from "../db/Connections.ts"
 import {
   ApiKeyCredential,
   AppleCredential,
@@ -22,6 +22,16 @@ import { Secrets } from "../db/Secrets.ts"
 import { importEs256Pem, signEs256 } from "../lib/Jwt.ts"
 import { Google } from "./Google.ts"
 import { OAuth, OAuthProviders } from "./OAuth.ts"
+
+/**
+ * An OAuth provider refused the refresh token (they revoked it, or it lapsed): the integration is now failed, and
+ * stays out of every sandbox until they connect it again. `failure` says what happened, in a clause.
+ */
+export class ConnectionLapsed extends Data.TaggedError("ConnectionLapsed")<{
+  readonly userId: UserId
+  readonly integration: Integration
+  readonly failure: string
+}> {}
 
 /** Refresh when less than this is left. */
 export const RefreshMarginMs = 10 * 60 * 1000
@@ -51,13 +61,20 @@ export class CredentialStore extends Context.Service<
     readonly apiKey: (row: IntegrationRow) => Effect.Effect<ApiKeyCredential>
     /**
      * An OAuth provider's tokens, refreshed if they expire soon (or `force`). When the provider refuses the refresh
-     * token (they revoked it, or it lapsed), the integration is marked failed and they have to connect again.
+     * token (they revoked it, or it lapsed), the integration is marked failed and they have to connect again: that
+     * one refresh fails with `ConnectionLapsed`, so whoever saw it can tell the projects that use it.
      */
-    readonly oauth: (row: IntegrationRow, force?: boolean) => Effect.Effect<OAuthCredential, UpstreamFailure>
+    readonly oauth: (
+      row: IntegrationRow,
+      force?: boolean
+    ) => Effect.Effect<OAuthCredential, UpstreamFailure | ConnectionLapsed>
     /** The credential with a current App Store Connect JWT. */
     readonly apple: (row: IntegrationRow) => Effect.Effect<AppleCredential, UpstreamFailure>
-    /** Refreshes everything that expires within the margin; returns whose credentials changed. */
-    readonly sweep: Effect.Effect<ReadonlyArray<UserId>>
+    /** Refreshes everything that expires within the margin; returns whose credentials changed, and what lapsed. */
+    readonly sweep: Effect.Effect<{
+      readonly changed: ReadonlyArray<UserId>
+      readonly lapsed: ReadonlyArray<ConnectionLapsed>
+    }>
   }
 >()("@dream/api/CredentialStore") {
   static readonly layer = Layer.effect(
@@ -172,9 +189,10 @@ export class CredentialStore extends Context.Service<
                 connections.updateIntegration(row.id, { status: "failed" }).pipe(
                   Effect.andThen(
                     Effect.fail(
-                      new UpstreamFailure({
-                        service: access.service,
-                        message: `${access.service} refused the refresh token (${rejected.reason}); they need to connect it again`
+                      new ConnectionLapsed({
+                        userId: row.user_id,
+                        integration: { ...toIntegration(row), status: "failed" },
+                        failure: `${access.service} refused to renew it (${rejected.reason})`
                       })
                     )
                   )
@@ -221,6 +239,7 @@ export class CredentialStore extends Context.Service<
       const sweep = Effect.gen(function* () {
         const now = yield* Clock.currentTimeMillis
         const changed = new Set<UserId>()
+        const lapsed: Array<ConnectionLapsed> = []
         for (const row of yield* connections.expiringChatGpt(now + RefreshMarginMs)) {
           const refreshed = yield* chatGpt(row).pipe(Effect.option)
           if (Option.isSome(refreshed)) changed.add(row.user_id)
@@ -232,16 +251,18 @@ export class CredentialStore extends Context.Service<
               : row.kind === "apple_asc"
                 ? yield* apple(row).pipe(Effect.asVoid, Effect.option)
                 : row.kind === "oauth"
-                  ? yield* oauth(row).pipe(Effect.asVoid, Effect.option)
+                  ? yield* oauth(row).pipe(
+                      Effect.asVoid,
+                      // A refused refresh token takes the connection out of their sandboxes, via `lapsed`.
+                      Effect.catchTag("ConnectionLapsed", (error) => Effect.sync(() => void lapsed.push(error))),
+                      Effect.option
+                    )
                   : Option.none()
-          if (Option.isSome(refreshed)) changed.add(row.user_id)
-          // A refused refresh token takes the connection out of their sandboxes' rules.
-          else if (row.kind === "oauth") {
-            const after = yield* connections.integration(row.user_id, row.id)
-            if (Option.isSome(after) && after.value.status !== "connected") changed.add(row.user_id)
+          if (Option.isSome(refreshed) && !lapsed.some((error) => error.integration.id === row.id)) {
+            changed.add(row.user_id)
           }
         }
-        return [...changed]
+        return { changed: [...changed], lapsed }
       }).pipe(Effect.withSpan("CredentialStore.sweep"))
 
       return CredentialStore.of({ claude, chatGpt, google: googleCredential, oauth, apiKey, apple, sweep })

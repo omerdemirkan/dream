@@ -13,6 +13,7 @@ import {
   accessLabel,
   accessReach,
   accessScope,
+  disconnectedNote,
   isKeyFile,
   isOAuth,
   keyFileWarning,
@@ -435,6 +436,14 @@ export const AccessCard = forwardRef<HostInstance, { readonly message: AccessMes
             check
             detail={`${scope ? `${scope} ` : ""}${accessReach(m.request)}`}
           />
+        </Card>
+      )
+    }
+    const gone = disconnectedNote(m)
+    if (gone) {
+      return (
+        <Card ref={ref} tone="done" onOpen={props.onOpen}>
+          <ResolvedRow label={gone.eyebrow} title={gone.title} strong check={false} detail={gone.detail} />
         </Card>
       )
     }

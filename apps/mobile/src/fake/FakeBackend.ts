@@ -61,7 +61,8 @@ export const Scenario = [
   "no-plan",
   "signed-in",
   "signed-out",
-  "spotify-ask"
+  "spotify-ask",
+  "spotify-stopped"
 ] as const
 export type Scenario = (typeof Scenario)[number]
 
@@ -494,6 +495,8 @@ export class FakeBackend extends Context.Service<
         SubmitKeyAccess: ({ projectId, messageId }) =>
           Effect.gen(function* () {
             const { record, message } = yield* findMessage(projectId, messageId)
+            // As the API does: a retry of a submission that went through returns the card as it is.
+            if (message._tag === "Access" && message.state._tag === "Connected") return message
             if (message._tag === "Access" && message.request._tag === "File") {
               const { service, name } = message.request
               const connected = yield* connectIntegration(record, message, service, {
@@ -545,6 +548,7 @@ export class FakeBackend extends Context.Service<
             if (!integrations.some((i) => i.id === integrationId))
               return yield* new NotFound({ entity: "integration", id: integrationId })
             integrations = integrations.filter((i) => i.id !== integrationId)
+            const now = yield* DateTime.now
             for (const record of records.values())
               for (const message of record.messages)
                 if (
@@ -552,7 +556,18 @@ export class FakeBackend extends Context.Service<
                   message.state._tag === "Connected" &&
                   message.state.integrationId === integrationId
                 )
-                  yield* setMessage(record, { ...message, state: { _tag: "Open" } })
+                  yield* setMessage(record, {
+                    ...message,
+                    state: { _tag: "Disconnected", integrationId, disconnectedAt: now, reason: "removed" }
+                  })
+          }),
+        ReplaceKey: ({ integrationId }) =>
+          Effect.gen(function* () {
+            const integration = integrations.find((i) => i.id === integrationId)
+            if (!integration) return yield* new NotFound({ entity: "integration", id: integrationId })
+            if (integration.access._tag !== "Key" && integration.access._tag !== "File")
+              return yield* new InvalidRequest({ message: `${integration.label} isn't a key.` })
+            return integration
           }),
         ListModelConnections: () => Effect.sync(() => [...connections]),
         StartModelConnection: ({ provider }) =>
@@ -622,6 +637,27 @@ export class FakeBackend extends Context.Service<
         observedAt: now
       })
 
+      /** Lift Log asks to connect Spotify (`msg_spotify`), unless it already has. */
+      const askSpotify = (now: DateTime.Utc) =>
+        Effect.gen(function* () {
+          const lift = Array.from(records.values()).find((r) => r.project.slug === "lift-log")
+          if (!lift || lift.messages.some((m) => m.id === "msg_spotify")) return
+          yield* setMessage(lift, {
+            _tag: "Access",
+            id: "msg_spotify" as MessageId,
+            projectId: lift.project.id,
+            createdAt: now,
+            request: {
+              _tag: "OAuth",
+              provider: "spotify",
+              service: "Spotify",
+              scopes: ["user-read-playback-state", "user-modify-playback-state"]
+            },
+            why: "Connect Spotify so your lifting playlist starts when a session does.",
+            state: { _tag: "Open" }
+          })
+        })
+
       const scenario = Effect.fn("FakeBackend.scenario")(function* (name: Scenario) {
         const now = yield* DateTime.now
         switch (name) {
@@ -674,22 +710,33 @@ export class FakeBackend extends Context.Service<
           case "no-plan":
             connections = []
             return
-          case "spotify-ask": {
+          case "spotify-ask":
+            return yield* askSpotify(now)
+          case "spotify-stopped": {
+            // Lift Log's Spotify connection, which Spotify stopped renewing.
+            yield* askSpotify(now)
             const lift = Array.from(records.values()).find((r) => r.project.slug === "lift-log")
-            if (!lift || lift.messages.some((m) => m.id === "msg_spotify")) return
-            yield* setMessage(lift, {
-              _tag: "Access",
-              id: "msg_spotify" as MessageId,
-              projectId: lift.project.id,
-              createdAt: now,
-              request: {
+            const ask = lift?.messages.find((m) => m.id === "msg_spotify")
+            if (!lift || ask?._tag !== "Access" || ask.request._tag !== "OAuth") return
+            const integration: Integration = {
+              id: newIntegrationId(++counter),
+              label: "Spotify",
+              status: "failed",
+              access: {
                 _tag: "OAuth",
                 provider: "spotify",
                 service: "Spotify",
-                scopes: ["user-read-playback-state", "user-modify-playback-state"]
+                account: user.name ?? user.email,
+                scopes: [...ask.request.scopes],
+                hosts: ["api.spotify.com"],
+                placeholder: "dream-spotify-oauth-placeholder"
               },
-              why: "Connect Spotify so your lifting playlist starts when a session does.",
-              state: { _tag: "Open" }
+              connectedAt: DateTime.subtract(now, { days: 3 })
+            }
+            integrations = [...integrations.filter((i) => i.label !== "Spotify"), integration]
+            yield* setMessage(lift, {
+              ...ask,
+              state: { _tag: "Disconnected", integrationId: integration.id, disconnectedAt: now, reason: "failed" }
             })
             return
           }

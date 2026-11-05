@@ -74,7 +74,7 @@ request for a provider other than Google).
 Scenarios (`dream://fixtures/<name>?to=/path`, or `-dreamScenario a,b`): `signed-in`, `signed-out`, `reset`,
 `paused` (Lift Log waits for a usage reset), `all-clear`, `cabin-resolved`, `withdraw-cabin`, `no-plan`,
 `live-activity`, `live-activity-needs` (start a Live Activity on the phone), `spotify-ask` (Lift Log asks to connect
-Spotify).
+Spotify), `spotify-stopped` (Lift Log's Spotify connection stopped working: its card says so and connects again).
 
 ## Checking against a deployed API
 

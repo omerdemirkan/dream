@@ -6,6 +6,7 @@ import { assert, describe, it } from "@effect/vitest"
 import { DateTime, Exit, Redacted, Schema } from "effect"
 import {
   AccessRequest,
+  AccessState,
   accessHostProblem,
   AgentEvent,
   keyFileNameFor,
@@ -97,6 +98,65 @@ describe("JSON codecs", () => {
       sandboxKeyPath("telegram-bot-token"),
       Fixtures.telegramKeyFile.access._tag === "File" ? Fixtures.telegramKeyFile.access.path : ""
     )
+  })
+
+  it("adds what changed about a connection without breaking older decoders", () => {
+    const fields = { id: "evt_c" as AgentEvent["id"], at: DateTime.makeUnsafe("2026-10-21T09:04:00Z") }
+    const replaced = AgentEvent.cases.AccessConnected.make({
+      ...fields,
+      messageId: Fixtures.telegramKey.id,
+      label: "Telegram",
+      access: Fixtures.telegramKeyFile.access,
+      change: "replaced"
+    })
+    const lapsed = AgentEvent.cases.AccessRemoved.make({
+      ...fields,
+      label: "Spotify",
+      access: IntegrationAccess.cases.OAuth.make({
+        provider: "spotify",
+        service: "Spotify",
+        scopes: [],
+        hosts: ["api.spotify.com"],
+        placeholder: "dream-spotify-oauth-placeholder"
+      }),
+      failure: "Spotify refused to renew it (invalid_grant)"
+    })
+    for (const event of [replaced, lapsed]) assert.deepStrictEqual(roundTrip(AgentEvent, event).decoded, event)
+    assert.include(renderAgentEvent(replaced), "rewrote /home/user/.dream/keys/telegram-bot-token")
+    assert.include(renderAgentEvent(lapsed), "stopped working: Spotify refused to renew it (invalid_grant).")
+    // A dreamd built before these fields decodes the events and drops the field (Schema ignores excess keys).
+    const Before = Schema.Union([
+      Schema.TaggedStruct("AccessConnected", {
+        id: Schema.String,
+        at: Schema.DateTimeUtc,
+        messageId: Schema.String,
+        label: Schema.String,
+        access: IntegrationAccess
+      }),
+      Schema.TaggedStruct("AccessRemoved", {
+        id: Schema.String,
+        at: Schema.DateTimeUtc,
+        label: Schema.String,
+        access: IntegrationAccess
+      })
+    ])
+    for (const event of [replaced, lapsed]) {
+      const wire = roundTrip(AgentEvent, event).wire
+      assert.notProperty(Schema.decodeUnknownSync(Schema.toCodecJson(Before))(wire), "change")
+      assert.notProperty(Schema.decodeUnknownSync(Schema.toCodecJson(Before))(wire), "failure")
+    }
+  })
+
+  it("round-trips a disconnected access request", () => {
+    const disconnected = {
+      ...Fixtures.telegramKey,
+      state: AccessState.cases.Disconnected.make({
+        integrationId: Fixtures.telegramKeyFile.id,
+        disconnectedAt: DateTime.makeUnsafe("2026-10-22T09:04:00Z"),
+        reason: "removed"
+      })
+    }
+    assert.deepStrictEqual(roundTrip(Message, disconnected).decoded, disconnected)
   })
 
   it("renders an OAuth connection for the agent with its hosts, placeholder and notes", () => {
