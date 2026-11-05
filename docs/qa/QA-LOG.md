@@ -253,3 +253,10 @@ Other findings:
   key with a canary): asked the agent to read it four ways (Read tool, `cat ~/…`, `cat /home/user/…`, and via a shell
   variable); all four were refused by Claude Code's permission settings, and the canary appears nowhere in the
   session transcript.
+- Merged feat/oauth (aa05cb8: `dream access oauth <provider>` for Spotify, GitHub, Strava, Dropbox, Slack, Notion,
+  Microsoft, Oura; Dream holds and refreshes tokens; StartOAuthAccess + /oauth/<provider>/callback; migration 0003).
+  Deployed (0003 applied: oauth_states.provider and code_verifier exist in prod D1); dream-sandbox rebuilt (build
+  fadbc3fb-2648-478b-a5eb-84d9f3817920). Verified live from a new sandbox: `dream access oauth spotify` exits 1 with
+  "Spotify sign-in isn't set up on this deployment … no card was shown" (no provider is configured yet), an unknown
+  provider lists the known ones, and no card reached Chat. Connecting needs the founder's provider apps
+  (docs/setup/oauth-providers.md).
