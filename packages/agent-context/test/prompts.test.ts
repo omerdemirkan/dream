@@ -5,7 +5,7 @@ import { DateTime } from "effect"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { extractPrompts } from "../src/extract.ts"
-import { dreamSkill, renderTurnPrompt, systemPrompt } from "../src/index.ts"
+import { dreamSkill, renderSteerPrompt, renderTurnPrompt, systemPrompt } from "../src/index.ts"
 
 const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf8")
 
@@ -81,5 +81,26 @@ What woke you:
     assert.include(prompt, "Something in the sandbox called `dream wake`:\n> Substack parser threw on 3 issues")
     assert.include(prompt, "Their five-hour usage window has reset.")
     assert.include(prompt, "where they are (UTC)")
+  })
+})
+
+describe("renderSteerPrompt", () => {
+  it("frames events that arrive during a turn", () => {
+    const [message] = Fixtures.events
+    const prompt = renderSteerPrompt({
+      events: [message!],
+      now: DateTime.makeUnsafe("2026-11-04T22:03:00Z"),
+      timeZone: "America/Los_Angeles"
+    })
+    assert.strictEqual(
+      prompt,
+      `It's Wednesday, November 4, 2026 at 2:03 PM where they are (America/Los_Angeles).
+
+This arrived while you were working:
+
+[Wed, Nov 4, 2:02 PM] They wrote:
+> Can the charts show estimated 1RM, not just the weight?
+`
+    )
   })
 })

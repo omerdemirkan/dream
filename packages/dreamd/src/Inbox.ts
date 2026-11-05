@@ -54,10 +54,14 @@ export class Inbox extends Context.Service<
     ) => Effect.Effect<ReadonlyArray<EventId>, JsonFile.StateFileError>
     /** Mark every queued event as taken by a turn and return them. */
     readonly take: Effect.Effect<ReadonlyArray<AgentEvent>, JsonFile.StateFileError>
-    /** The turn that took these is over: drop them, or (after a failure) queue them again. */
+    /**
+     * The turn that took these is done with them: drop them (`done`), queue
+     * them for another try after a failure (`retry`), or put them back as if
+     * never taken (`untake`, when they couldn't be handed to the turn).
+     */
     readonly release: (
       ids: ReadonlyArray<EventId>,
-      outcome: "done" | "retry"
+      outcome: "done" | "retry" | "untake"
     ) => Effect.Effect<void, JsonFile.StateFileError>
     /** Scheduled `--run` commands still to run. */
     readonly commands: Effect.Effect<ReadonlyArray<WakeDueEvent>>
@@ -145,6 +149,7 @@ export class Inbox extends Context.Service<
             const entries = state.entries.flatMap((entry): Array<Entry> => {
               if (!released.has(entry.event.id) || entry.state !== "turn") return [entry]
               if (outcome === "done") return []
+              if (outcome === "untake") return [{ ...entry, state: "queued", attempts: entry.attempts - 1 }]
               if (entry.attempts < maxAttempts) return [{ ...entry, state: "queued" }]
               dropped.push(entry.event.id)
               return []

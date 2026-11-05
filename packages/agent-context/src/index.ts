@@ -23,11 +23,7 @@ export interface TurnPromptInput {
 
 const byTime = Order.mapInput(DateTime.Order, (event: AgentEvent) => event.at)
 
-/**
- * The user-turn prompt that starts a turn: the current time where they are,
- * then what woke the agent.
- */
-export const renderTurnPrompt = ({ events, now, timeZone }: TurnPromptInput): string => {
+const render = (heading: string, { events, now, timeZone }: TurnPromptInput): string => {
   const zone = timeZone ?? "UTC"
   const clock = DateTime.format(now, {
     locale: "en-US",
@@ -40,5 +36,18 @@ export const renderTurnPrompt = ({ events, now, timeZone }: TurnPromptInput): st
     sorted.length === 0
       ? "Nothing new has arrived."
       : sorted.map((event) => renderAgentEvent(event, { timeZone: zone })).join("\n\n")
-  return `It's ${clock} where they are (${zone}).\n\nWhat woke you:\n\n${body}\n`
+  return `It's ${clock} where they are (${zone}).\n\n${heading}:\n\n${body}\n`
 }
+
+/**
+ * The user-turn prompt that starts a turn: the current time where they are,
+ * then what woke the agent.
+ */
+export const renderTurnPrompt = (input: TurnPromptInput): string => render("What woke you", input)
+
+/**
+ * Input given to a turn that's already running (Claude Code and Codex both
+ * accept it mid-turn), for events that arrive while the agent works.
+ */
+export const renderSteerPrompt = (input: TurnPromptInput): string =>
+  render("This arrived while you were working", input)

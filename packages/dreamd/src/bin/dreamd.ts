@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { NodeRuntime, NodeServices } from "@effect/platform-node"
+import { NodeRuntime } from "@effect/platform-node"
 import { Effect } from "effect"
-import { main } from "../Daemon.ts"
+import { layer, main } from "../Daemon.ts"
 
-main.pipe(Effect.provide(NodeServices.layer), NodeRuntime.runMain)
+main.pipe(Effect.provide(layer), NodeRuntime.runMain)

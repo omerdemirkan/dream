@@ -51,7 +51,7 @@ export const toSnapshot = (provider: ModelProvider, reading: UsageReading, now: 
 })
 
 /** When a harness says a limit is hit but not when it resets. */
-const fallbackLimit = (window: UsageWindowName, now: DateTime.Utc) => ({
+export const fallbackLimit = (window: UsageWindowName, now: DateTime.Utc) => ({
   window,
   until: DateTime.add(now, { hours: 1 })
 })
