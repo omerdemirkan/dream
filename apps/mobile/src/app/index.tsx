@@ -80,6 +80,18 @@ export default function Home() {
         ))}
         <Usage connections={connections} />
       </ScrollView>
+      {/* Keeps the clock readable over a long project list. */}
+      <View
+        pointerEvents="none"
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          height: insets.top + 8,
+          experimental_backgroundImage: `linear-gradient(to bottom, ${color.bg} 70%, rgba(10,10,12,0))`
+        }}
+      />
       <Dock />
     </View>
   )
