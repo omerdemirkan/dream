@@ -74,6 +74,18 @@ Scenarios (`dream://fixtures/<name>?to=/path`, or `-dreamScenario a,b`): `signed
 `paused` (Lift Log waits for a usage reset), `all-clear`, `cabin-resolved`, `withdraw-cabin`, `no-plan`,
 `live-activity`, `live-activity-needs` (start a Live Activity on the phone).
 
+## Checking against a deployed API
+
+`scripts/check-live.ts` runs the app's data layer (the services the screens use) from Node against the API: it
+reads what Home reads, registers a test device, asks which notifications are stale, and subscribes to a project's
+live socket if there is one.
+
+```sh
+DREAM_SESSION=$(node infra/scripts/dev-login.ts session you@example.com) node apps/mobile/scripts/check-live.ts
+```
+
+`screenshots/` holds the last Simulator run of every screen and the main flows (fixtures mode).
+
 ## Building for TestFlight
 
 ```sh
