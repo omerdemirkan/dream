@@ -139,6 +139,8 @@ export class Projects extends Context.Service<
     /** Replace the projection of one project (its row and its open asks). */
     readonly project: (projection: ProjectProjection) => Effect.Effect<void>
     readonly openAsks: (userId: UserId) => Effect.Effect<ReadonlyArray<OpenAsk>>
+    /** Removes an archived project from Home (its other rows stay for the record). */
+    readonly remove: (id: ProjectId) => Effect.Effect<void>
 
     readonly recordNotification: (row: {
       readonly id: NotificationId
@@ -265,6 +267,12 @@ export class Projects extends Context.Service<
           Effect.map((rows) => rows.map((row): OpenAsk => ({ project: toProject(row), message: row.ask_json })))
         )
 
+      const remove = (id: ProjectId) =>
+        Effect.gen(function* () {
+          yield* exec(sql`DELETE FROM open_asks WHERE project_id = ${id}`)
+          yield* exec(sql`DELETE FROM projects WHERE id = ${id}`)
+        })
+
       const recordNotification = (row: {
         readonly id: NotificationId
         readonly userId: UserId
@@ -340,6 +348,7 @@ export class Projects extends Context.Service<
         projectIdsFor,
         project,
         openAsks,
+        remove,
         recordNotification,
         withdrawNotifications,
         staleNotifications,

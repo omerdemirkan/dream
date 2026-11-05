@@ -28,7 +28,7 @@ import { randomToken } from "../lib/Ids.ts"
 import { Alarm } from "./Alarm.ts"
 import { Core } from "./Core.ts"
 import type { GatewayTarget } from "./ProjectRpcs.ts"
-import { type SandboxRecord, Store } from "./Store.ts"
+import { type SandboxRecord, Singletons, Store } from "./Store.ts"
 
 /** How long an idle sandbox stays up after a turn (it resumes on traffic in ~200 ms). */
 export const IdleTimeout = Duration.minutes(5)
@@ -55,6 +55,8 @@ export class SandboxManager extends Context.Service<
     readonly turnStarted: Effect.Effect<void>
     readonly turnFinished: Effect.Effect<void>
     readonly keepalive: Effect.Effect<void>
+    /** Kills the sandbox for good (archiving the project). */
+    readonly archive: Effect.Effect<void>
   }
 >()("@dream/api/project/SandboxManager") {
   static readonly layer = Layer.effect(
@@ -226,6 +228,7 @@ export class SandboxManager extends Context.Service<
           return yield* alarm.reschedule
         }
         yield* store.clearTimer("deliver")
+        if (Option.isSome(yield* store.getSingleton(...Singletons.archived))) return
         const pending = yield* store.pendingEvents(BatchSize)
         if (pending.length === 0) return
         const project = yield* core.project.pipe(Effect.orDie)
@@ -327,6 +330,15 @@ export class SandboxManager extends Context.Service<
         }
       })
 
+      const archive = Effect.gen(function* () {
+        const record = yield* core.sandbox
+        if (record.access !== undefined) yield* e2b.kill(record.access.sandboxId).pipe(Effect.ignore)
+        yield* update((r) => {
+          const { access: _, daemonToken: _t, ...rest } = r
+          return { ...rest, status: "none", working: false }
+        })
+      })
+
       return SandboxManager.of({
         deliver,
         ensureReady,
@@ -334,7 +346,8 @@ export class SandboxManager extends Context.Service<
         gatewayTarget,
         turnStarted,
         turnFinished,
-        keepalive: keepalive.pipe(Effect.catch(() => Effect.void))
+        keepalive: keepalive.pipe(Effect.catch(() => Effect.void)),
+        archive
       })
     })
   )

@@ -63,6 +63,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
     const connections = yield* Connections
     const directory = yield* ProjectDirectory
     const alarm = yield* Alarm
+    const projects = yield* Projects
 
     const findMessage = (id: Message["id"]) =>
       Effect.flatMap(core.message(id), (found) =>
@@ -224,6 +225,17 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
         }),
 
       GatewayTarget: () => sandbox.gatewayTarget,
+
+      Archive: () =>
+        Effect.gen(function* () {
+          const now = yield* DateTime.now
+          yield* store.putSingleton(...Singletons.archived, { at: now })
+          yield* store.clearSchedule(DateTime.formatIso(now))
+          yield* sandbox.archive
+          yield* alarm.reschedule
+          const current = yield* core.projectOption
+          if (Option.isSome(current)) yield* projects.remove(current.value.id)
+        }),
 
       RefreshModelCredential: () =>
         Effect.gen(function* () {

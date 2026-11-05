@@ -150,6 +150,10 @@ export const migrations = Migrator.fromRecord({
       name TEXT PRIMARY KEY,
       due_ms INTEGER NOT NULL
     )`
+  }),
+  "0002_archived": Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    yield* sql`CREATE TABLE archived (id INTEGER PRIMARY KEY CHECK (id = 1), json TEXT NOT NULL)`
   })
 })
 
@@ -202,6 +206,8 @@ export class Store extends Context.Service<
 
     readonly setTimer: (name: TimerName, dueMs: number) => Effect.Effect<void>
     readonly clearTimer: (name: TimerName) => Effect.Effect<void>
+    /** Archiving: drop every timer, wake and undelivered event. */
+    readonly clearSchedule: (at: string) => Effect.Effect<void>
     readonly dueTimers: (nowMs: number) => Effect.Effect<ReadonlyArray<TimerName>>
     readonly nextTimerMs: Effect.Effect<Option.Option<number>>
   }
@@ -356,6 +362,13 @@ export class Store extends Context.Service<
 
       const clearTimer = (name: TimerName) => exec(sql`DELETE FROM timers WHERE name = ${name}`)
 
+      const clearSchedule = (at: string) =>
+        Effect.gen(function* () {
+          yield* exec(sql`DELETE FROM timers`)
+          yield* exec(sql`DELETE FROM schedules`)
+          yield* exec(sql`UPDATE events SET delivered_at = ${at} WHERE delivered_at IS NULL`)
+        })
+
       const dueTimers = (nowMs: number) =>
         sql`SELECT name FROM timers WHERE due_ms <= ${nowMs} ORDER BY due_ms`.pipe(
           decodeRows(Schema.Struct({ name: Schema.String })),
@@ -393,6 +406,7 @@ export class Store extends Context.Service<
         openBrowsers,
         setTimer,
         clearTimer,
+        clearSchedule,
         dueTimers,
         nextTimerMs
       })
@@ -409,5 +423,6 @@ export const Singletons = {
   sandbox: ["sandbox", SandboxRecord] as const,
   liveActivity: ["live_activity", LiveActivityRecord] as const,
   mac: ["mac", MacRecord] as const,
-  usagePause: ["usage_pause", UsagePause] as const
+  usagePause: ["usage_pause", UsagePause] as const,
+  archived: ["archived", Schema.Struct({ at: Schema.DateTimeUtc })] as const
 }

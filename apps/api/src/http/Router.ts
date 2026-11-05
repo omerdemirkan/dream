@@ -4,14 +4,16 @@
  * every other `*.<domain>` host is a published app.
  */
 import { AppRpcs, HttpRpcSerialization, ProjectId, Routes, SandboxRpcs } from "@dream/domain"
-import { Context, Effect, Layer, Option, Schema } from "effect"
+import { Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { HttpServerRequest } from "effect/http/HttpServerRequest"
 import * as HttpServerResponse from "effect/http/HttpServerResponse"
 import { RpcServer } from "effect/rpc"
 import { Tokens } from "../auth/Tokens.ts"
 import { ApiConfig } from "../Config.ts"
 import { Access } from "../integrations/Access.ts"
+import { ProjectClients } from "../project/Client.ts"
 import { LivePath } from "../project/ProjectRpcs.ts"
+import { timingSafeEqual } from "../lib/Bytes.ts"
 import { AppAuthServer, AuthedHandlers, bearer, PublicHandlers } from "./AppHandlers.ts"
 import { gateway } from "./Gateway.ts"
 import { downloadMedia, uploadMedia } from "./Media.ts"
@@ -89,6 +91,21 @@ export const route = (raw: Request) =>
       const session = yield* tokens.verifySession(token.value).pipe(Effect.option)
       if (Option.isNone(session)) return HttpServerResponse.text("Session expired", { status: 401 })
       return yield* downloadMedia(request, media[1]!, session.value.userId)
+    }
+
+    // Operator tool (e2e cleanup): archive a project. Needs the DEV_LOGIN_SECRET in `x-dream-dev-secret`.
+    const archive = /^\/admin\/projects\/([^/]+)\/archive$/.exec(path)
+    if (archive !== null && request.method === "POST") {
+      const secret = request.headers["x-dream-dev-secret"]
+      const expected = Option.map(config.devLoginSecret, Redacted.value)
+      if (secret === undefined || Option.isNone(expected) || !timingSafeEqual(secret, expected.value)) {
+        return HttpServerResponse.text("Forbidden", { status: 403 })
+      }
+      const projectId = Schema.decodeUnknownOption(ProjectId)(archive[1])
+      if (Option.isNone(projectId)) return HttpServerResponse.text("Bad project id", { status: 400 })
+      const clients = yield* ProjectClients
+      yield* clients.use(projectId.value, (client) => client.Archive())
+      return HttpServerResponse.text("archived")
     }
 
     if (path === Routes.googleOAuthCallback && request.method === "GET") {

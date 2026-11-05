@@ -74,6 +74,8 @@ export class ProjectRpcs extends RpcGroup.make(
   Rpc.make("UsageLimited", { payload: { window: UsageWindowName, until: Schema.DateTimeUtc } }),
   /** Where the gateway sends this project's public traffic. */
   Rpc.make("GatewayTarget", { success: GatewayTarget, error: Schema.Union([NotFound, UpstreamFailure]) }),
-  /** Codex hit a 401 or wants a refresh: refresh their ChatGPT tokens now and push them. */
-  Rpc.make("RefreshModelCredential", { error: UpstreamFailure })
+  /** Refresh their ChatGPT tokens now and push them to every sandbox of theirs. */
+  Rpc.make("RefreshModelCredential", { error: UpstreamFailure }),
+  /** Stops the project for good: kills its sandbox and drops its wakes and undelivered events. */
+  Rpc.make("Archive", {})
 ) {}

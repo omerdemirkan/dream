@@ -5,7 +5,8 @@
  */
 import { assert, describe, it } from "@effect/vitest"
 import { DaemonEnvFile, type NotificationId, type ProjectId, QuestionAnswer } from "@dream/domain"
-import { DateTime, Effect, Exit, Fiber, Redacted, Stream } from "effect"
+import { Context, DateTime, Effect, Exit, Fiber, Redacted, Stream } from "effect"
+import { ProjectClients } from "../src/project/Client.ts"
 import { makeCloud } from "./support/Cloud.ts"
 
 const claudeUrl =
@@ -480,6 +481,22 @@ describe("a project, end to end", () => {
       cloud.session.token = Redacted.value(other.sessionToken)
       const error = yield* Effect.flip(cloud.phone.SendMessage({ projectId: project.id, text: "hi" }))
       assert.strictEqual(error._tag, "NotFound")
+      yield* cloud.close
+    })
+  )
+
+  it.live("archiving stops the project: no sandbox, no deliveries, gone from Home", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project } = yield* setup(cloud)
+      yield* cloud.alarm(project.id)
+      const clients = Context.get(cloud.workerContext, ProjectClients)
+      yield* cloud.phone.SendMessage({ projectId: project.id, text: "One more thing" })
+      yield* clients.use(project.id, (client) => client.Archive())
+      yield* cloud.alarm(project.id)
+      assert.strictEqual(cloud.world.delivered.length, 1)
+      assert.strictEqual(envFileOf(cloud, project.id).sandbox.state, "killed")
+      assert.deepStrictEqual(yield* cloud.phone.ListProjects(), [])
       yield* cloud.close
     })
   )
