@@ -11,7 +11,7 @@ import { useRouter } from "expo-router"
 import type { ReactNode } from "react"
 import { Pressable, ScrollView, Text, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
-import { providerName, resetLabel, usageLine } from "../data/format.ts"
+import { providerName, resetLabel, usageDetail } from "../data/format.ts"
 import {
   disconnectIntegrationFn,
   disconnectModelConnectionFn,
@@ -78,7 +78,10 @@ export default function Settings() {
       </Section>
 
       <Section title="Account">
-        <Row title={session?.user.name ?? session?.user.email ?? "Signed in"} subtitle={session?.user.email ?? ""} />
+        <Row
+          title={session?.user.name ?? session?.user.email ?? "Signed in"}
+          subtitle={session?.user.name ? session.user.email : ""}
+        />
       </Section>
       <Button
         title="Sign out"
@@ -154,7 +157,7 @@ function ConnectionRow(props: { readonly connection: ModelConnection }) {
   const router = useRouter()
   const disconnect = useAction(disconnectModelConnectionFn)
   const c = props.connection
-  const usage = c.usage ? usageLine(c.usage) : undefined
+  const usage = c.usage ? usageDetail(c.usage) : undefined
   const resets = c.usage?.weekly?.resetsAt ? ` · resets ${resetLabel(c.usage.weekly.resetsAt)}` : ""
   const subtitle =
     c.status === "connected"

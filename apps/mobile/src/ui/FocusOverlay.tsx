@@ -52,10 +52,13 @@ function FocusLayer(props: { readonly focus: Focus }) {
   const project = live?.project ?? summaries?.find((s) => s.project.id === focus.projectId)?.project
 
   const start: Rect = focus.origin ?? { x: 0, y: H * 0.05, width: W, height: H }
+  // The animated styles close over this rather than `focus`, whose message worklets can't copy.
+  const grows = focus.origin !== undefined
   const box = useSharedValue<Rect>(start)
   const progress = useSharedValue(0)
   const fade = useSharedValue(0)
   const closing = useRef(false)
+  const expanded = useRef(false)
   const pathnameRef = useRef(pathname)
   pathnameRef.current = pathname
 
@@ -65,6 +68,7 @@ function FocusLayer(props: { readonly focus: Focus }) {
   /** Once it fills the screen, put that project's Chat underneath, scrolled to this message. */
   const onExpanded = () => {
     if (closing.current) return
+    expanded.current = true
     land(false)
     if (pathnameRef.current === `/project/${focus.projectId}`) router.setParams({ tab: "chat" })
     else router.push({ pathname: "/project/[id]", params: { id: focus.projectId, tab: "chat", instant: "1" } })
@@ -80,6 +84,18 @@ function FocusLayer(props: { readonly focus: Focus }) {
     // Runs once per expanded message (the layer is keyed by it).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // A link or notification can name a message the project doesn't have (or one that isn't an ask):
+  // once the project has loaded, there's nothing to expand, so don't cover the screen with an empty layer.
+  const expandable = message?._tag === "Question" || message?._tag === "Access"
+  useEffect(() => {
+    if (live !== undefined && !expandable) setFocus(Option.none())
+  }, [live, expandable, setFocus])
+
+  // A link or notification that goes somewhere else (another project, Home) leaves this message behind.
+  useEffect(() => {
+    if (expanded.current && !closing.current && pathname !== `/project/${focus.projectId}`) setFocus(Option.none())
+  }, [pathname, focus.projectId, setFocus])
 
   const finish = () => {
     setFocus(Option.none())
@@ -119,7 +135,7 @@ function FocusLayer(props: { readonly focus: Focus }) {
       height: b.height + (H - b.height) * p,
       borderRadius: 24 * (1 - p),
       backgroundColor: interpolateColor(p, [0, 1], [color.s1, color.bg]),
-      opacity: focus.origin ? 1 : Math.min(1, fade.value * 1.4)
+      opacity: grows ? 1 : Math.min(1, fade.value * 1.4)
     }
   })
   const inner = useAnimatedStyle(() => {

@@ -81,9 +81,15 @@ export const shortDuration = (from: DateTime.Utc, to: DateTime.Utc) => {
 /** "ChatGPT Pro · 62% of this week left", or the paused line when a limit is hit. */
 export const usageLine = (usage: UsageSnapshot, timeZone?: string): string | undefined => {
   const plan = usage.plan ?? (usage.provider === "chatgpt" ? "ChatGPT" : "Claude")
-  if (usage.limitedUntil) return `${plan} · paused until ${timeLabel(usage.limitedUntil.until, timeZone)}`
-  if (usage.weekly) return `${plan} · ${Math.round(100 - usage.weekly.usedPercent)}% of this week left`
-  if (usage.fiveHour) return `${plan} · ${Math.round(100 - usage.fiveHour.usedPercent)}% left for now`
+  const detail = usageDetail(usage, timeZone)
+  return detail === undefined ? undefined : `${plan} · ${detail}`
+}
+
+/** The usage line without the plan, for where the plan is already the title. */
+export const usageDetail = (usage: UsageSnapshot, timeZone?: string): string | undefined => {
+  if (usage.limitedUntil) return `paused until ${timeLabel(usage.limitedUntil.until, timeZone)}`
+  if (usage.weekly) return `${Math.round(100 - usage.weekly.usedPercent)}% of this week left`
+  if (usage.fiveHour) return `${Math.round(100 - usage.fiveHour.usedPercent)}% left for now`
   return undefined
 }
 

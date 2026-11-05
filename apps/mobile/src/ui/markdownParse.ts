@@ -1,6 +1,7 @@
 /**
- * A small markdown reader for agent messages: paragraphs, bullet and numbered
- * lists, **bold**, *italic*, `code`, [links](https://…) and bare URLs.
+ * A small markdown reader for agent messages: paragraphs, headings, bullet and
+ * numbered lists, rules, fenced code, **bold**, *italic*, `code`,
+ * [links](https://…) and bare URLs.
  */
 export type Inline =
   | { readonly kind: "text"; readonly text: string }
@@ -34,22 +35,98 @@ export const parseInline = (source: string): ReadonlyArray<Inline> => {
 
 type Block =
   | { readonly kind: "paragraph"; readonly text: string }
-  | { readonly kind: "list"; readonly ordered: boolean; readonly items: ReadonlyArray<string> }
+  | { readonly kind: "heading"; readonly text: string }
+  | { readonly kind: "list"; readonly ordered: boolean; readonly start: number; readonly items: ReadonlyArray<string> }
+  | { readonly kind: "code"; readonly text: string }
+  | { readonly kind: "rule" }
 
+const fence = /^\s*(```|~~~)/
+const heading = /^\s*#{1,6}\s+(.*)$/
+const rule = /^\s*([-*_])(\s*\1){2,}\s*$/
+const bullet = /^\s*[-*•+]\s+(.*)$/
+const numbered = /^\s*(\d+)[.)]\s+(.*)$/
+
+/**
+ * Line by line, the way agents write: a `**Label:**` line straight above its
+ * bullets, `##` headings, `---` rules and fenced code. A list keeps its first
+ * number, so items separated by blank lines still count 1, 2, 3.
+ */
 export const parseBlocks = (source: string): ReadonlyArray<Block> => {
   const blocks: Array<Block> = []
-  for (const chunk of source.replace(/\r\n/g, "\n").split(/\n{2,}/)) {
-    const lines = chunk.split("\n").filter((line) => line.trim().length > 0)
-    if (lines.length === 0) continue
-    const bullet = /^\s*[-*•]\s+/
-    const numbered = /^\s*\d+[.)]\s+/
-    if (lines.every((line) => bullet.test(line))) {
-      blocks.push({ kind: "list", ordered: false, items: lines.map((line) => line.replace(bullet, "")) })
-    } else if (lines.every((line) => numbered.test(line))) {
-      blocks.push({ kind: "list", ordered: true, items: lines.map((line) => line.replace(numbered, "")) })
-    } else {
-      blocks.push({ kind: "paragraph", text: lines.join("\n").replace(/^#+\s+/gm, "") })
-    }
+  const lines = source.replace(/\r\n/g, "\n").split("\n")
+  let paragraph: Array<string> = []
+  let list: { ordered: boolean; start: number; items: Array<string> } | undefined
+  const flush = () => {
+    if (paragraph.length > 0) blocks.push({ kind: "paragraph", text: paragraph.join("\n") })
+    if (list) blocks.push({ kind: "list", ...list })
+    paragraph = []
+    list = undefined
   }
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? ""
+    if (fence.test(line)) {
+      flush()
+      const code: Array<string> = []
+      while (++i < lines.length && !fence.test(lines[i] ?? "")) code.push(lines[i] ?? "")
+      blocks.push({ kind: "code", text: code.join("\n") })
+      continue
+    }
+    if (line.trim().length === 0) {
+      // A blank line ends a paragraph; a list continues if the next item follows.
+      if (paragraph.length > 0) flush()
+      continue
+    }
+    const h = heading.exec(line)
+    if (h) {
+      flush()
+      blocks.push({ kind: "heading", text: h[1] ?? "" })
+      continue
+    }
+    if (rule.test(line)) {
+      flush()
+      blocks.push({ kind: "rule" })
+      continue
+    }
+    const b = bullet.exec(line)
+    const n = b ? undefined : numbered.exec(line)
+    if ((b || n) && list && list.items.length > 0 && /^\s{2,}/.test(line)) {
+      // An indented item nests under the item above it.
+      list.items[list.items.length - 1] += `\n• ${(b ? b[1] : n?.[2]) ?? ""}`
+      continue
+    }
+    if (b || n) {
+      const ordered = n !== undefined && n !== null
+      if (paragraph.length > 0 || (list && list.ordered !== ordered)) flush()
+      if (!list) {
+        const start = n ? Number(n[1]) : 1
+        list = { ordered, start, items: [] }
+      }
+      list.items.push((b ? b[1] : n?.[2]) ?? "")
+      continue
+    }
+    if (list && /^\s+/.test(line) && list.items.length > 0) {
+      // An indented line continues the item above it.
+      list.items[list.items.length - 1] += `\n${line.trim()}`
+      continue
+    }
+    if (list) flush()
+    paragraph.push(line)
+  }
+  flush()
   return blocks
 }
+
+const inlineText = (nodes: ReadonlyArray<Inline>): string =>
+  nodes.map((node) => (node.kind === "text" || node.kind === "code" ? node.text : inlineText(node.children))).join("")
+
+/** The message as plain text, one line per block, for a preview: no markers, no code. */
+export const plainText = (source: string): string =>
+  parseBlocks(source)
+    .flatMap((block) =>
+      block.kind === "paragraph" || block.kind === "heading"
+        ? [inlineText(parseInline(block.text))]
+        : block.kind === "list"
+          ? block.items.map((item) => inlineText(parseInline(item)))
+          : []
+    )
+    .join("\n")

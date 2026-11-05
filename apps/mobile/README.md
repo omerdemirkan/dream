@@ -84,7 +84,17 @@ live socket if there is one.
 DREAM_SESSION=$(node infra/scripts/dev-login.ts session you@example.com) node apps/mobile/scripts/check-live.ts
 ```
 
-`screenshots/` holds the last Simulator run of every screen and the main flows (fixtures mode).
+`screenshots/` holds the last Simulator run of every screen and the main flows (fixtures mode);
+`screenshots/live/` holds a run against the deployed API with real agent projects (a development build with
+`DREAM_BACKEND=live`, signed in through the dev secret).
+
+To drive the live app in a Simulator, build the development app (`CONFIGURATION=Debug DREAM_BACKEND=live
+scripts/build-ios.sh simulator`), install it, run `DREAM_BACKEND=live bunx expo start --dev-client` next to the
+Simulator, and open `dream://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081`. Namespace's macOS image
+(November 2026) tops out at Xcode 26.3, where `expo-modules-jsi` fails one Swift 6 check ("sending 'slot' risks
+causing data races" in `JavaScriptObject.swift`, `withEncodedValue`). For a local build only, passing the pointer
+into the isolated closure as `Int(bitPattern: slot)` and rebuilding it inside gets past it; don't ship that, build
+releases with Xcode 26.4 or newer.
 
 ## Building for TestFlight
 

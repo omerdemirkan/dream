@@ -90,6 +90,9 @@ export function Icon(props: {
 const symbolName = (name: string | undefined): SymbolViewProps["name"] =>
   (name && name.length > 0 ? name : "sparkle") as SymbolViewProps["name"]
 
+/** SF Symbol names are lowercase ASCII words joined by dots; agents often pick an emoji instead. */
+const isSymbolName = (name: string | undefined) => name === undefined || /^[a-z0-9]+(\.[a-z0-9]+)*$/.test(name)
+
 // ---------------------------------------------------------------------------
 // Tiles, dots, the orb
 // ---------------------------------------------------------------------------
@@ -115,16 +118,27 @@ export function Tile(props: { readonly icon: string | undefined; readonly size?:
         justifyContent: "center"
       }}
     >
-      <SymbolView
-        name={symbolName(props.icon)}
-        size={s.glyph}
-        tintColor={color.t2}
-        weight="medium"
-        accessible={false}
-        accessibilityElementsHidden
-        importantForAccessibility="no-hide-descendants"
-        style={{ width: s.glyph, height: s.glyph }}
-      />
+      {isSymbolName(props.icon) ? (
+        <SymbolView
+          name={symbolName(props.icon)}
+          size={s.glyph}
+          tintColor={color.t2}
+          weight="medium"
+          accessible={false}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          style={{ width: s.glyph, height: s.glyph }}
+        />
+      ) : (
+        <Text
+          accessible={false}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          style={{ fontSize: s.glyph, lineHeight: s.glyph * 1.25 }}
+        >
+          {props.icon}
+        </Text>
+      )}
     </View>
   )
 }
@@ -407,8 +421,10 @@ export function Choice(
       {...rest}
       style={({ pressed }) => [
         {
-          height,
+          minHeight: height,
           paddingHorizontal: 16,
+          paddingVertical: 11,
+          gap: 10,
           borderRadius: size === "lg" ? 18 : 16,
           backgroundColor: selected ? color.need : pressed ? color.s3 : color.s2,
           borderWidth: 1,
@@ -420,8 +436,9 @@ export function Choice(
         pressed ? { transform: [{ scale: 0.985 }] } : null
       ]}
     >
+      {/* Agents write options as long as a sentence: wrap rather than cut them off. */}
       <Text
-        numberOfLines={1}
+        numberOfLines={size === "lg" ? 3 : 2}
         style={{
           flex: 1,
           color: selected ? color.needInk : color.t1,

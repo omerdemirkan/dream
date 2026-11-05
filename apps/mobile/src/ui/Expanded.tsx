@@ -105,6 +105,7 @@ export function ExpandedQuestion(props: {
 }) {
   const m = props.message
   const answer = useAction(answerNowFn)
+  const toast = useToast()
   const [changing, setChanging] = useState(false)
   const [picked, setPicked] = useState<string | undefined>(undefined)
   useEffect(() => setChanging(false), [m.state._tag])
@@ -114,7 +115,13 @@ export function ExpandedQuestion(props: {
     if (input._tag === "Choice") setPicked(input.option)
     answer.run(
       { projectId: m.projectId, messageId: m.id, answer: input },
-      { onSuccess: () => setChanging(false), onFailure: () => setPicked(undefined) }
+      {
+        onSuccess: () => setChanging(false),
+        onFailure: (message) => {
+          setPicked(undefined)
+          toast(message)
+        }
+      }
     )
   }
 
