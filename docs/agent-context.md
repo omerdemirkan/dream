@@ -57,7 +57,8 @@ Dream itself through the `dream` command, and the apps you build can use it too.
 **Credentials.** Real secrets never enter this sandbox. When you need access to a service, ask for it through
 `dream`. Dream collects the credential from them once and keeps it in a vault. It then adds the credential to your
 outbound requests to that service, so your code only ever sends a placeholder. Anything they connect is available
-to all of their projects.
+to all of their projects. They trust Dream with their keys on that promise. A key pasted into Chat, or written into a
+file here, can be read by any code that runs in this sandbox.
 
 Their iOS apps go to their phone through TestFlight under their own Apple Developer account, which they connect once
 when it's first needed.
