@@ -104,7 +104,7 @@ const inSandbox = async (projectId: string, command: string, timeoutMs = 60_000)
   try {
     const r = await sbx.commands.run(command, { timeoutMs })
     return `${r.stdout}${r.stderr}`
-  } catch (e: Json) {
+  } catch (e: any) {
     return `exit ${e?.result?.exitCode ?? "?"}\n${e?.result?.stdout ?? ""}${e?.result?.stderr ?? ""}${e?.message ?? ""}`
   }
 }
@@ -115,7 +115,9 @@ const main = async () => {
     case "projects": {
       for (const s of await rpc("ListProjects")) {
         const p = s.project
-        console.log(`${p.id}  ${p.phase}  "${p.title}" (${p.kind ?? "?"})  ${p.headline ?? ""}  ${p.publicUrl ?? ""}  asks=${s.openAsks}`)
+        console.log(
+          `${p.id}  ${p.phase}  "${p.title}" (${p.kind ?? "?"})  ${p.headline ?? ""}  ${p.publicUrl ?? ""}  asks=${s.openAsks}`
+        )
       }
       return
     }
@@ -134,9 +136,13 @@ const main = async () => {
       return
     }
     case "choose":
-      return console.log(text(await rpc("AnswerQuestion", { projectId: a, messageId: b, answer: { _tag: "Choice", option: c } })))
+      return console.log(
+        text(await rpc("AnswerQuestion", { projectId: a, messageId: b, answer: { _tag: "Choice", option: c } }))
+      )
     case "reply":
-      return console.log(text(await rpc("AnswerQuestion", { projectId: a, messageId: b, answer: { _tag: "Freeform", text: c } })))
+      return console.log(
+        text(await rpc("AnswerQuestion", { projectId: a, messageId: b, answer: { _tag: "Freeform", text: c } }))
+      )
     case "decline":
       return console.log(text(await rpc("DeclineAccess", { projectId: a, messageId: b })))
     case "sandbox":
@@ -147,7 +153,9 @@ const main = async () => {
       return console.log(await inSandbox(a, b, 300_000))
     case "wait": {
       const deadline = Date.now() + Number(b ?? 15) * 60_000
-      const before = new Set(((await rpc("ListMessages", { projectId: a, limit: 50 })).messages as Json[]).map((m) => m.id))
+      const before = new Set(
+        ((await rpc("ListMessages", { projectId: a, limit: 50 })).messages as Json[]).map((m) => m.id)
+      )
       let idleChecks = 0
       while (Date.now() < deadline) {
         await new Promise((r) => setTimeout(r, 20_000))
@@ -165,7 +173,7 @@ const main = async () => {
       console.log("see the header of packages/sandbox-template/scripts/qa.ts")
   }
 }
-main().catch((e) => {
+main().catch((e: any) => {
   console.error(String(e?.message ?? e))
   process.exit(1)
 })
