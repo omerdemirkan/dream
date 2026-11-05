@@ -4,7 +4,7 @@ One file per item. They're in the order I'd do them. Each one ends with what to 
 
 | # | File | Unlocks | Time |
 | --- | --- | --- | --- |
-| 1 | [r2.md](r2.md) | Screenshots and recordings in Chat | 5 min |
+| 1 | [r2.md](r2.md) | Screenshots and recordings in Chat — **done 2026-11-05** | 5 min |
 | 2 | [apple-developer.md](apple-developer.md) | Signing the app; everything below that touches Apple | 15 min |
 | 3 | [apns.md](apns.md) | Push notifications and Live Activities | 10 min |
 | 4 | [testflight.md](testflight.md) | Dream on your phone (and your friends') | 30–60 min, needs a Mac with Xcode 26.4+ |

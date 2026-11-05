@@ -243,3 +243,6 @@ Other findings:
   then tried `dream ask "… paste your Client ID and Secret here"`, which the credential guard refused, and sent a
   message asking for the client id instead ("I'll guide you to set up the credentials securely"). The guard held; the
   new fact (Strava can't be connected yet) was read and not applied. Haiku; the fact stays as written.
+- R2 enabled by the founder (13:40). Set DREAM_R2_ENABLED=true in the root .env and deployed main: alchemy created the
+  `dream-media` bucket and bound it. Verified: `dream message --media shot.png` from the cabin sandbox → "Sent … with
+  1 attachment(s)"; GET /media/med_… answers 200 image/png (73,702 bytes, the same file) with the session, 401 without.
