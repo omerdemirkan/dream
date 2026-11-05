@@ -42,6 +42,7 @@ button{width:100%;margin-top:16px;padding:14px;border:0;border-radius:12px;backg
   justify-content:center;background:rgba(255,179,92,.12);color:#FFB35C;font-weight:700}
 `
 
+/** Built per request: the CSP nonce is random, and workerd forbids randomness at module scope. */
 const page = (title: string, body: string, status = 200) => {
   const nonce = randomToken(22)
   return HttpServerResponse.text(
@@ -86,11 +87,12 @@ const unusable = (error: ConnectLinkUnusable) =>
     error.reason === "invalid" ? 404 : 410
   )
 
-const connected = page(
-  "Claude connected",
-  `<div class="mark">✓</div><h1>Claude is connected</h1>` +
-    `<p>Your token is stored encrypted. You can close this page and go back to Dream.</p>`
-)
+const connected = () =>
+  page(
+    "Claude connected",
+    `<div class="mark">✓</div><h1>Claude is connected</h1>` +
+      `<p>Your token is stored encrypted. You can close this page and go back to Dream.</p>`
+  )
 
 /** `GET Routes.connect(provider)?t=…` */
 export const showConnectPage = (provider: ConnectLinkProvider, ticket: string | null) =>
@@ -111,7 +113,7 @@ export const submitConnectPage = (provider: ConnectLinkProvider) =>
     if (Option.isNone(body)) return unusable(new ConnectLinkUnusable({ reason: "invalid" }))
     const { t, token } = body.value
     return yield* links.redeem(provider, t, token).pipe(
-      Effect.as(connected),
+      Effect.map(connected),
       Effect.catchTags({
         ConnectLinkUnusable: (error) => Effect.succeed(unusable(error)),
         InvalidRequest: (error) => Effect.succeed(form(provider, t, error.message))
