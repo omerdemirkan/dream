@@ -18,13 +18,16 @@ export interface DreamdConfigShape extends Config.Success<typeof DaemonConfig> {
   readonly envFile: string
   /** A model to ask the harness for instead of its default. */
   readonly model: Option.Option<string>
+  /** For testing: where Codex sends model requests instead of the ChatGPT backend. */
+  readonly codexBaseUrl: Option.Option<string>
 }
 
 const LocalConfig = Config.all({
   home: Config.NonEmptyString("HOME"),
   stateDir: Config.option(Config.NonEmptyString("DREAM_STATE_DIR")),
   workDir: Config.option(Config.NonEmptyString("DREAM_WORKDIR")),
-  model: Config.option(Config.NonEmptyString("DREAM_MODEL"))
+  model: Config.option(Config.NonEmptyString("DREAM_MODEL")),
+  codexBaseUrl: Config.option(Config.NonEmptyString("DREAM_CODEX_BASE_URL"))
 })
 
 export class DreamdConfig extends Context.Service<DreamdConfig, DreamdConfigShape>()("@dream/dreamd/DreamdConfig") {
@@ -61,6 +64,7 @@ const load = (provider: ConfigProvider.ConfigProvider, envFile: string) =>
       stateDir: Option.getOrElse(local.stateDir, () => `${local.home}/.dream/state`),
       workDir: Option.getOrElse(local.workDir, () => `${local.home}/project`),
       envFile,
-      model: local.model
+      model: local.model,
+      codexBaseUrl: local.codexBaseUrl
     })
   })

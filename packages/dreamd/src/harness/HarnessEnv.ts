@@ -27,6 +27,17 @@ export const harnessEnv = (
 }
 
 /**
+ * The environment of every process dreamd starts for the agent. `DREAM_SOCKET`
+ * is set explicitly because dreamd may have read it from its env file, and
+ * `dream` must find dreamd from anywhere.
+ */
+export const agentEnv = (
+  processEnv: Readonly<Record<string, string | undefined>>,
+  config: { readonly home: string; readonly socket: string }
+): Record<string, string> =>
+  harnessEnv(processEnv, { HOME: config.home, [DaemonEnv.socket]: config.socket, DISABLE_AUTOUPDATER: "1" })
+
+/**
  * How each harness authenticates, given to its adapter as an explicit
  * environment so it never looks for a login of its own.
  *

@@ -16,7 +16,7 @@ import {
   UpstreamFailure
 } from "@dream/domain"
 import { NodeHttpClient } from "@effect/platform-node"
-import { Config, Context, Effect, Layer } from "effect"
+import { Config, Context, Effect, Layer, Predicate } from "effect"
 import { CliError } from "effect/cli"
 import { RpcClient, RpcClientError, RpcMiddleware } from "effect/rpc"
 
@@ -48,8 +48,10 @@ export const describeError = (error: unknown): string => {
   if (error instanceof NotFound) return `No ${error.entity} ${error.id}.`
   if (error instanceof InvalidRequest || error instanceof Unauthorized) return error.message
   if (error instanceof UpstreamFailure) return `${error.service} failed: ${error.message}`
-  if (error instanceof RpcClientError.RpcClientError)
-    return `Couldn't reach Dream through dreamd (${error.message}). Is dreamd running?`
+  if (error instanceof RpcClientError.RpcClientError) {
+    const cause = Predicate.hasProperty(error.reason, "cause") ? String(error.reason.cause) : error.message
+    return `Couldn't reach Dream through dreamd: ${cause}. dreamd may be restarting; try again in a few seconds.`
+  }
   return error instanceof Error ? error.message : String(error)
 }
 

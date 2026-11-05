@@ -5,10 +5,10 @@
  * the end of the output. Commands that were running when dreamd stopped run
  * again when it starts.
  */
-import { Context, Duration, Effect, FiberSet, Layer, Option, Ref, Stream } from "effect"
+import { Context, Duration, Effect, Fiber, FiberSet, FileSystem, Layer, Option, Ref, Stream } from "effect"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
 import { DreamdConfig } from "./Config.ts"
-import { harnessEnv } from "./harness/HarnessEnv.ts"
+import { agentEnv } from "./harness/HarnessEnv.ts"
 import { Inbox, type RunResult, type WakeDueEvent } from "./Inbox.ts"
 
 /** The most of a command's output the agent sees. */
@@ -29,7 +29,9 @@ export class Commands extends Context.Service<
       const config = yield* DreamdConfig
       const inbox = yield* Inbox
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
-      const env = harnessEnv(process.env, { HOME: config.home })
+      const fs = yield* FileSystem.FileSystem
+      yield* fs.makeDirectory(config.workDir, { recursive: true }).pipe(Effect.orDie)
+      const env = agentEnv(process.env, config)
       const running = yield* Ref.make<ReadonlySet<string>>(new Set())
       const fibers = yield* FiberSet.make()
 
@@ -40,12 +42,15 @@ export class Commands extends Context.Service<
             const handle = yield* spawner.spawn(
               ChildProcess.make(command, { shell: "/bin/bash", cwd: config.workDir, env })
             )
-            yield* handle.all.pipe(
+            const reader = yield* handle.all.pipe(
               Stream.decodeText(),
               Stream.runForEach((chunk) => Ref.update(tail, (text) => (text + chunk).slice(-outputTailBytes))),
               Effect.forkScoped
             )
-            return yield* handle.exitCode
+            const exitCode = yield* handle.exitCode
+            // A background process it started may hold the output open; don't wait for that.
+            yield* Fiber.join(reader).pipe(Effect.timeoutOption("1 second"), Effect.ignore)
+            return exitCode
           })
         ).pipe(
           Effect.timeoutOption(commandTimeout),

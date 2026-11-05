@@ -108,8 +108,10 @@ export class Agent extends Context.Service<
         const ids = yield* Ref.get(taken)
         const result = Exit.isSuccess(exit) ? exit.value : undefined
         const completed = result !== undefined && result.outcome._tag === "Completed"
-        const retry = !completed && result?.progressed !== true && result?.usage.limit === undefined
-        yield* inbox.release(ids, retry ? "retry" : "done")
+        // Events count as handled once the agent has started on them; otherwise they go to the next turn.
+        const requeue = !completed && result?.progressed !== true
+        const limited = result?.usage.limit !== undefined
+        yield* inbox.release(ids, requeue ? "retry" : "done")
 
         if (result !== undefined) yield* Ref.update(usage, (previous) => Usage.merge(previous, result.usage))
         const reading = yield* Ref.get(usage)
@@ -121,15 +123,13 @@ export class Agent extends Context.Service<
 
         if (Exit.isFailure(exit)) {
           yield* Effect.logError("The turn couldn't run", exit.cause)
-        } else if (exit.value.outcome._tag === "Failed") {
-          yield* Effect.logWarning("The turn failed", {
-            error: TurnOutcome.$is("Failed")(exit.value.outcome) ? exit.value.outcome.message : "",
-            retry
-          })
+        } else if (TurnOutcome.$is("Failed")(exit.value.outcome)) {
+          yield* Effect.logWarning("The turn failed", { error: exit.value.outcome.message, requeue, limited })
         } else {
           yield* Effect.logInfo("Turn finished", { events: ids })
         }
-        return retry
+        // A limit is waited out before the next turn; other failures back off.
+        return requeue && !limited
       }).pipe(Effect.ensuring(Ref.set(running, false)))
 
       const run = Effect.gen(function* () {

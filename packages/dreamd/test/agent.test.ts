@@ -141,11 +141,11 @@ describe("Agent", () => {
         Effect.succeed({
           outcome: TurnOutcome.Failed({ message: "limit" }),
           usage: { fiveHour: { usedPercent: 100 }, limit: { window: "fiveHour" as const, until } },
-          progressed: true
+          progressed: false
         })
       )
       yield* Queue.offer(turns, () => Effect.succeed(completed()))
-      yield* inbox.deliver([userMessage(1)])
+      yield* inbox.deliver([userMessage(1, "first, never handled")])
       yield* logged(1)
       while (!(yield* Ref.get(reports)).some((report) => report._tag === "Usage")) yield* Effect.yieldNow
       const usage = (yield* Ref.get(reports)).find((report) => report._tag === "Usage")
@@ -161,6 +161,7 @@ describe("Agent", () => {
       // …until the reset arrives.
       yield* inbox.deliver([usageReset(3)])
       const after = yield* logged(2)
+      assert.include(after[1], "> first, never handled")
       assert.include(after[1], "> still there?")
       assert.include(after[1], "Their five-hour usage window has reset.")
     }).pipe(Effect.scoped)

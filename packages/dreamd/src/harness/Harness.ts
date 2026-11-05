@@ -33,7 +33,7 @@ import {
 import { DreamdConfig } from "../Config.ts"
 import * as JsonFile from "../JsonFile.ts"
 import * as Usage from "../Usage.ts"
-import { harnessAuth, harnessEnv } from "./HarnessEnv.ts"
+import { agentEnv, harnessAuth } from "./HarnessEnv.ts"
 import { makeLocalSandboxSession } from "./LocalSandbox.ts"
 import * as Skill from "./Skill.ts"
 
@@ -139,8 +139,13 @@ const make = Effect.gen(function* () {
 
   const store = JsonFile.make(SavedSession, path.join(config.stateDir, "session.json"))
   const name = config.harness
-  const auth = harnessAuth(name)
-  const env = harnessEnv(process.env, { HOME: config.home, DISABLE_AUTOUPDATER: "1" })
+  const auth = {
+    ...harnessAuth(name),
+    ...(name === "codex"
+      ? Option.match(config.codexBaseUrl, { onNone: () => ({}), onSome: (url) => ({ OPENAI_BASE_URL: url }) })
+      : {})
+  }
+  const env = agentEnv(process.env, config)
 
   const agent = new HarnessAgent({
     harness: name === "claude-code" ? createClaudeCode({ auth }) : createCodex({ auth }),
