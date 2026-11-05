@@ -12,21 +12,26 @@
  *   with its pinned Claude Code or Codex CLI
  * - a supervisor as the start command that keeps dreamd running; dreamd waits
  *   for the env file the ProjectDO writes (`DaemonEnvFile`)
+ * - `/opt/dream/release.json`, naming this build of Dream (`releaseOf`), and
+ *   `refresh.sh`, which a sandbox made from an older build runs to swap onto
+ *   this one's Dream and harnesses (the ProjectDO's `SandboxRefresh` copies
+ *   them over from a fresh sandbox of this template)
  *
  * The CLIs need more memory than E2B's base sandbox has (installs OOM at
  * 512 MB), so the template asks for 4 vCPU and 8 GB, the Hobby maximum.
  *
  * Build it with `bun run template:build` (see scripts/build.ts).
  */
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { createHash } from "node:crypto"
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { join, relative } from "node:path"
 import { fileURLToPath } from "node:url"
 import { DefaultDaemonPort } from "@dream/domain"
 import { Template } from "e2b"
 
-/** The template name sandboxes are created from. */
-export const templateName = "dream-sandbox"
+/** The template name sandboxes are created from. `DREAM_TEMPLATE` builds (or smoke-tests) another one. */
+export const templateName = process.env.DREAM_TEMPLATE ?? "dream-sandbox"
 
 export const resources = { cpuCount: 4, memoryMB: 8192 } as const
 
@@ -64,7 +69,29 @@ export const stageContext = (): string => {
       cpSync(join(repoRoot, "packages", pkg, dir), join(dream, "packages", pkg, dir), { recursive: true })
   }
   cpSync(join(repoRoot, "packages/sandbox-template/files"), join(dream, "sandbox"), { recursive: true })
+  writeFileSync(join(dream, "release.json"), `${JSON.stringify({ release: releaseOf(dream) })}\n`)
   return context
+}
+
+/**
+ * The release a staged `/opt/dream` is: a hash of every file in it, by path and content. dreamd reports it
+ * (`Health.release`) so the ProjectDO can tell which Dream a sandbox runs; the same source gives the same release,
+ * which also keeps E2B's layer cache working.
+ */
+export const releaseOf = (dir: string): string => {
+  const hash = createHash("sha256")
+  const files = readdirSync(dir, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => relative(dir, join(entry.parentPath, entry.name)))
+    .filter((path) => path !== "release.json")
+    .sort()
+  for (const path of files)
+    hash
+      .update(path)
+      .update("\0")
+      .update(readFileSync(join(dir, path)))
+      .update("\0")
+  return hash.digest("hex").slice(0, 16)
 }
 
 const aptPackages = [
@@ -120,7 +147,7 @@ export const makeTemplate = (context: string) =>
         "cd /opt/dream && bun install --frozen-lockfile --production",
         "install -m 755 /opt/dream/sandbox/dream /opt/dream/sandbox/dreamd /usr/local/bin/",
         "install -m 755 /opt/dream/sandbox/chromium /usr/local/bin/ && ln -sf chromium /usr/local/bin/chrome",
-        "chmod 755 /opt/dream/sandbox/supervisor.sh",
+        "chmod 755 /opt/dream/sandbox/supervisor.sh /opt/dream/sandbox/refresh.sh",
         "echo '. /opt/dream/sandbox/env.sh' > /etc/profile.d/dream.sh",
         "mkdir -p /home/user/project /home/user/.dream/logs && chown -R user:user /home/user"
       ],

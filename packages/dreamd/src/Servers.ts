@@ -34,7 +34,7 @@ import { Inbox } from "./Inbox.ts"
 import { Outreach } from "./Outreach.ts"
 import { Published } from "./Published.ts"
 import { Shutdown } from "./Shutdown.ts"
-import { version } from "./version.ts"
+import { readRelease, version } from "./version.ts"
 
 // ---------------------------------------------------------------------------
 // DaemonRpcs on the port
@@ -47,6 +47,7 @@ const DaemonHandlers = DaemonRpcs.toLayer(
     const shutdown = yield* Shutdown
     const config = yield* DreamdConfig
     const envHash = Option.match(config.envHash, { onNone: () => ({}), onSome: (envHash) => ({ envHash }) })
+    const release = Option.match(yield* readRelease(), { onNone: () => ({}), onSome: (release) => ({ release }) })
     return {
       Deliver: ({ events, timeZone }) =>
         Effect.gen(function* () {
@@ -58,7 +59,7 @@ const DaemonHandlers = DaemonRpcs.toLayer(
           yield* Effect.logInfo("Delivered", { events: accepted })
           return { accepted }
         }),
-      Health: () => agent.status.pipe(Effect.map((status) => ({ version, ...status, ...envHash })))
+      Health: () => agent.status.pipe(Effect.map((status) => ({ version, ...status, ...envHash, ...release })))
     }
   })
 )

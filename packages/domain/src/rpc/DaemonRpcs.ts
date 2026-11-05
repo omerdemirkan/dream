@@ -41,7 +41,12 @@ export class DaemonRpcs extends RpcGroup.make(
        * The `DaemonEnv.envHash` from the env file this dreamd read at start, so the DO can tell that a restart
        * it caused by rewriting the file has happened. Absent from dreamd builds older than it.
        */
-      envHash: Schema.optionalKey(Schema.String)
+      envHash: Schema.optionalKey(Schema.String),
+      /**
+       * The template build's release this dreamd runs from (`/opt/dream/release.json`), so the DO can tell that a
+       * sandbox refresh has put the new dreamd in place. Absent from older builds, and outside a template.
+       */
+      release: Schema.optionalKey(Schema.String)
     })
   })
 ).middleware(DaemonAuth) {}

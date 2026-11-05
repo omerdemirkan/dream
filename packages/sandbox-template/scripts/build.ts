@@ -5,11 +5,19 @@
  *   bun run template:build --background             start the build on E2B and print its ids
  *   bun run template:build status <template> <build> [logs-offset]
  *
+ * DREAM_TEMPLATE=<name> builds another template (for testing; `dream-sandbox` is built from main).
+ *
+ * The build is tagged `default` (what new sandboxes get) and `release-<release>`, naming the Dream it carries
+ * (`/opt/dream/release.json`), so the ProjectDO can tell whether a sandbox is behind without starting one.
+ * Moving `default` back to an older build (`Template.assignTags("dream-sandbox:release-<old>", "default")`) rolls
+ * every sandbox back to it on its next refresh.
+ *
  * Needs E2B_API_KEY. In development the key can come from an HTTPS proxy that
  * adds it (the e2b SDK ignores proxy env vars, so it's passed explicitly);
  * then any placeholder key works. `--no-cache` rebuilds every step.
  */
-import { rmSync } from "node:fs"
+import { readFileSync, rmSync } from "node:fs"
+import { join } from "node:path"
 import { NodeRuntime } from "@effect/platform-node"
 import { defaultBuildLogger, Template } from "e2b"
 import { Effect } from "effect"
@@ -26,8 +34,10 @@ const build = Effect.gen(function* () {
   const context = yield* Effect.acquireRelease(Effect.sync(stageContext), (dir) =>
     Effect.sync(() => rmSync(dir, { recursive: true, force: true }))
   )
+  const { release } = JSON.parse(readFileSync(join(context, "dream", "release.json"), "utf8")) as { release: string }
   const options = {
     ...resources,
+    tags: ["default", `release-${release}`],
     ...connection,
     minFreeDiskMb,
     skipCache: args.includes("--no-cache"),
@@ -38,12 +48,14 @@ const build = Effect.gen(function* () {
     const info = yield* Effect.tryPromise(() =>
       Template.buildInBackground(makeTemplate(context), templateName, options)
     )
-    yield* Effect.logInfo(`Started building ${info.name}: status ${info.templateId} ${info.buildId}`)
+    yield* Effect.logInfo(
+      `Started building ${info.name} (release ${release}): status ${info.templateId} ${info.buildId}`
+    )
     return
   }
   const info = yield* Effect.tryPromise(() => Template.build(makeTemplate(context), templateName, options))
   yield* Effect.logInfo(
-    `Built ${info.name} (template ${info.templateId}, build ${info.buildId}) in ${Math.round((Date.now() - started) / 1000)} s`
+    `Built ${info.name} (template ${info.templateId}, build ${info.buildId}, release ${release}) in ${Math.round((Date.now() - started) / 1000)} s`
   )
 })
 

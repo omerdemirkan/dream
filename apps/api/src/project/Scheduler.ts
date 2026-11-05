@@ -85,6 +85,9 @@ export class Scheduler extends Context.Service<Scheduler, { readonly run: Effect
             case "turn-keepalive":
               yield* sandbox.keepalive
               break
+            case "sandbox-refresh":
+              yield* sandbox.refresh
+              break
             case "mac-idle":
               yield* machines.macIdleCheck
               break

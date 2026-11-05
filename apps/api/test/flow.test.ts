@@ -901,3 +901,182 @@ describe("a project, end to end", () => {
     })
   )
 })
+
+describe("sandbox refresh", () => {
+  /** The newest build is cached for a while; pretend that while has passed. */
+  const forgetLatest = (core: Context.Service.Shape<typeof Core>) =>
+    Effect.flatMap(core.sandbox, ({ latestBuild: _, ...rest }) => core.saveSandbox(rest))
+
+  /** A project whose sandbox was created from build "b1" of the template, and has had its first delivery. */
+  const started = (cloud: Cloud) =>
+    Effect.gen(function* () {
+      cloud.world.templateBuilds.set("dream-sandbox", { build: "b1", release: "r1" })
+      const { project } = yield* setup(cloud)
+      yield* cloud.alarm(project.id)
+      const { sandbox, env } = envFileOf(cloud, project.id)
+      const instance = yield* Effect.promise(() => cloud.project(project.id))
+      const core = Context.get(instance.context, Core)
+      const store = Context.get(instance.context, Store)
+      const dreamd = yield* cloud.sandbox(env.DREAM_PROJECT_TOKEN)
+      /** A new message, delivered by the next alarm. */
+      const say = (text: string) =>
+        Effect.andThen(cloud.phone.SendMessage({ projectId: project.id, text }), cloud.alarm(project.id))
+      /** The commands run in the project's sandbox, from the n-th on. */
+      const commands = (from = 0) =>
+        cloud.world.processes
+          .filter((p) => p.sandboxId === sandbox.access.sandboxId)
+          .slice(from)
+          .map((p) => p.command)
+      const donors = () => [...cloud.world.sandboxes.values()].filter((s) => s.metadata.purpose === "refresh-donor")
+      return { project, sandbox, core, store, dreamd, say, commands, donors }
+    })
+
+  it.live("records the build a sandbox is created from, and leaves it alone while that's the newest", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { core, say, donors } = yield* started(cloud)
+      assert.strictEqual((yield* core.sandbox).templateBuild, "b1")
+      assert.strictEqual((yield* core.sandbox).release, "r1")
+      yield* say("Track sets too")
+      assert.strictEqual(cloud.world.delivered.length, 2)
+      assert.lengthOf(donors(), 0)
+
+      // A rebuild of the same source is a new build with the same release tag: nothing to bring over, no donor.
+      cloud.world.templateBuilds.set("dream-sandbox", { build: "b2", release: "r1" })
+      yield* forgetLatest(core)
+      yield* say("And rest times")
+      assert.lengthOf(donors(), 0)
+      assert.strictEqual((yield* core.sandbox).templateBuild, "b2")
+      yield* cloud.close
+    })
+  )
+
+  it.live(
+    "a newer build is brought over from a donor before the next delivery, which then goes to the new dreamd",
+    () =>
+      Effect.gen(function* () {
+        const cloud = yield* makeCloud()
+        const { sandbox, core, say, commands, donors } = yield* started(cloud)
+        cloud.world.templateBuilds.set("dream-sandbox", { build: "b2", release: "r2" })
+        yield* forgetLatest(core)
+        const before = commands().length
+        yield* say("Track sets too")
+
+        const [donor] = donors()
+        assert.strictEqual(donor?.state, "killed")
+        const run = commands(before)
+        const stage = run.findIndex((c) => c.includes("curl"))
+        const activate = run.findIndex((c) => c.includes("/opt/dream.next/sandbox/refresh.sh activate"))
+        const commit = run.findIndex((c) => c.includes("/opt/dream/sandbox/refresh.sh commit"))
+        assert.isTrue(stage >= 0 && stage < activate && activate < commit, run.join("\n"))
+        assert.strictEqual(sandbox.release, "r2")
+        const record = yield* core.sandbox
+        assert.strictEqual(record.templateBuild, "b2")
+        assert.strictEqual(record.release, "r2")
+        assert.strictEqual(cloud.world.delivered.length, 2)
+
+        // Done: the next delivery doesn't refresh again.
+        yield* say("And rest times")
+        assert.lengthOf(donors(), 1)
+        assert.strictEqual(cloud.world.delivered.length, 3)
+        yield* cloud.close
+      })
+  )
+
+  it.live("never during a turn: it waits, and runs shortly after the turn ends", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { sandbox, core, store, dreamd, say, donors, project } = yield* started(cloud)
+      cloud.world.templateBuilds.set("dream-sandbox", { build: "b2", release: "r2" })
+      yield* forgetLatest(core)
+      yield* dreamd.ReportTurn({ state: "started", eventIds: [] })
+      yield* say("Track sets too")
+      assert.lengthOf(donors(), 0)
+      assert.strictEqual(cloud.world.delivered.length, 2)
+
+      // dreamd says a turn is running even though the DO missed it: still nothing.
+      yield* dreamd.ReportTurn({ state: "finished", eventIds: [] })
+      cloud.world.turns.set(sandbox.access.sandboxId, "running")
+      yield* Effect.andThen(store.setTimer("sandbox-refresh", 0), cloud.alarm(project.id))
+      assert.lengthOf(donors(), 0)
+
+      // Idle: the timer the end of the turn set does it.
+      cloud.world.turns.delete(sandbox.access.sandboxId)
+      yield* dreamd.ReportTurn({ state: "finished", eventIds: [] })
+      const due = yield* store.dueTimers(Date.now() + 61_000)
+      assert.include(due, "sandbox-refresh")
+      yield* Effect.andThen(store.setTimer("sandbox-refresh", 0), cloud.alarm(project.id))
+      assert.lengthOf(donors(), 1)
+      assert.strictEqual(sandbox.release, "r2")
+      assert.strictEqual((yield* core.sandbox).templateBuild, "b2")
+      yield* cloud.close
+    })
+  )
+
+  it.live("a failed refresh rolls back, is recorded, isn't retried for a while, and doesn't hold up delivery", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { sandbox, core, say, commands, donors } = yield* started(cloud)
+      cloud.world.templateBuilds.set("dream-sandbox", { build: "b2", release: "r2" })
+      yield* forgetLatest(core)
+      cloud.world.runResults.set("refresh.sh activate", { exitCode: 1, output: "claude: not found" })
+      const before = commands().length
+      yield* say("Track sets too")
+
+      assert.isTrue(commands(before).some((c) => c.includes("/opt/dream/sandbox/refresh.sh rollback")))
+      assert.strictEqual(sandbox.release, "r1")
+      const record = yield* core.sandbox
+      assert.strictEqual(record.templateBuild, "b1")
+      assert.strictEqual(record.refreshFailure?.build, "b2")
+      assert.strictEqual(record.refreshFailure?.failures, 1)
+      assert.include(record.refreshFailure?.message ?? "", "claude: not found")
+      assert.strictEqual(cloud.world.delivered.length, 2)
+
+      // Not again for that build until the backoff passes.
+      yield* say("And rest times")
+      assert.lengthOf(donors(), 1)
+      assert.strictEqual(cloud.world.delivered.length, 3)
+
+      // A newer build is tried at once.
+      cloud.world.runResults.clear()
+      cloud.world.templateBuilds.set("dream-sandbox", { build: "b3", release: "r3" })
+      yield* forgetLatest(core)
+      yield* say("Thanks")
+      assert.strictEqual(sandbox.release, "r3")
+      const after = yield* core.sandbox
+      assert.strictEqual(after.templateBuild, "b3")
+      assert.isUndefined(after.refreshFailure)
+      yield* cloud.close
+    })
+  )
+
+  it.live("without a release tag on the build, a new build id is what makes it due, and the donor says the rest", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { sandbox, core, say, donors } = yield* started(cloud)
+      cloud.world.untaggedBuilds = true
+      cloud.world.templateBuilds.set("dream-sandbox", { build: "b2", release: "r2" })
+      yield* forgetLatest(core)
+      yield* say("Track sets too")
+      assert.lengthOf(donors(), 1)
+      assert.strictEqual(sandbox.release, "r2")
+      assert.strictEqual((yield* core.sandbox).templateBuild, "b2")
+      yield* cloud.close
+    })
+  )
+
+  it.live("a template built before refreshing existed is noted once and left alone", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { core, say, commands, donors } = yield* started(cloud)
+      cloud.world.templateBuilds.set("dream-sandbox", { build: "b2", release: undefined })
+      yield* forgetLatest(core)
+      const before = commands().length
+      yield* say("Track sets too")
+      assert.lengthOf(donors(), 1)
+      assert.isFalse(commands(before).some((c) => c.includes("refresh.sh")))
+      assert.strictEqual((yield* core.sandbox).templateBuild, "b2")
+      yield* cloud.close
+    })
+  )
+})

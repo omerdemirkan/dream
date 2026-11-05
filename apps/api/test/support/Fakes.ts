@@ -28,6 +28,10 @@ export interface FakeSandbox {
   timeoutSeconds: number
   readonly files: Map<string, string>
   readonly metadata: Readonly<Record<string, string>>
+  /** The Dream release its dreamd runs (`/opt/dream/release.json`), and one staged by a refresh. */
+  release: string | undefined
+  staged?: string | undefined
+  previous?: string | undefined
 }
 
 export class FakeWorld {
@@ -60,6 +64,16 @@ export class FakeWorld {
   readonly scripts = new Map<string, ReadonlyArray<ProcessOutput>>()
   /** What a reattached process prints after input. */
   attachOutput: ReadonlyArray<ProcessOutput> = []
+  /** Each template's newest ready build, and the release a sandbox of it gets. */
+  readonly templateBuilds = new Map<string, { build: string; release: string | undefined }>()
+  /** Builds aren't tagged with their release (as before the template build tagged them). */
+  untaggedBuilds = false
+  /** `envd.run` results for commands containing a key; the first match wins. */
+  readonly runResults = new Map<string, { exitCode: number; output: string }>()
+  /** A refreshed dreamd that never answers with its release. */
+  newDaemonSilent = false
+  /** Turn state dreamd reports, per sandbox (default idle). */
+  readonly turns = new Map<string, "idle" | "running">()
   googleRefreshes = 0
   chatGptRefreshes = 0
   /** OAuth providers this deployment has credentials for (the rest of the catalog isn't set up). */
@@ -79,6 +93,7 @@ export const fakeE2B = (world: FakeWorld) =>
       create: (options) =>
         Effect.map(DateTime.now, (now) => {
           const sandboxId = world.nextId("sbx")
+          const release = world.templateBuilds.get(options.template)?.release
           const access = {
             sandboxId,
             domain: "e2b.test",
@@ -94,8 +109,9 @@ export const fakeE2B = (world: FakeWorld) =>
             resumes: 0,
             rules: options.rules,
             timeoutSeconds: options.timeoutSeconds,
-            files: new Map(),
-            metadata: options.metadata
+            files: new Map(release === undefined ? [] : [["/opt/dream/release.json", JSON.stringify({ release })]]),
+            metadata: options.metadata,
+            release
           })
           return access
         }),
@@ -133,6 +149,13 @@ export const fakeE2B = (world: FakeWorld) =>
           sandbox.rules = rules
           return true
         }),
+      currentBuild: (template) =>
+        Effect.sync(() =>
+          Option.map(Option.fromUndefinedOr(world.templateBuilds.get(template)), (current) => ({
+            build: current.build,
+            release: world.untaggedBuilds ? Option.none() : Option.fromUndefinedOr(current.release)
+          }))
+        ),
       pause: (sandboxId) =>
         Effect.sync(() => {
           const sandbox = world.sandboxes.get(sandboxId)
@@ -188,8 +211,22 @@ export const fakeEnvd = (world: FakeWorld) => {
       run: (sandbox, options) =>
         Effect.sync(() => {
           world.processes.push({ sandboxId: sandbox.sandboxId, command: options.command, pty: false })
+          for (const [key, result] of world.runResults) if (options.command.includes(key)) return result
           const files = world.sandboxes.get(sandbox.sandboxId)?.files
           if (files !== undefined) emulateFileCommands(files, options.command)
+          // A refresh, as the real scripts do it: stage the donor's release, swap it in, or put the old one back.
+          const target = world.sandboxes.get(sandbox.sandboxId)
+          if (target !== undefined) {
+            const donorId = /49983-([^.]+)\./.exec(options.envs?.DONOR_URL ?? "")?.[1]
+            if (donorId !== undefined) target.staged = world.sandboxes.get(donorId)?.release
+            if (options.command.includes("refresh.sh activate")) {
+              target.previous = target.release
+              target.release = target.staged
+            }
+            if (options.command.includes("refresh.sh rollback") && target.previous !== undefined) {
+              target.release = target.previous
+            }
+          }
           return { exitCode: 0, output: "" }
         }),
       sendInput: (sandbox, pid, text) =>
@@ -245,11 +282,17 @@ export const fakeDaemon = (world: FakeWorld) =>
           if (!world.daemonHealthy) return Effect.fail(new UpstreamFailure({ service: "dreamd", message: "down" }))
           const { envHash } = runningDaemon(world, sandbox)
           world.healthChecks.push(envHash)
+          const fake = world.sandboxes.get(sandbox.sandboxId)
+          const release =
+            fake?.release !== undefined && fake.release === fake.staged && world.newDaemonSilent
+              ? fake.previous
+              : fake?.release
           return Effect.succeed({
             version: "test",
-            turn: "idle" as const,
+            turn: world.turns.get(sandbox.sandboxId) ?? ("idle" as const),
             queued: 0,
-            ...(envHash === undefined ? {} : { envHash })
+            ...(envHash === undefined ? {} : { envHash }),
+            ...(release === undefined ? {} : { release })
           })
         })
     })

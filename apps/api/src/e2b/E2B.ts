@@ -49,6 +49,19 @@ const SandboxInfo = Schema.Struct({
 })
 export type SandboxInfo = typeof SandboxInfo.Type
 
+const TemplateAlias = Schema.Struct({ templateID: Schema.String })
+
+const TemplateTags = Schema.Array(Schema.Struct({ buildID: Schema.String, tag: Schema.String }))
+
+/** The tag the sandbox-template build puts on a build next to `default`: `release-<release>`. */
+export const ReleaseTagPrefix = "release-"
+
+/** The build new sandboxes of a template get, and the Dream release it carries if its build tagged it. */
+export interface TemplateBuild {
+  readonly build: string
+  readonly release: Option.Option<string>
+}
+
 export class SandboxGone extends Data.TaggedError("SandboxGone")<{ readonly sandboxId: string }> {}
 
 export interface CreateSandbox {
@@ -77,6 +90,11 @@ export class E2B extends Context.Service<
     ) => Effect.Effect<void, UpstreamFailure | SandboxGone>
     /** Replaces the egress rules. A paused sandbox can't be updated: that's `SandboxGone`'s sibling, `false`. */
     readonly updateRules: (sandboxId: string, rules: NetworkRules) => Effect.Effect<boolean, UpstreamFailure>
+    /**
+     * The build a new sandbox of `template` (an alias or id) gets, the one tagged `default`, with the release its
+     * `release-…` tag names. None if there's no such template or no default build.
+     */
+    readonly currentBuild: (template: string) => Effect.Effect<Option.Option<TemplateBuild>, UpstreamFailure>
     readonly pause: (sandboxId: string) => Effect.Effect<void, UpstreamFailure>
     readonly kill: (sandboxId: string) => Effect.Effect<void, UpstreamFailure>
   }
@@ -181,6 +199,35 @@ export class E2B extends Context.Service<
         return true
       })
 
+      const currentBuild = Effect.fn("E2B.currentBuild")(function* (template: string) {
+        const http = yield* client
+        const alias = yield* http
+          .get(`/templates/aliases/${encodeURIComponent(template)}`)
+          .pipe(Effect.mapError(failure("Looking up the template")))
+        const templateId =
+          alias.status === 404
+            ? template
+            : (yield* okOrFail(alias).pipe(
+                Effect.flatMap(HttpClientResponse.schemaBodyJson(TemplateAlias)),
+                Effect.mapError(failure("Looking up the template"))
+              )).templateID
+        const response = yield* http
+          .get(`/templates/${encodeURIComponent(templateId)}/tags`)
+          .pipe(Effect.mapError(failure("Reading the template's tags")))
+        if (response.status === 404) return Option.none<TemplateBuild>()
+        const tags = yield* okOrFail(response).pipe(
+          Effect.flatMap(HttpClientResponse.schemaBodyJson(TemplateTags)),
+          Effect.mapError(failure("Reading the template's tags"))
+        )
+        const build = tags.find((tag) => tag.tag === "default")?.buildID
+        if (build === undefined) return Option.none<TemplateBuild>()
+        const release = tags.find((tag) => tag.buildID === build && tag.tag.startsWith(ReleaseTagPrefix))?.tag
+        return Option.some({
+          build,
+          release: Option.map(Option.fromUndefinedOr(release), (tag) => tag.slice(ReleaseTagPrefix.length))
+        })
+      })
+
       const pause = Effect.fn("E2B.pause")(function* (sandboxId: string) {
         const http = yield* client
         const response = yield* HttpClientRequest.post(`/sandboxes/${sandboxId}/pause`).pipe(
@@ -201,7 +248,7 @@ export class E2B extends Context.Service<
         yield* okOrFail(response).pipe(Effect.mapError(failure("Killing the sandbox")))
       })
 
-      return E2B.of({ create, connect, info, setTimeout, updateRules, pause, kill })
+      return E2B.of({ create, connect, info, setTimeout, updateRules, currentBuild, pause, kill })
     })
   )
 }

@@ -34,6 +34,7 @@ import {
 import { DreamdConfig } from "../Config.ts"
 import * as JsonFile from "../JsonFile.ts"
 import * as Usage from "../Usage.ts"
+import { withPinnedCli } from "./Bridges.ts"
 import { agentEnv, harnessAuth } from "./HarnessEnv.ts"
 import { killAllNow, makeLocalSandboxSession, makeSpawned, stopAll } from "./LocalSandbox.ts"
 import { claudeSettings } from "./PersonChannel.ts"
@@ -183,7 +184,10 @@ const make = Effect.gen(function* () {
   const env = agentEnv(process.env, config)
 
   const agent = new HarnessAgent({
-    harness: name === "claude-code" ? createClaudeCode({ auth }) : createCodex({ auth }),
+    harness:
+      name === "claude-code"
+        ? withPinnedCli("claude-code", createClaudeCode({ auth }))
+        : withPinnedCli("codex", createCodex({ auth })),
     instructions: systemPrompt,
     skills: [skill],
     sandboxConfig: { workDir: "." },

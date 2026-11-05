@@ -40,6 +40,11 @@ export const ApiConfigSchema = Config.all({
    * Pro). Resuming restarts the clock, so a long turn is paused and resumed just before the cap.
    */
   sandboxMaxRun: Config.Duration("E2B_SANDBOX_MAX_RUN").pipe(Config.withDefault(Duration.hours(1))),
+  /**
+   * Whether project sandboxes are brought up to the template's newest build between turns (see
+   * `e2b/Refresh.ts`). On unless SANDBOX_REFRESH is "false".
+   */
+  sandboxRefresh: Config.Boolean("SANDBOX_REFRESH").pipe(Config.withDefault(true)),
   /** The template for short-lived model sign-in sandboxes; needs `claude` and `codex` on PATH. */
   authTemplate: optionalString("E2B_AUTH_TEMPLATE"),
   /**
@@ -99,6 +104,7 @@ export class ApiConfig extends Context.Service<ApiConfig, ApiConfigShape>()("@dr
         e2bDomain: "e2b.test",
         sandboxTemplate: "dream-sandbox",
         sandboxMaxRun: Duration.hours(1),
+        sandboxRefresh: true,
         authTemplate: Option.none(),
         agentModel: Option.none(),
         daemonCommand: "dreamd",

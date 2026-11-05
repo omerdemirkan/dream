@@ -34,6 +34,11 @@ const checks = [
     "cd ~/.ai-sdk-harness/.harness-bootstrap && claude-code/node_modules/.bin/claude --version && codex/node_modules/.bin/codex --version && ls -a claude-code codex | grep bootstrap-"
   ],
   ["dream", "dream --help | head -3"],
+  ["release", "cat /opt/dream/release.json && test -x /opt/dream/sandbox/refresh.sh && echo refresh.sh"],
+  [
+    "claude agent sdk",
+    "cd ~/.ai-sdk-harness/.harness-bootstrap/claude-code && node -p \"require('./node_modules/@anthropic-ai/claude-agent-sdk/package.json').version\""
+  ],
   ["disk", "df -h / | tail -1"],
   ["memory", "free -m | head -2"]
 ] as const

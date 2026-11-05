@@ -1,7 +1,7 @@
 /**
  * `dreamd bootstrap`, run once while the sandbox template is built: installs
  * what both harness adapters need under `~/.ai-sdk-harness` (each adapter's
- * bridge with its pinned Claude Code or Codex CLI) and records the markers
+ * bridge with the Claude Code or Codex CLI Dream pins, see `Bridges.ts`) and records the markers
  * `HarnessAgent` checks, so a project's first turn starts in seconds instead
  * of installing a quarter-gigabyte of CLI.
  */
@@ -12,6 +12,7 @@ import { createClaudeCode } from "@ai-sdk/harness-claude-code"
 import { createCodex } from "@ai-sdk/harness-codex"
 import { DefaultDaemonSocket } from "@dream/domain"
 import { Config, Effect } from "effect"
+import { withPinnedCli } from "./harness/Bridges.ts"
 import { agentEnv, harnessAuth } from "./harness/HarnessEnv.ts"
 import { makeLocalSandboxSession } from "./harness/LocalSandbox.ts"
 
@@ -23,8 +24,12 @@ export const bootstrap = Effect.gen(function* () {
   )
   const templates = yield* Effect.tryPromise(() =>
     Promise.all([
-      new HarnessAgent({ harness: createClaudeCode({ auth: harnessAuth("claude-code") }) }).getSandboxTemplate(),
-      new HarnessAgent({ harness: createCodex({ auth: harnessAuth("codex") }) }).getSandboxTemplate()
+      new HarnessAgent({
+        harness: withPinnedCli("claude-code", createClaudeCode({ auth: harnessAuth("claude-code") }))
+      }).getSandboxTemplate(),
+      new HarnessAgent({
+        harness: withPinnedCli("codex", createCodex({ auth: harnessAuth("codex") }))
+      }).getSandboxTemplate()
     ])
   )
   for (const template of templates) {

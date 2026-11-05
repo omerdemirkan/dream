@@ -22,7 +22,7 @@ import { Outreach } from "./Outreach.ts"
 import { Published } from "./Published.ts"
 import { DaemonServer, SocketServer } from "./Servers.ts"
 import { Shutdown } from "./Shutdown.ts"
-import { version } from "./version.ts"
+import { readRelease, version } from "./version.ts"
 
 /**
  * Completes when the env file's contents change. A watch on its directory (the
@@ -68,6 +68,7 @@ export const main = Effect.gen(function* () {
   const shutdown = yield* Shutdown
   yield* Effect.logInfo("dreamd started", {
     version,
+    release: Option.getOrUndefined(yield* readRelease()),
     projectId: config.projectId,
     harness: config.harness,
     port: config.port,

@@ -5,6 +5,7 @@
 import type { DurableObjectStorage } from "@cloudflare/workers-types"
 import * as SqliteClient from "@effect/sql-sqlite-do/SqliteClient"
 import { Layer } from "effect"
+import { SandboxRefresh } from "../e2b/Refresh.ts"
 import { Alarm, NativeAlarm } from "./Alarm.ts"
 import { Core } from "./Core.ts"
 import { LiveFeed } from "./Live.ts"
@@ -22,6 +23,7 @@ export const projectLayer = (
   const store = Layer.mergeAll(Store.layer, Layer.effectDiscard(migrate)).pipe(Layer.provide(sql))
   const alarm = Alarm.layer.pipe(Layer.provide(nativeAlarm))
   const core = Core.layer.pipe(Layer.provideMerge(Layer.mergeAll(LiveFeed.layer, alarm)))
-  const domain = Layer.mergeAll(Notifier.layer, SandboxManager.layer, Machines.layer).pipe(Layer.provideMerge(core))
+  const sandbox = SandboxManager.layer.pipe(Layer.provide(SandboxRefresh.layer))
+  const domain = Layer.mergeAll(Notifier.layer, sandbox, Machines.layer).pipe(Layer.provideMerge(core))
   return Scheduler.layer.pipe(Layer.provideMerge(domain), Layer.provideMerge(store))
 }

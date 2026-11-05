@@ -16,14 +16,14 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@ai-sdk/harness": "1.0.173",
-    "@ai-sdk/harness-claude-code": "1.0.177",
-    "@ai-sdk/harness-codex": "1.0.175",
-    "@ai-sdk/provider-utils": "5.0.74",
+    "@ai-sdk/harness": "1.0.174",
+    "@ai-sdk/harness-claude-code": "1.0.178",
+    "@ai-sdk/harness-codex": "1.0.176",
+    "@ai-sdk/provider-utils": "5.0.75",
     "@dream/agent-context": "workspace:*",
     "@dream/domain": "workspace:*",
     "@effect/platform-node": "4.1.2",
-    "ai": "7.0.162",
+    "ai": "7.0.163",
     "effect": "4.1.2",
     "ws": "8.21.0",
     "zod": "4.6.7"

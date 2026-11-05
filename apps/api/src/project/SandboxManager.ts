@@ -11,6 +11,11 @@
  * the keepalive checks every few minutes: shortly before the cap it pauses and
  * resumes the sandbox itself (resuming restarts the clock), and if it finds
  * the sandbox paused anyway, it resumes it.
+ *
+ * A sandbox keeps the Dream it was created with unless it's refreshed: when the
+ * template has a newer build, the sandbox is brought up to it between turns
+ * (`e2b/Refresh.ts`), before the next delivery and shortly after each turn.
+ * Projects that sleep for weeks catch up the next time something wakes them.
  */
 import {
   type AgentEvent,
@@ -32,8 +37,9 @@ import { ApiConfig } from "../Config.ts"
 import { Projects } from "../db/Projects.ts"
 import { Users } from "../db/Users.ts"
 import { Daemon } from "../e2b/Daemon.ts"
-import { E2B, type SandboxAccess } from "../e2b/E2B.ts"
+import { E2B, type SandboxAccess, type TemplateBuild } from "../e2b/E2B.ts"
 import { Envd } from "../e2b/Envd.ts"
+import { RefreshResult, SandboxRefresh } from "../e2b/Refresh.ts"
 import { KeyFiles } from "../integrations/KeyFiles.ts"
 import { SandboxCredentials } from "../integrations/SandboxCredentials.ts"
 import { toHex, utf8 } from "../lib/Bytes.ts"
@@ -57,6 +63,14 @@ const HealthWait = Duration.seconds(120)
  */
 const LegacyRestartWait = Duration.seconds(12)
 const BatchSize = 50
+/** How long the template's newest build, once looked up, is trusted. */
+export const LatestBuildTtl = Duration.minutes(10)
+/** After a turn ends, the sandbox is refreshed (if it's behind) this much later: still awake, and likely idle. */
+export const RefreshAfterTurn = Duration.minutes(1)
+
+/** After `failures` failed refreshes to the same build, wait this long before the next try: 1 h, doubling, up to a day. */
+export const refreshBackoff = (failures: number): Duration.Duration =>
+  Duration.hours(Math.min(24, 2 ** Math.max(0, failures - 1)))
 
 /**
  * What dreamd's env file says, but for the project token (signed afresh on every write). The agent model only
@@ -90,6 +104,12 @@ const hashSettings = (settings: Readonly<Record<string, string>>): Effect.Effect
     return toHex(new Uint8Array(await crypto.subtle.digest("SHA-256", utf8(canonical))))
   })
 
+const latestRecord = (current: TemplateBuild, checkedAt: DateTime.Utc) => ({
+  build: current.build,
+  ...Option.match(current.release, { onNone: () => ({}), onSome: (release) => ({ release }) }),
+  checkedAt
+})
+
 export const backoffMs = (failures: number): number => Math.min(15 * 60_000, 5_000 * 3 ** Math.max(0, failures - 1))
 
 export class SandboxManager extends Context.Service<
@@ -109,6 +129,8 @@ export class SandboxManager extends Context.Service<
     readonly turnStarted: Effect.Effect<void>
     readonly turnFinished: Effect.Effect<void>
     readonly keepalive: Effect.Effect<void>
+    /** Brings the sandbox up to the template's newest build, if it's behind and between turns. */
+    readonly refresh: Effect.Effect<void>
     /** Kills the sandbox for good (archiving the project). */
     readonly archive: Effect.Effect<void>
   }
@@ -128,6 +150,7 @@ export class SandboxManager extends Context.Service<
       const keyFiles = yield* KeyFiles
       const projects = yield* Projects
       const users = yield* Users
+      const refresher = yield* SandboxRefresh
       const busy = yield* Semaphore.make(1)
 
       const update = (f: (record: SandboxRecord) => SandboxRecord) =>
@@ -140,12 +163,12 @@ export class SandboxManager extends Context.Service<
       const waitForDaemon = (access: SandboxAccess, daemonToken: string, within: Duration.Duration, envHash?: string) =>
         Effect.gen(function* () {
           const since = yield* Clock.currentTimeMillis
-          yield* daemon.health(access, daemonToken).pipe(
+          return yield* daemon.health(access, daemonToken).pipe(
             Effect.flatMap((health) =>
               Effect.gen(function* () {
-                if (envHash === undefined || health.envHash === envHash) return
+                if (envHash === undefined || health.envHash === envHash) return health
                 const waited = (yield* Clock.currentTimeMillis) - since
-                if (health.envHash === undefined && waited >= Duration.toMillis(LegacyRestartWait)) return
+                if (health.envHash === undefined && waited >= Duration.toMillis(LegacyRestartWait)) return health
                 return yield* new UpstreamFailure({ service: "dreamd", message: "dreamd hasn't restarted yet" })
               })
             ),
@@ -207,12 +230,12 @@ export class SandboxManager extends Context.Service<
       const restartDaemon = (access: SandboxAccess, daemonToken: string) =>
         Effect.gen(function* () {
           const envHash = yield* writeDaemonEnv(access, daemonToken)
-          yield* waitForDaemon(access, daemonToken, Duration.seconds(45), envHash).pipe(
+          return yield* waitForDaemon(access, daemonToken, Duration.seconds(45), envHash).pipe(
             Effect.catch(() =>
               Effect.gen(function* () {
                 yield* Effect.logWarning("dreamd didn't answer; starting it directly")
                 yield* startDaemon(access)
-                yield* waitForDaemon(access, daemonToken, HealthWait, envHash)
+                return yield* waitForDaemon(access, daemonToken, HealthWait, envHash)
               })
             )
           )
@@ -271,6 +294,10 @@ export class SandboxManager extends Context.Service<
         const daemonToken = randomToken(40)
         const setup = yield* credentials.setup(project.ownerId, project.harness)
         yield* update((r) => ({ ...r, status: "creating" }))
+        // The build it's about to get (unknown if the lookup fails; then the first refresh check settles it).
+        const build = yield* e2b
+          .currentBuild(config.sandboxTemplate)
+          .pipe(Effect.orElseSucceed(() => Option.none<TemplateBuild>()))
         const access = yield* e2b.create({
           template: config.sandboxTemplate,
           timeoutSeconds: Duration.toSeconds(IdleTimeout),
@@ -282,7 +309,7 @@ export class SandboxManager extends Context.Service<
         // The keys are in place before the agent's first turn.
         const ready = Effect.andThen(writeKeyFiles(access), restartDaemon(access, daemonToken))
         // Don't leak a sandbox that never became usable.
-        yield* ready.pipe(Effect.tapError(() => e2b.kill(access.sandboxId).pipe(Effect.ignore)))
+        const health = yield* ready.pipe(Effect.tapError(() => e2b.kill(access.sandboxId).pipe(Effect.ignore)))
         const now = yield* DateTime.now
         yield* update((r) => ({
           ...r,
@@ -293,7 +320,12 @@ export class SandboxManager extends Context.Service<
           rulesHash: setup.rulesHash,
           rulesDirty: false,
           keyFilesDirty: false,
-          failures: 0
+          failures: 0,
+          ...(health.release === undefined ? {} : { release: health.release }),
+          ...Option.match(build, {
+            onNone: () => ({}),
+            onSome: (current) => ({ templateBuild: current.build, latestBuild: latestRecord(current, now) })
+          })
         }))
         yield* Effect.logInfo("sandbox ready", { sandboxId: access.sandboxId })
         return { access, daemonToken }
@@ -361,6 +393,114 @@ export class SandboxManager extends Context.Service<
           yield* revive(resumed, daemonToken)
         }).pipe(Effect.catch((error) => Effect.logWarning("sandbox check failed", String(error))))
 
+      /** The template's current build, looked up at most every `LatestBuildTtl`. */
+      const latestBuild = Effect.gen(function* () {
+        const record = yield* core.sandbox
+        const now = yield* DateTime.now
+        const cached = record.latestBuild
+        if (cached !== undefined && Duration.isLessThan(DateTime.distance(cached.checkedAt, now), LatestBuildTtl)) {
+          return Option.some({ build: cached.build, release: Option.fromUndefinedOr(cached.release) })
+        }
+        const current = yield* e2b.currentBuild(config.sandboxTemplate)
+        if (Option.isSome(current)) yield* update((r) => ({ ...r, latestBuild: latestRecord(current.value, now) }))
+        return current
+      })
+
+      /**
+       * Between turns, if the sandbox's Dream is behind the template's current build, refresh it. Behind means a
+       * different release when the build's tag names one (so a rebuild of the same source isn't), else a different
+       * build. A failure is logged and backed off per build; it never stands in the way of delivery (a failed refresh
+       * rolls itself back).
+       */
+      const refreshIfDue = (access: SandboxAccess, daemonToken: string) =>
+        Effect.gen(function* () {
+          if (!config.sandboxRefresh) return
+          const record = yield* core.sandbox
+          if (record.working) return
+          const found = yield* latestBuild
+          if (Option.isNone(found)) return
+          const latest = { build: found.value.build, release: Option.getOrUndefined(found.value.release) }
+          if (
+            latest.release !== undefined ? record.release === latest.release : record.templateBuild === latest.build
+          ) {
+            if (record.templateBuild !== latest.build) yield* settle(latest.build, latest.release)
+            return
+          }
+          const now = yield* DateTime.now
+          const failure = record.refreshFailure
+          if (failure?.build === latest.build && DateTime.isLessThan(now, failure.retryAt)) return
+          const project = yield* core.project.pipe(Effect.orDie)
+          yield* Effect.logInfo("the sandbox is behind the template; refreshing it", {
+            sandboxId: access.sandboxId,
+            from: { build: record.templateBuild, release: record.release },
+            to: latest
+          })
+          const result = yield* refresher
+            .run({
+              target: access,
+              daemonToken,
+              template: config.sandboxTemplate,
+              metadata: { projectId: project.id, userId: project.ownerId }
+            })
+            .pipe(Effect.result)
+          if (result._tag === "Failure") {
+            const failures = failure?.build === latest.build ? failure.failures + 1 : 1
+            yield* Effect.logError("couldn't refresh the sandbox", {
+              sandboxId: access.sandboxId,
+              step: result.failure.step,
+              error: result.failure.message,
+              rolledBack: result.failure.rolledBack,
+              failures
+            })
+            yield* update((r) => ({
+              ...r,
+              refreshFailure: {
+                build: latest.build,
+                failures,
+                retryAt: DateTime.addDuration(now, refreshBackoff(failures)),
+                message: `${result.failure.step}: ${result.failure.message}`
+              }
+            }))
+            return
+          }
+          yield* RefreshResult.$match(result.success, {
+            Busy: () => Effect.void,
+            // Built before refreshing existed: there's nothing newer to bring over, so don't look again for this build.
+            Unsupported: () => update((r) => ({ ...r, templateBuild: latest.build })),
+            Current: ({ release, build }) =>
+              settle(
+                Option.getOrElse(build, () => latest.build),
+                release
+              ),
+            Refreshed: ({ release, build }) =>
+              settle(
+                Option.getOrElse(build, () => latest.build),
+                release
+              )
+          })
+        }).pipe(
+          Effect.catch((error) => Effect.logWarning("couldn't check for a newer sandbox template", error.message)),
+          Effect.withSpan("SandboxManager.refreshIfDue")
+        )
+
+      const settle = (build: string, release: string | undefined) =>
+        update((r) => {
+          const { refreshFailure: _, ...rest } = r
+          return { ...rest, templateBuild: build, ...(release === undefined ? {} : { release }) }
+        })
+
+      const refresh = busy
+        .withPermits(1)(
+          Effect.gen(function* () {
+            yield* store.clearTimer("sandbox-refresh")
+            const record = yield* core.sandbox
+            if (record.status !== "ready" || record.access === undefined || record.daemonToken === undefined) return
+            if (Option.isSome(yield* store.getSingleton(...Singletons.archived))) return
+            yield* refreshIfDue(record.access, record.daemonToken)
+          })
+        )
+        .pipe(Effect.catchCause((cause) => Effect.logWarning("sandbox refresh check failed", { cause })))
+
       const deliverOnce = Effect.gen(function* () {
         const now = yield* Clock.currentTimeMillis
         const pause = yield* core.usagePause
@@ -392,6 +532,7 @@ export class SandboxManager extends Context.Service<
             )
           )
         }
+        yield* refreshIfDue(access, daemonToken)
         yield* refreshDaemonEnv(access, daemonToken)
         const timeZone = Option.flatMap(yield* users.find(project.ownerId), (user) =>
           Option.fromUndefinedOr(user.timeZone)
@@ -511,6 +652,12 @@ export class SandboxManager extends Context.Service<
           return { ...rest, working: false }
         })
         yield* store.clearTimer("turn-keepalive")
+        if (config.sandboxRefresh) {
+          yield* store.setTimer(
+            "sandbox-refresh",
+            (yield* Clock.currentTimeMillis) + Duration.toMillis(RefreshAfterTurn)
+          )
+        }
         yield* alarm.reschedule
         if (record.access !== undefined) {
           yield* e2b.setTimeout(record.access.sandboxId, Duration.toSeconds(IdleTimeout)).pipe(Effect.ignore)
@@ -553,6 +700,7 @@ export class SandboxManager extends Context.Service<
         turnStarted,
         turnFinished,
         keepalive: keepalive.pipe(Effect.catch(() => Effect.void)),
+        refresh,
         archive
       })
     })

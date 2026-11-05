@@ -48,7 +48,24 @@ export const SandboxRecord = Schema.Struct({
   startedWork: Schema.optionalKey(Schema.Boolean),
   /** Consecutive delivery failures, for backoff. */
   failures: Schema.Int,
-  lastError: Schema.optionalKey(Schema.String)
+  lastError: Schema.optionalKey(Schema.String),
+  /** The template build its Dream (dreamd, CLI, prompt, harnesses) came from: created from, or last refreshed to. */
+  templateBuild: Schema.optionalKey(Schema.String),
+  /** The release its dreamd last reported (`/opt/dream/release.json`). */
+  release: Schema.optionalKey(Schema.String),
+  /** The template's current build (and the release its tag names), as last looked up, and when. */
+  latestBuild: Schema.optionalKey(
+    Schema.Struct({ build: Schema.String, release: Schema.optionalKey(Schema.String), checkedAt: Schema.DateTimeUtc })
+  ),
+  /** Refreshing to `build` failed `failures` times in a row; don't try that build again before `retryAt`. */
+  refreshFailure: Schema.optionalKey(
+    Schema.Struct({
+      build: Schema.String,
+      failures: Schema.Int,
+      retryAt: Schema.DateTimeUtc,
+      message: Schema.String
+    })
+  )
 })
 export type SandboxRecord = typeof SandboxRecord.Type
 
@@ -172,7 +189,14 @@ export const migrate = Migrator.make({})({ loader: migrations }).pipe(Effect.orD
 const JsonRow = Schema.Struct({ json: Schema.String })
 const MessageRow = Schema.Struct({ seq: Schema.Number, json: Schema.String })
 
-export type TimerName = "deliver" | "usage-reset" | "mac-idle" | "turn-keepalive" | "browser-sweep" | "sandbox-retry"
+export type TimerName =
+  | "deliver"
+  | "usage-reset"
+  | "mac-idle"
+  | "turn-keepalive"
+  | "browser-sweep"
+  | "sandbox-retry"
+  | "sandbox-refresh"
 
 export class Store extends Context.Service<
   Store,

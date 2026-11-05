@@ -40,6 +40,8 @@ export class Daemon extends Context.Service<
         readonly queued: number
         /** The env file's hash, as that dreamd read it; absent from older builds. */
         readonly envHash?: string
+        /** The template release it runs from; absent from older builds. */
+        readonly release?: string
       },
       UpstreamFailure
     >
