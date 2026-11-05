@@ -424,11 +424,25 @@ export class SandboxManager extends Context.Service<
         }
       })
 
+      // The agent should set a phase itself, but if its first turn starts while
+      // the project is still "new", Home shouldn't keep saying so. Later turns
+      // leave the phase to the agent.
+      const advancePhase = (now: DateTime.Utc) =>
+        Effect.gen(function* () {
+          const status = yield* core.status
+          if (status.phase !== "new") return
+          yield* core.saveStatus({ ...status, phase: "exploring", phaseSince: now, updatedAt: now })
+          const project = yield* core.project.pipe(Effect.orDie)
+          yield* core.saveProject({ ...project, phase: "exploring", updatedAt: now })
+        })
+
       const turnStarted = Effect.gen(function* () {
         const now = yield* DateTime.now
+        if ((yield* core.sandbox).startedWork !== true) yield* advancePhase(now)
         yield* update((r) => ({
           ...r,
           working: true,
+          startedWork: true,
           turnStartedAt: r.working && r.turnStartedAt ? r.turnStartedAt : now
         }))
         yield* keepalive

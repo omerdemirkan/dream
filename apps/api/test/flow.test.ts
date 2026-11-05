@@ -6,6 +6,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { DaemonEnvFile, type NotificationId, type ProjectId, QuestionAnswer } from "@dream/domain"
 import { Context, DateTime, Effect, Exit, Fiber, Option, Redacted, Stream } from "effect"
+import { gateway } from "../src/http/Gateway.ts"
 import { ProjectClients } from "../src/project/Client.ts"
 import { Core } from "../src/project/Core.ts"
 import { Store } from "../src/project/Store.ts"
@@ -130,7 +131,8 @@ describe("a project, end to end", () => {
     Effect.gen(function* () {
       const cloud = yield* makeCloud()
       const { project, user } = yield* setup(cloud)
-      assert.strictEqual(project.title, "New idea")
+      assert.strictEqual(project.title, "Strength log")
+      assert.strictEqual(project.phase, "new")
       assert.strictEqual(project.harness, "claude-code")
       assert.match(project.publicUrl, /^https:\/\/strength-log-reads-[a-z0-9]{8}\.dream\.test$/)
 
@@ -475,6 +477,54 @@ describe("a project, end to end", () => {
       storage.db.exec("UPDATE timers SET due_ms = 0 WHERE name = 'deliver'")
       yield* cloud.alarm(project.id)
       assert.strictEqual(cloud.world.delivered.length, 1)
+      yield* cloud.close
+    })
+  )
+
+  it.live("the first turn moves the phase on from new, and never overrides the agent's phase", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project } = yield* setup(cloud)
+      yield* cloud.alarm(project.id)
+      const dreamd = yield* cloud.sandbox(envFileOf(cloud, project.id).env.DREAM_PROJECT_TOKEN)
+      const live = yield* cloud.live(project.id)
+      const snapshot = Effect.map(live.Subscribe().pipe(Stream.take(1), Stream.runCollect), ([first]) =>
+        first?._tag === "Snapshot" ? first : assert.fail("expected a Snapshot")
+      )
+      assert.strictEqual((yield* snapshot).status.phase, "new")
+
+      yield* dreamd.ReportTurn({ state: "started", eventIds: [] })
+      const [row] = yield* cloud.phone.ListProjects()
+      assert.strictEqual(row?.project.phase, "exploring")
+      assert.strictEqual(row?.project.title, "Strength log")
+      const started = yield* snapshot
+      assert.strictEqual(started.project.phase, "exploring")
+      assert.strictEqual(started.status.phase, "exploring")
+      assert.strictEqual((yield* dreamd.GetStatus()).phase, "exploring")
+      yield* dreamd.ReportTurn({ state: "finished", eventIds: [] })
+
+      // Once the agent has set a phase, later turns leave it alone, even "new".
+      yield* dreamd.UpdateStatus({ title: "Lift Log", phase: "new" })
+      yield* dreamd.ReportTurn({ state: "started", eventIds: [] })
+      assert.strictEqual((yield* cloud.phone.ListProjects())[0]?.project.phase, "new")
+      assert.strictEqual((yield* cloud.phone.ListProjects())[0]?.project.title, "Lift Log")
+      assert.strictEqual((yield* snapshot).status.phase, "new")
+      yield* cloud.close
+    })
+  )
+
+  it.live("the gateway says plainly when nothing is published yet", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project } = yield* setup(cloud)
+      const host = new URL(project.publicUrl).host
+      const response = yield* gateway(host, new Request(project.publicUrl)).pipe(
+        Effect.provideContext(cloud.workerContext)
+      )
+      assert.strictEqual(response.status, 404)
+      const body = response.body._tag === "Uint8Array" ? new TextDecoder().decode(response.body.body) : ""
+      assert.include(body, "Not published yet")
+      assert.include(body, "still being built")
       yield* cloud.close
     })
   )

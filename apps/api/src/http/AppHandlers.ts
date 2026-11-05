@@ -26,7 +26,7 @@ import { ApiConfig } from "../Config.ts"
 import { ConnectLinks } from "../connect/ConnectLinks.ts"
 import { ModelConnect } from "../connect/ModelConnect.ts"
 import { Connections, toModelConnection } from "../db/Connections.ts"
-import { Projects } from "../db/Projects.ts"
+import { Projects, titleFromIdea } from "../db/Projects.ts"
 import { Users } from "../db/Users.ts"
 import { Access } from "../integrations/Access.ts"
 import { Google } from "../integrations/Google.ts"
@@ -182,7 +182,7 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
           const project: Project = {
             id: yield* newProjectId(),
             ownerId: userId,
-            title: "New idea",
+            title: titleFromIdea(idea),
             idea,
             harness: chosen,
             phase: "new",
