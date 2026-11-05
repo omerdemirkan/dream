@@ -194,3 +194,9 @@ Other findings:
   refused: "more than one credential"). The same holds for chatgpt.com on Codex projects. Not changed: it needs a
   founder decision (options in the summary: route the harness through a Dream-owned egress host so api.anthropic.com
   carries nothing, or keep it and state it to the agent).
+- Game fix loop (06:43): as the person, reported "my phone locked … I wasn't in the room anymore". The agent fixed it
+  in 1.5 minutes (persistent player ids in localStorage + a rejoin event). Verified with four socket.io clients through
+  the public URL: a player who drops and reconnects on a new socket gets their seat, team and spymaster role back
+  mid-game, and the room survives everyone locking at once. Gaps: the client only rejoins if the page wasn't reloaded
+  (iOS may discard a backgrounded tab), and disconnect now never removes anyone (rooms live forever; harmless here).
+  So: a concrete report gets a real fix fast; the same constraint stated up front ("phones will lock") didn't.
