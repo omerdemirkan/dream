@@ -47,3 +47,15 @@ Other findings:
   re-ran it in 18 s. No CORS headers (not needed same-origin).
 - Prompt: added one line of context about honesty ("they act on what you tell them … an honest 'not yet'") after the
   Google dashboard overclaim. Model-agnostic.
+
+## 4. Native iOS (tip calculator, prj_f0kxtUZlB37GGR1GKMwH0J) — interim, from the transcript
+- PASS: `dream mac start` → Mac up; `dream mac ssh` works; Xcode 26.1.1; `dream mac stop` at the end.
+- Agent struggled to make an Xcode project from scratch (hand-written .pbxproj, then SwiftPM `--type app`, both failed).
+- `screencapture` over SSH fails (no GUI session); the agent didn't find `xcrun simctl io booted screenshot`.
+- Sandbox had no Chromium on PATH, no PIL, no fonts → couldn't render a preview image. SVG rejected by `--media`
+  (clear error). A long `dream message` with box-drawing characters broke shell quoting.
+- Agent then claimed "Here's your Tip Calculator app running on iOS" over a mockup — overclaiming (honesty line was added
+  to the prompt after this project started).
+- Fixes dispatched (`fix/sandbox-env`): stdin for `dream message`, Chromium on PATH + fonts + PIL in the template,
+  Mac facts in the skill (simctl screenshots, Homebrew/XcodeGen, file copy) and `dream mac cp` if missing.
+- Merged `fix/status-defaults` (provisional titles, phase → exploring on first turn); deployed from main.
