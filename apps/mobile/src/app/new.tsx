@@ -37,7 +37,7 @@ export default function NewIdea() {
     (heard) => setText((current) => (current.trim() ? `${current.trimEnd()} ${heard}` : heard)),
     "Scale any recipe up or down, and keep the ingredient math honest."
   )
-  const has = text.trim().length > 0
+  const has = text.trim().length > 0 || (dictation.listening && dictation.heard.trim().length > 0)
 
   useEffect(() => {
     if (params.dictate) {
@@ -51,9 +51,14 @@ export default function NewIdea() {
   }, [])
 
   const send = () => {
-    if (!has || create.busy) return
-    dictation.stop()
-    const idea = text.trim()
+    // Sending mid-dictation takes what's been heard so far, rather than dropping it.
+    const idea = (dictation.listening && dictation.heard ? `${text.trimEnd()} ${dictation.heard}` : text).trim()
+    if (!idea || create.busy) return
+    if (dictation.listening) {
+      // The field keeps the whole idea, so a failed send can be retried.
+      setText(idea)
+      dictation.cancel()
+    }
     create.run(
       { idea, requestId: requestId.for(idea) },
       {

@@ -11,6 +11,7 @@ import * as Device from "expo-device"
 import { getLocales } from "expo-localization"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Alert, Linking } from "react-native"
+import { addResult, emptyTranscript, type Transcript, transcriptText } from "../data/transcript.ts"
 import { appConfig } from "../state/runtime.ts"
 
 interface SpeechResultEvent {
@@ -49,6 +50,8 @@ export interface Dictation {
   readonly heard: string
   readonly toggle: () => void
   readonly stop: () => void
+  /** Stops listening and drops the take, for when its text was already used. */
+  readonly cancel: () => void
 }
 
 /**
@@ -59,6 +62,7 @@ export function useDictation(onText: (text: string) => void, sample = "Can it al
   const [listening, setListening] = useState(false)
   const [heard, setHeard] = useState("")
   const heardRef = useRef("")
+  const transcript = useRef<Transcript>(emptyTranscript)
   const onTextRef = useRef(onText)
   onTextRef.current = onText
   const subscriptions = useRef<Array<Subscription>>([])
@@ -105,9 +109,13 @@ export function useDictation(onText: (text: string) => void, sample = "Can it al
       cleanUp()
       subscriptions.current = [
         module.addListener("result", (event) => {
-          const text = event.results[0]?.transcript ?? ""
-          heardRef.current = text
-          setHeard(text)
+          // iOS starts each segment over after a pause, so the take is the kept segments plus this one.
+          transcript.current = addResult(transcript.current, {
+            text: event.results[0]?.transcript ?? "",
+            isFinal: event.isFinal
+          })
+          heardRef.current = transcriptText(transcript.current)
+          setHeard(heardRef.current)
         }),
         module.addListener("error", (event) => {
           if (event.error !== "aborted" && event.error !== "no-speech") {
@@ -117,6 +125,7 @@ export function useDictation(onText: (text: string) => void, sample = "Can it al
         module.addListener("end", finish)
       ]
       heardRef.current = ""
+      transcript.current = emptyTranscript
       setHeard("")
       setListening(true)
       module.start({
@@ -155,11 +164,20 @@ export function useDictation(onText: (text: string) => void, sample = "Can it al
     else finish()
   }, [finish, listening])
 
+  const cancel = useCallback(() => {
+    cleanUp()
+    speech?.abort()
+    heardRef.current = ""
+    transcript.current = emptyTranscript
+    setHeard("")
+    setListening(false)
+  }, [cleanUp])
+
   const toggle = useCallback(() => {
     if (listening) return stop()
     if (speech) void startNative(speech)
     else if (appConfig.backend === "fixtures") startSimulated()
   }, [listening, startNative, startSimulated, stop])
 
-  return { available: dictationAvailable, listening, heard, toggle, stop }
+  return { available: dictationAvailable, listening, heard, toggle, stop, cancel }
 }
