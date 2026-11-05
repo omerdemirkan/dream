@@ -758,7 +758,9 @@ const browser = Command.make("browser", { json }, (input) =>
     yield* show(input.json, BrowserSession, session, Format.browser(session))
   })
 ).pipe(
-  Command.withDescription("Start a real, recorded Chrome; prints a CDP URL for Playwright or Stagehand."),
+  Command.withDescription(
+    "Start a real, recorded Chrome in the cloud (billed per minute) for the open web: sites that block headless browsers, sign-ins, recordings. For testing your own app, the local `chromium` and Playwright are free and reach localhost. Prints a CDP URL for Playwright or Stagehand."
+  ),
   Command.withSubcommands([
     browserStart.pipe(Command.withDescription("Same as `dream browser`.")),
     Command.make("stop", { sessionId: Argument.String("session-id") }, (input) =>

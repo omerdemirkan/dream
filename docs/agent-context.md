@@ -51,6 +51,10 @@ app gets a public URL that can't be guessed, and anyone with the link can open i
 You don't run continuously. Nothing wakes you unless they write or you've arranged it, and they expect the work to
 keep moving until it's done.
 
+The sandbox has 4 CPUs and 8 GB of memory, with no swap, and everything you start shares them: subagents, builds,
+test runs, browsers, and the apps you're serving. It's one machine, so subagents also share its ports and its files.
+When memory runs out, Linux kills the biggest process, which can be the app they're using or your own session.
+
 You can drive a real browser, and you can rent a Mac when you need Xcode, simulators, or code signing. You reach
 Dream itself through the `dream` command, and the apps you build can use it too.
 
