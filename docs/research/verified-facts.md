@@ -224,3 +224,11 @@
   sshHostKeys[b64]}, no expiry, same key per instance; ExtendInstance {instanceId, ensureMinimum:"1800s"};
   DestroyInstance idempotent. No idle auto-stop: only `deadline` (Developer plan max 3 h). macOS allowed on every plan
   (Developer: 12 vCPU / 28 GB concurrent).
+- Cloudflare deploy (2026-11-05, control plane): the API Worker `dream-api` is live at https://dream.omer.build
+  (custom domain) with zone route `*.omer.build/*` and a proxied `*.omer.build` AAAA 100:: record for the gateway.
+  Alchemy's state bootstrap needs a workers.dev subdomain (created: omer-build.workers.dev) and its Cloudflare state
+  store needs Secrets Store access, which the cloudflare-api token lacks (also lacks KV and Workers Observability);
+  state is local with `--adopt` until then. Secrets set outside alchemy (API or dashboard) survive `alchemy deploy`
+  (verified with a dummy secret). `POST /accounts/:id/workers/scripts/dream-api/tails` works for live logs.
+  A DO stub's `fetch` turns `https://project/internal/rpc` into `https://localhost/internal/rpc/` (trailing slash), and
+  a deployed DO can keep running its previous code for a few minutes after a deploy.
