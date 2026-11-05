@@ -296,3 +296,9 @@
   kernel picked the largest process (supervisor, dreamd and user processes all have oom_score_adj 100), and dreamd
   survived. So the risk is total memory across builds, tests, dev servers and browsers, not browsers alone.
 - Browserbase: the account moved to a paid plan on 2026-11-05; `dream browser` start/stop verified from a sandbox.
+- Namespace macOS 27 image (2026-11-05): selector `macos.version=27.x` gives macOS 27.2 with /Applications/Xcode_26.6,
+  Xcode_27 (27.0, the xcode-select default), Xcode_27.1 and Xcode_27.2; iOS 26.5 and 27.x simulator runtimes; no bun.
+  Dream's `build-ios.sh` picks Xcode 26.6 and, from a fresh checkout, builds for the Simulator (Release, ~7 min) and
+  archives for devices unsigned (~4 min) with no patches. The `26.x` image stops at Xcode 26.3. Outerloop's own
+  simulator (`ol simulator`) has only Expo Go and no app install, so Dream's screens are checked on the Namespace Mac
+  (simctl, `axe` from Homebrew for taps and typing; type in short chunks, fast input drops characters).

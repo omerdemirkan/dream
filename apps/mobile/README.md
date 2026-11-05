@@ -94,13 +94,15 @@ DREAM_SESSION=$(node infra/scripts/dev-login.ts session you@example.com) node ap
 `screenshots/live/` holds a run against the deployed API with real agent projects (a development build with
 `DREAM_BACKEND=live`, signed in through the dev secret).
 
+Screens are checked on a Namespace Mac: Outerloop's own Simulator carries only Expo Go, which can't run this app.
+
 To drive the live app in a Simulator, build the development app (`CONFIGURATION=Debug DREAM_BACKEND=live
 scripts/build-ios.sh simulator`), install it, run `DREAM_BACKEND=live bunx expo start --dev-client` next to the
-Simulator, and open `dream://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081`. Namespace's macOS image
-(November 2026) tops out at Xcode 26.3, where `expo-modules-jsi` fails one Swift 6 check ("sending 'slot' risks
-causing data races" in `JavaScriptObject.swift`, `withEncodedValue`). For a local build only, passing the pointer
-into the isolated closure as `Int(bitPattern: slot)` and rebuilding it inside gets past it; don't ship that, build
-releases with Xcode 26.4 or newer.
+Simulator, and open `dream://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081`. Expo SDK 58 needs Xcode
+26.4 or newer: on 26.3 `expo-modules-jsi` fails one Swift 6 check. On Namespace, create the Mac with
+`macos.version=27.x` (macOS 27.2 with Xcode 26.6, 27.0, 27.1 and 27.2); `build-ios.sh` picks Xcode 26.6 there and
+builds unchanged. The `26.x` image stops at Xcode 26.3. In November 2026 a fresh checkout built for the Simulator
+(Release) in about 7 minutes, and an unsigned device archive in about 4.
 
 ## Building for TestFlight
 

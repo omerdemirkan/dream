@@ -2,8 +2,9 @@
 
 **Why:** this puts the real app on your phone, and on your friends' phones.
 
-**Needs:** a Mac with **Xcode 26.4 or newer**. Expo SDK 58 doesn't compile on 26.3 or older. Namespace's newest Mac
-image is 26.3, which is why this runs on your own Mac for now. Do [apple-developer.md](apple-developer.md) first, and
+**Needs:** a Mac with **Xcode 26.4 or newer**. Expo SDK 58 doesn't compile on 26.3 or older. Your own Mac works, and
+so does a Namespace Mac created with the selector `macos.version=27.x` (macOS 27.2 with Xcode 26.6, 27.0, 27.1 and
+27.2; `build-ios.sh` picks 26.6). The `26.x` image stops at Xcode 26.3. Do [apple-developer.md](apple-developer.md) first, and
 ideally [apns.md](apns.md) and [google-oauth.md](google-oauth.md) too: their values are baked into the build.
 
 **1. One-time Mac setup**
