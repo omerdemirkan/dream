@@ -36,6 +36,7 @@ bun run test           # vitest, all projects (see vitest.config.ts)
 bun run format         # biome, TS and JSON only
 bun run sync-prompts   # regenerate agent-context strings after editing docs/agent-context.md or docs/dream-skill.md
 bun run infra:plan     # alchemy plan; needs Cloudflare credentials and DREAM_DOMAIN in .env
+bun run template:build # build the dream-sandbox E2B template (~2 min); --background, then `status <template> <build>`
 ```
 
 Run alchemy from the workspace root (the `infra:*` scripts do), because relative paths in resource props, such as D1
@@ -161,6 +162,10 @@ the other workstreams to agree first.
   one-to-one onto `SandboxRpcs`. Turn prompts come from `renderTurnPrompt` in `@dream/agent-context`, and the system
   prompt and skill are exported there as strings. The bins run directly under Node 24 type stripping, which is why
   `erasableSyntaxOnly` is on (no enums, namespaces or parameter properties).
+  The `dream-sandbox` template's start command keeps dreamd running, and the snapshot carries it into every new
+  sandbox, so the ProjectDO starts dreamd by writing `DaemonEnvFile` (rewriting it restarts dreamd). Both harness
+  CLIs are pre-installed. `packages/sandbox-template/scripts/smoke.ts` checks a fresh sandbox, and with
+  `packages/dreamd/scripts/fake-api.ts` and `fake-responses.ts` (exposed publicly) it runs a Codex turn there.
 - **Mobile.** Run `create-expo-app` inside `apps/mobile` with bun, keep the package name `@dream/mobile`, and depend on
   `@dream/domain` (`workspace:*`). Domain source uses explicit `.ts` import extensions and `exports` maps, so confirm
   Metro resolves both. Confirm where expo-notifications exposes custom APNs keys and adjust `PushDataKey` if needed.

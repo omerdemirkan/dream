@@ -158,6 +158,18 @@
   * HTTP to exposed port of a PAUSED sandbox (with token) auto-resumed in ~180 ms; background server process survived.
   * Base template = 2 vCPU / 512 MB / Node 20 → npm i of CLIs OOM-killed. Custom template via
     Template().fromNodeImage('24')...; Template.build(tpl, name, {cpuCount, memoryMB}) built in ~52 s.
+- E2B `dream-sandbox` template verified 2026-11-05 (template f6mkmzgx3xm1n2vt1j8b, team-private; build ~2 min):
+  * node:24 is Debian 12 (bookworm), Node 24.22.2; pnpm 12.14.0, Bun 1.4.4, Playwright 1.64.1 Chromium in
+    /opt/playwright; Claude Code 2.1.290 and codex-cli 0.165.0 (the adapters' pins) pre-installed by
+    `dreamd bootstrap`. 4 vCPU / 7956 MB, 14 GB disk with 11 GB free. Sandbox.create ~1.4 s.
+  * The start command's process (the dreamd supervisor) is in the snapshot: every new sandbox already has dreamd
+    running, waiting for /home/user/.dream/dreamd.env. Writing that file starts it within a second (dreamd checks for it every second).
+  * Sandbox.create in e2b 2.63.0 is secured by default: port URLs return 403 without `e2b-traffic-access-token`
+    even when no `network` is set (correcting the note above).
+  * With lifecycle pause + autoResume: pause took 0.8 s; Deliver to the paused sandbox's port URL resumed it and
+    returned in 1.3 s; the same dreamd process ran the next turn in the same Codex thread.
+  * Codex in API-key mode against a chatgpt.com-style base URL sends `Authorization: Bearer <CODEX_API_KEY>` and no
+    ChatGPT-Account-ID, so the egress rule must add both (ModelEgress does). Real chatgpt.com still untested.
   * Claude Code 2.1.318 with placeholder CLAUDE_CODE_OAUTH_TOKEN: no local validation, reaches API → 401 "OAuth access
     token is invalid" (so header swap on api.anthropic.com should work). Codex 0.166.0 without auth.json uses
     api.openai.com/v1/responses; ChatGPT-auth path (chatgpt.com/backend-api/codex) still to test.

@@ -1,0 +1,3 @@
+#!/bin/sh
+# The `dream` command, for the agent and any app in the sandbox.
+exec node --disable-warning=ExperimentalWarning /opt/dream/packages/dreamd/src/bin/dream.ts "$@"
