@@ -66,6 +66,7 @@ function Shell() {
           <Stack.Screen name="oauth/google" options={{ animation: "none" }} />
         </Stack.Protected>
         <Stack.Screen name="fixtures/[scenario]" options={{ animation: "none" }} />
+        <Stack.Screen name="fixtures/index" />
       </Stack>
       {signedIn ? <DeviceHost /> : null}
       <FixturesLaunch />

@@ -87,6 +87,14 @@ export default function Settings() {
         onPress={() => signOut.run(undefined)}
         style={{ marginTop: 24 }}
       />
+      {appConfig.backend === "fixtures" ? (
+        <Button
+          title="Sample screens"
+          variant="ghost"
+          onPress={() => router.push("/fixtures")}
+          style={{ marginTop: 10 }}
+        />
+      ) : null}
 
       <Text style={{ marginTop: 28, fontSize: 12, lineHeight: 18, color: color.t3, textAlign: "center" }}>
         Dream {Application.nativeApplicationVersion ?? ""} ·{" "}
