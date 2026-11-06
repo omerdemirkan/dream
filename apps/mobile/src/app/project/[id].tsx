@@ -163,9 +163,10 @@ function Project(props: {
     useCallback(
       () => () => {
         setUsage(false)
-        setNotificationsSheet(Option.none())
+        // Only this project's: the screen a link opens over this one may have just opened its own.
+        setNotificationsSheet((shown) => (Option.contains(shown, props.projectId) ? Option.none() : shown))
       },
-      [setNotificationsSheet]
+      [setNotificationsSheet, props.projectId]
     )
   )
 

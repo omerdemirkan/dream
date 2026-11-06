@@ -15,6 +15,7 @@ import { appLine, historyRows, historyTag, startOfTomorrow } from "../src/data/a
 import { SecureStorage } from "../src/data/SecureStorage.ts"
 import { Session } from "../src/data/Session.ts"
 import { PhoneAppRpcs } from "../src/data/Tolerant.ts"
+import { askLine } from "../src/ui/statusView.ts"
 import { FakeBackend } from "../src/fake/FakeBackend.ts"
 
 const zone = "America/Los_Angeles"
@@ -173,4 +174,11 @@ describe("an app's notifications through the client", () => {
       })
     )
   )
+})
+
+describe("the Status card's amber line for an app asking", () => {
+  it("says the app asks, rather than that the project needs it", () => {
+    const card = { ...Fx.morningBriefNotificationsCard, state: { _tag: "Open" as const } }
+    assert.strictEqual(askLine(card, Fx.liftLogStatus), "Morning Brief asks to notify you")
+  })
 })
