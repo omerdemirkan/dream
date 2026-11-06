@@ -130,7 +130,12 @@ function AccessFront(props: { readonly ask: OpenAsk; readonly message: AccessMes
   return (
     <>
       <Who ask={props.ask} label="Access" onOpen={props.onOpen} />
-      <Heading title={heading.title} tldr={heading.reason ?? accessExplainer(props.message)} onOpen={props.onOpen} />
+      <Heading
+        title={heading.title}
+        tldr={heading.reason ?? accessExplainer(props.message)}
+        context={props.message.context}
+        onOpen={props.onOpen}
+      />
       {props.message.request._tag === "Google" ? (
         <GoogleButton compact busy={signIn.busy} onPress={signIn.start} />
       ) : props.message.request._tag === "OAuth" ? (

@@ -165,7 +165,7 @@ describe("dream usage errors", () => {
       )
       assert.strictEqual(
         lines[1],
-        'Example: dream access key --service Discord --host discord.com --header Authorization --format "Bot {key}" --why "Add your Discord bot key so it can post quotes to your channel"'
+        'Example: dream access key --service Discord --host discord.com --header Authorization --format "Bot {key}" --why "Add your Discord bot key so it can post quotes to your channel" --context "In the [Developer Portal](https://discord.com/developers/applications), open your app, tap **Bot**, then **Reset Token**, and copy it."'
       )
       assert.strictEqual(lines[2], "Usage: dream access key [flags]. All flags: `dream access key --help`.")
       assert.lengthOf(lines, 3)

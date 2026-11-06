@@ -78,7 +78,7 @@ Message ids: `msg_cabinrule`, `msg_cabinpick`, `msg_gcal` (Cabin), `msg_apple` (
 `msg_brieftelegram` (Morning Brief; the last-resort key file card), `msg_recipewho` (Recipe Scaler), `msg_spotify`
 (Lift Log, after the `spotify-ask` scenario: an OAuth request for a provider other than Google), `msg_voicelong`
 (Lift Log, after `long-question`: a whole message sent as the question, markdown and all), `msg_openai` (Lift Log,
-after `vague-access`: a key request whose heading doesn't name the service), `msg_voice` (Lift Log, after
+after `vague-access`: a key request whose heading doesn't name the service, with how to get the key), `msg_voice` (Lift Log, after
 `question-context`: the same decision as a short question with its context under it), and
 `msg_unsupported` (Cabin, after `unsupported-message`: a kind of message this build can't decode, shown as the
 neutral "update Dream" row).

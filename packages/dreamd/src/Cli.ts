@@ -277,6 +277,12 @@ const accessFlags = {
       "The card's heading, in your words, which they read first and often alone (Home, the lock screen): what you're asking them to connect and what it's for."
     )
   ),
+  context: Flag.String("context").pipe(
+    Flag.withDescription(
+      'How to get it, in markdown, when it\'s a key they make themselves: a link to the exact page and what to tap there. Shown on the card and above the paste field, with links that open in Safari. "-" reads it from stdin.'
+    ),
+    Flag.optional
+  ),
   when: Flag.String("when").pipe(
     Flag.withDescription('Roughly when it\'s needed, e.g. "around Thursday". Shows as upcoming instead of notifying.'),
     Flag.optional
@@ -286,12 +292,25 @@ const accessFlags = {
 
 const requestAccess = (
   request: AccessRequest,
-  input: { readonly why: string; readonly when: Option.Option<string>; readonly json: boolean }
+  input: {
+    readonly why: string
+    readonly context: Option.Option<string>
+    readonly when: Option.Option<string>
+    readonly json: boolean
+  }
 ) =>
   Effect.gen(function* () {
     const dream = yield* Dream
+    const context = yield* readOptional(input.context)
     const requested = yield* userFacing(
-      dream.RequestAccess(defined({ request, why: input.why, when: Option.getOrUndefined(input.when) }))
+      dream.RequestAccess(
+        defined({
+          request,
+          why: input.why,
+          context: context === "" ? undefined : context,
+          when: Option.getOrUndefined(input.when)
+        })
+      )
     )
     yield* show(input.json, AccessMessage, requested, Format.accessRequested(requested))
   })
@@ -303,7 +322,7 @@ const access = Command.make("access").pipe(
   Command.withExamples([
     {
       command:
-        'dream access key --service Stripe --host api.stripe.com --header Authorization --format "Bearer {key}" --why "Add your Stripe key so the shop can take payments"'
+        'dream access key --service Stripe --host api.stripe.com --header Authorization --format "Bearer {key}" --why "Add your Stripe key so the shop can take payments" --context "Make one at [dashboard.stripe.com/apikeys](https://dashboard.stripe.com/apikeys): tap **Create secret key**, then copy it."'
     }
   ]),
   Command.withSubcommands([
@@ -371,11 +390,11 @@ const access = Command.make("access").pipe(
       Command.withExamples([
         {
           command:
-            'dream access key --service Discord --host discord.com --header Authorization --format "Bot {key}" --why "Add your Discord bot key so it can post quotes to your channel"'
+            'dream access key --service Discord --host discord.com --header Authorization --format "Bot {key}" --why "Add your Discord bot key so it can post quotes to your channel" --context "In the [Developer Portal](https://discord.com/developers/applications), open your app, tap **Bot**, then **Reset Token**, and copy it."'
         },
         {
           command:
-            'dream access key --service Stripe --host api.stripe.com --header Authorization --format "Bearer {key}" --why "Add your Stripe key so the shop can take payments"'
+            'dream access key --service Stripe --host api.stripe.com --header Authorization --format "Bearer {key}" --why "Add your Stripe key so the shop can take payments" --context "Make one at [dashboard.stripe.com/apikeys](https://dashboard.stripe.com/apikeys): tap **Create secret key**, then copy it."'
         }
       ])
     ),
@@ -407,7 +426,7 @@ const access = Command.make("access").pipe(
       Command.withExamples([
         {
           command:
-            'dream access file --service Telegram --name telegram-bot-token --why "Add your Telegram bot token so the bot can message you"'
+            'dream access file --service Telegram --name telegram-bot-token --why "Add your Telegram bot token so the bot can message you" --context "Message [@BotFather](https://t.me/BotFather), send /newbot, and copy the token it replies with."'
         }
       ])
     ),

@@ -29,14 +29,17 @@ this sandbox, including the apps you build. `dream <command> --help` lists every
   - `dream ask withdraw <id>` takes back a question that no longer needs an answer.
 - `dream access …` asks for access to a service. It shows up like a question, with a way to connect. `--why` is its
   heading, which they read first and often alone, on Home or the lock screen, so it says what they're connecting and
-  what for, as in "Connect Gmail so I can read your newsletters".
+  what for, as in "Connect Gmail so I can read your newsletters". `--context` adds markdown on the card and just
+  above where they paste: for a key they make themselves, the link to the page where it's made and what to tap.
+  Links open in Safari, and they come back to paste.
   - `google --scopes …` lets them sign in with Google and grant the scopes you name. Like `oauth` below, it works
     only once whoever runs Dream has registered Dream's Google app, and when they haven't, `dream access google` says
     so before any card reaches them.
   - `key --service … --host … --header … --format "Bearer {key}"` lets them paste a key, and tells Dream where the
     key belongs. `--host` is the real host your requests go to, like `api.stripe.com`. A key card isn't a place to
     keep values you'd send some other way.
-  - `apple` asks for their App Store Connect API key, which TestFlight needs.
+  - `apple` asks for their App Store Connect API key, which TestFlight needs. Its card already links Apple's guide
+    to making one.
   - `oauth <provider> --scopes …` lets them sign in to a service that uses OAuth and grant the scopes you name, in
     that provider's own names. Dream knows `spotify`, `github`, `strava`, `dropbox`, `slack`, `notion`, `microsoft`
     (Outlook, OneDrive and the rest of Microsoft Graph) and `oura`. Each one works only once whoever runs Dream has

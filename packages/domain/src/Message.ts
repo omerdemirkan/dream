@@ -192,6 +192,11 @@ export const AccessMessage = Schema.TaggedStruct("Access", {
    * "Connect Gmail so I can read your newsletters." See `accessHeading` for one that doesn't name the service.
    */
   why: Schema.NonEmptyString,
+  /**
+   * How to get it, in markdown, for a key they make themselves: a link to the exact page and what to tap there.
+   * Shown on the card and above the paste field. Added after the first release: older apps don't show it.
+   */
+  context: Schema.optionalKey(Schema.String),
   /** Roughly when it's needed, if not now, e.g. "around Thursday". Absent means now. */
   when: Schema.optionalKey(Schema.String),
   state: AccessState

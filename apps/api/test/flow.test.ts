@@ -480,7 +480,12 @@ describe("a project, end to end", () => {
         header: "Authorization",
         format: "Bearer {key}"
       }
-      const request = yield* dreamd.RequestAccess({ request: stripe, why: "Take payments for cabin weekends." })
+      const request = yield* dreamd.RequestAccess({
+        request: stripe,
+        why: "Take payments for cabin weekends.",
+        context: "Make one at [dashboard.stripe.com/apikeys](https://dashboard.stripe.com/apikeys)."
+      })
+      assert.include(request.context, "dashboard.stripe.com/apikeys")
       // The heading doesn't name Stripe, so the notification says what's asked first.
       assert.strictEqual(
         (cloud.world.pushes.findLast((p) => p.kind === "alert")?.payload as any)?.body,

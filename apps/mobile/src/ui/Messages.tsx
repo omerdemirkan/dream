@@ -519,6 +519,7 @@ export const AccessCard = forwardRef<HostInstance, { readonly message: AccessMes
     const m = props.message
     const label = accessLabel(m.request)
     const scope = accessScope(m.request)
+    const clamps = useClamps()
     if (m.state._tag === "Connected") {
       return (
         <Card ref={ref} tone="done" onOpen={props.onOpen}>
@@ -576,7 +577,15 @@ export const AccessCard = forwardRef<HostInstance, { readonly message: AccessMes
             style={{ fontSize: 15, lineHeight: 21, color: color.t1, marginTop: 6, marginHorizontal: 2 }}
           />
         ) : null}
-        <CardText>{accessExplainer(m)}</CardText>
+        {/* Where to get the key says more than how Dream uses it; the expanded view has both. */}
+        {m.context ? (
+          <CardContext lines={4} onClamp={clamps.track("context")}>
+            {m.context}
+          </CardContext>
+        ) : (
+          <CardText>{accessExplainer(m)}</CardText>
+        )}
+        {clamps.clamped ? <ReadMore onOpen={props.onOpen} /> : null}
         <OpenAccessBody message={m} onOpen={props.onOpen} />
         {isKeyFile(m.request) ? (
           <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, marginTop: 13, marginHorizontal: 2 }}>

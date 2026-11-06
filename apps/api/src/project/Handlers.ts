@@ -490,7 +490,7 @@ export const AgentHandlers = SandboxRpcs.toLayer(
           return withdrawn
         }),
 
-      RequestAccess: ({ request, why, when }) =>
+      RequestAccess: ({ request, why, context, when }) =>
         Effect.gen(function* () {
           // An old dreamd doesn't check the host, and a card for a host no request goes to can never work.
           const problem =
@@ -509,6 +509,7 @@ export const AgentHandlers = SandboxRpcs.toLayer(
             ...(notificationId === undefined ? {} : { notificationId }),
             request,
             why,
+            ...(context === undefined || context.trim() === "" ? {} : { context }),
             ...(when === undefined ? {} : { when }),
             state: AccessState.cases.Open.make({})
           })

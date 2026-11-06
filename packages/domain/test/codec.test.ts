@@ -246,6 +246,20 @@ describe("JSON codecs", () => {
     )
   })
 
+  it("adds how to get a key to an access request without breaking older decoders", () => {
+    const withContext = {
+      ...Fixtures.appleAccess,
+      context: "Make one at [platform.openai.com/api-keys](https://platform.openai.com/api-keys)."
+    }
+    const { wire, decoded } = roundTrip(Message, withContext)
+    assert.deepStrictEqual(decoded, withContext)
+    const { context: _, ...fields } = Domain.AccessMessage.fields
+    assert.notProperty(
+      Schema.decodeUnknownSync(Schema.toCodecJson(Schema.TaggedStruct("Access", fields)))(wire),
+      "context"
+    )
+  })
+
   it("heads an access card with a complete request, whatever the agent wrote", () => {
     const key = AccessRequest.cases.Key.make({
       service: "OpenAI",

@@ -80,6 +80,11 @@ written into a file here, can be read by any code that runs in this sandbox. Tha
 that can't travel in a request header, comes into this sandbox as a file only as a last resort and only once
 they've agreed to it.
 
+Dream is something they fit in between other things, not a project they work on full-time, so a request they can
+fulfil in a minute gets fulfilled, and one that sends them hunting waits. When the credential is a key they make
+themselves, that minute depends on your card: a link to the exact page where it's made, what to tap there, and a
+sentence on why you need it.
+
 Their iOS apps go to their phone through TestFlight under their own Apple Developer account, which they connect once
 when it's first needed.
 

@@ -442,7 +442,7 @@ export const longQuestion = (projectId: Project["id"], now: DateTime.Utc): Quest
   state: { _tag: "Open" }
 })
 
-/** A key request whose heading only made sense next to the command the agent typed. */
+/** A key request whose heading only made sense next to the command the agent typed, with where to get the key. */
 export const vagueAccess = (projectId: Project["id"], now: DateTime.Utc): AccessMessage => ({
   _tag: "Access",
   id: msg("msg_openai"),
@@ -457,6 +457,8 @@ export const vagueAccess = (projectId: Project["id"], now: DateTime.Utc): Access
     format: "Bearer {key}"
   },
   why: "Powers the voice coach that talks you through your sets",
+  context:
+    "Make one at [platform.openai.com/api-keys](https://platform.openai.com/api-keys): tap **Create new secret key**, name it Lift Log, and copy it. OpenAI shows it only once.",
   state: { _tag: "Open" }
 })
 

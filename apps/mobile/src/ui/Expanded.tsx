@@ -392,6 +392,27 @@ function KeyFileWarning() {
   )
 }
 
+/** The agent's steps for getting the key, right above where it goes; links open in Safari. */
+function HowToGet(props: { readonly source: string }) {
+  return (
+    <View
+      style={{
+        marginTop: 20,
+        padding: 14,
+        borderRadius: 18,
+        backgroundColor: color.s1,
+        borderWidth: 1,
+        borderColor: color.line
+      }}
+    >
+      <Lab>How to get it</Lab>
+      <View style={{ marginTop: 8 }}>
+        <Markdown source={props.source} style={{ fontSize: 16, lineHeight: 23 }} />
+      </View>
+    </View>
+  )
+}
+
 function Shared(props: { readonly oauth: boolean }) {
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 9, marginTop: 20 }}>
@@ -722,6 +743,7 @@ export function ExpandedAccess(props: {
           {gone ? <Lead style={{ marginBottom: 12 }}>{gone.lead}</Lead> : null}
           {heading.reason ? <Lead style={{ color: color.t1, marginBottom: 12 }}>{heading.reason}</Lead> : null}
           <Lead>{accessExplainer(m)}</Lead>
+          {m.context ? <HowToGet source={m.context} /> : null}
           {keyFile ? <KeyFileWarning /> : <Shared oauth={oauth} />}
           {oauth ? <Vault /> : null}
           {m.request._tag === "Apple" ? (

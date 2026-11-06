@@ -62,7 +62,7 @@ export class SandboxRpcs extends RpcGroup.make(
     error: Schema.Union([NotFound, InvalidRequest])
   }),
   /**
-   * `dream access google|key|file|apple|oauth … --why "…" [--when "…"]`. Notifies unless `when` is set.
+   * `dream access google|key|file|apple|oauth … --why "…" [--context "…"] [--when "…"]`. Notifies unless `when` is set.
    * `InvalidRequest` when a key's host can't be an egress target (`accessHostProblem`), a file key's name isn't
    * a plain file name (`keyFileNameProblem`), or for `oauth` when Dream doesn't know the provider or it isn't set
    * up on this deployment.
@@ -71,6 +71,8 @@ export class SandboxRpcs extends RpcGroup.make(
     payload: {
       request: AccessRequest,
       why: Schema.NonEmptyString,
+      /** Added after the first release; an older API ignores it. */
+      context: Schema.optionalKey(Schema.String),
       when: Schema.optionalKey(Schema.String)
     },
     success: AccessMessage,
