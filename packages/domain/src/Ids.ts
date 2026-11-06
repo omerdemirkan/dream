@@ -23,7 +23,8 @@ export const IdPrefix = {
   wake: "wak",
   integration: "int",
   modelConnection: "mcn",
-  browserSession: "brs"
+  browserSession: "brs",
+  link: "lnk"
 } as const
 
 export const UserId = opaque.pipe(Schema.brand("UserId"))
@@ -52,6 +53,9 @@ export type ModelConnectionId = typeof ModelConnectionId.Type
 
 export const BrowserSessionId = opaque.pipe(Schema.brand("BrowserSessionId"))
 export type BrowserSessionId = typeof BrowserSessionId.Type
+
+export const LinkId = opaque.pipe(Schema.brand("LinkId"))
+export type LinkId = typeof LinkId.Type
 
 /** Client-generated UUID, kept in SecureStore for the life of the install. */
 export const DeviceId = Schema.String.check(Schema.isUUID()).pipe(Schema.brand("DeviceId"))

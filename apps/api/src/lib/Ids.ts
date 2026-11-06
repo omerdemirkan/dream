@@ -7,6 +7,7 @@ import {
   EventId,
   IdPrefix,
   IntegrationId,
+  LinkId,
   MediaId,
   MessageId,
   ModelConnectionId,
@@ -45,6 +46,7 @@ export const newEventId = make(EventId, IdPrefix.event)
 export const newWakeId = make(WakeId, IdPrefix.wake)
 export const newIntegrationId = make(IntegrationId, IdPrefix.integration)
 export const newModelConnectionId = make(ModelConnectionId, IdPrefix.modelConnection)
+export const newLinkId = make(LinkId, IdPrefix.link)
 export const newBrowserSessionId = make(BrowserSessionId, IdPrefix.browserSession)
 export const newSecretId = (): Effect.Effect<string> => Effect.sync(() => `sec_${randomToken(22)}`)
 export const newNotificationId = (): Effect.Effect<NotificationId> =>
@@ -61,3 +63,4 @@ const fromRequest =
 
 export const projectIdFor = fromRequest(ProjectId, IdPrefix.project)
 export const messageIdFor = fromRequest(MessageId, IdPrefix.message)
+export const linkIdFor = fromRequest(LinkId, IdPrefix.link)

@@ -2,7 +2,7 @@
  * Screen state that isn't data: the expanded message, where Chat should land,
  * the toast, and the media viewer.
  */
-import type { AskMessage, MediaRef, MessageId, ProjectId } from "@dream/domain"
+import type { AskMessage, LinkId, MediaRef, MessageId, ProjectId } from "@dream/domain"
 import { Option } from "effect"
 import { Atom } from "effect/reactivity"
 
@@ -58,3 +58,11 @@ export const viewerAtom = Atom.make<Option.Option<MediaRef>>(Option.none()).pipe
 
 /** Measures for the message cards on screen in Chat, so the expanded view can shrink back into one. */
 export const messageRects = new Map<MessageId, () => Promise<Rect | undefined>>()
+
+/** The sheet open over Home for app links: adding one, changing one's icon, or putting one on the Home Screen. */
+export type LinkSheet =
+  | { readonly kind: "add" }
+  | { readonly kind: "icon"; readonly linkId: LinkId }
+  | { readonly kind: "home-screen"; readonly linkId: LinkId }
+
+export const linkSheetAtom = Atom.make<Option.Option<LinkSheet>>(Option.none()).pipe(Atom.keepAlive)

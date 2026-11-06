@@ -56,7 +56,12 @@ const glyphs = {
   copy: "doc.on.doc",
   wrench: "wrench.adjustable",
   warn: "exclamationmark.triangle",
-  arrowOut: "arrow.up.right"
+  arrowOut: "arrow.up.right",
+  plus: "plus",
+  link: "link",
+  dots: "ellipsis",
+  plusApp: "plus.app",
+  globe: "globe"
 } as const satisfies Record<string, SymbolViewProps["name"]>
 
 export type Glyph = keyof typeof glyphs

@@ -7,7 +7,17 @@ import { Rpc, RpcGroup } from "effect/rpc"
 import { AppAuth } from "../Auth.ts"
 import { ConnectLink, ConnectLinkProvider, Integration, ModelConnectFlow, ModelConnection } from "../Connections.ts"
 import { InvalidRequest, NoModelConnection, NotFound, NotInvited, Unauthorized, UpstreamFailure } from "../Errors.ts"
-import { DeviceId, IntegrationId, MessageId, ModelConnectionId, NotificationId, ProjectId, RequestId } from "../Ids.ts"
+import {
+  DeviceId,
+  IntegrationId,
+  LinkId,
+  MessageId,
+  ModelConnectionId,
+  NotificationId,
+  ProjectId,
+  RequestId
+} from "../Ids.ts"
+import { AppLink, LinkColor, LinkIcon, LinkTitle, LinkUrl } from "../Links.ts"
 import { AccessMessage, AskMessage, Message, QuestionAnswer, QuestionMessage, TextMessage } from "../Message.ts"
 import { ArchivedProject, Harness, Project, ProjectSummary } from "../Project.ts"
 import { ModelProvider } from "../Usage.ts"
@@ -144,6 +154,60 @@ export class AuthedAppRpcs extends RpcGroup.make(
   }),
   /** Their archived projects for Settings, most recently archived first. */
   Rpc.make("ListArchivedProjects", { success: Schema.Array(ArchivedProject) }),
+
+  // App links on Home -------------------------------------------------------------
+  /**
+   * The row of app icons at the top of Home, oldest first. Links of archived projects are left out until they're
+   * restored. Added after the first release.
+   */
+  Rpc.make("ListLinks", { success: Schema.Array(AppLink) }),
+  /**
+   * They add a link from the add sheet: any https URL, or a project's published URL. A URL on one of their
+   * projects' hosts belongs to that project (its menu still says "Added by you"). `icon` can be a symbol or an
+   * emoji, not an image. With a `requestId`, a retry returns the link the first attempt added.
+   */
+  Rpc.make("AddLink", {
+    payload: {
+      url: LinkUrl,
+      title: LinkTitle,
+      icon: Schema.optionalKey(LinkIcon),
+      color: LinkColor,
+      requestId: Schema.optionalKey(RequestId)
+    },
+    success: AppLink,
+    error: InvalidRequest
+  }),
+  /**
+   * Rename or re-icon a link (absent leaves a field; `icon: null` makes it a monogram). On an agent's link the
+   * change becomes theirs and the agent hears about it (`AgentEvent.LinkEdited`).
+   */
+  Rpc.make("UpdateLink", {
+    payload: {
+      linkId: LinkId,
+      title: Schema.optionalKey(LinkTitle),
+      icon: Schema.optionalKey(Schema.NullOr(LinkIcon)),
+      color: Schema.optionalKey(LinkColor)
+    },
+    success: AppLink,
+    error: Schema.Union([NotFound, InvalidRequest])
+  }),
+  /** Take a link off Home. An agent's link stays off: its agent hears, and can't add that URL again. */
+  Rpc.make("RemoveLink", { payload: { linkId: LinkId }, error: NotFound }),
+  /** They opened it from Home: an agent's new link loses its dot. */
+  Rpc.make("MarkLinkOpened", { payload: { linkId: LinkId }, error: NotFound }),
+  /**
+   * Before opening a link in Safari to add it to their Home Screen. `iconPng` is the tile as the phone draws it
+   * (base64 png, square), which the gateway serves as the app's icon; an image icon needs none. Returns the URL to
+   * open: on a published app, one that shows Safari's steps once.
+   */
+  Rpc.make("PrepareHomeScreen", {
+    payload: {
+      linkId: LinkId,
+      iconPng: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2_000_000)))
+    },
+    success: Schema.Struct({ url: Schema.String }),
+    error: Schema.Union([NotFound, InvalidRequest])
+  }),
 
   // A project ----------------------------------------------------------------
   /**

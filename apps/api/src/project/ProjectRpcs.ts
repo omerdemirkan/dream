@@ -12,6 +12,7 @@ import {
   DeviceId,
   Integration,
   InvalidRequest,
+  LinkId,
   Message,
   MessageId,
   NotFound,
@@ -106,5 +107,16 @@ export class ProjectRpcs extends RpcGroup.make(
    */
   Rpc.make("Archive", { success: Schema.DateTimeUtc }),
   /** They restored it (`RestoreProject`): the agent goes on with what was waiting. Nothing for one that isn't archived. */
-  Rpc.make("Restore", {})
+  Rpc.make("Restore", {}),
+  /** They renamed, re-iconed or removed one of the agent's app links: tell the agent (`AgentEvent.LinkEdited`). */
+  Rpc.make("LinkEdited", {
+    payload: {
+      linkId: LinkId,
+      url: Schema.String,
+      title: Schema.String,
+      change: Schema.Literals(["renamed", "icon", "removed"]),
+      previousTitle: Schema.optionalKey(Schema.String),
+      tile: Schema.optionalKey(Schema.String)
+    }
+  })
 ) {}

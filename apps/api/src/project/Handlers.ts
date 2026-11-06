@@ -298,6 +298,12 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
           )
         }),
 
+      LinkEdited: (payload) =>
+        Effect.gen(function* () {
+          if (Option.isSome(yield* store.getSingleton(...Singletons.deleted))) return
+          yield* core.enqueue(yield* event((fields) => AgentEvent.cases.LinkEdited.make({ ...fields, ...payload })))
+        }),
+
       KeyFileReplaced: ({ integration }) =>
         Effect.gen(function* () {
           if (Option.isSome(yield* store.getSingleton(...Singletons.deleted))) return
@@ -562,6 +568,10 @@ export const AgentHandlers = SandboxRpcs.toLayer(
       ListAccess: () => Effect.die("ListAccess is served by the Worker"),
       GetUsage: () => Effect.die("GetUsage is served by the Worker"),
       CreateMediaUpload: () => Effect.die("CreateMediaUpload is served by the Worker"),
+      AddLink: () => Effect.die("AddLink is served by the Worker"),
+      UpdateLink: () => Effect.die("UpdateLink is served by the Worker"),
+      RemoveLink: () => Effect.die("RemoveLink is served by the Worker"),
+      ListLinks: () => Effect.die("ListLinks is served by the Worker"),
 
       WithdrawNotification: ({ notificationId }) =>
         Effect.gen(function* () {

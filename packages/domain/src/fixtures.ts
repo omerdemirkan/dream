@@ -6,7 +6,8 @@
 import { DateTime } from "effect"
 import type { AgentEvent } from "./AgentEvent.ts"
 import type { Integration } from "./Connections.ts"
-import type { IntegrationId, MediaId, MessageId, NotificationId, ProjectId, UserId } from "./Ids.ts"
+import type { IntegrationId, LinkId, MediaId, MessageId, NotificationId, ProjectId, UserId } from "./Ids.ts"
+import type { AppLink } from "./Links.ts"
 import type { MediaRef } from "./Media.ts"
 import type { AccessMessage, Message, QuestionMessage, TextMessage } from "./Message.ts"
 import type { Project } from "./Project.ts"
@@ -222,6 +223,58 @@ export const usage: UsageSnapshot = {
   weekly: { usedPercent: 38, resetsAt: at("2026-11-09T08:00:00Z") },
   observedAt: at("2026-11-04T22:10:00Z")
 }
+
+/**
+ * App links on Home (option A, the dock): three made by agents, the newest (Cabin) not opened yet, and one they
+ * added themselves, which has no icon and shows a monogram.
+ */
+export const links: ReadonlyArray<AppLink> = [
+  {
+    id: "lnk_liftlog" as LinkId,
+    url: liftLog.publicUrl,
+    title: "Lift Log",
+    icon: { _tag: "Symbol", name: "dumbbell" },
+    color: "purple",
+    projectId: liftLog.id,
+    addedBy: "agent",
+    createdAt: at("2026-10-28T18:00:00Z"),
+    updatedAt: at("2026-10-28T18:00:00Z"),
+    openedAt: at("2026-10-28T19:00:00Z")
+  },
+  {
+    id: "lnk_brief" as LinkId,
+    url: `${morningBrief.publicUrl}/today`,
+    title: "Brief",
+    icon: { _tag: "Symbol", name: "sun.horizon" },
+    color: "orange",
+    projectId: morningBrief.id,
+    addedBy: "agent",
+    createdAt: at("2026-10-30T15:00:00Z"),
+    updatedAt: at("2026-10-30T15:00:00Z"),
+    openedAt: at("2026-10-31T14:00:00Z")
+  },
+  {
+    id: "lnk_cabin" as LinkId,
+    url: cabin.publicUrl,
+    title: "Cabin",
+    icon: { _tag: "Symbol", name: "house" },
+    color: "green",
+    projectId: cabin.id,
+    addedBy: "agent",
+    createdAt: at("2026-11-04T21:50:00Z"),
+    updatedAt: at("2026-11-04T21:50:00Z")
+  },
+  {
+    id: "lnk_traintimes" as LinkId,
+    url: "https://www.realtimetrains.co.uk/search/simple/gb-nr:HIB/to/gb-nr:EUS",
+    title: "Train times",
+    color: "light",
+    addedBy: "person",
+    createdAt: at("2026-11-01T08:00:00Z"),
+    updatedAt: at("2026-11-01T08:00:00Z"),
+    openedAt: at("2026-11-02T07:40:00Z")
+  }
+]
 
 export const messages: ReadonlyArray<Message> = [appleAccess, liftLogUpdate, cabinQuestion, recipeQuestion, gmailAccess]
 

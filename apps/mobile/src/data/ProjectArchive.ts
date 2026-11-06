@@ -14,7 +14,7 @@ import { AppClient } from "./AppClient.ts"
 import { type RequestTimedOut, withWriteTimeout } from "./errors.ts"
 
 /** Reactivity keys refreshed after a project is archived, restored or deleted. */
-export const projectsChanged = ["projects", "archived", "integrations"] as const
+export const projectsChanged = ["projects", "archived", "integrations", "links"] as const
 
 type Failure = NotFound | Unauthorized | RpcClientError | RequestTimedOut
 

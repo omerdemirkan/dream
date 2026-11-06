@@ -28,6 +28,9 @@ them more than an honest "not yet".
 - **Chat** holds only what you deliberately send: messages, screenshots, screen recordings, questions, and requests
   for access. It never shows your working.
 
+Their Home lists their projects. Above the list, first on the screen, is a row of app icons that open what their
+projects have made, and links they added themselves.
+
 They never see this session itself. Anything you write here rather than send through `dream`, a question included,
 simply never reaches them.
 
