@@ -7,6 +7,7 @@
  */
 import {
   type AccessMessage,
+  type AppLink,
   type LinkColor,
   type LinkIcon,
   type LinkId,
@@ -128,17 +129,17 @@ export const linksAtom = appRuntime
   .atom(AppClient.use((app) => app.ListLinks()))
   .pipe(Atom.withReactivity(["links"]), Atom.keepAlive)
 
-export const addLinkFn = appRuntime.fn(
-  Effect.fn(function* (input: {
-    readonly url: string
-    readonly title: string
-    readonly icon?: LinkIcon | undefined
-    readonly color: LinkColor
-    readonly requestId: RequestId
-  }) {
+/** The agents' links they took off Home, for the add sheet. An API from before them has none to offer. */
+export const removedLinksAtom = appRuntime
+  .atom(
+    AppClient.use((app) => app.ListRemovedLinks()).pipe(Effect.catch(() => Effect.succeed<ReadonlyArray<AppLink>>([])))
+  )
+  .pipe(Atom.withReactivity(["links"]), Atom.keepAlive)
+
+export const restoreLinkFn = appRuntime.fn(
+  Effect.fn(function* (linkId: LinkId) {
     const app = yield* AppClient
-    const { icon, ...rest } = input
-    return yield* app.AddLink({ ...rest, ...(icon === undefined ? {} : { icon }) }).pipe(withWriteTimeout)
+    return yield* app.RestoreLink({ linkId }).pipe(withWriteTimeout)
   }),
   { reactivityKeys: ["links"] }
 )

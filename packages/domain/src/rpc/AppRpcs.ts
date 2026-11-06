@@ -171,9 +171,19 @@ export class AuthedAppRpcs extends RpcGroup.make(
    */
   Rpc.make("ListLinks", { success: Schema.Array(AppLink) }),
   /**
-   * They add a link from the add sheet: any https URL, or a project's published URL. A URL on one of their
-   * projects' hosts belongs to that project (its menu still says "Added by you"). `icon` can be a symbol or an
-   * emoji, not an image. With a `requestId`, a retry returns the link the first attempt added.
+   * The agents' links they removed from Home, most recently removed first, each with `removedAt`. The add sheet
+   * offers them back (`RestoreLink`). Links of archived projects are left out. Added when hand-added links went.
+   */
+  Rpc.make("ListRemovedLinks", { success: Schema.Array(AppLink) }),
+  /**
+   * Put an agent's link they removed back on Home, in its old place, with what they changed on it still theirs.
+   * Its agent can change it again. Added when hand-added links went.
+   */
+  Rpc.make("RestoreLink", { payload: { linkId: LinkId }, success: AppLink, error: NotFound }),
+  /**
+   * Deprecated: Home holds only what their projects' agents make, so this always fails with `InvalidRequest`
+   * saying so. Builds from before `RestoreLink` still call it from their add sheet. Links they added before keep
+   * working, and `UpdateLink` and `RemoveLink` take them as before.
    */
   Rpc.make("AddLink", {
     payload: {

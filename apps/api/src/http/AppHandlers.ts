@@ -30,7 +30,7 @@ import { Connections, toModelConnection } from "../db/Connections.ts"
 import { Projects, titleFromIdea } from "../db/Projects.ts"
 import { Users } from "../db/Users.ts"
 import { Access } from "../integrations/Access.ts"
-import { AppLinks } from "../links/AppLinks.ts"
+import { AppLinks, NoHandAddedLinks } from "../links/AppLinks.ts"
 import { Links } from "../db/Links.ts"
 import { Google } from "../integrations/Google.ts"
 import { timingSafeEqual } from "../lib/Bytes.ts"
@@ -264,7 +264,9 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
         }),
 
       ListLinks: () => Effect.flatMap(me, appLinks.list),
-      AddLink: (input) => Effect.flatMap(me, (userId) => appLinks.add(userId, input)),
+      ListRemovedLinks: () => Effect.flatMap(me, appLinks.listRemoved),
+      RestoreLink: ({ linkId }) => Effect.flatMap(me, (userId) => appLinks.restore(userId, linkId)),
+      AddLink: () => Effect.fail(NoHandAddedLinks),
       UpdateLink: ({ linkId, ...changes }) => Effect.flatMap(me, (userId) => appLinks.update(userId, linkId, changes)),
       RemoveLink: ({ linkId }) => Effect.flatMap(me, (userId) => appLinks.remove(userId, linkId)),
       MarkLinkOpened: ({ linkId }) => Effect.flatMap(me, (userId) => appLinks.markOpened(userId, linkId)),

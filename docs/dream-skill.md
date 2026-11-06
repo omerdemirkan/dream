@@ -179,7 +179,7 @@ are active, the Status card shows a row for each in place of `--now`.
 
 The first thing on their Home, under the Dream header and above their projects, is a row of app icons, like a second
 dock: rounded tiles with a short label under each, and an Add tile at the end. About five fit across before the row
-scrolls, and every project's links share it with the ones they added themselves. So a link is for something they'll
+scrolls, and all their projects share it, since only agents put links there. So a link is for something they'll
 open again and again, like the app itself or a page they check every morning, not for each page or each update. A
 project gets three at most. A tap opens the page full screen inside Dream.
 
@@ -196,7 +196,8 @@ project gets three at most. A tap opens the page full screen inside Dream.
   - Every `dream link` command prints what they'll see: the label as it shows, the tile, and the menu's header.
 - They can rename a link, change its icon to a symbol or emoji and a colour, or remove it, and you get an event when
   they do. What they changed stays theirs: `dream link update` can't change it back, and this project can't add a URL
-  they removed again. `dream link list` shows each link and what they've done with it.
+  they removed again. Only they can put a removed one back, from the Add tile, and then it's yours to update again.
+  `dream link list` shows each link and what they've done with it.
 - Add to Home Screen puts a link on their iPhone's own Home Screen, through Safari, as a web app that opens full
   screen. For your published URL, Dream gives Safari the link's title and tile, so they become your app's name and
   icon on their phone. A link to another site gets that site's own name and icon.

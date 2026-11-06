@@ -1,7 +1,8 @@
 /**
  * App links (D1 `app_links`): the row of app icons at the top of each person's Home. Rows are per person, with the
  * project a link belongs to. An agent's link they removed stays as a row with `removed_at`, so its agent can't add
- * that URL again; a link they added is deleted outright.
+ * that URL again and they can put it back; a link they added themselves (from before only agents made them) is
+ * deleted outright.
  */
 import {
   AppLink,
@@ -77,6 +78,8 @@ export class Links extends Context.Service<
     readonly find: (id: LinkId) => Effect.Effect<Option.Option<LinkRow>>
     /** Home's row: theirs, not removed, leaving out archived projects' links; oldest first. */
     readonly forUser: (userId: UserId) => Effect.Effect<ReadonlyArray<LinkRow>>
+    /** The agents' links they removed, leaving out archived projects'; most recently removed first. */
+    readonly removedForUser: (userId: UserId) => Effect.Effect<ReadonlyArray<LinkRow>>
     /** A project's links, removed ones included; oldest first. */
     readonly forProject: (projectId: ProjectId) => Effect.Effect<ReadonlyArray<LinkRow>>
     /** The links on Home that go to `host`, for the gateway. */
@@ -84,6 +87,8 @@ export class Links extends Context.Service<
     readonly update: (id: LinkId, changes: LinkChanges, at: DateTime.Utc) => Effect.Effect<void>
     /** Keeps the row with `removed_at`, for an agent's link. */
     readonly markRemoved: (id: LinkId, at: DateTime.Utc) => Effect.Effect<void>
+    /** Clears `removed_at`: the link is back on Home. */
+    readonly markRestored: (id: LinkId, at: DateTime.Utc) => Effect.Effect<void>
     readonly delete: (id: LinkId) => Effect.Effect<void>
     readonly markOpened: (id: LinkId, at: DateTime.Utc) => Effect.Effect<void>
     /** A deleted project's links and their icons. */
@@ -117,6 +122,11 @@ export class Links extends Context.Service<
             WHERE l.user_id = ${userId} AND l.removed_at IS NULL AND p.archived_at IS NULL
             ORDER BY l.created_at, l.id`.pipe(decodeRows(LinkRow))
 
+      const removedForUser = (userId: UserId) =>
+        sql`SELECT l.* FROM app_links l JOIN projects p ON p.id = l.project_id
+            WHERE l.user_id = ${userId} AND l.removed_at IS NOT NULL AND p.archived_at IS NULL
+            ORDER BY l.removed_at DESC, l.id`.pipe(decodeRows(LinkRow))
+
       const forProject = (projectId: ProjectId) =>
         sql`SELECT * FROM app_links WHERE project_id = ${projectId} ORDER BY created_at, id`.pipe(decodeRows(LinkRow))
 
@@ -145,6 +155,9 @@ export class Links extends Context.Service<
 
       const markRemoved = (id: LinkId, at: DateTime.Utc) =>
         exec(sql`UPDATE app_links SET removed_at = ${DateTime.formatIso(at)} WHERE id = ${id}`)
+
+      const markRestored = (id: LinkId, at: DateTime.Utc) =>
+        exec(sql`UPDATE app_links SET removed_at = NULL, updated_at = ${DateTime.formatIso(at)} WHERE id = ${id}`)
 
       const remove = (id: LinkId) =>
         Effect.gen(function* () {
@@ -180,10 +193,12 @@ export class Links extends Context.Service<
         insert,
         find,
         forUser,
+        removedForUser,
         forProject,
         forHost,
         update,
         markRemoved,
+        markRestored,
         delete: remove,
         markOpened,
         deleteForProject,

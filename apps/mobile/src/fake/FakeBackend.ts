@@ -106,6 +106,8 @@ export const Scenario = [
   "links-empty",
   "no-projects",
   "links-new",
+  "links-removed",
+  "links-nothing-published",
   "long-chat",
   "now-two-lines",
   "now-three-lines",
@@ -415,6 +417,9 @@ export class FakeBackend extends Context.Service<
 
       /** Projects on Home: all but the archived ones. */
       const active = () => Array.from(records.values()).filter((record) => record.archivedAt === undefined)
+      /** Whether a link is on Home or offered back: an archived project's are neither. */
+      const shown = (link: AppLink) =>
+        link.projectId === undefined || active().some((r) => r.project.id === link.projectId)
 
       const summaryOf = (record: ProjectRecord): ProjectSummary => {
         const milestones = record.status.milestones
@@ -633,32 +638,27 @@ export class FakeBackend extends Context.Service<
               return project
             })
           ),
-        ListLinks: () =>
+        ListLinks: () => Effect.sync(() => links.filter((link) => link.removedAt === undefined && shown(link))),
+        ListRemovedLinks: () =>
           Effect.sync(() =>
-            links.filter(
-              (link) => link.projectId === undefined || active().some((r) => r.project.id === link.projectId)
-            )
+            links
+              .filter((link) => link.removedAt !== undefined && shown(link))
+              .sort((a, b) => DateTime.toEpochMillis(b.removedAt!) - DateTime.toEpochMillis(a.removedAt!))
           ),
-        AddLink: ({ url, title, icon, color }) =>
+        RestoreLink: ({ linkId }) =>
           stallable(
             Effect.gen(function* () {
-              const now = yield* DateTime.now
-              const host = linkHost(url)
-              const project = Array.from(records.values()).find((r) => linkHost(r.project.publicUrl) === host)
-              const link: AppLink = {
-                id: nextId("lnk") as LinkId,
-                url,
-                title,
-                ...(icon ? { icon } : {}),
-                color,
-                ...(project ? { projectId: project.project.id } : {}),
-                addedBy: "person",
-                createdAt: now,
-                updatedAt: now,
-                openedAt: now
-              }
-              links = [...links, link]
-              return link
+              const link = links.find((l) => l.id === linkId && l.addedBy === "agent" && shown(l))
+              if (!link) return yield* new NotFound({ entity: "link", id: linkId })
+              const { removedAt: _, ...back } = link
+              links = links.map((l) => (l.id === linkId ? back : l))
+              return back
+            })
+          ),
+        AddLink: () =>
+          Effect.fail(
+            new InvalidRequest({
+              message: "Only your projects add apps to Home now. Update Dream to put back one you removed."
             })
           ),
         UpdateLink: ({ linkId, title, icon, color }) =>
@@ -681,8 +681,12 @@ export class FakeBackend extends Context.Service<
             return next
           }),
         RemoveLink: ({ linkId }) =>
-          Effect.sync(() => {
-            links = links.filter((l) => l.id !== linkId)
+          Effect.gen(function* () {
+            const now = yield* DateTime.now
+            // An agent's link stays, removed, so they can put it back; one they added goes.
+            links = links.flatMap((l) =>
+              l.id !== linkId ? [l] : l.addedBy === "agent" ? [{ ...l, removedAt: now }] : []
+            )
           }),
         MarkLinkOpened: ({ linkId }) =>
           Effect.gen(function* () {
@@ -1077,6 +1081,7 @@ export class FakeBackend extends Context.Service<
           case "links-new": {
             // Lift Log's agent just published a second page; its tile shows the dot until they open it.
             const lift = Array.from(records.values()).find((r) => r.project.slug === "lift-log")
+            const recipes = Array.from(records.values()).find((r) => r.project.slug === "recipe-scaler")
             if (!lift) return
             links = [
               ...links,
@@ -1091,20 +1096,54 @@ export class FakeBackend extends Context.Service<
                 createdAt: now,
                 updatedAt: now
               },
+              ...(recipes
+                ? [
+                    {
+                      id: "lnk_recipes" as LinkId,
+                      url: recipes.project.publicUrl,
+                      title: "Recipes",
+                      icon: { _tag: "Emoji", emoji: "🍳" },
+                      color: "yellow",
+                      projectId: recipes.project.id,
+                      addedBy: "agent",
+                      createdAt: now,
+                      updatedAt: now,
+                      openedAt: now
+                    } satisfies AppLink
+                  ]
+                : [])
+            ]
+            return
+          }
+          case "links-removed": {
+            // They took Brief off Home yesterday and Lift Log's rest timer an hour ago; Add offers both back.
+            const lift = Array.from(records.values()).find((r) => r.project.slug === "lift-log")
+            links = links.map((l) =>
+              l.id === "lnk_brief" ? { ...l, removedAt: DateTime.subtract(now, { days: 1 }) } : l
+            )
+            if (!lift) return
+            links = [
+              ...links,
               {
-                id: "lnk_recipes" as LinkId,
-                url: "https://www.seriouseats.com/the-food-lab",
-                title: "Food Lab",
-                icon: { _tag: "Emoji", emoji: "🍳" },
-                color: "yellow",
-                addedBy: "person",
-                createdAt: now,
-                updatedAt: now,
-                openedAt: now
+                id: "lnk_liftlogtimer" as LinkId,
+                url: `${lift.project.publicUrl}/timer`,
+                title: "Rest timer",
+                icon: { _tag: "Symbol", name: "timer" },
+                color: "teal",
+                projectId: lift.project.id,
+                addedBy: "agent",
+                createdAt: DateTime.subtract(now, { days: 3 }),
+                updatedAt: DateTime.subtract(now, { days: 3 }),
+                openedAt: DateTime.subtract(now, { days: 2 }),
+                removedAt: DateTime.subtract(now, { hours: 1 })
               }
             ]
             return
           }
+          case "links-nothing-published":
+            // No agent has made a link yet; only the one they added themselves, back when they could, is on Home.
+            links = links.filter((l) => l.addedBy === "person")
+            return
           case "archived": {
             // Recipe Scaler was put away a few days ago, Morning Brief last month.
             const at = (slug: string, days: number) => {

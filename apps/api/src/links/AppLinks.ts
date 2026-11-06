@@ -1,8 +1,9 @@
 /**
  * App links on Home: what the phone (`AppRpcs`) and the agent (`SandboxRpcs`, `dream link`) may do to them, over
  * D1's `app_links`. The rules that make the person's choices stick live here: a title or icon they changed on an
- * agent's link stays theirs, an agent's link they removed can't come back from the agent, and the agent hears
- * about each of these (`AgentEvent.LinkEdited`).
+ * agent's link stays theirs, an agent's link they removed can't come back from the agent (only they can put it
+ * back), and the agent hears about each of these (`AgentEvent.LinkEdited`). Only agents make links now; the ones
+ * people added themselves before that keep working until they remove them.
  */
 import {
   AgentLinksPerProject,
@@ -17,13 +18,12 @@ import {
   type ProjectId,
   type ProjectLink,
   type ProjectLinks,
-  type RequestId,
   type UserId
 } from "@dream/domain"
 import { Context, DateTime, Effect, Layer, Option } from "effect"
 import { type LinkChanges, type LinkRow, Links, toAppLink } from "../db/Links.ts"
 import { Projects } from "../db/Projects.ts"
-import { linkIdFor, newLinkId } from "../lib/Ids.ts"
+import { newLinkId } from "../lib/Ids.ts"
 import { ProjectClients } from "../project/Client.ts"
 
 /** The query parameter that makes the gateway point at Safari's steps once (H2 in the mocks). */
@@ -49,13 +49,10 @@ const sameIcon = (a: LinkIcon | undefined, b: LinkIcon | null | undefined) => {
 const isPngBase64 = (text: string) =>
   /^[A-Za-z0-9+/]+={0,2}$/.test(text) && text.startsWith("iVBORw0KGgo") && (text.length * 3) / 4 <= MaxIconBytes
 
-export interface PersonLinkInput {
-  readonly url: string
-  readonly title: string
-  readonly icon?: LinkIcon | undefined
-  readonly color: LinkColor
-  readonly requestId?: RequestId | undefined
-}
+/** What `AddLink` answers, for builds from before hand-added links went. */
+export const NoHandAddedLinks = new InvalidRequest({
+  message: "Only your projects add apps to Home now. Update Dream to put back one you removed."
+})
 
 export interface AgentLinkInput {
   readonly url: string
@@ -68,7 +65,8 @@ export class AppLinks extends Context.Service<
   AppLinks,
   {
     readonly list: (userId: UserId) => Effect.Effect<ReadonlyArray<AppLink>>
-    readonly add: (userId: UserId, input: PersonLinkInput) => Effect.Effect<AppLink, InvalidRequest>
+    readonly listRemoved: (userId: UserId) => Effect.Effect<ReadonlyArray<AppLink>>
+    readonly restore: (userId: UserId, linkId: LinkId) => Effect.Effect<AppLink, NotFound>
     readonly update: (
       userId: UserId,
       linkId: LinkId,
@@ -157,31 +155,21 @@ export class AppLinks extends Context.Service<
 
       const list = (userId: UserId) => Effect.map(links.forUser(userId), (rows) => rows.map(toAppLink))
 
-      const add = Effect.fn("AppLinks.add")(function* (userId: UserId, input: PersonLinkInput) {
-        yield* personIcon(input.icon, undefined)
-        const id = input.requestId === undefined ? yield* newLinkId() : linkIdFor(input.requestId)
-        const existing = yield* links.find(id)
-        if (Option.isSome(existing)) {
-          if (existing.value.user_id !== userId) return yield* invalid("That request id is already taken. Try again.")
-          return toAppLink(existing.value)
+      const listRemoved = (userId: UserId) =>
+        Effect.map(links.removedForUser(userId), (rows) =>
+          rows.filter((row) => row.added_by === "agent").map(toAppLink)
+        )
+
+      const restore = Effect.fn("AppLinks.restore")(function* (userId: UserId, linkId: LinkId) {
+        const row = yield* links.find(linkId)
+        if (Option.isNone(row) || row.value.user_id !== userId || row.value.added_by !== "agent") {
+          return yield* notFound(linkId)
         }
-        const project = yield* projectOfUrl(userId, input.url)
-        const now = yield* DateTime.now
-        const link: AppLink = {
-          id,
-          url: input.url,
-          title: input.title,
-          ...(input.icon === undefined ? {} : { icon: input.icon }),
-          color: input.color,
-          ...(Option.isSome(project) ? { projectId: project.value.projectId } : {}),
-          addedBy: "person",
-          createdAt: now,
-          updatedAt: now,
-          // Theirs from the start: no "new" dot on what they added.
-          openedAt: now
-        }
-        yield* links.insert(link, userId)
-        return link
+        if (row.value.removed_at === null) return toAppLink(row.value)
+        // Not offered while its project is archived, so not restored then either.
+        if (!(yield* links.removedForUser(userId)).some((r) => r.id === linkId)) return yield* notFound(linkId)
+        yield* links.markRestored(linkId, yield* DateTime.now)
+        return toAppLink(yield* reread(linkId))
       })
 
       const update = Effect.fn("AppLinks.update")(function* (
@@ -264,7 +252,7 @@ export class AppLinks extends Context.Service<
           : Effect.fail(
               invalid(
                 `They removed your link to ${row.url} ("${row.title}") from their Home on ` +
-                  `${DateTime.formatIso(row.removed_at).slice(0, 10)}, so it stays off. They can add it back themselves.`
+                  `${DateTime.formatIso(row.removed_at).slice(0, 10)}, so it stays off. They can put it back themselves.`
               )
             )
 
@@ -383,7 +371,8 @@ export class AppLinks extends Context.Service<
 
       return AppLinks.of({
         list,
-        add,
+        listRemoved,
+        restore,
         update,
         remove,
         markOpened,

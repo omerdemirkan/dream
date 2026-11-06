@@ -260,7 +260,7 @@ export const renderAgentEvent = (event: AgentEvent, options: RenderOptions = {})
           ? `They changed the icon of your app link "${title}" (${linkId}, ${url}) to ${tile ?? "one of their own"}. ` +
             "The icon is theirs now."
           : `They removed your app link "${title}" (${url}) from their Home. It stays off: Dream won't take a new ` +
-            "link to that URL from this project, though they can add it back themselves."
+            "link to that URL from this project, though they can put it back themselves."
   })
   return `[${time}] ${body}`
 }
