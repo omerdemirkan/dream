@@ -7,6 +7,7 @@ import * as SqliteClient from "@effect/sql-sqlite-do/SqliteClient"
 import { Layer } from "effect"
 import { SandboxRefresh } from "../e2b/Refresh.ts"
 import { Alarm, NativeAlarm } from "./Alarm.ts"
+import { AppNotifications } from "./AppNotifications.ts"
 import { Core } from "./Core.ts"
 import { LiveFeed } from "./Live.ts"
 import { Machines } from "./Machines.ts"
@@ -26,5 +27,8 @@ export const projectLayer = (
   const core = Core.layer.pipe(Layer.provideMerge(Layer.mergeAll(LiveFeed.layer, alarm)))
   const sandbox = SandboxManager.layer.pipe(Layer.provide(SandboxRefresh.layer))
   const domain = Layer.mergeAll(Notifier.layer, sandbox, Machines.layer).pipe(Layer.provideMerge(core))
-  return Layer.mergeAll(Scheduler.layer, Relays.layer).pipe(Layer.provideMerge(domain), Layer.provideMerge(store))
+  return Layer.mergeAll(Scheduler.layer, Relays.layer, AppNotifications.layer).pipe(
+    Layer.provideMerge(domain),
+    Layer.provideMerge(store)
+  )
 }

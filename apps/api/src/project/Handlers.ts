@@ -39,6 +39,7 @@ import { Users } from "../db/Users.ts"
 import { CredentialStore } from "../integrations/CredentialStore.ts"
 import { newEventId, newMessageId, newNotificationId, newWakeId, newWorkstreamId } from "../lib/Ids.ts"
 import { Alarm } from "./Alarm.ts"
+import { AppNotifications } from "./AppNotifications.ts"
 import { ProjectDirectory } from "./Client.ts"
 import { Core, initialStatus } from "./Core.ts"
 import { LiveFeed } from "./Live.ts"
@@ -107,6 +108,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
     const projects = yield* Projects
     const machines = yield* Machines
     const relays = yield* Relays
+    const appNotifications = yield* AppNotifications
 
     const findMessage = (id: Message["id"]) =>
       Effect.flatMap(core.message(id), (found) =>
@@ -253,6 +255,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
       DeclineAccess: ({ messageId, reason }) =>
         Effect.gen(function* () {
           const message = yield* findAccess(messageId)
+          if (message.request._tag === "Notifications") return yield* appNotifications.decline(message, reason)
           if (message.state._tag === "Declined") return message
           if (message.state._tag !== "Open") {
             return yield* new InvalidRequest({ message: "This access request isn't open anymore." })
@@ -278,6 +281,16 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
           yield* notifier.asksChanged
           return declined
         }),
+
+      GetAppNotifications: () => appNotifications.list(undefined),
+      AllowAppNotifications: ({ messageId }) =>
+        Effect.gen(function* () {
+          const message = yield* findAccess(messageId)
+          if (message.request._tag !== "Notifications") return yield* notFound("notifications request", messageId)
+          return yield* appNotifications.allow(message)
+        }),
+      UpdateAppNotifications: ({ app, delivery, mutedUntil }) => appNotifications.update(app, { delivery, mutedUntil }),
+      OpenedAppNotification: ({ notificationId }) => appNotifications.opened(notificationId),
 
       RegisterLiveActivity: (device) => notifier.registerLive(device),
 
@@ -492,6 +505,7 @@ export const AgentHandlers = SandboxRpcs.toLayer(
     const directory = yield* ProjectDirectory
     const alarm = yield* Alarm
     const relays = yield* Relays
+    const appNotifications = yield* AppNotifications
 
     const project = core.project.pipe(Effect.orDie)
 
@@ -708,6 +722,11 @@ export const AgentHandlers = SandboxRpcs.toLayer(
                 ? keyFileNameProblem(request.name)
                 : undefined
           if (problem !== undefined) return yield* new InvalidRequest({ message: problem })
+          if (request._tag === "Notifications") {
+            return yield* new InvalidRequest({
+              message: "An app asks to notify them with `dream notify setup`, not `dream access`."
+            })
+          }
           const current = yield* project
           const label = yield* labelFor(workstream)
           const notificationId = when === undefined ? yield* newNotificationId() : undefined
@@ -738,11 +757,20 @@ export const AgentHandlers = SandboxRpcs.toLayer(
       RemoveLink: () => Effect.die("RemoveLink is served by the Worker"),
       ListLinks: () => Effect.die("ListLinks is served by the Worker"),
 
+      SetUpAppNotifications: (request) =>
+        Effect.gen(function* () {
+          yield* labelFor(request.workstream)
+          return yield* appNotifications.setUp(request)
+        }),
+      SendAppNotification: (request) => appNotifications.send(request),
+      ListAppNotifications: ({ app }) => appNotifications.list(app),
+
       WithdrawNotification: ({ notificationId }) =>
         Effect.gen(function* () {
           const record = yield* store.notification(notificationId)
           if (Option.isNone(record)) return yield* notFound("notification", notificationId)
           yield* notifier.withdraw([notificationId])
+          yield* appNotifications.withdrawn(notificationId)
           if (record.value.messageId !== undefined) {
             const message = yield* core.message(record.value.messageId)
             if (Option.isSome(message)) yield* core.changeMessage(message.value)

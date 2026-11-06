@@ -9,8 +9,13 @@
  */
 import {
   AccessMessage,
+  AppDelivery,
+  AppId,
+  AppNotifications,
+  AppSender,
   DeclineReason,
   DeviceId,
+  NotificationId,
   Integration,
   InvalidRequest,
   LinkId,
@@ -153,6 +158,23 @@ export class ProjectRpcs extends RpcGroup.make(
   Rpc.make("RelayAlert", { payload: { relayId: RelayId, reason: Schema.NonEmptyString }, error: NotFound }),
   /** Whether the relay is still this project's to hold; asked now and then by a line that's been quiet. */
   Rpc.make("RelayActive", { payload: { relayId: RelayId }, success: Schema.Boolean }),
+  // Notifications from the project's apps, for the phone (`AppRpcs` of the same names).
+  Rpc.make("GetAppNotifications", { success: AppNotifications }),
+  Rpc.make("AllowAppNotifications", {
+    payload: { messageId: MessageId },
+    success: AccessMessage,
+    error: Schema.Union([NotFound, InvalidRequest])
+  }),
+  Rpc.make("UpdateAppNotifications", {
+    payload: {
+      app: AppId,
+      delivery: Schema.optionalKey(AppDelivery),
+      mutedUntil: Schema.optionalKey(Schema.NullOr(Schema.DateTimeUtc))
+    },
+    success: AppSender,
+    error: Schema.Union([NotFound, InvalidRequest])
+  }),
+  Rpc.make("OpenedAppNotification", { payload: { notificationId: NotificationId }, error: NotFound }),
   /** They renamed, re-iconed or removed one of the agent's app links: tell the agent (`AgentEvent.LinkEdited`). */
   Rpc.make("LinkEdited", {
     payload: {
