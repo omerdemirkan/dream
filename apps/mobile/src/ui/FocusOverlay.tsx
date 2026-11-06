@@ -25,7 +25,8 @@ import { scheduleOnRN } from "react-native-worklets"
 import { projectsAtom } from "../state/atoms.ts"
 import { type Focus, focusAtom, landingAtom, messageRects, type Rect } from "../state/ui.ts"
 import { ExpandedAccess, ExpandedQuestion } from "./Expanded.tsx"
-import { useMessage, useProject } from "./hooks.ts"
+import { nextOpenAsk } from "./asks.ts"
+import { useMessage, usePendingAnswers, useProject, withPending } from "./hooks.ts"
 import { color } from "./theme.ts"
 
 const easing = Easing.bezier(0.22, 0.8, 0.2, 1)
@@ -58,8 +59,10 @@ function FocusLayer(props: { readonly focus: Focus }) {
   // The animated styles close over this rather than `focus`, whose message worklets can't copy.
   const grows = focus.origin !== undefined
   const box = useSharedValue<Rect>(start)
-  const progress = useSharedValue(0)
-  const fade = useSharedValue(0)
+  // One opened by answering the one before is already full screen; it slides in from the right instead.
+  const progress = useSharedValue(focus.advanced ? 1 : 0)
+  const fade = useSharedValue(focus.advanced ? 1 : 0)
+  const slide = useSharedValue(focus.advanced ? 1 : 0)
   const closing = useRef(false)
   const expanded = useRef(false)
   const pathnameRef = useRef(pathname)
@@ -73,11 +76,17 @@ function FocusLayer(props: { readonly focus: Focus }) {
     if (closing.current) return
     expanded.current = true
     land(false)
+    const params = { pathname: "/project/[id]", params: { id: focus.projectId, tab: "chat", instant: "1" } } as const
     if (pathnameRef.current === `/project/${focus.projectId}`) router.setParams({ tab: "chat" })
-    else router.push({ pathname: "/project/[id]", params: { id: focus.projectId, tab: "chat", instant: "1" } })
+    else router.push(params)
   }
 
   useEffect(() => {
+    if (focus.advanced) {
+      slide.value = withTiming(0, { duration: 340, easing })
+      onExpanded()
+      return
+    }
     progress.value = withTiming(1, { duration: focus.origin ? 500 : 340, easing }, (finished) => {
       if (finished) scheduleOnRN(onExpanded)
     })
@@ -99,6 +108,54 @@ function FocusLayer(props: { readonly focus: Focus }) {
   useEffect(() => {
     if (expanded.current && !closing.current && pathname !== `/project/${focus.projectId}`) setFocus(Option.none())
   }, [pathname, focus.projectId, setFocus])
+
+  // Answering moves on to the project's next open ask in Chat order (wrapping to an earlier one). The
+  // confirmation stays up for a beat first; with nothing left, it stays as it is. A failed answer leaves the
+  // ask open, so nothing moves.
+  const pending = usePendingAnswers()
+  const passed = [...(focus.passed ?? []), focus.messageId]
+  const nextAsk = (): Focus | undefined => {
+    const ask = nextOpenAsk(
+      (live?.messages ?? []).map((m) => withPending(m, pending)),
+      focus.messageId,
+      { passed, wrap: true }
+    )
+    return ask
+      ? {
+          projectId: ask.projectId,
+          messageId: ask.id,
+          origin: undefined,
+          message: ask,
+          advanced: true,
+          passed
+        }
+      : undefined
+  }
+  const next = useRef(nextAsk)
+  next.current = nextAsk
+  const upcoming = useRef<Focus | undefined>(undefined)
+  const goNext = () => {
+    if (upcoming.current) setFocus(Option.some(upcoming.current))
+  }
+  const state = message && message._tag !== "Text" ? message.state._tag : undefined
+  const before = useRef(state)
+  useEffect(() => {
+    const was = before.current
+    before.current = state
+    if (was !== "Open" || state === undefined || state === "Open" || state === "Withdrawn") return
+    const timer = setTimeout(() => {
+      const ask = next.current()
+      if (!ask || closing.current) return
+      closing.current = true
+      upcoming.current = ask
+      slide.value = withTiming(-1, { duration: 240, easing: Easing.in(Easing.cubic) }, (finished) => {
+        if (finished) scheduleOnRN(goNext)
+      })
+    }, 1100)
+    return () => clearTimeout(timer)
+    // `goNext` and `next` read refs; the beat restarts only when the state changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state])
 
   const finish = () => {
     setFocus(Option.none())
@@ -147,6 +204,12 @@ function FocusLayer(props: { readonly focus: Focus }) {
     return { left: -b.x * (1 - p), top: -b.y * (1 - p), opacity: fade.value }
   })
 
+  const sliding = useAnimatedStyle(() => ({
+    flex: 1,
+    opacity: 1 - Math.abs(slide.value),
+    transform: [{ translateX: slide.value * W * 0.24 }]
+  }))
+
   return (
     // Modal for VoiceOver: the screen underneath (the project's Chat) isn't read while this is open.
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none" accessibilityViewIsModal>
@@ -158,11 +221,13 @@ function FocusLayer(props: { readonly focus: Focus }) {
             keyboardVerticalOffset={-(Math.max(insets.bottom, 12) + 6 - 10)}
             style={{ flex: 1 }}
           >
-            {message?._tag === "Question" ? (
-              <ExpandedQuestion message={message} project={project} onBack={back} />
-            ) : message?._tag === "Access" ? (
-              <ExpandedAccess message={message} project={project} onBack={back} />
-            ) : null}
+            <Animated.View style={sliding}>
+              {message?._tag === "Question" ? (
+                <ExpandedQuestion message={message} project={project} onBack={back} />
+              ) : message?._tag === "Access" ? (
+                <ExpandedAccess message={message} project={project} onBack={back} />
+              ) : null}
+            </Animated.View>
           </KeyboardAvoidingView>
         </Animated.View>
       </Animated.View>

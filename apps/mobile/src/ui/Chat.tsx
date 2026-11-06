@@ -23,6 +23,7 @@ import { chatRowOf, presenceOf, receiptOf } from "../data/presence.ts"
 import type { ProjectState } from "../data/projectState.ts"
 import { loadEarlierFn } from "../state/atoms.ts"
 import { landingAtom, messageRects } from "../state/ui.ts"
+import { nextOpenAsk } from "./asks.ts"
 import { useNow, useOpenMessage, usePendingAnswers, withPending } from "./hooks.ts"
 import { AccessCard, AgentText, QuestionCard, UserBubble } from "./Messages.tsx"
 import { ChatActivityRow } from "./Presence.tsx"
@@ -76,7 +77,11 @@ function Divider(props: { readonly label: string; readonly first: boolean }) {
   )
 }
 
-function AskRow(props: { readonly message: AskMessage; readonly highlightAt: number }) {
+function AskRow(props: {
+  readonly message: AskMessage
+  readonly highlightAt: number
+  readonly onAnswered: (messageId: MessageId) => void
+}) {
   const ref = useRef<HostInstance>(null)
   const open = useOpenMessage()
   const m = props.message
@@ -99,7 +104,7 @@ function AskRow(props: { readonly message: AskMessage; readonly highlightAt: num
   return (
     <View>
       {m._tag === "Question" ? (
-        <QuestionCard ref={ref} message={m} onOpen={onOpen} />
+        <QuestionCard ref={ref} message={m} onOpen={onOpen} onAnswered={() => props.onAnswered(m.id)} />
       ) : (
         <AccessCard ref={ref} message={m} onOpen={onOpen} />
       )}
@@ -168,6 +173,20 @@ export function ChatTab(props: {
     }
   })
 
+  // Answering a card inline moves on to the next open one below it, once the answered card has settled.
+  const latest = useRef({ state, pending })
+  latest.current = { state, pending }
+  const onAnswered = useCallback(
+    (messageId: MessageId) => {
+      setTimeout(() => {
+        const messages = latest.current.state.messages.map((m) => withPending(m, latest.current.pending))
+        const next = nextOpenAsk(messages, messageId, { wrap: false })
+        if (next && scrollTo(next.id, true)) setHighlights((map) => new Map(map).set(next.id, Date.now()))
+      }, 450)
+    },
+    [scrollTo]
+  )
+
   const onContentSizeChange = () => {
     if (wanted) return
     if (!landed.current || nearBottom.current) {
@@ -216,7 +235,7 @@ export function ChatTab(props: {
             <AgentText message={message} time={time} />
           )
         ) : (
-          <AskRow message={message} highlightAt={highlightAt} />
+          <AskRow message={message} highlightAt={highlightAt} onAnswered={onAnswered} />
         )}
       </View>
     )

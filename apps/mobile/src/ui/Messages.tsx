@@ -347,7 +347,12 @@ export const answerText = (message: QuestionMessage) =>
 
 export const QuestionCard = forwardRef<
   HostInstance,
-  { readonly message: QuestionMessage; readonly onOpen: () => void }
+  {
+    readonly message: QuestionMessage
+    readonly onOpen: () => void
+    /** The answer went through (Chat then moves on to the next open card). */
+    readonly onAnswered?: (() => void) | undefined
+  }
 >(function QuestionCard(props, ref) {
   const m = props.message
   const answer = useAction(answerNowFn)
@@ -411,6 +416,7 @@ export const QuestionCard = forwardRef<
           answer.run(
             { projectId: m.projectId, messageId: m.id, answer: { _tag: "Choice", option } },
             {
+              onSuccess: () => props.onAnswered?.(),
               onFailure: (message) => {
                 setPicked(undefined)
                 toast(message)
