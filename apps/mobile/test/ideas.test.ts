@@ -13,10 +13,10 @@ const guessTexts = (text: string, guesses: ReadonlyArray<{ start: number; end: n
 const sampleTitles = [Fx.liftLog, Fx.morningBrief, Fx.cabin, Fx.recipeScaler].map((p) => p.title)
 
 describe("ideas", () => {
-  it("are the founder's four, in their order, each a short starter and a draft with guesses", () => {
+  it("are the founder's five, in their order, each a short starter and a draft with guesses", () => {
     assert.deepStrictEqual(
       ideas.map((i) => i.id),
-      ["memory-tutor", "points-trips", "run-club-bot", "dinner-plan"]
+      ["my-podcast", "memory-tutor", "points-trips", "run-club-bot", "dinner-plan"]
     )
     for (const i of ideas) {
       assert.isAtMost(i.line.length, 110, i.id)
@@ -109,7 +109,7 @@ describe("which starters", () => {
     assert.deepStrictEqual(startersFor(ideas, sampleTitles), ideas)
     assert.deepStrictEqual(
       startersFor(ideas, ["Meal planner"]).map((i) => i.id),
-      ["memory-tutor", "points-trips", "run-club-bot"]
+      ["my-podcast", "memory-tutor", "points-trips", "run-club-bot"]
     )
   })
 })
