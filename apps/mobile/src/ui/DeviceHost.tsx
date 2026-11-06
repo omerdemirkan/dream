@@ -12,8 +12,10 @@ import { useRouter } from "expo-router"
 import { useEffect, useRef } from "react"
 import { AppState } from "react-native"
 import { DreamNative } from "../../modules/dream-native/index.ts"
+import { showsWhileOpen } from "../data/notificationPresentation.ts"
 import { randomUuid } from "../data/Session.ts"
 import * as Push from "../platform/push.ts"
+import { viewingProject } from "../platform/viewing.ts"
 import {
   cleanUpNotificationsFn,
   fixturePushesAtom,
@@ -30,9 +32,8 @@ import { useOpenMessage } from "./hooks.ts"
 
 Notifications.setNotificationHandler({
   handleNotification: async (notification) => {
-    const data = Push.pushDataOf(notification)
-    const silent = Option.isSome(data) && data.value._tag === "Withdraw"
-    return { shouldShowBanner: !silent, shouldShowList: !silent, shouldPlaySound: !silent, shouldSetBadge: false }
+    const show = showsWhileOpen(Push.pushDataOf(notification), viewingProject())
+    return { shouldShowBanner: show, shouldShowList: show, shouldPlaySound: show, shouldSetBadge: false }
   }
 })
 

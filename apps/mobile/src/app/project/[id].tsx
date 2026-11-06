@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { dotOf, headerLine, presenceOf } from "../../data/presence.ts"
 import type { ProjectState } from "../../data/projectState.ts"
 import { draftKey } from "../../data/Replies.ts"
+import { useViewingProject } from "../../platform/viewing.ts"
 import { clearDraftFn, draftAtom, projectsAtom, sendMessageFn } from "../../state/atoms.ts"
 import { landingAtom } from "../../state/ui.ts"
 import { useAction } from "../../ui/actions.ts"
@@ -55,6 +56,8 @@ function Project(props: {
   const router = useRouter()
   const insets = useSafeAreaInsets()
   const open = useOpenMessage()
+  // While this screen is in front, its own notifications stay quiet: what they'd say arrives here anyway.
+  useViewingProject(props.projectId)
   const state = useProject(props.projectId)
   const summaries = Option.getOrUndefined(AsyncResult.value(useAtomValue(projectsAtom)))
   const project = state?.project ?? summaries?.find((s) => s.project.id === props.projectId)?.project
