@@ -317,7 +317,8 @@ describe("the usage sheet", () => {
     assert.strictEqual(usage.billing, "subscription")
     assert.strictEqual(usage.plan, "Claude Max")
     // Week: t1 (9,000 tokens) + t3 (2,500). Today (since 08:00 UTC) and the five hours: t3 only.
-    assert.strictEqual(usage.week.tokens, 11_500)
+    assert.strictEqual(usage.week.tokens, 4_500)
+    assert.strictEqual(usage.week.cacheReadTokens, 7_000)
     assert.strictEqual(usage.today.tokens, 2_500)
     assert.strictEqual(usage.fiveHour.tokens, 2_500)
     // The week rose 34 → 35 over t1, then 35 → 37 over t2 and t3 (cost 2 and 2): A gets 1 + 1.
@@ -369,7 +370,7 @@ describe("the usage sheet", () => {
     assert.isUndefined(noWeek.outsideDreamPercent)
     assert.deepStrictEqual(noWeek.projects, [])
     // The last seven days stand in for the week's tokens.
-    assert.strictEqual(noWeek.week.tokens, 11_500)
+    assert.strictEqual(noWeek.week.tokens, 4_500)
 
     const idle = buildProjectUsage({
       project: { id: C, harness: "claude-code" },

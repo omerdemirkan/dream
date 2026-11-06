@@ -92,8 +92,13 @@ export type ProjectUsageGlance = typeof ProjectUsageGlance.Type
 
 /** This project's use over one period. */
 export const UsagePeriod = Schema.Struct({
-  /** Exact. Absent when no turn in the period reported tokens (dreamd builds before this didn't). */
+  /**
+   * Exact: input, cache writes and output. Absent when no turn in the period reported tokens (dreamd builds before
+   * this didn't).
+   */
   tokens: Schema.optionalKey(Count),
+  /** Input read from the cache, counted apart from `tokens` because it dwarfs them (and costs a tenth). */
+  cacheReadTokens: Schema.optionalKey(Count),
   /**
    * Its estimated share of the window the period is measured against: the five-hour window for `fiveHour`, the
    * week for `today` and `week`. Absent on an API key, or when the window isn't known.

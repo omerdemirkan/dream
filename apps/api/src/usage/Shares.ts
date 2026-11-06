@@ -64,8 +64,8 @@ export const RelativePrice: Record<ModelProvider, Record<keyof TokenUsage, numbe
   chatgpt: { input: 1, cacheWrite: 1, cacheRead: 0.1, output: 8 }
 }
 
-export const totalTokens = (tokens: TokenUsage): number =>
-  tokens.input + tokens.cacheRead + tokens.cacheWrite + tokens.output
+/** The headline token figure: input, cache writes and output. Cache reads, which dwarf them, are counted apart. */
+export const totalTokens = (tokens: TokenUsage): number => tokens.input + tokens.cacheWrite + tokens.output
 
 const pricedTokens = (provider: ModelProvider, tokens: TokenUsage): number => {
   const price = RelativePrice[provider]

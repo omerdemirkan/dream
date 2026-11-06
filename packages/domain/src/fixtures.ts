@@ -234,9 +234,9 @@ export const liftLogUsage: ProjectUsage = {
   plan: "ChatGPT Pro",
   weekly: { usedPercent: 38, projectPercent: 4, resetsAt: at("2026-11-09T08:00:00Z") },
   fiveHourWindow: { usedPercent: 41, projectPercent: 9, resetsAt: at("2026-11-04T23:40:00Z") },
-  today: { tokens: 2_140_000, sharePercent: 2 },
-  fiveHour: { tokens: 910_000, sharePercent: 9 },
-  week: { tokens: 9_620_000, sharePercent: 4 },
+  today: { tokens: 2_140_000, cacheReadTokens: 18_400_000, sharePercent: 2 },
+  fiveHour: { tokens: 910_000, cacheReadTokens: 7_900_000, sharePercent: 9 },
+  week: { tokens: 9_620_000, cacheReadTokens: 83_000_000, sharePercent: 4 },
   projects: [
     { projectId: ids.recipe, title: "Recipe Scaler", icon: "frying.pan", sharePercent: 19 },
     { projectId: ids.lift, title: "Lift Log", icon: "dumbbell", sharePercent: 4 },

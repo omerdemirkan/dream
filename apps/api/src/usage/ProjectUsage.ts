@@ -104,9 +104,11 @@ export const buildProjectUsage = (input: UsageInputs): ProjectUsage => {
     shareOf: (turns: ReadonlyArray<LoggedTurn>) => number
   ) => {
     const inPeriod = own.filter((t) => t.endedMs > fromMs)
-    const reported = inPeriod.flatMap((t) => (t.tokens === undefined ? [] : [totalTokens(t.tokens)]))
+    const reported = inPeriod.flatMap((t) => (t.tokens === undefined ? [] : [t.tokens]))
     const result: UsagePeriod = {
-      ...(reported.length === 0 ? {} : { tokens: sum(reported) }),
+      ...(reported.length === 0
+        ? {}
+        : { tokens: sum(reported.map(totalTokens)), cacheReadTokens: sum(reported.map((t) => t.cacheRead)) }),
       ...(window === undefined ? {} : { sharePercent: roundPercent(shareOf(inPeriod)) })
     }
     return { result, turns: inPeriod }

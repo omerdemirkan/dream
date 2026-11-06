@@ -953,8 +953,9 @@ describe("a project, end to end", () => {
 
       const sheet = yield* cloud.phone.GetProjectUsage({ projectId: project.id })
       assert.strictEqual(sheet.plan, "Claude Max")
-      assert.strictEqual(sheet.week.tokens, 46_700)
-      assert.strictEqual(sheet.today.tokens, 46_700)
+      assert.strictEqual(sheet.week.tokens, 6_700)
+      assert.strictEqual(sheet.week.cacheReadTokens, 40_000)
+      assert.strictEqual(sheet.today.tokens, 6_700)
       assert.strictEqual(sheet.fiveHour.sharePercent, 4)
       assert.deepStrictEqual(sheet.fiveHourWindow, { usedPercent: 14, projectPercent: 4, resetsAt: fiveResets })
       assert.deepStrictEqual(
@@ -973,7 +974,7 @@ describe("a project, end to end", () => {
       assert.isNull(old[1].output_tokens)
       assert.strictEqual(old[1].weekly_before_percent, 22)
       const after = yield* cloud.phone.GetProjectUsage({ projectId: project.id })
-      assert.strictEqual(after.week.tokens, 46_700)
+      assert.strictEqual(after.week.tokens, 6_700)
       assert.strictEqual(after.week.sharePercent, 3)
       // The tokens shown are still only the first turn's, which counted its subagents.
       assert.strictEqual(after.subagents, "included")
