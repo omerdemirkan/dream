@@ -1,9 +1,10 @@
-import type { Message } from "@dream/domain"
+import type { Message, WorkstreamId } from "@dream/domain"
+import * as Fx from "@dream/domain/fixtures"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime } from "effect"
 import type { ProjectState } from "../src/data/projectState.ts"
-import { makeWorld, mockNow } from "../src/fake/fixtures.ts"
-import { cardOf, trackOf } from "../src/ui/statusView.ts"
+import { liftWorkstreams, makeWorld, mockNow, type WorkstreamsStage } from "../src/fake/fixtures.ts"
+import { cardOf, labelsOf, trackOf } from "../src/ui/statusView.ts"
 
 const world = makeWorld(mockNow)
 const stateOf = (slug: string, change: Partial<ProjectState> = {}): ProjectState => {
@@ -65,5 +66,79 @@ describe("the Status card over Chat", () => {
     const lift = stateOf("lift-log")
     const done = lift.status.milestones.map((m) => ({ ...m, state: "done" as const }))
     assert.strictEqual(trackOf(done)?.position, 5)
+  })
+})
+
+describe("workstreams on the card", () => {
+  /** Lift Log in one of the workstream states, as the fixtures backend's scenarios put it. */
+  const liftIn = (stage: WorkstreamsStage): ProjectState => {
+    const lift = stateOf("lift-log")
+    const latest = lift.messages.at(-1)!.createdAt
+    const { workstreams, labels, added } = liftWorkstreams(stage, lift.project.id, latest)
+    return {
+      ...lift,
+      status: { ...lift.status, workstreams },
+      messages: [
+        ...lift.messages.map((m) => {
+          const label = labels.get(m.id)
+          return label === undefined ? m : { ...m, workstream: label }
+        }),
+        ...added
+      ]
+    }
+  }
+
+  it("none, or one active: the card is the sentence and the track, and nothing is labeled", () => {
+    for (const state of [stateOf("lift-log"), liftIn("one")]) {
+      const card = cardOf(state, mockNow)
+      assert.isUndefined(card.rows)
+      assert.strictEqual(card.text, "Charting your estimated 1RM")
+      assert.strictEqual(card.track?.position, 3)
+      assert.isUndefined(labelsOf(state.status))
+    }
+  })
+
+  it("three in flight (A1): a row each, and the Health import folded", () => {
+    const state = liftIn("three")
+    const rows = cardOf(state, mockNow).rows!
+    assert.deepStrictEqual(
+      rows.rows.map((r) => [r.title, r.line, r.waiting?.id]),
+      [
+        ["Progress charts", "Charting estimated 1RM for each lift", undefined],
+        ["Rest timer", "Wiring it into a Live Activity", undefined],
+        ["Android?", "Finding out what it would take", undefined]
+      ]
+    )
+    assert.isUndefined(rows.more)
+    assert.deepStrictEqual(rows.done, { text: "Health import · 214 workouts from a sample export", others: 0 })
+    assert.strictEqual(labelsOf(state.status)?.get("ws_android" as WorkstreamId), "Android?")
+  })
+
+  it("one waits on them (A2): its row is amber, at the top, with the question, and it isn't a second amber line", () => {
+    const card = cardOf(liftIn("waiting"), mockNow)
+    const [first] = card.rows!.rows
+    assert.strictEqual(first?.title, "Rest timer")
+    assert.strictEqual(first?.waiting?.id, "msg_wssound")
+    assert.strictEqual(first?.line, "Which sound should the rest timer end with?")
+    assert.strictEqual(card.need?.ask.id, "msg_wssound")
+    assert.isUndefined(card.looseNeed)
+    assert.strictEqual(card.rows!.done?.text, "Progress charts · Estimated 1RM on every chart")
+  })
+
+  it("five active: two rows and the rest summed up", () => {
+    const rows = cardOf(liftIn("many"), mockNow).rows!
+    assert.deepStrictEqual(
+      rows.rows.map((r) => r.title),
+      ["Progress charts", "Rest timer"]
+    )
+    assert.deepStrictEqual(rows.more, { text: "3 more: Android?, Onboarding, Lock Screen widget", waiting: false })
+    assert.strictEqual(rows.all.length, 5)
+  })
+
+  it("an ask outside any workstream still gets the amber line under the rows", () => {
+    const state = liftIn("three")
+    const loose = { ...Fx.cabinQuestion, projectId: state.project.id, createdAt: mockNow }
+    const card = cardOf({ ...state, messages: [...state.messages, loose] }, mockNow)
+    assert.strictEqual(card.looseNeed?.ask.id, loose.id)
   })
 })

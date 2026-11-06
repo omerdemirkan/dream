@@ -25,7 +25,11 @@ import {
   type Wake,
   type WakeWhen,
   DefaultDaemonPort,
-  keyFileNameProblem
+  keyFileNameProblem,
+  waitsOnThem,
+  type Workstream,
+  type WorkstreamId,
+  type Workstreams
 } from "@dream/domain"
 import { Clock, Cron, DateTime, Effect, Layer, Option, Result } from "effect"
 import { Connections } from "../db/Connections.ts"
@@ -33,7 +37,7 @@ import { Secrets } from "../db/Secrets.ts"
 import { Projects } from "../db/Projects.ts"
 import { Users } from "../db/Users.ts"
 import { CredentialStore } from "../integrations/CredentialStore.ts"
-import { newEventId, newMessageId, newNotificationId, newWakeId } from "../lib/Ids.ts"
+import { newEventId, newMessageId, newNotificationId, newWakeId, newWorkstreamId } from "../lib/Ids.ts"
 import { Alarm } from "./Alarm.ts"
 import { ProjectDirectory } from "./Client.ts"
 import { Core, initialStatus } from "./Core.ts"
@@ -67,6 +71,26 @@ export const nextWakeAt = (when: WakeWhen, defaultTimeZone: string, fromMs: numb
  */
 export const knowsAccessRemoved = (record: SandboxRecord): boolean =>
   record.status !== "ready" || record.release !== undefined
+
+/** Ended workstreams the card keeps, latest first, so the list stays small in a project that lives for months. */
+export const EndedWorkstreamsKept = 30
+
+/** `list` with the oldest ended ones past `EndedWorkstreamsKept` let go. */
+export const pruneWorkstreams = (list: ReadonlyArray<Workstream>): ReadonlyArray<Workstream> => {
+  const ended = list
+    .filter((w) => w.state !== "active")
+    .sort((a, b) => DateTime.toEpochMillis(b.endedAt ?? b.updatedAt) - DateTime.toEpochMillis(a.endedAt ?? a.updatedAt))
+  const gone = new Set(ended.slice(EndedWorkstreamsKept).map((w) => w.id))
+  return list.filter((w) => !gone.has(w.id))
+}
+
+/** The workstreams, and which wait on them because one of their questions or access requests is open. */
+export const workstreamsOf = (status: StatusCard, openAsks: ReadonlyArray<Message>): Workstreams => ({
+  workstreams: status.workstreams ?? [],
+  waiting: openAsks.flatMap((m) =>
+    m.workstream !== undefined && waitsOnThem(m) ? [{ workstream: m.workstream, messageId: m.id }] : []
+  )
+})
 
 export const ProjectHandlers = ProjectRpcs.toLayer(
   Effect.gen(function* () {
@@ -126,24 +150,35 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
 
       ListMessages: ({ before, limit }) => store.messagesBefore(before, limit),
 
-      SendUserMessage: ({ text, id }) =>
+      SendUserMessage: ({ text, id, workstream }) =>
         Effect.gen(function* () {
           if (id !== undefined) {
             const posted = yield* core.message(id)
             if (Option.isSome(posted) && posted.value._tag === "Text") return posted.value
           }
           const project = yield* core.project.pipe(Effect.orDie)
+          // A workstream the agent has since let go of, or never had, is left off rather than refusing their words.
+          const into =
+            workstream === undefined ? undefined : (yield* core.status).workstreams?.find((w) => w.id === workstream)
           const message = TextMessage.make({
             id: id ?? (yield* newMessageId()),
             projectId: project.id,
             createdAt: yield* DateTime.now,
             from: "user",
             text,
-            media: []
+            media: [],
+            ...(into === undefined ? {} : { workstream: into.id })
           })
           yield* core.addMessage(message)
           yield* core.enqueue(
-            yield* event((fields) => AgentEvent.cases.UserMessage.make({ ...fields, messageId: message.id, text }))
+            yield* event((fields) =>
+              AgentEvent.cases.UserMessage.make({
+                ...fields,
+                messageId: message.id,
+                text,
+                ...(into === undefined ? {} : { workstream: { id: into.id, title: into.title } })
+              })
+            )
           )
           return message
         }),
@@ -486,10 +521,110 @@ export const AgentHandlers = SandboxRpcs.toLayer(
       return value === null || value === "" ? (rest as StatusCard) : { ...rest, [key]: value }
     }
 
+    const findWorkstream = (id: WorkstreamId) =>
+      Effect.gen(function* () {
+        const status = yield* core.status
+        const found = status.workstreams?.find((w) => w.id === id)
+        if (found === undefined) return yield* notFound("workstream", id)
+        return { status, workstream: found }
+      })
+
+    /** `--work`: the workstream has to be one of the project's. */
+    const labelFor = (id: WorkstreamId | undefined) =>
+      Effect.gen(function* () {
+        if (id === undefined) return {}
+        const status = yield* core.status
+        if (status.workstreams?.some((w) => w.id === id) !== true) {
+          return yield* new InvalidRequest({
+            message: `This project has no workstream ${id}; \`dream work list\` shows the ones it has.`
+          })
+        }
+        return { workstream: id }
+      })
+
+    const workstreams = Effect.gen(function* () {
+      return workstreamsOf(yield* core.status, yield* core.openAsks)
+    })
+
+    /** Replaces one workstream (or adds it) and saves the card, which reaches the phone as `StatusChanged`. */
+    const saveWorkstream = (status: StatusCard, next: Workstream) =>
+      Effect.gen(function* () {
+        const list = status.workstreams ?? []
+        const replaced = list.some((w) => w.id === next.id)
+          ? list.map((w) => (w.id === next.id ? next : w))
+          : [...list, next]
+        yield* core.saveStatus({ ...status, workstreams: pruneWorkstreams(replaced), updatedAt: next.updatedAt })
+        return yield* workstreams
+      })
+
+    const route = (messageId: Message["id"], workstream: WorkstreamId) =>
+      Effect.gen(function* () {
+        const message = yield* findMessage(messageId)
+        if (message.workstream === workstream) return message
+        const routed = { ...message, workstream }
+        yield* core.changeMessage(routed)
+        return routed
+      })
+
     return {
-      SendMessage: ({ text, media, notify }) =>
+      ListWorkstreams: () => workstreams,
+
+      StartWorkstream: ({ title, now, from }) =>
+        Effect.gen(function* () {
+          if (from !== undefined) yield* findMessage(from)
+          const at = yield* DateTime.now
+          const workstream: Workstream = {
+            id: yield* newWorkstreamId(),
+            title: title.trim(),
+            ...(now === undefined || now.trim() === "" ? {} : { now: now.trim() }),
+            state: "active",
+            startedAt: at,
+            updatedAt: at
+          }
+          const report = yield* saveWorkstream(yield* core.status, workstream)
+          if (from !== undefined) yield* route(from, workstream.id)
+          return report
+        }),
+
+      UpdateWorkstream: ({ workstreamId, title, now }) =>
+        Effect.gen(function* () {
+          const { status, workstream } = yield* findWorkstream(workstreamId)
+          const { now: _, ...rest } = workstream
+          const nextNow =
+            now === undefined ? workstream.now : now === null || now.trim() === "" ? undefined : now.trim()
+          return yield* saveWorkstream(status, {
+            ...rest,
+            ...(title === undefined ? {} : { title: title.trim() }),
+            ...(nextNow === undefined ? {} : { now: nextNow }),
+            updatedAt: yield* DateTime.now
+          })
+        }),
+
+      EndWorkstream: ({ workstreamId, state, result }) =>
+        Effect.gen(function* () {
+          const { status, workstream } = yield* findWorkstream(workstreamId)
+          if (workstream.state === state) return yield* workstreams
+          const at = yield* DateTime.now
+          const { result: _, ...rest } = workstream
+          return yield* saveWorkstream(status, {
+            ...rest,
+            state,
+            ...(result === undefined || result.trim() === "" ? {} : { result: result.trim() }),
+            updatedAt: at,
+            endedAt: at
+          })
+        }),
+
+      RouteMessage: ({ messageId, workstreamId }) =>
+        Effect.gen(function* () {
+          yield* findWorkstream(workstreamId)
+          return yield* route(messageId, workstreamId)
+        }),
+
+      SendMessage: ({ text, media, notify, workstream }) =>
         Effect.gen(function* () {
           const current = yield* project
+          const label = yield* labelFor(workstream)
           const refs = yield* resolveMedia(media)
           const notificationId = notify ? yield* newNotificationId() : undefined
           const message = TextMessage.make({
@@ -499,16 +634,18 @@ export const AgentHandlers = SandboxRpcs.toLayer(
             from: "agent",
             text,
             media: refs,
-            ...(notificationId === undefined ? {} : { notificationId })
+            ...(notificationId === undefined ? {} : { notificationId }),
+            ...label
           })
           yield* core.addMessage(message)
           if (notificationId !== undefined) yield* notifier.notify(message, notificationId, "message")
           return message
         }),
 
-      AskQuestion: ({ question, options, why, context, meanwhile }) =>
+      AskQuestion: ({ question, options, why, context, meanwhile, workstream }) =>
         Effect.gen(function* () {
           const current = yield* project
+          const label = yield* labelFor(workstream)
           const notificationId = yield* newNotificationId()
           const message = QuestionMessage.make({
             id: yield* newMessageId(),
@@ -520,7 +657,8 @@ export const AgentHandlers = SandboxRpcs.toLayer(
             ...(why === undefined ? {} : { why }),
             ...(context === undefined || context.trim() === "" ? {} : { context }),
             ...(meanwhile === undefined ? {} : { meanwhile }),
-            state: QuestionState.cases.Open.make({})
+            state: QuestionState.cases.Open.make({}),
+            ...label
           })
           yield* core.addMessage(message)
           yield* notifier.notify(message, notificationId, "question")
@@ -546,7 +684,7 @@ export const AgentHandlers = SandboxRpcs.toLayer(
           return withdrawn
         }),
 
-      RequestAccess: ({ request, why, context, when }) =>
+      RequestAccess: ({ request, why, context, when, workstream }) =>
         Effect.gen(function* () {
           // An old dreamd doesn't check the host, and a card for a host no request goes to can never work.
           const problem =
@@ -557,6 +695,7 @@ export const AgentHandlers = SandboxRpcs.toLayer(
                 : undefined
           if (problem !== undefined) return yield* new InvalidRequest({ message: problem })
           const current = yield* project
+          const label = yield* labelFor(workstream)
           const notificationId = when === undefined ? yield* newNotificationId() : undefined
           const message = AccessMessage.make({
             id: yield* newMessageId(),
@@ -567,7 +706,8 @@ export const AgentHandlers = SandboxRpcs.toLayer(
             why,
             ...(context === undefined || context.trim() === "" ? {} : { context }),
             ...(when === undefined ? {} : { when }),
-            state: AccessState.cases.Open.make({})
+            state: AccessState.cases.Open.make({}),
+            ...label
           })
           yield* core.addMessage(message)
           if (notificationId !== undefined) yield* notifier.notify(message, notificationId, "access")

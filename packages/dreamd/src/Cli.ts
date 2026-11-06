@@ -25,6 +25,7 @@ import {
   ProjectLinks,
   type MediaId,
   MediaRef,
+  Message,
   type MessageId,
   Milestone,
   type NotificationId,
@@ -35,13 +36,16 @@ import {
   UsageSnapshot,
   Wake,
   type WakeId,
-  WakeWhen
+  WakeWhen,
+  type WorkstreamId,
+  Workstreams,
+  WorkstreamTitleMaxLength
 } from "@dream/domain"
 import { Cause, Console, DateTime, Effect, FileSystem, Option, Path, Redacted, Result, Schema } from "effect"
 import { Argument, CliError, Command, Flag } from "effect/cli"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
-import { Dream, userFacing } from "./cli/Client.ts"
+import { Dream, newerThanApi, userFacing } from "./cli/Client.ts"
 import * as Format from "./cli/Format.ts"
 import { PageCheck, PageLoad } from "./cli/PageCheck.ts"
 import * as Parse from "./cli/Parse.ts"
@@ -144,6 +148,15 @@ const upload = Effect.fn("dream.upload")(function* (file: string, caption?: stri
   return media
 })
 
+const workFlag = Flag.String("work").pipe(
+  Flag.withDescription(
+    "The workstream it belongs to (ws_…, from `dream work`). It carries that workstream's label in Chat; a question or access request makes its row wait on them while it's open."
+  ),
+  Flag.optional
+)
+
+const workOf = (work: Option.Option<string>) => Option.getOrUndefined(work)?.trim() as WorkstreamId | undefined
+
 const mediaFlag = Flag.String("media").pipe(
   Flag.withDescription("Attach a screenshot or recording (png, jpg or mp4). Repeat for more."),
   Flag.atLeast(0)
@@ -165,6 +178,7 @@ const message = Command.make(
       Flag.withDescription("Also notify them: its first lines, as plain text, on their lock screen."),
       Flag.withDefault(false)
     ),
+    work: workFlag,
     json
   },
   (input) =>
@@ -177,8 +191,9 @@ const message = Command.make(
       if (text.length === 0) return yield* fail("The message is empty.")
       const media: Array<MediaId> = []
       for (const file of input.media) media.push((yield* upload(file)).id)
-      const sent = yield* userFacing(dream.SendMessage({ text, media, notify: input.notify }))
-      yield* show(input.json, TextMessage, sent, Format.sent(sent))
+      const workstream = workOf(input.work)
+      const sent = yield* userFacing(dream.SendMessage(defined({ text, media, notify: input.notify, workstream })))
+      yield* show(input.json, TextMessage, sent, Format.sent(sent) + Format.unlabeled(workstream, sent))
     })
 ).pipe(
   Command.withDescription("Put a message in their Chat (markdown), optionally with media and a notification."),
@@ -223,6 +238,7 @@ const ask = Command.make(
       Flag.withDescription('What you\'ll keep doing while you wait; "-" reads it from stdin.'),
       Flag.optional
     ),
+    work: workFlag,
     notASecret: Flag.Boolean("not-a-secret").pipe(
       Flag.withDescription("Send it even though it mentions a credential, because it doesn't ask them for one."),
       Flag.withDefault(false)
@@ -256,11 +272,12 @@ const ask = Command.make(
             options: input.option,
             why,
             context: context === "" ? undefined : context,
-            meanwhile
+            meanwhile,
+            workstream: workOf(input.work)
           })
         )
       )
-      yield* show(input.json, QuestionMessage, asked, Format.asked(asked))
+      yield* show(input.json, QuestionMessage, asked, Format.asked(asked) + Format.unlabeled(workOf(input.work), asked))
     })
 ).pipe(
   Command.withDescription(
@@ -295,6 +312,7 @@ const accessFlags = {
     Flag.withDescription('Roughly when it\'s needed, e.g. "around Thursday". Shows as upcoming instead of notifying.'),
     Flag.optional
   ),
+  work: workFlag,
   json
 }
 
@@ -304,6 +322,7 @@ const requestAccess = (
     readonly why: string
     readonly context: Option.Option<string>
     readonly when: Option.Option<string>
+    readonly work: Option.Option<string>
     readonly json: boolean
   }
 ) =>
@@ -316,11 +335,17 @@ const requestAccess = (
           request,
           why: input.why,
           context: context === "" ? undefined : context,
-          when: Option.getOrUndefined(input.when)
+          when: Option.getOrUndefined(input.when),
+          workstream: workOf(input.work)
         })
       )
     )
-    yield* show(input.json, AccessMessage, requested, Format.accessRequested(requested))
+    yield* show(
+      input.json,
+      AccessMessage,
+      requested,
+      Format.accessRequested(requested) + Format.unlabeled(workOf(input.work), requested)
+    )
   })
 
 const access = Command.make("access").pipe(
@@ -592,6 +617,188 @@ const status = Command.make(
     { command: 'dream status --now "Building the progress charts"' },
     { command: "dream status --milestones milestones.json --media charts.png" }
   ])
+)
+
+// ---------------------------------------------------------------------------
+// Workstreams
+// ---------------------------------------------------------------------------
+
+/** Against an API from before workstreams. */
+const workUnknown =
+  "Nothing changed: this Dream's API predates workstreams, so `dream work` isn't available here yet. Until it is, the Status card's --now sentence is the one line they see; say what's going on there, and in your messages."
+
+const work = <A, E, R>(effect: Effect.Effect<A, E, R>) => userFacing(effect).pipe(newerThanApi(workUnknown))
+
+const workstreamId = Argument.String("workstream-id").pipe(Argument.withDescription("The workstream (ws_…)."))
+
+const workTitle = (title: string) =>
+  title.trim().length === 0
+    ? fail("The title is empty.")
+    : [...title.trim()].length > WorkstreamTitleMaxLength
+      ? fail(
+          `"${title.trim()}" is ${[...title.trim()].length} characters; a workstream's title is ${WorkstreamTitleMaxLength} at most, and a row fits about 30. A few words that name it, like "Double charges".`
+        )
+      : Effect.succeed(title.trim())
+
+const showWork = (asJson: boolean, report: Workstreams, lead: string) =>
+  Effect.gen(function* () {
+    yield* show(asJson, Workstreams, report, `${lead}\n${Format.workstreams(report, yield* now)}`)
+  })
+
+const workList = Command.make("list", { json }, (input) =>
+  Effect.gen(function* () {
+    const dream = yield* Dream
+    const report = yield* work(dream.ListWorkstreams())
+    yield* show(input.json, Workstreams, report, Format.workstreams(report, yield* now))
+  })
+).pipe(Command.withDescription("Every workstream, and what the card shows of them."))
+
+const workStart = Command.make(
+  "start",
+  {
+    title: Argument.String("title").pipe(
+      Argument.withDescription(
+        'What it is, in a few words: the row\'s first line and its label in Chat ("Double charges").'
+      )
+    ),
+    now: Flag.String("now").pipe(
+      Flag.withDescription("Where it stands, one short line under the title."),
+      Flag.optional
+    ),
+    from: Flag.String("from").pipe(
+      Flag.withDescription("The message that started it (msg_…, usually theirs): it's filed under the new workstream."),
+      Flag.optional
+    ),
+    json
+  },
+  (input) =>
+    Effect.gen(function* () {
+      const dream = yield* Dream
+      const title = yield* workTitle(input.title)
+      const report = yield* work(
+        dream.StartWorkstream(
+          defined({
+            title,
+            now: Option.getOrUndefined(input.now)?.trim() || undefined,
+            from: Option.getOrUndefined(input.from)?.trim() as MessageId | undefined
+          })
+        )
+      )
+      const started = report.workstreams.findLast((w) => w.title === title && w.state === "active")
+      yield* showWork(input.json, report, `Started ${started?.id ?? title}. Nothing was sent to them.`)
+    })
+).pipe(
+  Command.withDescription(
+    "Start a workstream: a line of work they might ask about on its own. With two or more active, the card shows a row for each."
+  ),
+  Command.withExamples([{ command: 'dream work start "Double charges" --now "Reproducing it" --from msg_\u2026' }])
+)
+
+const workUpdate = Command.make(
+  "update",
+  {
+    workstreamId,
+    title: Flag.String("title").pipe(Flag.withDescription("A new title."), Flag.optional),
+    now: Flag.String("now").pipe(
+      Flag.withDescription('Where it stands now, one short line; "" clears it.'),
+      Flag.optional
+    ),
+    json
+  },
+  (input) =>
+    Effect.gen(function* () {
+      const dream = yield* Dream
+      const title = Option.isSome(input.title) ? yield* workTitle(input.title.value) : undefined
+      const nowLine = patch(input.now)
+      if (title === undefined && nowLine === undefined) return yield* fail("Say what changes: --now and/or --title.")
+      const report = yield* work(
+        dream.UpdateWorkstream(defined({ workstreamId: input.workstreamId as WorkstreamId, title, now: nowLine }))
+      )
+      yield* showWork(input.json, report, `Updated ${input.workstreamId}: only its row changed, with no message.`)
+    })
+).pipe(
+  Command.withDescription("Change a workstream's row. It's silent: nothing reaches Chat or their lock screen."),
+  Command.withExamples([{ command: 'dream work update ws_\u2026 --now "Testing the fix on a slow network"' }])
+)
+
+const workEnd = (state: "done" | "dropped") =>
+  Command.make(
+    state === "done" ? "done" : "drop",
+    {
+      workstreamId,
+      result: Flag.String(state === "done" ? "result" : "why").pipe(
+        Flag.withDescription(
+          state === "done"
+            ? 'What came of it, a few words on the card\'s last line ("Fixed, refunds sent").'
+            : "Why, for your own record; they don't see it."
+        ),
+        Flag.optional
+      ),
+      json
+    },
+    (input) =>
+      Effect.gen(function* () {
+        const dream = yield* Dream
+        const result = Option.getOrUndefined(input.result)?.trim()
+        const report = yield* work(
+          dream.EndWorkstream(
+            defined({ workstreamId: input.workstreamId as WorkstreamId, state, result: result || undefined })
+          )
+        )
+        yield* showWork(
+          input.json,
+          report,
+          state === "done"
+            ? `${input.workstreamId} is done: it folds into the card's last line. Nothing was sent to them; if it's worth their attention, say so in a message.`
+            : `Dropped ${input.workstreamId}: it's off the card. Nothing was sent to them.`
+        )
+      })
+  ).pipe(
+    Command.withDescription(
+      state === "done" ? "Mark a workstream done." : "Drop a workstream that's no longer its own thing."
+    ),
+    Command.withExamples([
+      {
+        command:
+          state === "done"
+            ? 'dream work done ws_\u2026 --result "Fixed, refunds sent"'
+            : 'dream work drop ws_\u2026 --why "Folded into the redesign"'
+      }
+    ])
+  )
+
+const workRoute = Command.make("route", { messageId: Argument.String("message-id"), workstreamId, json }, (input) =>
+  Effect.gen(function* () {
+    const dream = yield* Dream
+    const routed = yield* work(
+      dream.RouteMessage({
+        messageId: input.messageId as MessageId,
+        workstreamId: input.workstreamId as WorkstreamId
+      })
+    )
+    yield* show(
+      input.json,
+      Message,
+      routed,
+      `Filed ${routed.id} under ${input.workstreamId}: it carries that label in Chat. Nothing was sent to them.`
+    )
+  })
+).pipe(
+  Command.withDescription("File a message (usually theirs) under a workstream, so it carries that label."),
+  Command.withExamples([{ command: "dream work route msg_\u2026 ws_\u2026" }])
+)
+
+const workCommand = Command.make("work", { json }, (input) =>
+  Effect.gen(function* () {
+    const dream = yield* Dream
+    const report = yield* work(dream.ListWorkstreams())
+    yield* show(input.json, Workstreams, report, Format.workstreams(report, yield* now))
+  })
+).pipe(
+  Command.withDescription(
+    "Workstreams: the separate things you're running at once, each a row on the Status card while two or more are active."
+  ),
+  Command.withSubcommands([workList, workStart, workUpdate, workEnd("done"), workEnd("dropped"), workRoute])
 )
 
 const liveFlags = {
@@ -1169,7 +1376,22 @@ const usage = Command.make("usage", { json }, (input) =>
 
 export const dream = Command.make("dream").pipe(
   Command.withDescription(
-    "Reach the person and Dream from this sandbox: messages, questions, access, status, wake-ups, publishing, app links on their Home, a browser, a Mac, and usage."
+    "Reach the person and Dream from this sandbox: messages, questions, access, status, workstreams, wake-ups, publishing, app links on their Home, a browser, a Mac, and usage."
   ),
-  Command.withSubcommands([message, ask, access, notify, status, live, wake, publish, link, media, browser, mac, usage])
+  Command.withSubcommands([
+    message,
+    ask,
+    access,
+    notify,
+    status,
+    workCommand,
+    live,
+    wake,
+    publish,
+    link,
+    media,
+    browser,
+    mac,
+    usage
+  ])
 )

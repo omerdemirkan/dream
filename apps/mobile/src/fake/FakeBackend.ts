@@ -41,7 +41,8 @@ import {
   type StatusCard,
   type TextMessage,
   Unauthorized,
-  type User
+  type User,
+  type WorkstreamId
 } from "@dream/domain"
 import { Context, DateTime, Duration, Effect, Layer, Option, PubSub, Redacted, Schema, Stream } from "effect"
 import { Headers } from "effect/http"
@@ -50,6 +51,7 @@ import { TolerantMessage } from "../data/Tolerant.ts"
 import {
   type FixtureWorld,
   cabinHold,
+  liftWorkstreams,
   longChat,
   longQuestion,
   makeWorld,
@@ -109,7 +111,11 @@ export const Scenario = [
   "declined-reason",
   "usage-normal",
   "usage-near-limit",
-  "usage-none"
+  "usage-none",
+  "workstreams",
+  "workstreams-waiting",
+  "workstreams-many",
+  "workstreams-one"
 ] as const
 export type Scenario = (typeof Scenario)[number]
 
@@ -364,7 +370,7 @@ export class FakeBackend extends Context.Service<
           yield* emit(record, ProjectEvent.cases.ProjectChanged.make({ project: record.project }))
         })
 
-      const agentText = (record: ProjectRecord, text: string) =>
+      const agentText = (record: ProjectRecord, text: string, workstream?: WorkstreamId) =>
         Effect.gen(function* () {
           const message: TextMessage = {
             _tag: "Text",
@@ -373,7 +379,8 @@ export class FakeBackend extends Context.Service<
             createdAt: yield* DateTime.now,
             from: "agent",
             text,
-            media: []
+            media: [],
+            ...(workstream === undefined ? {} : { workstream })
           }
           yield* setMessage(record, message)
           return message
@@ -718,10 +725,12 @@ export class FakeBackend extends Context.Service<
             const from = Math.max(0, until - (limit ?? 50))
             return { messages: record.messages.slice(from, until).reverse(), hasEarlier: from > 0 }
           }),
-        SendMessage: ({ projectId, text }) =>
+        SendMessage: ({ projectId, text, workstream }) =>
           stallable(
             Effect.gen(function* () {
               const record = yield* find(projectId)
+              // As the ProjectDO does: a workstream the project doesn't have is left off.
+              const into = record.status.workstreams?.find((w) => w.id === workstream)?.id
               const message: TextMessage = {
                 _tag: "Text",
                 id: nextId("msg") as MessageId,
@@ -729,14 +738,15 @@ export class FakeBackend extends Context.Service<
                 createdAt: yield* DateTime.now,
                 from: "user",
                 text,
-                media: []
+                media: [],
+                ...(into === undefined ? {} : { workstream: into })
               }
               yield* setMessage(record, message)
               const taken = yield* wake(record)
               yield* later(
                 taken + 3,
                 Effect.gen(function* () {
-                  yield* agentText(record, "Noted. I’ll fold that in and show you when it’s ready.")
+                  yield* agentText(record, "Noted. I’ll fold that in and show you when it’s ready.", into)
                   yield* endTurn(record)
                 })
               )
@@ -1244,6 +1254,37 @@ export class FakeBackend extends Context.Service<
                   ? "Building progress charts for squat, bench and deadlift."
                   : "Building progress charts for squat, bench and deadlift, then wiring the rest timer into its own Live Activity."
             })
+          }
+          case "workstreams":
+          case "workstreams-waiting":
+          case "workstreams-many":
+          case "workstreams-one": {
+            // Lift Log running several things at once (mocks/screens/workstreams, option A).
+            const lift = Array.from(records.values()).find((r) => r.project.slug === "lift-log")
+            if (!lift) return
+            const stage =
+              name === "workstreams-waiting"
+                ? "waiting"
+                : name === "workstreams-many"
+                  ? "many"
+                  : name === "workstreams-one"
+                    ? "one"
+                    : "three"
+            const base = lift.messages.filter((m) => !m.id.startsWith("msg_ws"))
+            const latest = base.reduce(
+              (max, m) => (DateTime.isGreaterThan(m.createdAt, max) ? m.createdAt : max),
+              lift.project.updatedAt
+            )
+            const { workstreams, labels, added } = liftWorkstreams(stage, lift.project.id, latest)
+            lift.messages = [
+              ...base.map((m) => {
+                const label = labels.get(m.id)
+                return label === undefined ? m : { ...m, workstream: label }
+              }),
+              ...added
+            ]
+            lift.status = { ...lift.status, workstreams, updatedAt: now }
+            return yield* emit(lift, snapshotOf(lift))
           }
           case "activity-sent":
             return yield* liftStage("sent", now)

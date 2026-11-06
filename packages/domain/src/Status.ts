@@ -11,6 +11,7 @@ import { MessageId } from "./Ids.ts"
 import { fitLine, wrapLines } from "./Links.ts"
 import { MediaRef } from "./Media.ts"
 import { ProjectPhase } from "./Project.ts"
+import { Workstream } from "./Workstream.ts"
 
 /**
  * Something the agent will need from them, pinned to the milestone where it
@@ -53,6 +54,11 @@ export const StatusCard = Schema.Struct({
   /** Screenshots and recordings shown with `justDid`. */
   media: Schema.Array(MediaRef),
   milestones: Schema.Array(Milestone),
+  /**
+   * The project's workstreams (`dream work`), every state. While two or more are active, apps that know them show a
+   * row for each in place of `now`, which stays the sentence for Home and for older apps. Added in November 2026.
+   */
+  workstreams: Schema.optionalKey(Schema.Array(Workstream)),
   /** Set by Dream, not the agent, while a usage limit holds the project. */
   pausedUntil: Schema.optionalKey(Schema.DateTimeUtc),
   updatedAt: Schema.DateTimeUtc

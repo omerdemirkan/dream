@@ -17,7 +17,9 @@ import type {
   TextMessage,
   UsageSnapshot,
   UsageWindow,
-  Wake
+  Wake,
+  WorkstreamId,
+  Workstreams
 } from "@dream/domain"
 import {
   AgentLinksPerProject,
@@ -26,8 +28,13 @@ import {
   linkHost,
   linkLabel,
   linkMenuHeader,
+  cardRows,
+  doneLine,
+  moreLine,
   needLine,
   nowOnCard,
+  rowOnCard,
+  RowsOnCard,
   sandboxKeyPath
 } from "@dream/domain"
 import { DateTime } from "effect"
@@ -159,6 +166,62 @@ export const status = (card: StatusCard, now: DateTime.Utc): string => {
     card.milestones.some((m) => m.detail !== undefined) ? "milestone details" : undefined
   ].filter((x) => x !== undefined)
   if (unseen.length > 0) lines.push(`Not shown in the app: ${unseen.join(", ")}.`)
+  return lines.join("\n")
+}
+
+/** Said when `--work` was given but the message came back without a label: the API predates workstreams. */
+export const unlabeled = (asked: WorkstreamId | undefined, message: { readonly workstream?: WorkstreamId }): string =>
+  asked !== undefined && message.workstream === undefined
+    ? " It went without a workstream label: this Dream's API predates workstreams."
+    : ""
+
+/** The workstreams, and exactly what the card shows of them. */
+export const workstreams = (report: Workstreams, now: DateTime.Utc): string => {
+  const { workstreams: all, waiting } = report
+  const active = all.filter((w) => w.state === "active")
+  const lines: Array<string> = []
+  const card = cardRows(all, waiting, now)
+  if (card === undefined) {
+    lines.push(
+      active.length === 0
+        ? "No active workstreams. The card shows your --now sentence, as usual."
+        : `One active workstream (${active[0]?.id}). The card still shows your --now sentence; rows replace it once two are active.`
+    )
+  } else {
+    lines.push(`On the card, in place of your --now sentence (which Home and older apps still show):`)
+    for (const row of card.rows) {
+      const shown = rowOnCard(row.workstream)
+      const id = row.workstream.id
+      lines.push(
+        row.waitingOn === undefined
+          ? `  ● ${shown.title}${shown.now === undefined ? " (no now-line)" : ` / ${shown.now}`}  [${id}]`
+          : `  ● ${shown.title} / amber, at the top: waiting on them while ${row.waitingOn} is open  [${id}]`
+      )
+      if (!shown.whole)
+        lines.push(
+          "    Cut: a row is one line of title and one line of now, about 30 characters and 35; it's whole only when they open the card."
+        )
+    }
+    if (card.more.length > 0)
+      lines.push(
+        `  ${moreLine(card.more)}  (past ${RowsOnCard} active, the last row sums up the rest; all of them show when they open the card)`
+      )
+    const done = doneLine(card.done)
+    if (done !== undefined)
+      lines.push(
+        `  ✓ ${done.text}${done.others > 0 ? ` +${done.others}` : ""}  (finished in the last few days, folded)`
+      )
+  }
+  const ended = all.filter((w) => w.state !== "active")
+  if (active.length > 0 && card === undefined)
+    for (const w of active) lines.push(`  active: ${w.title}${w.now === undefined ? "" : ` / ${w.now}`}  [${w.id}]`)
+  if (ended.length > 0)
+    lines.push(
+      `Ended: ${ended
+        .slice(-8)
+        .map((w) => `${w.title} (${w.state}${w.endedAt === undefined ? "" : ` ${time(w.endedAt, now)}`}) [${w.id}]`)
+        .join("; ")}`
+    )
   return lines.join("\n")
 }
 

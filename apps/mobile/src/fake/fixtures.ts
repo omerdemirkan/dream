@@ -24,7 +24,9 @@ import type {
   Project,
   QuestionMessage,
   StatusCard,
-  TextMessage
+  TextMessage,
+  Workstream,
+  WorkstreamId
 } from "@dream/domain"
 import * as Fx from "@dream/domain/fixtures"
 import { DateTime } from "effect"
@@ -539,4 +541,151 @@ export const longChat = (projectId: Project["id"], before: DateTime.Utc): Readon
     media: [],
     ...(from === "user" ? { seenAt: DateTime.subtract(before, { minutes: (lines.length - i) * 9 - 1 }) } : {})
   }))
+}
+
+/** Which of the workstream states (mocks/screens/workstreams, option A) Lift Log is in. */
+export type WorkstreamsStage = "three" | "waiting" | "many" | "one"
+
+/**
+ * Lift Log running several things at once, `after` its latest message: the workstreams for its Status card, labels
+ * for messages it already has, and the messages each stage adds. "three" is A1 (three rows, the Health import
+ * folded), "waiting" is A2 (the rest timer waits on a question, the charts are done), "many" runs five so the card
+ * sums up the rest, and "one" leaves a single active workstream, which looks like a project without any.
+ */
+export const liftWorkstreams = (
+  stage: WorkstreamsStage,
+  projectId: Project["id"],
+  after: DateTime.Utc
+): {
+  readonly workstreams: ReadonlyArray<Workstream>
+  readonly labels: ReadonlyMap<MessageId, WorkstreamId>
+  readonly added: ReadonlyArray<Message>
+} => {
+  const t = (minutes: number) => DateTime.add(after, { minutes })
+  const ws = (id: string) => id as WorkstreamId
+  const health: Workstream = {
+    id: ws("ws_health"),
+    title: "Health import",
+    state: "done",
+    result: "214 workouts from a sample export",
+    startedAt: t(-60 * 26),
+    updatedAt: t(-40),
+    endedAt: t(-40)
+  }
+  const charts: Workstream = {
+    id: ws("ws_charts"),
+    title: "Progress charts",
+    now: "Charting estimated 1RM for each lift",
+    state: "active",
+    startedAt: t(-35),
+    updatedAt: t(-3)
+  }
+  const timer: Workstream = {
+    id: ws("ws_timer"),
+    title: "Rest timer",
+    now: "Wiring it into a Live Activity",
+    state: "active",
+    startedAt: t(-30),
+    updatedAt: t(1)
+  }
+  const android: Workstream = {
+    id: ws("ws_android"),
+    title: "Android?",
+    now: "Finding out what it would take",
+    state: "active",
+    startedAt: t(3),
+    updatedAt: t(3)
+  }
+  const labels = new Map<MessageId, WorkstreamId>([
+    [msg("msg_liftimport"), health.id],
+    [msg("msg_lift1rm"), charts.id],
+    [msg("msg_lift1rmreply"), charts.id]
+  ])
+  const say = (id: string, minutes: number, from: "agent" | "user", body: string, workstream: Workstream) => ({
+    ...text(projectId, id, DateTime.formatIso(t(minutes)), from, body),
+    workstream: workstream.id
+  })
+  const timerNote = say(
+    "msg_wstimer",
+    1,
+    "agent",
+    "The rest timer is next: it counts down on your lock screen, so you don’t need the app open between sets.",
+    timer
+  )
+  const androidAsk = say("msg_wsandroid", 2, "user", "And should we do Android at some point?", android)
+  const androidReply = say(
+    "msg_wsandroidreply",
+    3,
+    "agent",
+    "I’ll find out what it would take and what it would cost you, then come back with a recommendation.",
+    android
+  )
+  if (stage === "one") return { workstreams: [health, charts], labels, added: [] }
+  if (stage === "three")
+    return { workstreams: [health, charts, timer, android], labels, added: [timerNote, androidAsk, androidReply] }
+  if (stage === "many") {
+    const onboarding: Workstream = {
+      id: ws("ws_onboarding"),
+      title: "Onboarding",
+      now: "Writing the first-run screens",
+      state: "active",
+      startedAt: t(4),
+      updatedAt: t(4)
+    }
+    const widget: Workstream = {
+      id: ws("ws_widget"),
+      title: "Lock Screen widget",
+      now: "Sketching what it shows",
+      state: "active",
+      startedAt: t(5),
+      updatedAt: t(5)
+    }
+    return {
+      workstreams: [health, charts, timer, android, onboarding, widget],
+      labels,
+      added: [timerNote, androidAsk, androidReply]
+    }
+  }
+  const chartsDone: Workstream = {
+    ...charts,
+    now: "Estimated 1RM is on every chart",
+    state: "done",
+    result: "Estimated 1RM on every chart",
+    updatedAt: t(8),
+    endedAt: t(8)
+  }
+  const androidLater: Workstream = {
+    ...android,
+    now: "Most of it carries over; checking Health Connect",
+    updatedAt: t(9)
+  }
+  const sound: QuestionMessage = {
+    _tag: "Question",
+    id: msg("msg_wssound"),
+    projectId,
+    createdAt: t(10),
+    question: "Which sound should the rest timer end with?",
+    options: ["A soft chime", "Three short buzzes", "No sound, just a vibration"],
+    why: "You’ll hear it mid-set, so I’d rather not guess.",
+    state: { _tag: "Open" },
+    notificationId: "4b0c7f1e-2a3d-4e8f-9b1c-5d6e7f8a9b0c" as NotificationId,
+    workstream: timer.id
+  }
+  return {
+    workstreams: [health, chartsDone, timer, androidLater],
+    labels,
+    added: [
+      timerNote,
+      androidAsk,
+      androidReply,
+      say(
+        "msg_wscharts",
+        8,
+        "agent",
+        "The charts now show estimated 1RM for squat, bench and deadlift, and mark the sessions where I’d have told you to add weight.",
+        charts
+      ),
+      sound
+    ]
+  }
 }

@@ -3,7 +3,7 @@
  * client (through `RpcTest`), sessions, held answers with Undo, and live
  * project state.
  */
-import { type MessageId, type ProjectId, RequestId } from "@dream/domain"
+import { type MessageId, type ProjectId, RequestId, type WorkstreamId } from "@dream/domain"
 import * as Fx from "@dream/domain/fixtures"
 import { assert, describe, it } from "@effect/vitest"
 import { Clock, DateTime, Effect, Fiber, Layer, Option, Redacted, Stream, SubscriptionRef } from "effect"
@@ -131,6 +131,47 @@ describe("fixtures backend through the app's services", () => {
         assert.isFalse((yield* app.ListOpenAsks()).some((a) => a.message.id === "msg_spotify"))
         const notOAuth = yield* Effect.flip(app.StartOAuthAccess({ projectId, messageId: "msg_apple" as MessageId }))
         assert.strictEqual(notOAuth._tag, "InvalidRequest")
+      })
+    )
+  )
+
+  it.effect("workstreams: the scenarios put Lift Log in each state, and a message into one is answered in it", () =>
+    run(
+      Effect.gen(function* () {
+        yield* signIn
+        const app = yield* AppClient
+        const backend = yield* FakeBackend
+        const lift = "prj_liftlog" as ProjectId
+        yield* backend.scenario("workstreams")
+        const { messages } = yield* app.ListMessages({ projectId: lift })
+        assert.strictEqual(messages.find((m) => m.id === "msg_wsandroid")?.workstream, "ws_android")
+        assert.strictEqual(messages.find((m) => m.id === "msg_lift1rm")?.workstream, "ws_charts")
+
+        const sent = yield* app.SendMessage({
+          projectId: lift,
+          text: "Only if it doesn't slow down iPhone",
+          workstream: "ws_android" as WorkstreamId
+        })
+        assert.strictEqual(sent.workstream, "ws_android")
+        const stray = yield* app.SendMessage({
+          projectId: lift,
+          text: "Thanks",
+          workstream: "ws_gone" as WorkstreamId
+        })
+        assert.notProperty(stray, "workstream")
+        yield* TestClock.adjust("30 seconds")
+        const after = (yield* app.ListMessages({ projectId: lift })).messages
+        const replies = after.filter((m) => m._tag === "Text" && m.from === "agent" && m.text.startsWith("Noted."))
+        assert.sameMembers(
+          replies.map((m) => String(m.workstream)),
+          ["ws_android", "undefined"]
+        )
+
+        yield* backend.scenario("workstreams-waiting")
+        const waiting = (yield* app.ListMessages({ projectId: lift })).messages
+        const sound = waiting.find((m) => m.id === "msg_wssound")
+        assert.strictEqual(sound?._tag === "Question" ? sound.state._tag : undefined, "Open")
+        assert.isTrue((yield* app.ListOpenAsks()).some((a) => a.message.id === "msg_wssound"))
       })
     )
   )
