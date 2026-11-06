@@ -972,7 +972,7 @@ export class FakeBackend extends Context.Service<
             stallNextWrite = true
             return
           case "ask-series": {
-            // Cabin: three open questions and the calendar request; Home's deck also has Lift Log's and others'.
+            // Cabin: three open questions and the calendar request.
             const cabin = Array.from(records.values()).find((r) => r.project.slug === "cabin")
             if (!cabin || cabin.messages.some((m) => m.id === "msg_cabinhold")) return
             return yield* setMessage(cabin, cabinHold(cabin.project.id, now))

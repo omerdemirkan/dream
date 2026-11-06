@@ -26,7 +26,7 @@ import { projectsAtom } from "../state/atoms.ts"
 import { type Focus, focusAtom, landingAtom, messageRects, type Rect } from "../state/ui.ts"
 import { ExpandedAccess, ExpandedQuestion } from "./Expanded.tsx"
 import { nextOpenAsk } from "./asks.ts"
-import { useDeckAsks, useMessage, usePendingAnswers, useProject, withPending } from "./hooks.ts"
+import { useMessage, usePendingAnswers, useProject, withPending } from "./hooks.ts"
 import { color } from "./theme.ts"
 
 const easing = Easing.bezier(0.22, 0.8, 0.2, 1)
@@ -78,8 +78,6 @@ function FocusLayer(props: { readonly focus: Focus }) {
     land(false)
     const params = { pathname: "/project/[id]", params: { id: focus.projectId, tab: "chat", instant: "1" } } as const
     if (pathnameRef.current === `/project/${focus.projectId}`) router.setParams({ tab: "chat" })
-    // Moving on to another project's ask (from Home's deck) swaps the Chat underneath rather than stacking it.
-    else if (focus.advanced && pathnameRef.current.startsWith("/project/")) router.replace(params)
     else router.push(params)
   }
 
@@ -111,32 +109,23 @@ function FocusLayer(props: { readonly focus: Focus }) {
     if (expanded.current && !closing.current && pathname !== `/project/${focus.projectId}`) setFocus(Option.none())
   }, [pathname, focus.projectId, setFocus])
 
-  // Answering moves on to the next open ask: the project's next in Chat order, or the deck's next card. The
+  // Answering moves on to the project's next open ask in Chat order (wrapping to an earlier one). The
   // confirmation stays up for a beat first; with nothing left, it stays as it is. A failed answer leaves the
   // ask open, so nothing moves.
   const pending = usePendingAnswers()
-  const deck = useDeckAsks()
   const passed = [...(focus.passed ?? []), focus.messageId]
   const nextAsk = (): Focus | undefined => {
-    const ask =
-      focus.scope === "deck"
-        ? nextOpenAsk(
-            deck.map((a) => a.message),
-            focus.messageId,
-            { passed, wrap: true }
-          )
-        : nextOpenAsk(
-            (live?.messages ?? []).map((m) => withPending(m, pending)),
-            focus.messageId,
-            { passed, wrap: true }
-          )
+    const ask = nextOpenAsk(
+      (live?.messages ?? []).map((m) => withPending(m, pending)),
+      focus.messageId,
+      { passed, wrap: true }
+    )
     return ask
       ? {
           projectId: ask.projectId,
           messageId: ask.id,
           origin: undefined,
           message: ask,
-          scope: focus.scope ?? "project",
           advanced: true,
           passed
         }

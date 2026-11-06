@@ -2,7 +2,7 @@
  * Hooks shared by the screens: reading a project and its messages with held
  * answers folded in, opening the expanded view, and the current time.
  */
-import { type AskMessage, type Message, type MessageId, type OpenAsk, type ProjectId, RequestId } from "@dream/domain"
+import { type AskMessage, type Message, type MessageId, type ProjectId, RequestId } from "@dream/domain"
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
 import { DateTime, Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
@@ -11,7 +11,6 @@ import type { HostInstance } from "react-native"
 import type { AnswerInput } from "../data/Answers.ts"
 import type { ProjectState } from "../data/projectState.ts"
 import { randomUuid } from "../data/Session.ts"
-import { needsThem } from "./asks.ts"
 import { openAsksAtom, pendingAnswersAtom, projectAtom } from "../state/atoms.ts"
 import { focusAtom } from "../state/ui.ts"
 
@@ -56,23 +55,12 @@ export function useMessage(projectId: ProjectId, messageId: MessageId, fallback?
   return message ? withPending(message, pending) : undefined
 }
 
-/** Home's needs-you deck, in order (as Home filters it): open asks, less answers held for Undo and access for later. */
-export function useDeckAsks(): ReadonlyArray<OpenAsk> {
-  const result = useAtomValue(openAsksAtom)
-  const pending = usePendingAnswers()
-  return Option.getOrElse(AsyncResult.value(result), (): ReadonlyArray<OpenAsk> => []).filter(
-    (ask) => !pending.has(ask.message.id) && needsThem(ask.message)
-  )
-}
-
 export interface OpenMessage {
   readonly projectId: ProjectId
   readonly messageId: MessageId
   readonly message?: AskMessage | undefined
   /** The card it grows out of. */
   readonly from?: RefObject<HostInstance | null> | undefined
-  /** Opened from Home's deck, so answering moves on to the deck's next card. */
-  readonly scope?: "project" | "deck"
 }
 
 /** Expands a question or access request to full screen. */
@@ -82,15 +70,7 @@ export function useOpenMessage() {
     (open: OpenMessage) => {
       const node = open.from?.current
       const focus = (origin: { x: number; y: number; width: number; height: number } | undefined) =>
-        setFocus(
-          Option.some({
-            projectId: open.projectId,
-            messageId: open.messageId,
-            origin,
-            message: open.message,
-            scope: open.scope ?? "project"
-          })
-        )
+        setFocus(Option.some({ projectId: open.projectId, messageId: open.messageId, origin, message: open.message }))
       if (node) node.measureInWindow((x, y, width, height) => focus(width > 0 ? { x, y, width, height } : undefined))
       else focus(undefined)
     },
