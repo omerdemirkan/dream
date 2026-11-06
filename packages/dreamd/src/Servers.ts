@@ -8,8 +8,9 @@
  * - The Unix socket is for the `dream` CLI, from any process in the sandbox.
  *   It forwards `SandboxRpcs` requests to the API unchanged, adding the
  *   project token, so the CLI never holds a credential and the API decides
- *   everything. The calls only dreamd makes (`ReportTurn`, `ReportUsage`) are
- *   refused there, so an app can't fake the agent's state. Calls that reach
+ *   everything. The calls only dreamd makes (`ReportTurn`, `ReportUsage`,
+ *   `StayAwake`) are refused there, so an app can't fake the agent's state
+ *   or hold its own sandbox up. Calls that reach
  *   the person are counted (`Outreach`), and published ports noted (`Published`).
  */
 import { timingSafeEqual } from "node:crypto"
@@ -102,7 +103,7 @@ export const DaemonServer = Layer.unwrap(
 // ---------------------------------------------------------------------------
 
 /** Calls only dreamd makes. */
-export const dreamdOnly: ReadonlySet<string> = new Set(["ReportTurn", "ReportUsage"])
+export const dreamdOnly: ReadonlySet<string> = new Set(["ReportTurn", "ReportUsage", "StayAwake"])
 
 const RequestLine = Schema.fromJsonString(Schema.Struct({ _tag: Schema.Literal("Request"), tag: Schema.String }))
 const decodeRequestLine = Schema.decodeUnknownOption(RequestLine)

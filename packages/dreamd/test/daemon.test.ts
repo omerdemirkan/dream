@@ -2,6 +2,7 @@
  * dreamd assembled as it runs in the sandbox, against a fake API: the daemon
  * port, the CLI socket and the turn loop, with a scripted harness.
  */
+import { AppTraffic } from "../src/Awake.ts"
 import { join } from "node:path"
 import { assert, describe, it } from "@effect/vitest"
 import * as Fixtures from "@dream/domain/fixtures"
@@ -34,10 +35,9 @@ const setup = Effect.gen(function* () {
   const log = yield* Ref.make<ReadonlyArray<string>>([])
   yield* Layer.build(fakeApi(calls, apiPort))
   const context = yield* Layer.build(
-    layerWith(Layer.mergeAll(Harness.layerTest({ turns, log }), Shutdown.layerTest(), noPageChecks)).pipe(
-      Layer.provideMerge(DreamdConfig.layerFromRecord(env)),
-      Layer.provideMerge(NodeServices.layer)
-    )
+    layerWith(
+      Layer.mergeAll(Harness.layerTest({ turns, log }), Shutdown.layerTest(), noPageChecks, AppTraffic.layerNone)
+    ).pipe(Layer.provideMerge(DreamdConfig.layerFromRecord(env)), Layer.provideMerge(NodeServices.layer))
   )
   const agent = Context.get(context, Agent)
   const shutdown = Context.get(context, Shutdown)
@@ -151,16 +151,19 @@ describe("dreamd", () => {
   it.live("doesn't let other processes make dreamd's own reports", () =>
     Effect.gen(function* () {
       const { calls, socket } = yield* setup
-      const exit = yield* Effect.gen(function* () {
-        const client = yield* Dream
-        return yield* client.ReportUsage({ usage: Fixtures.usage })
-      }).pipe(
-        Effect.provide(Dream.layer),
-        Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnvRecord({ DREAM_SOCKET: socket }))),
-        Effect.exit
-      )
-      assert.isTrue(Exit.isFailure(exit))
-      assert.isFalse((yield* Ref.get(calls)).some((call) => call.startsWith("ReportUsage")))
+      const asOtherProcess = <A, E>(call: (client: Context.Service.Shape<typeof Dream>) => Effect.Effect<A, E>) =>
+        Effect.gen(function* () {
+          return yield* call(yield* Dream)
+        }).pipe(
+          Effect.provide(Dream.layer),
+          Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnvRecord({ DREAM_SOCKET: socket }))),
+          Effect.exit
+        )
+      assert.isTrue(Exit.isFailure(yield* asOtherProcess((client) => client.ReportUsage({ usage: Fixtures.usage }))))
+      // An app in the sandbox can't hold its own sandbox up either.
+      assert.isTrue(Exit.isFailure(yield* asOtherProcess((client) => client.StayAwake({ reason: "app" }))))
+      const made = yield* Ref.get(calls)
+      assert.isFalse(made.some((call) => call.startsWith("ReportUsage") || call.startsWith("StayAwake")))
     }).pipe(Effect.scoped)
   )
 

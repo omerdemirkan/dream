@@ -4,6 +4,7 @@
  * interrupted turn's events again. Also, `stopAll` takes down a process's
  * whole group, as it does for a harness bridge and the CLI it started.
  */
+import { AppTraffic } from "../src/Awake.ts"
 import { spawn } from "node:child_process"
 import { writeFileSync } from "node:fs"
 import { join } from "node:path"
@@ -31,7 +32,12 @@ const dreamd = (dir: string, envFile: string, apiPort: number, turns: Queue.Queu
     const fiber = yield* main.pipe(
       Effect.provide(
         layerWith(
-          Layer.mergeAll(Harness.layerTest({ turns, log }), Shutdown.layerTest({ grace: "300 millis" }), noPageChecks)
+          Layer.mergeAll(
+            Harness.layerTest({ turns, log }),
+            Shutdown.layerTest({ grace: "300 millis" }),
+            noPageChecks,
+            AppTraffic.layerNone
+          )
         ).pipe(Layer.provideMerge(DreamdConfig.layerFromRecord(env, envFile)), Layer.provideMerge(NodeServices.layer))
       ),
       Effect.forkScoped

@@ -35,6 +35,48 @@ const page = (status: number, title: string, body: string) =>
     { status, contentType: "text/html; charset=utf-8" }
   )
 
+/**
+ * The app can't answer yet: the sandbox is still coming up, or a request was cut off when it went to sleep. A browser
+ * opening a page gets one that quietly tries again (sooner at first, then every 30 s); anything else, like an API
+ * call or a WebSocket, gets a 503 it can retry.
+ */
+export const waking = (request: Request) => {
+  const accept = request.headers.get("accept") ?? ""
+  if ((request.method === "GET" || request.method === "HEAD") && accept.includes("text/html")) {
+    return HttpServerResponse.text(
+      `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Waking up</title>` +
+        `<body style="font:16px system-ui;margin:20vh auto;max-width:28rem;padding:0 1.5rem;color:#222">` +
+        `<h1 style="font-size:1.4rem">Waking up</h1><p>This takes a moment. The page opens by itself.</p>` +
+        `<script>(function(){var k="dream-waking:"+location.pathname+location.search,` +
+        `n=+(sessionStorage.getItem(k)||0);sessionStorage.setItem(k,n+1);` +
+        `setTimeout(function(){location.reload()},Math.min(30000,1000*Math.pow(2,n)))})()</script></body>`,
+      {
+        status: 503,
+        contentType: "text/html; charset=utf-8",
+        headers: { "retry-after": "2", "cache-control": "no-store" }
+      }
+    )
+  }
+  return HttpServerResponse.text("Waking up. Try again in a moment.\n", {
+    status: 503,
+    headers: { "retry-after": "2", "cache-control": "no-store" }
+  })
+}
+
+/** E2B's own 502, for a sandbox that's running with nothing listening on the port (yet), as opposed to the app's. */
+export const portNotOpen = (response: Response) =>
+  Effect.gen(function* () {
+    if (response.status !== 502) return false
+    if (!(response.headers.get("content-type") ?? "").includes("application/json")) return false
+    const body = yield* Effect.promise(() =>
+      response
+        .clone()
+        .text()
+        .catch(() => "")
+    )
+    return body.includes("port is not open")
+  })
+
 export const gateway = (host: string, raw: Request) =>
   Effect.gen(function* () {
     const projects = yield* Projects
@@ -58,9 +100,7 @@ export const gateway = (host: string, raw: Request) =>
     } else {
       const result = yield* clients.use(id, (client) => client.GatewayTarget()).pipe(Effect.result)
       if (result._tag === "Failure") {
-        if (result.failure._tag !== "NotFound") {
-          return page(502, "Waking up", "The app couldn't be reached just now. Try again in a moment.")
-        }
+        if (result.failure._tag !== "NotFound") return waking(raw)
         if (result.failure.entity === "project") {
           // Deleted: forget the host, so this isolate asks D1 again (which knows nothing of it).
           hostCache.delete(host)
@@ -96,11 +136,15 @@ export const gateway = (host: string, raw: Request) =>
     const response = yield* Effect.tryPromise(() => fetch(forwarded)).pipe(Effect.option)
     if (Option.isNone(response)) {
       targetCache.delete(id)
-      return page(502, "Waking up", "The app couldn't be reached just now. Try again in a moment.")
+      return waking(raw)
     }
     if (response.value.status === 502 || response.value.status === 404) {
       // The sandbox may have been recreated; look it up again next time.
       targetCache.delete(id)
+    }
+    if (yield* portNotOpen(response.value)) {
+      yield* Effect.promise(() => response.value.body?.cancel().catch(() => undefined) ?? Promise.resolve())
+      return waking(raw)
     }
     return HttpServerResponse.raw(yield* withHomeScreenHead(host, owned.ownerId, incoming, response.value, hint))
   })

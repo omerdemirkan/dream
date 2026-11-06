@@ -235,7 +235,8 @@ const Handlers = SandboxRpcs.toLayer(
         log("ReportUsage", encode(SandboxRpcs.requests.get("ReportUsage")!.payloadSchema, payload)).pipe(
           Effect.andThen(Ref.set(usage, Option.some(payload.usage)))
         ),
-      ReportTurn: (payload) => log("ReportTurn", payload)
+      ReportTurn: (payload) => log("ReportTurn", payload),
+      StayAwake: (payload) => log("StayAwake", payload)
     }
   })
 )

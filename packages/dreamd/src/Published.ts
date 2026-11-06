@@ -45,6 +45,8 @@ export class Published extends Context.Service<
   {
     /** `dream publish --port <port>` went through. */
     readonly noted: (port: number) => Effect.Effect<void>
+    /** The published port, once `dream publish` went through. */
+    readonly port: Effect.Effect<Option.Option<number>>
     /** Load the published URL, if there is one, and tell the agent if it newly looks broken. */
     readonly checkAfterTurn: Effect.Effect<void>
   }
@@ -113,6 +115,7 @@ export class Published extends Context.Service<
       })
 
       return Published.of({
+        port: Effect.map(Ref.get(state), (current) => Option.fromUndefinedOr(current?.port)),
         noted: (port) =>
           Effect.gen(function* () {
             const current = yield* Ref.get(state)
@@ -126,5 +129,9 @@ export class Published extends Context.Service<
   )
 
   /** Nothing is published. */
-  static readonly layerNone = Layer.succeed(Published, { noted: () => Effect.void, checkAfterTurn: Effect.void })
+  static readonly layerNone = Layer.succeed(Published, {
+    port: Effect.succeed(Option.none()),
+    noted: () => Effect.void,
+    checkAfterTurn: Effect.void
+  })
 }
