@@ -43,7 +43,7 @@ const ProjectRow = Schema.Struct({
   progress_total: Schema.NullOr(Schema.Int),
   paused_until: Schema.NullOr(IsoDate),
   open_asks: Schema.Int,
-  /** Missing until migration 0006 ran; null until the project's DO first projects it. */
+  /** Missing until migration 0007 ran; null until the project's DO first projects it. */
   activity_json: Schema.optionalKey(Schema.NullOr(JsonColumn(AgentActivity))),
   created_at: IsoDate,
   updated_at: IsoDate
