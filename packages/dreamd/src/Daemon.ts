@@ -2,8 +2,9 @@
  * dreamd: the sandbox's event loop. It serves `DaemonRpcs` on
  * `DREAM_DAEMON_PORT` (the ProjectDO delivers events there), serves the
  * `dream` CLI on the `DREAM_SOCKET` Unix socket (forwarding to the API), runs
- * scheduled commands, runs one harness turn at a time, and looks at the
- * published URL after each.
+ * scheduled commands, runs one harness turn at a time, looks at the
+ * published URL after each, and keeps the sandbox awake while a scheduled
+ * command runs or the published app is in use (see `Awake.ts`).
  *
  * It exits when its env file changes, so its supervisor restarts it with the
  * new configuration, and it always exits promptly (see `Shutdown.ts`).
@@ -13,6 +14,7 @@ import { Duration, Effect, Fiber, FileSystem, Layer, Option, Path, Stream } from
 import { FetchHttpClient } from "effect/http"
 import { Agent } from "./Agent.ts"
 import { Api } from "./Api.ts"
+import { AppTraffic, Awake } from "./Awake.ts"
 import { PageCheck } from "./cli/PageCheck.ts"
 import { Commands } from "./Commands.ts"
 import { DreamdConfig } from "./Config.ts"
@@ -65,6 +67,7 @@ export const main = Effect.gen(function* () {
   const config = yield* DreamdConfig
   const agent = yield* Agent
   const commands = yield* Commands
+  const awake = yield* Awake
   const shutdown = yield* Shutdown
   yield* Effect.logInfo("dreamd started", {
     version,
@@ -76,7 +79,7 @@ export const main = Effect.gen(function* () {
     workDir: config.workDir,
     envHash: Option.getOrUndefined(config.envHash)
   })
-  const work = yield* Effect.forkDetach(Effect.all([agent.run, commands.run], { concurrency: "unbounded" }))
+  const work = yield* Effect.forkDetach(Effect.all([agent.run, commands.run, awake.run], { concurrency: "unbounded" }))
   const stop = (reason: string) =>
     Effect.gen(function* () {
       yield* shutdown.begin(reason)
@@ -92,8 +95,9 @@ export const main = Effect.gen(function* () {
 })
 
 /** Everything `main` needs, given the harness, how to shut down, the config and the platform. */
-export const layerWith = <E, R>(base: Layer.Layer<Harness | Shutdown | PageCheck, E, R>) =>
+export const layerWith = <E, R>(base: Layer.Layer<Harness | Shutdown | PageCheck | AppTraffic, E, R>) =>
   Layer.mergeAll(DaemonServer, SocketServer).pipe(
+    Layer.provideMerge(Awake.layer),
     Layer.provideMerge(Layer.mergeAll(Agent.layer, Commands.layer)),
     Layer.provideMerge(Published.layer),
     Layer.provideMerge(Layer.mergeAll(Inbox.layer, Api.layer, Outreach.layer, base))
@@ -101,7 +105,12 @@ export const layerWith = <E, R>(base: Layer.Layer<Harness | Shutdown | PageCheck
 
 /** Everything `main` needs, given the config and the platform. */
 export const layerWithoutConfig = layerWith(
-  Layer.mergeAll(Harness.layer, Shutdown.layer, PageCheck.layer.pipe(Layer.provide(FetchHttpClient.layer)))
+  Layer.mergeAll(
+    Harness.layer,
+    Shutdown.layer,
+    AppTraffic.layer,
+    PageCheck.layer.pipe(Layer.provide(FetchHttpClient.layer))
+  )
 )
 
 export const layer = layerWithoutConfig.pipe(

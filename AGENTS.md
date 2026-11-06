@@ -165,6 +165,9 @@ the other workstreams to agree first.
   The top-level agent's model and effort come from `src/harness/Fleet.ts` (each provider's flagship, effort high;
   the agent picks each subagent's model and effort itself), unless the operator overrides them for a QA run
   (`DREAM_AGENT_MODEL`, `DREAM_CODEX_AGENT_MODEL`, `DREAM_AGENT_EFFORT` Worker secrets).
+  E2B pauses a sandbox five minutes after it woke whatever runs in it, so between turns dreamd asks the ProjectDO
+  to keep it up (`StayAwake`, about once a minute) while a scheduled `--run` command runs or the published app is in
+  use (`src/Awake.ts`); a turn's keepalive covers turns.
   The `dream-sandbox` template's start command keeps dreamd running, and the snapshot carries it into every new
   sandbox, so the ProjectDO starts dreamd by writing `DaemonEnvFile` (rewriting it restarts dreamd). Both harness
   CLIs are pre-installed. `packages/sandbox-template/scripts/smoke.ts` checks a fresh sandbox, and with

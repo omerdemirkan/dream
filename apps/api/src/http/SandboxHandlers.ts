@@ -186,7 +186,8 @@ export const WorkerSandboxHandlers = SandboxRpcs.toLayer(
           return connection.value.usage_json
         }),
       ReportUsage: (payload) => forward((c) => c.ReportUsage(payload)),
-      ReportTurn: (payload) => forward((c) => c.ReportTurn(payload))
+      ReportTurn: (payload) => forward((c) => c.ReportTurn(payload)),
+      StayAwake: (payload) => forward((c) => c.StayAwake(payload))
     }
   })
 )

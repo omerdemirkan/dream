@@ -113,20 +113,36 @@ this sandbox, including the apps you build. `dream <command> --help` lists every
 
   Each turn starts with the events that woke it.
 - `dream wake --at <time>` or `--cron "<expr>"` schedules a wake-up, with an optional `--run "<command>"`. The sandbox
-  wakes to run the command. You're woken if the command fails, or right away if there's no command.
-- `dream wake "why"`, run from anywhere such as an app's error handler, wakes you now.
+  wakes to run the command and stays awake until it finishes, for up to 30 minutes. You're woken if the command
+  fails, or right away if there's no command.
+  - That's how anything runs on a schedule here, since nothing runs in a sleeping sandbox. To have your app do the
+    work, call it on localhost, where the endpoint needn't be public:
+    `--run "curl -fsS --max-time 900 http://localhost:3000/tasks/digest"`. Without `-f`, curl succeeds on an error
+    status, and you'd never hear about it.
+  - For work that should carry on after your turn ends, such as a long import, `--at 1m --run "…"` keeps the sandbox
+    awake until it's done.
+  - Each wake keeps the sandbox up for a few minutes, so a schedule every few minutes keeps a whole machine running
+    around the clock.
+- `dream wake "why"` wakes you now. An app can call it, from an error handler say, whenever it's running, which is
+  only while the sandbox is awake.
 - `dream wake list` and `dream wake cancel <id>` show and remove scheduled wake-ups.
 
 ## Hosting
 
 - `dream publish --port <port>` gives a port a stable public URL, `https://<slug>-<random>.<domain>`. A request to it
   wakes the sandbox. From their phone it opens in Safari.
-  - It then loads the URL from this sandbox and tells you what it answers and any page errors; running it again
+  - The sandbox wakes in under a second and stays up for a few minutes after the last request. Then your server is
+    frozen with everything else, and its open connections close.
+  - Publishing then loads the URL from this sandbox and tells you what it answers and any page errors; running it again
     re-checks. Dream also loads it when each of your turns ends, and wakes you when that finds a new error status,
     page error, or no answer.
   - Requests reach your server with `Host` set to the sandbox's internal name (`<port>-<sandbox id>.e2b.app`), so a
     server that checks hosts (Vite's dev server does) has to allow it.
   - The public URL works from inside this sandbox too, so you can load exactly what they'll see.
+- Services that can push to you instead of being polled, such as Telegram, Slack, Discord's interactions, GitHub and
+  Stripe, can send webhooks to the published URL, and each one wakes the sandbox. Only one port is published, so the
+  webhook routes go in the same server as the app. Some senders want an answer within three seconds, so answer first
+  and do the slow part after.
 - A server you start as a background task of your shell stops when your turn ends. To keep one running between
   turns, start it detached, e.g. `setsid nohup npm start > server.log 2>&1 &`.
 

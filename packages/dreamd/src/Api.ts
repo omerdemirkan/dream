@@ -1,6 +1,6 @@
 /**
- * What dreamd itself tells the API: when turns start and finish, and where the
- * subscription stands. These go to `Routes.sandbox` with the project token.
+ * What dreamd itself tells the API: when turns start and finish, where the
+ * subscription stands, and that the sandbox should stay awake. These go to `Routes.sandbox` with the project token.
  * Reports are best effort: a few retries, then a log line. Losing one only
  * costs a stale "working" badge or usage bar until the next.
  *
@@ -19,7 +19,7 @@ import {
   type TurnUsage,
   type UsageSnapshot
 } from "@dream/domain"
-import { Context, Data, Effect, Layer, Redacted, Ref, Schedule } from "effect"
+import { Cause, Context, Data, Effect, Layer, Redacted, Ref, Schedule } from "effect"
 import { FetchHttpClient, Headers } from "effect/http"
 import { RpcClient, RpcMiddleware } from "effect/rpc"
 import { DreamdConfig } from "./Config.ts"
@@ -36,6 +36,7 @@ export type Report =
   | { readonly _tag: "Question"; readonly question: DreamQuestion }
   | { readonly _tag: "Message"; readonly text: string }
   | { readonly _tag: "Publish"; readonly port: number }
+  | { readonly _tag: "StayAwake"; readonly reason: "command" | "app" }
 
 /** A call made for the agent didn't go through. */
 export class ApiError extends Data.TaggedError("ApiError")<{ readonly message: string }> {}
@@ -66,6 +67,8 @@ export class Api extends Context.Service<
       usage?: TurnUsage
     ) => Effect.Effect<void>
     readonly reportUsage: (usage: UsageSnapshot) => Effect.Effect<void>
+    /** Once, with no retries: the caller asks again a minute later. A Worker older than `StayAwake` fails it. */
+    readonly stayAwake: (reason: "command" | "app") => Effect.Effect<void, ApiError>
     /** `dream ask` on the agent's behalf. */
     readonly askQuestion: (question: DreamQuestion) => Effect.Effect<MessageId, ApiError>
     /** `dream message` on the agent's behalf, without a notification. */
@@ -98,6 +101,13 @@ export class Api extends Context.Service<
         reportTurn: (state, eventIds, usage) =>
           report(`turn ${state}`, client.ReportTurn({ state, eventIds, ...(usage === undefined ? {} : { usage }) })),
         reportUsage: (usage) => report("usage", client.ReportUsage({ usage })),
+        stayAwake: (reason) =>
+          client.StayAwake({ reason }).pipe(
+            Effect.timeout("30 seconds"),
+            Effect.catchCause((cause) =>
+              Effect.fail(new ApiError({ message: Cause.pretty(cause).split("\n")[0] ?? "failed" }))
+            )
+          ),
         askQuestion: (question) => speak(client.AskQuestion(question)),
         sendMessage: (text) =>
           text.trim().length === 0
@@ -129,6 +139,8 @@ export class Api extends Context.Service<
             ]
           ),
         reportUsage: (usage) => Ref.update(reports, (all): ReadonlyArray<Report> => [...all, { _tag: "Usage", usage }]),
+        stayAwake: (reason) =>
+          Ref.update(reports, (all): ReadonlyArray<Report> => [...all, { _tag: "StayAwake", reason }]),
         askQuestion: (question) =>
           Ref.modify(reports, (all) => [
             `msg_${all.length + 1}` as MessageId,

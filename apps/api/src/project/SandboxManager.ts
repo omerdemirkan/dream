@@ -154,6 +154,8 @@ export class SandboxManager extends Context.Service<
     /** A turn finished, with the tokens it used (none from older dreamd builds): recorded, and the header updated. */
     readonly turnFinished: (usage?: TurnUsage | undefined) => Effect.Effect<void>
     readonly keepalive: Effect.Effect<void>
+    /** dreamd is running a scheduled command or serving the published app: keep the sandbox up a while longer. */
+    readonly stayAwake: Effect.Effect<void>
     /** Brings the sandbox up to the template's newest build, if it's behind and between turns. */
     readonly refresh: Effect.Effect<void>
     /** Kills the sandbox for good (retiring the project). */
@@ -187,6 +189,11 @@ export class SandboxManager extends Context.Service<
       const usageReport = yield* UsageReport
       const live = yield* LiveFeed
       const busy = yield* Semaphore.make(1)
+      /**
+       * Held while the timeout is set from what the record says (the keepalive, a turn ending, `stayAwake`), so a
+       * turn starting under a `stayAwake` can't have its longer timeout replaced by a shorter one.
+       */
+      const timeouts = yield* Semaphore.make(1)
 
       const update = (f: (record: SandboxRecord) => SandboxRecord) =>
         Effect.flatMap(core.sandbox, (r) => core.saveSandbox(f(r)))
@@ -667,7 +674,7 @@ export class SandboxManager extends Context.Service<
       })
 
       /** Mid-turn: keeps the sandbox running, cycling it before E2B's run cap and resuming it if it was paused. */
-      const stayAwake = (record: SandboxRecord, access: SandboxAccess, daemonToken: string) =>
+      const keepTurnRunning = (record: SandboxRecord, access: SandboxAccess, daemonToken: string) =>
         Effect.gen(function* () {
           const info = yield* e2b.info(access.sandboxId)
           // Gone: the next delivery creates a new one.
@@ -704,11 +711,32 @@ export class SandboxManager extends Context.Service<
         yield* store.setTimer("turn-keepalive", (yield* Clock.currentTimeMillis) + Duration.toMillis(KeepaliveEvery))
         yield* alarm.reschedule
         if (record.daemonToken !== undefined) {
-          yield* stayAwake(record, record.access, record.daemonToken).pipe(
-            Effect.catch((error) => Effect.logWarning("keepalive couldn't check the sandbox", String(error)))
-          )
+          yield* timeouts
+            .withPermits(1)(keepTurnRunning(record, record.access, record.daemonToken))
+            .pipe(Effect.catch((error) => Effect.logWarning("keepalive couldn't check the sandbox", String(error))))
         }
       })
+
+      /**
+       * dreamd has work between turns (`StayAwake`): the sandbox stays up until `IdleTimeout` from now. A turn's
+       * keepalive keeps it up longer, and E2B's own timeout may already be later, so neither is shortened.
+       */
+      const stayAwake = timeouts
+        .withPermits(1)(
+          Effect.gen(function* () {
+            if (yield* held) return
+            const record = yield* core.sandbox
+            if (record.working || record.access === undefined) return
+            const sandboxId = record.access.sandboxId
+            const info = yield* e2b.info(sandboxId)
+            if (Option.isNone(info) || info.value.state !== "running") return
+            const until = DateTime.addDuration(yield* DateTime.now, IdleTimeout)
+            const endAt = Option.flatMap(Option.fromUndefinedOr(info.value.endAt), DateTime.make)
+            if (Option.isSome(endAt) && DateTime.isGreaterThanOrEqualTo(endAt.value, until)) return
+            yield* e2b.setTimeout(sandboxId, Duration.toSeconds(IdleTimeout))
+          })
+        )
+        .pipe(Effect.catch((error) => Effect.logWarning("couldn't keep the sandbox awake", String(error))))
 
       // The agent should set a phase itself, but if its first turn starts while
       // the project is still "new", Home shouldn't keep saying so. Later turns
@@ -789,7 +817,9 @@ export class SandboxManager extends Context.Service<
           }
           yield* alarm.reschedule
           if (record.access !== undefined) {
-            yield* e2b.setTimeout(record.access.sandboxId, Duration.toSeconds(IdleTimeout)).pipe(Effect.ignore)
+            yield* timeouts
+              .withPermits(1)(e2b.setTimeout(record.access.sandboxId, Duration.toSeconds(IdleTimeout)))
+              .pipe(Effect.ignore)
           }
           // Machine time for this turn, plus the idle tail before E2B pauses it.
           yield* recordTurnUsage(record, DateTime.addDuration(now, IdleTimeout))
@@ -902,6 +932,7 @@ export class SandboxManager extends Context.Service<
         turnStarted,
         turnFinished,
         keepalive: keepalive.pipe(Effect.catch(() => Effect.void)),
+        stayAwake,
         refresh,
         destroy,
         pause,

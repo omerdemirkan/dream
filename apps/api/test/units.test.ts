@@ -9,6 +9,7 @@ import { ApiConfig } from "../src/Config.ts"
 import { findClaudeToken, findClaudeUrl, findDeviceCode, stripAnsi } from "../src/connect/ModelConnect.ts"
 import { slugFromIdea, titleFromIdea } from "../src/db/Projects.ts"
 import { decodeEnvelopes, encodeEnvelope } from "../src/e2b/Envd.ts"
+import { portNotOpen, waking } from "../src/http/Gateway.ts"
 import { parseRange } from "../src/http/Media.ts"
 import { keyPlaceholder } from "../src/integrations/Access.ts"
 import { mintAppleJwt } from "../src/integrations/CredentialStore.ts"
@@ -263,4 +264,41 @@ describe("leakedKey", () => {
   it("ignores values too short to tell from ordinary text", () => {
     assert.isUndefined(leakedKey({ text: "abc" }, [key("abc")]))
   })
+})
+
+describe("the gateway while the app wakes", () => {
+  const bodyText = (response: ReturnType<typeof waking>) =>
+    response.body._tag === "Uint8Array" ? new TextDecoder().decode(response.body.body) : ""
+
+  it("gives a browser a page that retries, and anything else a 503 to retry", () => {
+    const page = waking(new Request("https://app.test/", { headers: { accept: "text/html,application/xhtml+xml" } }))
+    assert.strictEqual(page.status, 503)
+    assert.include(page.headers["content-type"] ?? "", "text/html")
+    assert.include(bodyText(page), "location.reload()")
+
+    for (const request of [
+      new Request("https://app.test/api/items", { headers: { accept: "application/json" } }),
+      new Request("https://app.test/", { method: "POST", headers: { accept: "text/html" }, body: "a=1" }),
+      new Request("https://app.test/socket", { headers: { upgrade: "websocket" } })
+    ]) {
+      const response = waking(request)
+      assert.strictEqual(response.status, 503)
+      assert.strictEqual(response.headers["retry-after"], "2")
+      assert.notInclude(response.headers["content-type"] ?? "", "text/html")
+    }
+  })
+
+  it.effect("tells E2B's closed-port 502 from the app's own", () =>
+    Effect.gen(function* () {
+      const e2b = new Response(
+        JSON.stringify({ message: "The sandbox is running but port is not open", sandboxId: "sbx", port: 3000 }),
+        { status: 502, headers: { "content-type": "application/json" } }
+      )
+      assert.isTrue(yield* portNotOpen(e2b))
+      const app = new Response("<h1>Bad gateway</h1>", { status: 502, headers: { "content-type": "text/html" } })
+      assert.isFalse(yield* portNotOpen(app))
+      assert.strictEqual(yield* Effect.promise(() => app.text()), "<h1>Bad gateway</h1>")
+      assert.isFalse(yield* portNotOpen(new Response("ok")))
+    })
+  )
 })

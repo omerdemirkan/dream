@@ -21,6 +21,8 @@ export class Commands extends Context.Service<
   {
     /** Run every pending command as it arrives, forever. */
     readonly run: Effect.Effect<never>
+    /** Whether a command is running now. */
+    readonly busy: Effect.Effect<boolean>
   }
 >()("@dream/dreamd/Commands") {
   static readonly layer = Layer.effect(
@@ -94,7 +96,7 @@ export class Commands extends Context.Service<
         Effect.andThen(Effect.never)
       )
 
-      return Commands.of({ run })
+      return Commands.of({ run, busy: Effect.map(Ref.get(running), (ids) => ids.size > 0) })
     })
   )
 }

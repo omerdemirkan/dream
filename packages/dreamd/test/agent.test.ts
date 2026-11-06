@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { AgentEvent, type EventId, type TurnUsage, type WakeId } from "@dream/domain"
-import { Clock, Context, DateTime, Deferred, Duration, Effect, Layer, Queue, Ref } from "effect"
+import { Clock, Context, DateTime, Deferred, Duration, Effect, Layer, Option, Queue, Ref } from "effect"
 import { TestClock } from "effect/testing"
 import { Agent, backoff } from "../src/Agent.ts"
 import { Api, type Report } from "../src/Api.ts"
@@ -112,6 +112,7 @@ describe("Agent", () => {
       const checks = yield* Ref.make(0)
       const { turns, inbox, idle, reports } = yield* setup({
         published: Layer.succeed(Published, {
+          port: Effect.succeed(Option.none()),
           noted: () => Effect.void,
           checkAfterTurn: Ref.update(checks, (n) => n + 1)
         })

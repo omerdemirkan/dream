@@ -247,5 +247,11 @@ export class SandboxRpcs extends RpcGroup.make(
       eventIds: Schema.Array(EventId),
       usage: Schema.optionalKey(TurnUsage)
     }
-  })
+  }),
+  /**
+   * Keep the sandbox up: a scheduled `--run` command is running, or the published app is in use. dreamd sends it
+   * about once a minute while either holds, and Dream keeps the sandbox awake until five minutes from then (longer
+   * timeouts, like a turn's, stay). Nothing for an archived project.
+   */
+  Rpc.make("StayAwake", { payload: { reason: Schema.Literals(["command", "app"]) } })
 ).middleware(SandboxAuth) {}

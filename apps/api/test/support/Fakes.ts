@@ -29,6 +29,10 @@ export interface FakeSandbox {
   resumes: number
   rules: NetworkRules
   timeoutSeconds: number
+  /** When it pauses: its timeout from when the timeout was last set. */
+  endAt: DateTime.Utc
+  /** How many times its timeout was set, by `connect` or `setTimeout`. */
+  timeoutsSet: number
   readonly files: Map<string, string>
   readonly metadata: Readonly<Record<string, string>>
   /** The Dream release its dreamd runs (`/opt/dream/release.json`), and one staged by a refresh. */
@@ -137,6 +141,8 @@ export const fakeE2B = (world: FakeWorld) =>
             resumes: 0,
             rules: options.rules,
             timeoutSeconds: options.timeoutSeconds,
+            endAt: DateTime.add(now, { seconds: options.timeoutSeconds }),
+            timeoutsSet: 0,
             files: new Map(release === undefined ? [] : [["/opt/dream/release.json", JSON.stringify({ release })]]),
             metadata: options.metadata,
             release
@@ -153,6 +159,8 @@ export const fakeE2B = (world: FakeWorld) =>
           }
           sandbox.state = "running"
           sandbox.timeoutSeconds = timeoutSeconds
+          sandbox.endAt = DateTime.add(now, { seconds: timeoutSeconds })
+          sandbox.timeoutsSet++
           return sandbox.access
         })
       },
@@ -161,14 +169,22 @@ export const fakeE2B = (world: FakeWorld) =>
           const sandbox = world.sandboxes.get(sandboxId)
           return sandbox === undefined
             ? Option.none()
-            : Option.some({ sandboxID: sandboxId, state: sandbox.state, startedAt: sandbox.startedAt })
+            : Option.some({
+                sandboxID: sandboxId,
+                state: sandbox.state,
+                startedAt: sandbox.startedAt,
+                endAt: DateTime.formatIso(sandbox.endAt)
+              })
         }),
       setTimeout: (sandboxId, timeoutSeconds) => {
         const sandbox = world.sandboxes.get(sandboxId)
         // Like E2B: a paused sandbox's timeout can't be set (404).
         if (sandbox === undefined || sandbox.state !== "running") return Effect.fail(new SandboxGone({ sandboxId }))
-        sandbox.timeoutSeconds = timeoutSeconds
-        return Effect.void
+        return Effect.map(DateTime.now, (now) => {
+          sandbox.timeoutSeconds = timeoutSeconds
+          sandbox.endAt = DateTime.add(now, { seconds: timeoutSeconds })
+          sandbox.timeoutsSet++
+        })
       },
       updateRules: (sandboxId, rules) =>
         Effect.sync(() => {

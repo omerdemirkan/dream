@@ -1292,6 +1292,46 @@ describe("a project, end to end", () => {
       yield* cloud.close
     })
   )
+  it.live("StayAwake keeps an idle sandbox up five more minutes, but never shortens a turn's timeout", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project } = yield* setup(cloud)
+      yield* cloud.alarm(project.id)
+      const { sandbox, env } = envFileOf(cloud, project.id)
+      const dreamd = yield* cloud.sandbox(env.DREAM_PROJECT_TOKEN)
+      const fiveMinutesOn = Effect.map(DateTime.now, (now) => DateTime.toEpochMillis(now) + 5 * 60_000)
+
+      // A turn's keepalive set 15 minutes: StayAwake leaves that alone, and doesn't ask E2B anything.
+      yield* dreamd.ReportTurn({ state: "started", eventIds: [] })
+      const duringTurn = sandbox.timeoutsSet
+      yield* dreamd.StayAwake({ reason: "command" })
+      assert.strictEqual(sandbox.timeoutSeconds, 15 * 60)
+      assert.strictEqual(sandbox.timeoutsSet, duringTurn)
+      yield* dreamd.ReportTurn({ state: "finished", eventIds: [] })
+      assert.strictEqual(sandbox.timeoutSeconds, 5 * 60)
+
+      // Three minutes later the app is still in use: five minutes from now.
+      sandbox.endAt = DateTime.subtract(sandbox.endAt, { minutes: 3 })
+      const before = yield* fiveMinutesOn
+      yield* dreamd.StayAwake({ reason: "app" })
+      assert.isAtLeast(DateTime.toEpochMillis(sandbox.endAt), before)
+
+      // E2B already has it up for longer (a wake bought more): left as it is.
+      sandbox.endAt = DateTime.add(yield* DateTime.now, { minutes: 10 })
+      sandbox.timeoutSeconds = 600
+      yield* dreamd.StayAwake({ reason: "app" })
+      assert.strictEqual(sandbox.timeoutSeconds, 600)
+
+      // Archived: the sandbox is paused, and StayAwake changes nothing.
+      yield* cloud.phone.ArchiveProject({ projectId: project.id })
+      const archived = sandbox.timeoutsSet
+      sandbox.state = "running"
+      sandbox.endAt = DateTime.add(yield* DateTime.now, { minutes: 1 })
+      yield* dreamd.StayAwake({ reason: "command" })
+      assert.strictEqual(sandbox.timeoutsSet, archived)
+      yield* cloud.close
+    })
+  )
 })
 
 describe("sandbox refresh", () => {
