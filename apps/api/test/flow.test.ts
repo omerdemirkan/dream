@@ -716,7 +716,7 @@ describe("a project, end to end", () => {
     })
   )
 
-  it.live("archiving a project deletes its file keys", () =>
+  it.live("retiring a project deletes its file keys", () =>
     Effect.gen(function* () {
       const cloud = yield* makeCloud()
       const { project } = yield* setup(cloud)
@@ -733,7 +733,7 @@ describe("a project, end to end", () => {
       })
       assert.strictEqual((yield* cloud.phone.ListIntegrations()).length, 1)
       const clients = Context.get(cloud.workerContext, ProjectClients)
-      yield* clients.use(project.id, (client) => client.Archive())
+      yield* clients.use(project.id, (client) => client.Retire())
       assert.deepStrictEqual(yield* cloud.phone.ListIntegrations(), [])
       yield* cloud.close
     })
@@ -1085,14 +1085,14 @@ describe("a project, end to end", () => {
     })
   )
 
-  it.live("archiving stops the project: no sandbox, no deliveries, gone from Home", () =>
+  it.live("retiring stops the project for good: no sandbox, no deliveries, gone from Home", () =>
     Effect.gen(function* () {
       const cloud = yield* makeCloud()
       const { project } = yield* setup(cloud)
       yield* cloud.alarm(project.id)
       const clients = Context.get(cloud.workerContext, ProjectClients)
       yield* cloud.phone.SendMessage({ projectId: project.id, text: "One more thing" })
-      yield* clients.use(project.id, (client) => client.Archive())
+      yield* clients.use(project.id, (client) => client.Retire())
       yield* cloud.alarm(project.id)
       assert.strictEqual(cloud.world.delivered.length, 1)
       assert.strictEqual(envFileOf(cloud, project.id).sandbox.state, "killed")

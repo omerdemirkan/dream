@@ -93,6 +93,10 @@ export class ProjectRpcs extends RpcGroup.make(
   Rpc.make("GatewayTarget", { success: GatewayTarget, error: Schema.Union([NotFound, UpstreamFailure]) }),
   /** Refresh their ChatGPT tokens now and push them to every sandbox of theirs. */
   Rpc.make("RefreshModelCredential", { error: UpstreamFailure }),
-  /** Stops the project for good: kills its sandbox and drops its wakes and undelivered events. */
-  Rpc.make("Archive", {})
+  /**
+   * Destroys the project, for the operator's cleanup (`/admin/projects/:id/archive`): kills its sandbox, deletes its
+   * file keys, drops its wakes and undelivered events, and removes it from Home. There's no undoing it, so the phone
+   * never reaches it.
+   */
+  Rpc.make("Retire", {})
 ) {}

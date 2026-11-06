@@ -182,15 +182,15 @@ export const route = (raw: Request) =>
       )
     }
 
-    // Operator tool (e2e cleanup): archive a project.
-    const archive = /^\/admin\/projects\/([^/]+)\/archive$/.exec(path)
-    if (archive !== null && request.method === "POST") {
+    // Operator tool (e2e cleanup): retire (destroy) a project. The path predates the name; scripts call it.
+    const retire = /^\/admin\/projects\/([^/]+)\/archive$/.exec(path)
+    if (retire !== null && request.method === "POST") {
       if (!operator()) return HttpServerResponse.text("Forbidden", { status: 403 })
-      const projectId = Schema.decodeUnknownOption(ProjectId)(archive[1])
+      const projectId = Schema.decodeUnknownOption(ProjectId)(retire[1])
       if (Option.isNone(projectId)) return HttpServerResponse.text("Bad project id", { status: 400 })
       const clients = yield* ProjectClients
-      yield* clients.use(projectId.value, (client) => client.Archive())
-      return HttpServerResponse.text("archived")
+      yield* clients.use(projectId.value, (client) => client.Retire())
+      return HttpServerResponse.text("retired")
     }
 
     // The one-time token page from `CreateConnectLink`. Its body (the token) is never logged.

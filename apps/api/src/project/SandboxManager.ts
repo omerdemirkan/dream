@@ -141,8 +141,8 @@ export class SandboxManager extends Context.Service<
     readonly keepalive: Effect.Effect<void>
     /** Brings the sandbox up to the template's newest build, if it's behind and between turns. */
     readonly refresh: Effect.Effect<void>
-    /** Kills the sandbox for good (archiving the project). */
-    readonly archive: Effect.Effect<void>
+    /** Kills the sandbox for good (retiring the project). */
+    readonly destroy: Effect.Effect<void>
   }
 >()("@dream/api/project/SandboxManager") {
   static readonly layer = Layer.effect(
@@ -508,7 +508,7 @@ export class SandboxManager extends Context.Service<
             yield* store.clearTimer("sandbox-refresh")
             const record = yield* core.sandbox
             if (record.status !== "ready" || record.access === undefined || record.daemonToken === undefined) return
-            if (Option.isSome(yield* store.getSingleton(...Singletons.archived))) return
+            if (Option.isSome(yield* store.getSingleton(...Singletons.retired))) return
             yield* refreshIfDue(record.access, record.daemonToken)
           })
         )
@@ -522,7 +522,7 @@ export class SandboxManager extends Context.Service<
           return yield* alarm.reschedule
         }
         yield* store.clearTimer("deliver")
-        if (Option.isSome(yield* store.getSingleton(...Singletons.archived))) return
+        if (Option.isSome(yield* store.getSingleton(...Singletons.retired))) return
         const pending = yield* store.pendingEvents(BatchSize)
         if (pending.length === 0) return
         const project = yield* core.project.pipe(Effect.orDie)
@@ -704,7 +704,7 @@ export class SandboxManager extends Context.Service<
         }
       })
 
-      const archive = Effect.gen(function* () {
+      const destroy = Effect.gen(function* () {
         const record = yield* core.sandbox
         if (record.access !== undefined) yield* e2b.kill(record.access.sandboxId).pipe(Effect.ignore)
         yield* update((r) => {
@@ -725,7 +725,7 @@ export class SandboxManager extends Context.Service<
         turnFinished,
         keepalive: keepalive.pipe(Effect.catch(() => Effect.void)),
         refresh,
-        archive
+        destroy
       })
     })
   )

@@ -247,7 +247,7 @@ export class Store extends Context.Service<
 
     readonly setTimer: (name: TimerName, dueMs: number) => Effect.Effect<void>
     readonly clearTimer: (name: TimerName) => Effect.Effect<void>
-    /** Archiving: drop every timer, wake and undelivered event. */
+    /** Retiring: drop every timer, wake and undelivered event. */
     readonly clearSchedule: (at: string) => Effect.Effect<void>
     readonly dueTimers: (nowMs: number) => Effect.Effect<ReadonlyArray<TimerName>>
     readonly nextTimerMs: Effect.Effect<Option.Option<number>>
@@ -488,5 +488,6 @@ export const Singletons = {
   liveActivity: ["live_activity", LiveActivityRecord] as const,
   mac: ["mac", MacRecord] as const,
   usagePause: ["usage_pause", UsagePause] as const,
-  archived: ["archived", Schema.Struct({ at: Schema.DateTimeUtc })] as const
+  /** Retired by the operator (`ProjectRpcs.Retire`). The table is older than the name. */
+  retired: ["archived", Schema.Struct({ at: Schema.DateTimeUtc })] as const
 }

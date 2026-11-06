@@ -517,7 +517,7 @@ export class Access extends Context.Service<
         if ((yield* secrets.get(row.secret_id, ApiKeyCredential)).key === credential.key) return integration
         yield* secrets.replace(row.secret_id, ApiKeyCredential, credential)
         if (row.access_json._tag === "File") {
-          // Its project rewrites the file before the agent hears. An archived project has no sandbox to write to.
+          // Its project rewrites the file before the agent hears. A retired project has no sandbox to write to.
           yield* clients
             .use(row.access_json.projectId, (client) => client.KeyFileReplaced({ integration }))
             .pipe(Effect.catchCause((cause) => Effect.logWarning("couldn't tell the project its key changed", cause)))
@@ -544,7 +544,7 @@ export class Access extends Context.Service<
         const access = row.value.access_json
         const integration = toIntegration(row.value)
         if (access._tag === "File") {
-          // Its project deletes the file and tells the agent. An archived project's sandbox is already gone.
+          // Its project deletes the file and tells the agent. A retired project's sandbox is already gone.
           yield* clients
             .use(access.projectId, (client) => client.IntegrationGone({ integration }))
             .pipe(Effect.catchCause((cause) => Effect.logWarning("couldn't tell the project a key file went", cause)))

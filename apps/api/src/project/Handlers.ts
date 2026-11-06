@@ -233,7 +233,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
 
       IntegrationGone: ({ integration, failure }) =>
         Effect.gen(function* () {
-          if (Option.isSome(yield* store.getSingleton(...Singletons.archived))) return
+          if (Option.isSome(yield* store.getSingleton(...Singletons.retired))) return
           const now = yield* DateTime.now
           const cards = (yield* store.accessMessagesFor(integration.id)).filter(
             (message) => message.state._tag === "Connected"
@@ -270,7 +270,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
 
       IntegrationRestored: ({ integration, tell }) =>
         Effect.gen(function* () {
-          if (Option.isSome(yield* store.getSingleton(...Singletons.archived))) return
+          if (Option.isSome(yield* store.getSingleton(...Singletons.retired))) return
           const now = yield* DateTime.now
           const cards = (yield* store.accessMessagesFor(integration.id)).filter(
             (message) => message.state._tag === "Disconnected" && message.state.reason === "failed"
@@ -299,7 +299,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
 
       KeyFileReplaced: ({ integration }) =>
         Effect.gen(function* () {
-          if (Option.isSome(yield* store.getSingleton(...Singletons.archived))) return
+          if (Option.isSome(yield* store.getSingleton(...Singletons.retired))) return
           yield* sandbox.keyFilesChanged
           // The event names the request it was connected through, which every file key has.
           const card = (yield* store.accessMessagesFor(integration.id)).at(-1)
@@ -330,12 +330,12 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
 
       GatewayTarget: () => sandbox.gatewayTarget,
 
-      Archive: () =>
+      Retire: () =>
         Effect.gen(function* () {
           const now = yield* DateTime.now
-          yield* store.putSingleton(...Singletons.archived, { at: now })
+          yield* store.putSingleton(...Singletons.retired, { at: now })
           yield* store.clearSchedule(DateTime.formatIso(now))
-          yield* sandbox.archive
+          yield* sandbox.destroy
           yield* alarm.reschedule
           const current = yield* core.projectOption
           if (Option.isSome(current)) {

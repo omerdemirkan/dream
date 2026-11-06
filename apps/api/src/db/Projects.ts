@@ -182,7 +182,7 @@ export class Projects extends Context.Service<
     /** Replace the projection of one project (its row and its open asks). */
     readonly project: (projection: ProjectProjection) => Effect.Effect<void>
     readonly openAsks: (userId: UserId) => Effect.Effect<ReadonlyArray<OpenAsk>>
-    /** Removes an archived project from Home (its other rows stay for the record). */
+    /** Removes a retired project from Home (its other rows stay for the record). */
     readonly remove: (id: ProjectId) => Effect.Effect<void>
 
     readonly recordNotification: (row: {
