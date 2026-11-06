@@ -86,7 +86,8 @@ export class Access extends Context.Service<
     readonly decline: (
       userId: UserId,
       projectId: ProjectId,
-      messageId: MessageId
+      messageId: MessageId,
+      reason?: string
     ) => Effect.Effect<AccessMessage, NotFound | InvalidRequest>
     readonly list: (userId: UserId) => Effect.Effect<ReadonlyArray<Integration>>
     /** A new key for a `Key` or `File` integration, from Settings. */
@@ -495,10 +496,12 @@ export class Access extends Context.Service<
         return yield* announce(userId, projectId, messageId, row)
       })
 
-      const decline = (userId: UserId, projectId: ProjectId, messageId: MessageId) =>
+      const decline = (userId: UserId, projectId: ProjectId, messageId: MessageId, reason?: string) =>
         Effect.gen(function* () {
           yield* owned(userId, projectId)
-          return yield* clients.use(projectId, (client) => client.DeclineAccess({ messageId }))
+          return yield* clients.use(projectId, (client) =>
+            client.DeclineAccess(reason === undefined ? { messageId } : { messageId, reason })
+          )
         })
 
       const list = (userId: UserId) => Effect.map(connections.integrations(userId), (rows) => rows.map(toIntegration))

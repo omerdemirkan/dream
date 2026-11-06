@@ -322,8 +322,8 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
         Effect.flatMap(me, (userId) =>
           access.submitApple(userId, projectId, messageId, { issuerId, keyId, privateKey: Redacted.value(privateKey) })
         ),
-      DeclineAccess: ({ projectId, messageId }) =>
-        Effect.flatMap(me, (userId) => access.decline(userId, projectId, messageId)),
+      DeclineAccess: ({ projectId, messageId, reason }) =>
+        Effect.flatMap(me, (userId) => access.decline(userId, projectId, messageId, reason?.trim() || undefined)),
 
       ListIntegrations: () => Effect.flatMap(me, access.list),
       ReplaceKey: ({ integrationId, key }) =>

@@ -18,7 +18,15 @@ import {
   RequestId
 } from "../Ids.ts"
 import { AppLink, LinkColor, LinkIcon, LinkTitle, LinkUrl } from "../Links.ts"
-import { AccessMessage, AskMessage, Message, QuestionAnswer, QuestionMessage, TextMessage } from "../Message.ts"
+import {
+  AccessMessage,
+  AskMessage,
+  DeclineReason,
+  Message,
+  QuestionAnswer,
+  QuestionMessage,
+  TextMessage
+} from "../Message.ts"
 import { ArchivedProject, Harness, Project, ProjectSummary } from "../Project.ts"
 import { ModelProvider } from "../Usage.ts"
 import { Device, TimeZone, User } from "../User.ts"
@@ -290,9 +298,12 @@ export class AuthedAppRpcs extends RpcGroup.make(
     success: AccessMessage,
     error: Schema.Union([NotFound, InvalidRequest, UpstreamFailure])
   }),
-  /** "Not now" on an access request. Declining one that's already declined returns it unchanged. */
+  /**
+   * "Don't connect" on an access request, with why if they said (older apps send no `reason`). Declining one
+   * that's already declined returns it unchanged.
+   */
   Rpc.make("DeclineAccess", {
-    payload: ProjectMessage,
+    payload: { ...ProjectMessage, reason: Schema.optionalKey(DeclineReason) },
     success: AccessMessage,
     error: Schema.Union([NotFound, InvalidRequest])
   }),

@@ -163,6 +163,13 @@ export const keyFileNameFor = (service: string): string =>
     .slice(0, 64)
     .replace(/-+$/, "") || "key"
 
+/**
+ * Why they declined an access request, in their words or one of the app's one-tap reasons ("I'd rather not share
+ * this"). Optional: declining without one is still one tap.
+ */
+export const DeclineReason = Schema.NonEmptyString.check(Schema.isMaxLength(500))
+export type DeclineReason = typeof DeclineReason.Type
+
 /** Why a connected access request isn't connected anymore. */
 export const DisconnectReason = Schema.Literals([
   /** They removed it in Settings. */
@@ -175,7 +182,8 @@ export type DisconnectReason = typeof DisconnectReason.Type
 export const AccessState = Schema.TaggedUnion({
   Open: {},
   Connected: { integrationId: IntegrationId, connectedAt: Schema.DateTimeUtc },
-  Declined: { declinedAt: Schema.DateTimeUtc },
+  /** `reason` was added later: older apps ignore it, and older ones decline without one. */
+  Declined: { declinedAt: Schema.DateTimeUtc, reason: Schema.optionalKey(DeclineReason) },
   /**
    * It was connected, and the connection is gone. Like `Declined`, they can still connect it from the card. Added
    * after the first release: older apps show the card as one they can't display.
