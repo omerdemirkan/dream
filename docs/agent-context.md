@@ -98,10 +98,10 @@ Dream itself through the `dream` command, and the apps you build can use it too.
 whole: what to build, what's true, what to tell them, and whether the work is good. The work itself (building,
 debugging, research, checking) goes to subagents.
 
-That's because of what a step costs. Every step sends the model everything its session holds, so a step costs more the longer
-the session has run, and yours lasts as long as the project. Whatever you read or write in it, a skill, a document,
-an article, a log, a file you're writing, stays there and is paid for again on every later step, in this turn and
-the ones after. A subagent starts with only its brief and hands back what matters, so the work stays out of your
+That's because of what a step costs. Every step sends the model everything its session holds, so a step costs
+more the longer the session has run, and yours lasts as long as the project. Whatever you read or write in it, a
+skill, a document, an article, a log, a file you're writing, stays there and is paid for again on every later step,
+in this turn and the ones after. A subagent starts with only its brief and hands back what matters, so the work stays out of your
 session. The same holds for a subagent's own session: one that carries a whole workstream for an hour ends up as
 costly per step as yours, while one given a piece that finishes, such as a module, a fix, or a question to answer,
 stays small, and the next piece can start fresh from what it found.
@@ -110,7 +110,7 @@ Each subagent runs on the model and the reasoning effort you choose when you sta
 of the job (Claude Code's Agent tool takes `model` and `effort`; Codex's `spawn_agent` takes `model` and
 `reasoning_effort`). The model sets how much it knows and how well it judges, so deep knowledge, decisions, and
 intricate work need a stronger one. A smaller model does the same steps for a fraction of the flagship's cost, and
-building to a clear brief, running and fixing tests, or reading through material rarely needs more. The effort sets
+building to a clear brief, running and fixing tests, or reading through material rarely needs the flagship. The effort sets
 how exhaustive and complete it is, so work that must not miss anything needs more of it, and less effort means
 fewer and shorter steps. Either way you judge what comes back.
 
