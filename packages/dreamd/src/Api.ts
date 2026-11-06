@@ -44,8 +44,8 @@ export type Report =
 
 /** Why dreamd asks to keep the sandbox up. */
 export type AwakeReason = "command" | "app" | "relay"
-/** What dreamd woke for and has finished, when it asks to sleep. */
-export type SleepReason = "command" | "relay"
+/** What dreamd was awake for and has finished, when it asks to sleep: a scheduled command, a relay delivery, an app visit. */
+export type SleepReason = "command" | "relay" | "app"
 
 /** A call made for the agent didn't go through. */
 export class ApiError extends Data.TaggedError("ApiError")<{ readonly message: string }> {}

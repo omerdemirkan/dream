@@ -33,6 +33,8 @@ export interface FakeSandbox {
   endAt: DateTime.Utc
   /** How many times its timeout was set, by `connect` or `setTimeout`. */
   timeoutsSet: number
+  /** Every timeout `setTimeout` set, in seconds, in order. */
+  readonly timeoutHistory: Array<number>
   readonly files: Map<string, string>
   readonly metadata: Readonly<Record<string, string>>
   /** The Dream release its dreamd runs (`/opt/dream/release.json`), and one staged by a refresh. */
@@ -155,6 +157,7 @@ export const fakeE2B = (world: FakeWorld) =>
             timeoutSeconds: options.timeoutSeconds,
             endAt: DateTime.add(now, { seconds: options.timeoutSeconds }),
             timeoutsSet: 0,
+            timeoutHistory: [],
             files: new Map(release === undefined ? [] : [["/opt/dream/release.json", JSON.stringify({ release })]]),
             metadata: options.metadata,
             release
@@ -196,6 +199,7 @@ export const fakeE2B = (world: FakeWorld) =>
           sandbox.timeoutSeconds = timeoutSeconds
           sandbox.endAt = DateTime.add(now, { seconds: timeoutSeconds })
           sandbox.timeoutsSet++
+          sandbox.timeoutHistory.push(timeoutSeconds)
         })
       },
       updateRules: (sandboxId, rules) =>

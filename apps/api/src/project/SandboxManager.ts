@@ -79,8 +79,21 @@ import { LiveFeed } from "./Live.ts"
 import type { GatewayTarget } from "./ProjectRpcs.ts"
 import { type SandboxRecord, Singletons, Store } from "./Store.ts"
 
-/** How long an idle sandbox stays up after a turn (it resumes on traffic in ~200 ms). */
+/**
+ * The timeout a sandbox is created and resumed with. E2B gives every wake the creation timeout (and at least five
+ * minutes), so this is also how long a wake lasts unless something shortens it: a turn ending (`TurnTail`), or dreamd
+ * asking to sleep once the work it was woken for is done.
+ */
 export const IdleTimeout = Duration.minutes(5)
+/**
+ * How long an idle sandbox stays up after a turn. It resumes on traffic in under a second, so a reply that comes
+ * later costs no noticeable wait; this covers the post-turn checks and the refresh `RefreshAfterTurn` starts.
+ */
+export const TurnTail = Duration.seconds(90)
+/** `StayAwake` keeps the sandbox up this long from each ask. dreamd asks about once a minute while it has work. */
+export const AwakeTail = Duration.minutes(2)
+/** While a refresh runs, the sandbox is kept up this long, so a slow one (a rollback takes ~2.5 min) isn't paused. */
+export const RefreshTimeout = Duration.minutes(5)
 /** While a turn runs, the timeout is pushed out by this much (E2B clamps it to the run cap), every `KeepaliveEvery`. */
 export const WorkingTimeout = Duration.minutes(15)
 export const KeepaliveEvery = Duration.minutes(5)
@@ -100,8 +113,8 @@ export const LatestBuildTtl = Duration.minutes(10)
  * or a relay's deliveries) it may not have seen. Within this margin of the look counts as after, for clock skew.
  */
 export const SleepMargin = Duration.seconds(2)
-/** After a turn ends, the sandbox is refreshed (if it's behind) this much later: still awake, and likely idle. */
-export const RefreshAfterTurn = Duration.minutes(1)
+/** After a turn ends, the sandbox is refreshed (if it's behind) this much later: well within `TurnTail`, and likely idle. */
+export const RefreshAfterTurn = Duration.seconds(20)
 
 /** After `failures` failed refreshes to the same build, wait this long before the next try: 1 h, doubling, up to a day. */
 export const refreshBackoff = (failures: number): Duration.Duration =>
@@ -217,7 +230,7 @@ export class SandboxManager extends Context.Service<
      * dreamd has nothing left to do (`SandboxRpcs.Sleep`): pause the sandbox now, unless a turn runs, events are on
      * their way or were just handed over, a relay delivery is under way, or a turn ended in the last few minutes.
      */
-    readonly sleep: (reason: "command" | "relay", checkedAt: DateTime.Utc) => Effect.Effect<void>
+    readonly sleep: (reason: "command" | "relay" | "app", checkedAt: DateTime.Utc) => Effect.Effect<void>
     /**
      * Hands a relay's events to dreamd, which posts them to the app on `port`, waking the sandbox (creating it, if
      * there's none). Failures come back in the result, for the relay to retry.
@@ -583,7 +596,7 @@ export class SandboxManager extends Context.Service<
               template: config.sandboxTemplate,
               metadata: { projectId: project.id, userId: project.ownerId }
             })
-            .pipe(Effect.result)
+            .pipe(holdUpWhile(access.sandboxId), Effect.result)
           if (result._tag === "Failure") {
             const failures = failure?.build === latest.build ? failure.failures + 1 : 1
             yield* Effect.logError("couldn't refresh the sandbox", {
@@ -623,6 +636,23 @@ export class SandboxManager extends Context.Service<
           Effect.catch((error) => Effect.logWarning("couldn't check for a newer sandbox template", error.message)),
           Effect.withSpan("SandboxManager.refreshIfDue")
         )
+
+      /**
+       * Keeps the sandbox up for `RefreshTimeout` while `effect` runs (a turn's tail or a wake may be shorter than a
+       * refresh), then gives it the post-turn tail again, unless a turn has started meanwhile.
+       */
+      const holdUpWhile =
+        (sandboxId: string) =>
+        <A, E, R>(effect: Effect.Effect<A, E, R>) => {
+          const setTo = (timeout: Duration.Duration) =>
+            timeouts
+              .withPermits(1)(e2b.setTimeout(sandboxId, Duration.toSeconds(timeout)))
+              .pipe(Effect.catch((error) => Effect.logWarning("couldn't set the sandbox's timeout", String(error))))
+          return setTo(RefreshTimeout).pipe(
+            Effect.andThen(effect),
+            Effect.ensuring(Effect.flatMap(core.sandbox, (record) => (record.working ? Effect.void : setTo(TurnTail))))
+          )
+        }
 
       const settle = (build: string, release: string | undefined) =>
         update((r) => {
@@ -798,7 +828,7 @@ export class SandboxManager extends Context.Service<
       })
 
       /**
-       * dreamd has work between turns (`StayAwake`): the sandbox stays up until `IdleTimeout` from now. A turn's
+       * dreamd has work between turns (`StayAwake`): the sandbox stays up until `AwakeTail` from now. A turn's
        * keepalive keeps it up longer, and E2B's own timeout may already be later, so neither is shortened.
        */
       const stayAwake = timeouts
@@ -810,15 +840,15 @@ export class SandboxManager extends Context.Service<
             const sandboxId = record.access.sandboxId
             const info = yield* e2b.info(sandboxId)
             if (Option.isNone(info) || info.value.state !== "running") return
-            const until = DateTime.addDuration(yield* DateTime.now, IdleTimeout)
+            const until = DateTime.addDuration(yield* DateTime.now, AwakeTail)
             const endAt = Option.flatMap(Option.fromUndefinedOr(info.value.endAt), DateTime.make)
             if (Option.isSome(endAt) && DateTime.isGreaterThanOrEqualTo(endAt.value, until)) return
-            yield* e2b.setTimeout(sandboxId, Duration.toSeconds(IdleTimeout))
+            yield* e2b.setTimeout(sandboxId, Duration.toSeconds(AwakeTail))
           })
         )
         .pipe(Effect.catch((error) => Effect.logWarning("couldn't keep the sandbox awake", String(error))))
 
-      const sleep = (reason: "command" | "relay", checkedAt: DateTime.Utc) =>
+      const sleep = (reason: "command" | "relay" | "app", checkedAt: DateTime.Utc) =>
         busy
           .withPermitsIfAvailable(1)(
             timeouts.withPermits(1)(
@@ -834,7 +864,7 @@ export class SandboxManager extends Context.Service<
                   return "dreamd was handed something after it looked"
                 }
                 if (record.awakeUntil !== undefined && DateTime.toEpochMillis(record.awakeUntil) > nowMs) {
-                  return "a turn ended a few minutes ago"
+                  return "a turn ended a moment ago"
                 }
                 if ((yield* store.pendingEvents(1)).length > 0) return "events are on their way"
                 const sandboxId = record.access.sandboxId
@@ -981,7 +1011,7 @@ export class SandboxManager extends Context.Service<
           const now = yield* DateTime.now
           yield* update((r) => {
             const { turnStartedAt: _, turnUsageBefore: _b, ...rest } = withoutStarting(r)
-            return { ...rest, working: false, turnEndedAt: now, awakeUntil: DateTime.addDuration(now, IdleTimeout) }
+            return { ...rest, working: false, turnEndedAt: now, awakeUntil: DateTime.addDuration(now, TurnTail) }
           })
           yield* store.clearTimer("turn-keepalive")
           if (config.sandboxRefresh) {
@@ -993,11 +1023,11 @@ export class SandboxManager extends Context.Service<
           yield* alarm.reschedule
           if (record.access !== undefined) {
             yield* timeouts
-              .withPermits(1)(e2b.setTimeout(record.access.sandboxId, Duration.toSeconds(IdleTimeout)))
+              .withPermits(1)(e2b.setTimeout(record.access.sandboxId, Duration.toSeconds(TurnTail)))
               .pipe(Effect.ignore)
           }
           // Machine time for this turn, plus the idle tail before E2B pauses it.
-          yield* recordTurnUsage(record, DateTime.addDuration(now, IdleTimeout))
+          yield* recordTurnUsage(record, DateTime.addDuration(now, TurnTail))
           yield* recordModelTurn(record, now, usage)
         })
 

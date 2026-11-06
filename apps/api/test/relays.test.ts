@@ -319,6 +319,11 @@ describe("going back to sleep after scheduled work", () => {
       yield* dreamd.Sleep({ reason: "command", checkedAt: yield* DateTime.now })
       assert.strictEqual(sandbox.state, "paused")
       assert.strictEqual(sandbox.pauses, pauses + 1)
+      // And once a visit to the app is over.
+      sandbox.state = "running"
+      yield* dreamd.Sleep({ reason: "app", checkedAt: yield* DateTime.now })
+      assert.strictEqual(sandbox.state, "paused")
+      assert.strictEqual(sandbox.pauses, pauses + 2)
       yield* cloud.close
     })
   )
@@ -339,7 +344,7 @@ describe("going back to sleep after scheduled work", () => {
         yield* dreamd.Sleep({ reason: "command", checkedAt: yield* DateTime.now })
         assert.isFalse(asleep())
         yield* dreamd.ReportTurn({ state: "finished", eventIds: [] })
-        // Just ended: the few minutes after a turn stay.
+        // Just ended: the minute and a half after a turn stays.
         yield* dreamd.Sleep({ reason: "command", checkedAt: yield* DateTime.now })
         assert.isFalse(asleep())
 

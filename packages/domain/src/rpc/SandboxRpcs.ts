@@ -407,19 +407,20 @@ export class SandboxRpcs extends RpcGroup.make(
   /**
    * Keep the sandbox up: a scheduled `--run` command is running, the published app is in use, or the app is taking
    * a relay's delivery ("relay", added after the first release). dreamd sends it about once a minute while any
-   * holds, and Dream keeps the sandbox awake until five minutes from then (longer timeouts, like a turn's, stay).
-   * Nothing for an archived project.
+   * holds, and Dream keeps the sandbox awake for a couple of minutes from then (longer timeouts, like a turn's,
+   * stay). Nothing for an archived project.
    */
   Rpc.make("StayAwake", { payload: { reason: Schema.Literals(["command", "app", "relay"]) } }),
   /**
-   * dreamd has nothing left to do: the scheduled command or relay delivery it woke for is done, no turn is running
-   * or waiting, and nobody has used the app for a few minutes. Dream pauses the sandbox now rather than when its
-   * timeout runs out, unless something on its side still needs it (a turn, events on their way, a delivery under
-   * way, the few minutes after a turn). Added after the first release; an older API refuses it.
+   * dreamd has nothing left to do: the scheduled command, relay delivery or app visit it was awake for is done, no
+   * turn is running or waiting, and nobody is using the app. Dream pauses the sandbox now rather than when its
+   * timeout runs out, unless something on its side still needs it (a turn, events on their way, a delivery or
+   * refresh under way, the minute or so after a turn). Added after the first release; an older API refuses it, and
+   * one from before "app" (an app visit that ended) refuses that reason.
    */
   Rpc.make("Sleep", {
     payload: {
-      reason: Schema.Literals(["command", "relay"]),
+      reason: Schema.Literals(["command", "relay", "app"]),
       /** When dreamd last looked and saw nothing to do; anything handed to it after that may not have been seen. */
       checkedAt: Schema.DateTimeUtc
     }
