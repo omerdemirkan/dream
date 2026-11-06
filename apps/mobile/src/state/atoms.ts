@@ -2,7 +2,7 @@
  * What the screens read and do, as atoms over the app's services.
  *
  * Queries refresh through reactivity keys when a mutation changes what they
- * show ("projects", "asks", "connections", "integrations"), and when the app
+ * show ("projects", "connections", "integrations"), and when the app
  * comes back to the foreground.
  */
 import {
@@ -80,10 +80,6 @@ export const projectsAtom = appRuntime
   .atom(AppClient.use((app) => app.ListProjects()))
   .pipe(Atom.withReactivity(["projects"]), Atom.keepAlive)
 
-export const openAsksAtom = appRuntime
-  .atom(AppClient.use((app) => app.ListOpenAsks()))
-  .pipe(Atom.withReactivity(["asks"]), Atom.keepAlive)
-
 export const modelConnectionsAtom = appRuntime
   .atom(AppClient.use((app) => app.ListModelConnections()))
   .pipe(Atom.withReactivity(["connections"]), Atom.keepAlive)
@@ -123,7 +119,7 @@ export const refreshHomeFn = appRuntime.fn(
   Effect.fn(function* () {
     yield* Effect.void
   }),
-  { reactivityKeys: ["projects", "asks", "connections"] }
+  { reactivityKeys: ["projects", "connections"] }
 )
 
 /** `requestId` stays the same when they retry the same idea, so a retry can't start a second project. */
@@ -199,9 +195,6 @@ export const clearDraftFn = appRuntime.fn(
 // Answers
 // ---------------------------------------------------------------------------
 
-/** Answers held for Undo, by question; the UI shows them as answered. */
-export const pendingAnswersAtom = appRuntime.subscriptionRef(Answers.useSync((answers) => answers.pending))
-
 export const answerNowFn = appRuntime.fn(
   Effect.fn(function* (input: AnswerInput) {
     const answers = yield* Answers
@@ -210,30 +203,6 @@ export const answerNowFn = appRuntime.fn(
     return message
   })
 )
-
-export const answerUndoableFn = appRuntime.fn(
-  Effect.fn(function* (input: AnswerInput) {
-    const answers = yield* Answers
-    yield* answers.answerUndoable(input)
-  })
-)
-
-export const undoAnswerFn = appRuntime.fn(
-  Effect.fn(function* (messageId: MessageId) {
-    const answers = yield* Answers
-    return yield* answers.undo(messageId)
-  })
-)
-
-export const flushAnswersFn = appRuntime.fn(
-  Effect.fn(function* () {
-    const answers = yield* Answers
-    yield* answers.flush
-  })
-)
-
-/** Failures of answers sent after their undo window, for the toast. */
-export const answerFailuresAtom = appRuntime.atom(Stream.unwrap(Answers.useSync((answers) => answers.failures)))
 
 export type { QuestionAnswer }
 
@@ -372,7 +341,7 @@ export const scenarioFn = appRuntime.fn(
       yield* session.signIn({ token: result.sessionToken, user: result.user })
     }
   }),
-  { reactivityKeys: ["projects", "asks", "connections", "integrations"] }
+  { reactivityKeys: ["projects", "connections", "integrations"] }
 )
 
 // ---------------------------------------------------------------------------

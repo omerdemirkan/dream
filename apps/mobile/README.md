@@ -1,19 +1,20 @@
 # @dream/mobile
 
 Dream's iPhone app: Expo SDK 58 (React Native 0.88), expo-router, Effect 4.1 with `@effect/atom-react`. The design
-is Deck v3 (`mocks/deck-v3.html`); the one change is that "Something else…" (typed or dictated) lives only in the
-expanded view.
+is Deck v3 (`mocks/deck-v3.html`), with two changes: "Something else…" (typed or dictated) lives only in the
+expanded view, and Home has no needs-you deck. Questions and access requests stay in their project (Chat, the Status
+card, notifications); Home's project rows say which projects are waiting for them.
 
 ## Layout
 
 | Path | What |
 | --- | --- |
 | `src/app` | Routes: Home (`index`), `project/[id]` (Status / Chat), `new`, `sign-in`, `connect`, `settings`, `oauth/google`, `oauth/[provider]`, `fixtures/[scenario]` |
-| `src/data` | Services (no React Native): `AppClient` (AppRpcs over HTTP), `LiveProjects` (ProjectLiveRpcs over WebSocket, re-subscribing with a fresh ticket), `ProjectStates`, `Answers` (Undo), `Session`, formatting |
+| `src/data` | Services (no React Native): `AppClient` (AppRpcs over HTTP), `LiveProjects` (ProjectLiveRpcs over WebSocket, re-subscribing with a fresh ticket), `ProjectStates`, `Answers`, `Session`, formatting |
 | `src/fake` | The fixtures backend: `AppRpcs` handlers and live events over the Deck v3 sample world, with a small simulated agent |
 | `src/state` | The atom runtime and the atoms screens use |
 | `src/platform` | Expo/iOS pieces: keychain, streaming fetch, push, dictation, Google Sign-In |
-| `src/ui` | Components: the deck, Status roadmap, Chat messages, the expanded view and its grow/shrink animation |
+| `src/ui` | Components: Status roadmap, Chat messages, the expanded view and its grow/shrink animation |
 | `modules/dream-native` | Local Expo module (Swift): Live Activity push-to-start and update tokens, launch arguments |
 | `targets/widget` | The Live Activity widget (lock screen + Dynamic Island), via `@bacons/apple-targets` |
 | `scripts/build-ios.sh` | `expo prebuild` + CocoaPods + `xcodebuild`, for the Simulator or TestFlight |
@@ -73,7 +74,7 @@ xcrun simctl launch --terminate-running-process booted build.omer.dream \
 
 | Route | Screen |
 | --- | --- |
-| `/` | Home: the needs-you deck, then projects |
+| `/` | Home: the projects; one waiting for them has an amber dot and "Waiting for you" |
 | `/project/prj_liftlog` · `prj_morningbrief` · `prj_cabin` · `prj_recipescaler` | Status |
 | `…?tab=chat` | Chat; add `&focus=<messageId>` to expand a message, `&land=<messageId>` to land on it highlighted |
 | `/new` · `/new?sample=long` · add `dictate=1` | New idea (the page), with a long brain dump, dictating at the cursor (simulated in the Simulator) |
@@ -173,8 +174,7 @@ implements the [Expo Updates protocol v1](https://docs.expo.dev/technical-specs/
 **When an update takes over.** expo-updates checks on every launch without holding the launch up
 (`fallbackToCacheTimeout: 0`) and downloads in the background; the update runs from the next launch. The app also
 looks again when it comes back after a minute or more in the background, and restarts on a downloaded update when
-it comes back after 15 minutes or more (held answers were sent when it left, and the screen it returns to is stale
-by then). Nothing interrupts someone using the app. Settings shows which update is running under the version, and
+it comes back after 15 minutes or more (the screen it returns to is stale by then). Nothing interrupts someone using the app. Settings shows which update is running under the version, and
 "Restart to update Dream" once one is downloaded. So to see a fix right away: open Dream, wait a few seconds, open
 Settings and tap Restart (or close Dream and open it again).
 

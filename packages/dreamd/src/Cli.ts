@@ -193,7 +193,7 @@ const ask = Command.make(
   {
     question: textArgument(
       "question",
-      "The question: the card's heading in large type, also on Home and in the notification, so it's the decision itself."
+      "The question: the card's heading in large type, also in the notification, so it's the decision itself."
     ),
     option: Flag.String("option").pipe(
       Flag.withDescription(
@@ -274,7 +274,7 @@ const ask = Command.make(
 const accessFlags = {
   why: Flag.String("why").pipe(
     Flag.withDescription(
-      "The card's heading, in your words, which they read first and often alone (Home, the lock screen): what you're asking them to connect and what it's for."
+      "The card's heading, in your words, which they read first and often alone (the lock screen): what you're asking them to connect and what it's for."
     )
   ),
   context: Flag.String("context").pipe(

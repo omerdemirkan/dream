@@ -60,14 +60,19 @@ describe("fixtures backend through the app's services", () => {
     )
   )
 
-  it.effect("lists open asks oldest first, including later ones for Status", () =>
+  it.effect("counts what needs them now on Home's rows, leaving out access for later", () =>
     run(
       Effect.gen(function* () {
         yield* signIn
-        const asks = yield* (yield* AppClient).ListOpenAsks()
+        const projects = yield* (yield* AppClient).ListProjects()
         assert.deepStrictEqual(
-          asks.map((a) => a.message.id),
-          ["msg_apple", "msg_brieftelegram", "msg_cabinrule", "msg_cabinpick", "msg_gcal", "msg_recipewho"]
+          projects.map((p) => [p.project.title, p.openAsks]),
+          [
+            ["Lift Log", 0],
+            ["Morning Brief", 1],
+            ["Cabin", 3],
+            ["Recipe Scaler", 1]
+          ]
         )
       })
     )
@@ -173,42 +178,21 @@ describe("fixtures backend through the app's services", () => {
     )
   )
 
-  it.effect("holds an answer for the undo window, then sends it", () =>
+  it.effect("an answer goes out at once, and Home's row counts one fewer", () =>
     run(
       Effect.gen(function* () {
         yield* signIn
         const answers = yield* Answers
         const app = yield* AppClient
-        yield* answers.answerUndoable({
+        const cabinAsks = Effect.map(app.ListProjects(), (all) => all.find((s) => s.project.id === cabin)?.openAsks)
+        assert.strictEqual(yield* cabinAsks, 3)
+        const answered = yield* answers.answerNow({
           projectId: cabin,
           messageId: cabinRule,
           answer: { _tag: "Choice", option: "First to ask" }
         })
-        assert.isTrue((yield* SubscriptionRef.get(answers.pending)).has(cabinRule))
-        assert.isTrue((yield* app.ListOpenAsks()).some((a) => a.message.id === cabinRule))
-        yield* TestClock.adjust("5 seconds")
-        assert.isFalse((yield* SubscriptionRef.get(answers.pending)).has(cabinRule))
-        assert.isFalse((yield* app.ListOpenAsks()).some((a) => a.message.id === cabinRule))
-      })
-    )
-  )
-
-  it.effect("Undo inside the window means the answer is never sent", () =>
-    run(
-      Effect.gen(function* () {
-        yield* signIn
-        const answers = yield* Answers
-        const app = yield* AppClient
-        yield* answers.answerUndoable({
-          projectId: cabin,
-          messageId: cabinRule,
-          answer: { _tag: "Choice", option: "First to ask" }
-        })
-        yield* TestClock.adjust("2 seconds")
-        assert.isTrue(yield* answers.undo(cabinRule))
-        yield* TestClock.adjust("10 seconds")
-        assert.isTrue((yield* app.ListOpenAsks()).some((a) => a.message.id === cabinRule))
-        assert.strictEqual((yield* SubscriptionRef.get(answers.pending)).size, 0)
+        assert.strictEqual(answered.state._tag, "Answered")
+        assert.strictEqual(yield* cabinAsks, 2)
       })
     )
   )

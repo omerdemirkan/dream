@@ -41,11 +41,10 @@ const program = Effect.gen(function* () {
   const me = yield* app.GetMe()
   console.log(`GetMe: a user at …@${me.email.split("@")[1] ?? "?"}`)
   const projects = yield* app.ListProjects()
-  const asks = yield* app.ListOpenAsks()
   const connections = yield* app.ListModelConnections()
   const integrations = yield* app.ListIntegrations()
   console.log(
-    `Home: ${projects.length} projects, ${asks.length} open asks, ${connections.length} model connections (${connections.map((c) => `${c.provider}:${c.status}`).join(", ") || "none"}), ${integrations.length} integrations`
+    `Home: ${projects.length} projects, ${projects.reduce((n, s) => n + s.openAsks, 0)} open asks, ${connections.length} model connections (${connections.map((c) => `${c.provider}:${c.status}`).join(", ") || "none"}), ${integrations.length} integrations`
   )
 
   const device = yield* app.RegisterDevice({

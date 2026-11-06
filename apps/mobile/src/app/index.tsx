@@ -1,20 +1,19 @@
 /**
- * Home: whatever needs them first (the deck), then their projects. The
- * composer at the bottom starts a new idea.
+ * Home: their projects, each saying whether it's waiting for them (questions
+ * and access requests live in the project). The composer at the bottom starts
+ * a new idea.
  */
-import type { ModelConnection, OpenAsk, ProjectSummary } from "@dream/domain"
+import type { ModelConnection, ProjectSummary } from "@dream/domain"
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react"
 import { Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
 import { Redirect, useRouter } from "expo-router"
-import { useEffect, useState } from "react"
+import { useEffect } from "react"
 import { Pressable, ScrollView, Text, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { phaseLabel, providerName, usageLeft, usageLine } from "../data/format.ts"
 import { dotOf, homeLine, presenceOf } from "../data/presence.ts"
-import { hiddenProjectsAtom, modelConnectionsAtom, openAsksAtom, projectsAtom } from "../state/atoms.ts"
-import { Deck, Segments } from "../ui/Deck.tsx"
-import { usePendingAnswers } from "../ui/hooks.ts"
+import { hiddenProjectsAtom, modelConnectionsAtom, projectsAtom } from "../state/atoms.ts"
 import { Dot, Icon, IconButton, LinkButton, Orb } from "../ui/kit.tsx"
 import { plainText } from "../ui/markdownParse.ts"
 import { PresenceTile, StateLineText, useTickingNow } from "../ui/Presence.tsx"
@@ -34,27 +33,12 @@ export default function Home() {
     (): ReadonlySet<string> => new Set()
   )
   const projects = listOf(projectsResult).filter((summary) => !hidden.has(summary.project.id))
-  const pending = usePendingAnswers()
-  const asksResult = useAtomValue(openAsksAtom)
   const refreshProjects = useAtomRefresh(projectsAtom)
-  const refreshAsks = useAtomRefresh(openAsksAtom)
-  const asks = listOf(asksResult).filter(
-    (ask) =>
-      !pending.has(ask.message.id) &&
-      !(ask.message._tag === "Access" && ask.message.when) &&
-      !hidden.has(ask.project.id)
-  )
   const connectionsResult = useAtomValue(modelConnectionsAtom)
   const connections = listOf(connectionsResult)
-  const [answered, setAnswered] = useState(0)
-  const needs = asks.length > 0
+  const needs = projects.some((s) => s.openAsks > 0)
   // Nothing to show and the last try failed (offline, the API down): say so rather than "All clear".
-  const unreachable =
-    !needs &&
-    projects.length === 0 &&
-    (AsyncResult.isFailure(projectsResult) || AsyncResult.isFailure(asksResult)) &&
-    !projectsResult.waiting &&
-    !asksResult.waiting
+  const unreachable = projects.length === 0 && AsyncResult.isFailure(projectsResult) && !projectsResult.waiting
 
   // While an agent is starting or working, Home checks back every so often, so its row moves on by itself.
   const busy = projects.some((s) => s.activity?.state === "starting" || s.activity?.state === "working")
@@ -82,30 +66,27 @@ export default function Home() {
           <Text style={{ fontSize: 17, fontWeight: "700", letterSpacing: -0.34, color: color.t1, flex: 1 }}>Dream</Text>
           <IconButton icon="person" size={34} label="Settings" onPress={() => router.push("/settings")} />
         </View>
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginTop: 8,
-            marginBottom: 12
-          }}
-        >
-          <Text style={{ fontSize: 30, fontWeight: "700", letterSpacing: -1.2, lineHeight: 33, color: color.t1 }}>
-            {needs ? "Needs you" : AsyncResult.isSuccess(asksResult) ? "All clear" : ""}
-          </Text>
-          {needs || answered > 0 ? <Segments done={answered} remaining={asks.length} /> : null}
-        </View>
-        {unreachable ? (
-          <Unreachable
-            onRetry={() => {
-              refreshProjects()
-              refreshAsks()
+        {/* When a project waits for them, its row says so; Home has no section for what they're asked. */}
+        {needs ? (
+          <View style={{ height: 12 }} />
+        ) : (
+          <Text
+            style={{
+              fontSize: 30,
+              fontWeight: "700",
+              letterSpacing: -1.2,
+              lineHeight: 33,
+              color: color.t1,
+              marginTop: 8,
+              marginBottom: 12
             }}
-          />
-        ) : needs ? (
-          <Deck asks={asks} onAnswered={() => setAnswered((n) => n + 1)} />
-        ) : AsyncResult.isSuccess(projectsResult) || projects.length > 0 ? (
+          >
+            {AsyncResult.isSuccess(projectsResult) ? "All clear" : ""}
+          </Text>
+        )}
+        {unreachable ? (
+          <Unreachable onRetry={refreshProjects} />
+        ) : needs ? null : AsyncResult.isSuccess(projectsResult) || projects.length > 0 ? (
           <AllClear projects={projects} />
         ) : null}
         <ConnectionBanner connections={connections} />
@@ -113,7 +94,7 @@ export default function Home() {
           <Text style={{ fontSize: 13, fontWeight: "600", color: color.t3, marginBottom: 2 }}>Projects</Text>
         ) : null}
         {projects.map((summary, i) => (
-          <ProjectRow key={summary.project.id} summary={summary} first={i === 0} asks={asks} />
+          <ProjectRow key={summary.project.id} summary={summary} first={i === 0} open={summary.openAsks} />
         ))}
         <Usage connections={connections} />
       </ScrollView>
@@ -245,13 +226,9 @@ function Progress(props: { readonly done: number; readonly total: number; readon
   )
 }
 
-function ProjectRow(props: {
-  readonly summary: ProjectSummary
-  readonly first: boolean
-  readonly asks: ReadonlyArray<OpenAsk>
-}) {
+function ProjectRow(props: { readonly summary: ProjectSummary; readonly first: boolean; readonly open: number }) {
   const { project, progress } = props.summary
-  const open = props.asks.filter((ask) => ask.project.id === project.id).length
+  const { open } = props
   // The Status card's now line, as plain text: markdown and any lines after the first don't fit here.
   const headline = project.headline ? plainText(project.headline).split("\n")[0] || undefined : undefined
   const now = useTickingNow(props.summary.activity?.state === "working")

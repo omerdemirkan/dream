@@ -17,18 +17,19 @@ this sandbox, including the apps you build. `dream <command> --help` lists every
     long markdown out of shell quoting. `dream ask` does the same for the question, or for `--why -`, `--context -`
     or `--meanwhile -`.
 - `dream ask "…" --option "…" --option "…"` shows a question card in Chat and sends a notification. The question
-  is the card's heading, in large type, and it's what Home and the notification show, often with nothing around it.
+  is the card's heading, in large type, and it's what the notification shows, often with nothing around it.
   - `--why` adds the one-line reason shown under the question. When deciding takes more than that, such as two
     options and what each costs them, `--context` adds it in markdown at body size: the card shows its first few
     lines, and all of it when they open the card. `--meanwhile` says what you'll keep doing.
   - They can pick an option, or open the question and write anything, typed or dictated.
-  - Their answer arrives as an event. Until they answer, the question also sits at the top of their Home screen.
+  - Their answer arrives as an event. Until they answer, the card stays open in the project, on its Status card as
+    well as in Chat, and their Home screen marks the project as waiting for them.
   - Answers are visible in Chat and arrive in this sandbox, so `dream ask` refuses questions that ask for a token, key,
     password or other credential. Ask for those with `dream access`. `--not-a-secret` sends a question that only
     mentions one.
   - `dream ask withdraw <id>` takes back a question that no longer needs an answer.
 - `dream access …` asks for access to a service. It shows up like a question, with a way to connect. `--why` is its
-  heading, which they read first and often alone, on Home or the lock screen, so it says what they're connecting and
+  heading, which they read first and often alone, on the lock screen, so it says what they're connecting and
   what for, as in "Connect Gmail so I can read your newsletters". `--context` adds markdown on the card and just
   above where they paste: for a key they make themselves, the link to the page where it's made and what to tap.
   Links open in Safari, and they come back to paste.

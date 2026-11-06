@@ -7,8 +7,9 @@ own cloud sandbox and asks you sharp questions only when it must. It builds the 
 weeks, hosts it from the sandbox, and keeps it healthy afterwards. Each project has one agent, one sandbox, and two
 views: **Status** (a live roadmap) and **Chat** (only what the agent chose to send).
 
-The design is locked: Deck v3 (`mocks/deck`, commit `d3ba192`). The one change is that "Something else…" appears only
-in the expanded view.
+The design is locked: Deck v3 (`mocks/deck`, commit `d3ba192`). Two changes: "Something else…" appears only in the
+expanded view, and Home has no needs-you deck (questions and access requests stay in their project; Home marks the
+projects waiting for them in their rows).
 
 **Out of scope for v1:**
 - live voice calls
@@ -97,7 +98,7 @@ infra/alchemy.run.ts   Cloudflare resources + E2B template as a custom Alchemy r
 - `integrations` (kind: google_oauth, api_key, or apple_asc; hosts; scopes; secret id; status)
 - `secrets` (AES-GCM ciphertext + nonce, owner, kind; decrypted only inside the Worker)
 - `projects` (owner, title, slug, harness, phase, headline, sandbox id, public URL, updated_at)
-- `open_asks` (a copy of each project's open questions and access requests, for the Home deck)
+- `open_asks` (a copy of each project's open questions and access requests, for older builds' Home deck)
 - `usage_events` (sandbox, browser and Mac minutes per project)
 
 **ProjectDO tables:**
@@ -179,7 +180,7 @@ dream usage                          → subscription windows, % left, reset tim
 ## 8. Mobile app (Deck v3)
 
 **Screens:**
-- Home: the needs-you deck, then the project rows
+- Home: the project rows (a row says when its project is waiting for them)
 - Project: Status | Chat
 - The expanded message (question or access) that shrinks back to its place in Chat, with a highlight
 - New idea: composer and dictation

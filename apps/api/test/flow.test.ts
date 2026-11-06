@@ -299,6 +299,24 @@ describe("a project, end to end", () => {
       })
       assert.strictEqual(answered.state._tag, "Answered")
       assert.deepStrictEqual((yield* cloud.phone.ListOpenAsks()).length, 0)
+
+      // Access for later is listed for older builds' deck, but doesn't make the project need them yet.
+      const later = yield* dreamd.RequestAccess({
+        request: {
+          _tag: "Key",
+          service: "Stripe",
+          host: "api.stripe.com",
+          header: "Authorization",
+          format: "Bearer {key}"
+        },
+        why: "Take payments.",
+        when: "around Thursday"
+      })
+      assert.deepStrictEqual(
+        (yield* cloud.phone.ListOpenAsks()).map((a) => a.message.id),
+        [later.id]
+      )
+      assert.strictEqual((yield* cloud.phone.ListProjects())[0]?.openAsks, 0)
       // The answered question's notification is withdrawn (silent push + stale list).
       const withdraw = cloud.world.pushes.find((p) => p.kind === "silent")!
       assert.deepStrictEqual((withdraw.payload as any).notificationIds, [question.notificationId])

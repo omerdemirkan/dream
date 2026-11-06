@@ -1,7 +1,7 @@
 /**
  * When a downloaded over-the-air update takes over. Never under someone's hands: it runs from the next launch,
- * or when the app comes back after a long while in the background, which is a fresh start in all but name
- * (answers held for Undo were sent when it left). Coming back sooner only looks for one. Nothing is shown;
+ * or when the app comes back after a long while in the background, which is a fresh start in all but name.
+ * Coming back sooner only looks for one. Nothing is shown;
  * Settings says what's running and offers a restart once an update is ready.
  */
 import { Effect } from "effect"

@@ -8,11 +8,10 @@ import { DateTime, Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react"
 import type { HostInstance } from "react-native"
-import type { AnswerInput } from "../data/Answers.ts"
 import type { ProjectState } from "../data/projectState.ts"
 import { randomUuid } from "../data/Session.ts"
-import { openAsksAtom, pendingAnswersAtom, projectAtom } from "../state/atoms.ts"
-import { focusAtom } from "../state/ui.ts"
+import { projectAtom } from "../state/atoms.ts"
+import { askPushAtom, focusAtom } from "../state/ui.ts"
 
 const nowUtc = () => DateTime.nowUnsafe()
 
@@ -26,33 +25,15 @@ export function useNow(everyMs = 30_000) {
   return now
 }
 
-export function usePendingAnswers(): ReadonlyMap<MessageId, AnswerInput> {
-  const result = useAtomValue(pendingAnswersAtom)
-  return Option.getOrElse(AsyncResult.value(result), () => new Map<MessageId, AnswerInput>())
-}
-
-/** A question with an answer held for Undo reads as answered. */
-export const withPending = <M extends Message>(message: M, pending: ReadonlyMap<MessageId, AnswerInput>): M => {
-  if (message._tag !== "Question") return message
-  const held = pending.get(message.id)
-  if (!held || message.state._tag !== "Open") return message
-  return { ...message, state: { _tag: "Answered", answer: held.answer, answeredAt: nowUtc() } }
-}
-
 export function useProject(projectId: ProjectId): ProjectState | undefined {
   const result = useAtomValue(projectAtom(projectId))
   return Option.getOrUndefined(Option.flatten(AsyncResult.value(result)))
 }
 
-/** One message, from the open project, else Home's open asks, else what the opener passed along. */
+/** One message, from the open project, else what the opener passed along. */
 export function useMessage(projectId: ProjectId, messageId: MessageId, fallback?: AskMessage): Message | undefined {
   const project = useProject(projectId)
-  const asks = useAtomValue(openAsksAtom)
-  const pending = usePendingAnswers()
-  const fromProject = project?.messages.find((m) => m.id === messageId)
-  const fromAsks = Option.getOrUndefined(AsyncResult.value(asks))?.find((a) => a.message.id === messageId)?.message
-  const message = fromProject ?? fromAsks ?? fallback
-  return message ? withPending(message, pending) : undefined
+  return project?.messages.find((m) => m.id === messageId) ?? fallback
 }
 
 export interface OpenMessage {
@@ -61,6 +42,12 @@ export interface OpenMessage {
   readonly message?: AskMessage | undefined
   /** The card it grows out of. */
   readonly from?: RefObject<HostInstance | null> | undefined
+}
+
+/** A moment that calls for asking to send notifications, such as their first answer. */
+export function useAskPush() {
+  const set = useAtomSet(askPushAtom)
+  return useCallback(() => set((n) => n + 1), [set])
 }
 
 /** Expands a question or access request to full screen. */

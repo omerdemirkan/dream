@@ -33,6 +33,7 @@ import {
 } from "../state/atoms.ts"
 import { useAction, useSignInAccess, useToast } from "./actions.ts"
 import { ElseComposer } from "./Composer.tsx"
+import { useAskPush } from "./hooks.ts"
 import {
   accessExplainer,
   accessLabel,
@@ -147,6 +148,7 @@ export function ExpandedQuestion(props: {
 }) {
   const m = props.message
   const answer = useAction(answerNowFn)
+  const askPush = useAskPush()
   const toast = useToast()
   const [changing, setChanging] = useState(false)
   const [picked, setPicked] = useState<string | undefined>(undefined)
@@ -167,6 +169,7 @@ export function ExpandedQuestion(props: {
         onSuccess: () => {
           setChanging(false)
           if (draft) clearDraft(target)
+          askPush()
           sent?.()
         },
         onFailure: (message) => {

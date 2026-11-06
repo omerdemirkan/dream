@@ -117,13 +117,14 @@ export const pastLabel = (dt: DateTime.Utc, now: DateTime.Utc, timeZone?: string
 const planName = (harness: Harness) => (harness === "codex" ? "ChatGPT" : "Claude")
 
 /**
- * One state line: `lead`, then `· rest`. `strong` leads are bold and white (the agent is doing something); the
- * rest are quiet.
+ * One state line: `lead`, then `· rest`. `strong` leads are bold and white (the agent is doing something), `need`
+ * leads are amber (it's waiting for them); the rest are quiet.
  */
 export interface StateLine {
   readonly lead: string
   readonly rest?: string | undefined
   readonly strong: boolean
+  readonly need?: boolean
 }
 
 export interface LineContext {
@@ -163,7 +164,7 @@ export const homeLine = (
     case "Paused":
       return paused(presence.until, context)
   }
-  if (context.openAsks > 0) return { lead: "Waiting for you", rest: context.headline, strong: false }
+  if (context.openAsks > 0) return { lead: "Waiting for you", rest: context.headline, strong: false, need: true }
   if (presence._tag === "Awake") {
     return {
       lead: "Done for now",
@@ -196,7 +197,7 @@ export const headerLine = (
       ? { lead: "Awake", rest: "picking it up", strong: false }
       : { lead: "Asleep", rest: "waking up", strong: false }
   }
-  if (context.openAsks > 0) return { lead: "Waiting for you", strong: false }
+  if (context.openAsks > 0) return { lead: "Waiting for you", strong: false, need: true }
   switch (presence._tag) {
     case "Awake": {
       const last = messages.at(-1)
