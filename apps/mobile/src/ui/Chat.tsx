@@ -7,7 +7,7 @@
 import type { AskMessage, Message, MessageId, WorkstreamId } from "@dream/domain"
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
 import { Option } from "effect"
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   type HostInstance,
   type NativeScrollEvent,
@@ -149,17 +149,22 @@ const replyAt = 56
 /** Swiping a labeled message to the right writes to its workstream. */
 function ReplySwipe(props: { readonly onReply: () => void; readonly children: ReactNode }) {
   const x = useSharedValue(0)
-  const reply = props.onReply
-  const pan = Gesture.Pan()
-    .activeOffsetX(14)
-    .failOffsetY([-12, 12])
-    .onUpdate((e) => {
-      x.value = Math.max(0, Math.min(replyAt + 16, e.translationX * 0.7))
-    })
-    .onEnd(() => {
-      if (x.value >= replyAt) scheduleOnRN(reply)
-      x.value = withTiming(0, { duration: 220 })
-    })
+  // The latest callback, so the gesture is made once.
+  const reply = useRef(props.onReply)
+  reply.current = props.onReply
+  const pan = useMemo(() => {
+    const fire = () => reply.current()
+    return Gesture.Pan()
+      .activeOffsetX(14)
+      .failOffsetY([-12, 12])
+      .onUpdate((e) => {
+        x.value = Math.max(0, Math.min(replyAt + 16, e.translationX * 0.7))
+      })
+      .onEnd(() => {
+        if (x.value >= replyAt) scheduleOnRN(fire)
+        x.value = withTiming(0, { duration: 220 })
+      })
+  }, [x])
   const slide = useAnimatedStyle(() => ({ transform: [{ translateX: x.value }] }))
   const hint = useAnimatedStyle(() => ({
     opacity: interpolate(x.value, [12, replyAt], [0, 1], "clamp"),

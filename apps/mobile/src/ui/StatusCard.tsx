@@ -113,7 +113,7 @@ function WorkstreamRow(props: {
           boxShadow: `0 0 0 3px ${waiting ? color.needBg : "rgba(255,255,255,0.10)"}`
         }}
       />
-      <View style={{ flex: 1 }}>
+      <View style={{ flex: 1, paddingRight: props.first ? 22 : 0 }}>
         <Text
           numberOfLines={1}
           maxFontSizeMultiplier={bigTextScale}
@@ -148,7 +148,7 @@ function Rows(props: {
       <View style={{ position: "absolute", top: 18, right: 16 }}>
         <Chevron />
       </View>
-      <View style={{ paddingRight: 22 }}>
+      <View>
         {rows.rows.map((row, i) => (
           <WorkstreamRow
             key={row.id}
