@@ -11,10 +11,11 @@
  *   app asks `FilterStaleNotifications` whenever it opens, since APNs can't
  *   delete anything itself.
  */
-import { PushData, PushDataKey } from "@dream/domain"
+import { type MessageId, PushData, PushDataKey } from "@dream/domain"
 import { Data, Effect, Option, Schema } from "effect"
 import * as Notifications from "expo-notifications"
 import * as TaskManager from "expo-task-manager"
+import { notificationsAbout } from "../data/seenMessages.ts"
 
 export class PushError extends Data.TaggedError("PushError")<{ readonly step: string; readonly cause: unknown }> {}
 
@@ -103,21 +104,16 @@ export const removeDelivered = (ids: ReadonlyArray<string>) =>
     catch: (cause) => new PushError({ step: "remove delivered", cause })
   })
 
-/** Removes delivered notifications about these messages, e.g. a question they just answered in the app. */
-export const removeDeliveredFor = (messageIds: ReadonlyArray<string>) =>
+/** Removes delivered notifications about these messages, e.g. a question they just answered or a message they saw in Chat. */
+export const removeDeliveredFor = (messageIds: ReadonlyArray<MessageId>) =>
   Effect.tryPromise({
     try: async () => {
       const presented = await Notifications.getPresentedNotificationsAsync()
-      await Promise.all(
-        presented
-          .filter((n) =>
-            Option.match(pushDataOf(n), {
-              onNone: () => false,
-              onSome: (data) => data._tag === "OpenMessage" && messageIds.includes(data.messageId)
-            })
-          )
-          .map((n) => Notifications.dismissNotificationAsync(n.request.identifier))
+      const about = notificationsAbout(
+        presented.map((n) => ({ identifier: n.request.identifier, data: pushDataOf(n) })),
+        messageIds
       )
+      await Promise.all(about.map((identifier) => Notifications.dismissNotificationAsync(identifier)))
     },
     catch: (cause) => new PushError({ step: "remove delivered", cause })
   })
