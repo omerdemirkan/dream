@@ -30,6 +30,7 @@ import { type AnswerInput, Answers, asksChanged } from "../data/Answers.ts"
 import { withWriteTimeout } from "../data/errors.ts"
 import { ProjectArchive } from "../data/ProjectArchive.ts"
 import { ProjectStates } from "../data/ProjectStates.ts"
+import { ProjectUsages } from "../data/ProjectUsages.ts"
 import { Replies, type Reply, type ReplyTarget } from "../data/Replies.ts"
 import { Session } from "../data/Session.ts"
 import { FakeBackend, type Scenario } from "../fake/FakeBackend.ts"
@@ -205,6 +206,16 @@ export const createProjectFn = appRuntime.fn(
 /** The live state of one project; `None` until its first snapshot. */
 export const projectAtom = Atom.family((projectId: ProjectId) =>
   appRuntime.atom(Stream.unwrap(ProjectStates.useSync((states) => states.state(projectId))))
+)
+
+/** The header's usage figures for a project; `undefined` while none are known. */
+export const usageGlanceAtom = Atom.family((projectId: ProjectId) =>
+  appRuntime.atom(Stream.unwrap(ProjectUsages.useSync((usages) => usages.glance(projectId))))
+)
+
+/** The usage sheet, fetched when it opens (refresh it to fetch again). */
+export const projectUsageAtom = Atom.family((projectId: ProjectId) =>
+  appRuntime.atom(ProjectUsages.use((usages) => usages.sheet(projectId)))
 )
 
 export const loadEarlierFn = appRuntime.fn(

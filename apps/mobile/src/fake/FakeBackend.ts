@@ -57,6 +57,7 @@ import {
   questionWithContext,
   vagueAccess
 } from "./fixtures.ts"
+import { afterTurn, glanceOf, makeUsageWorld, type UsageMode, type UsageWorld, usageOf } from "./usage.ts"
 
 /** A notification the fake would have sent through APNs. The app shows it as a local notification. */
 export interface FakePush {
@@ -96,7 +97,10 @@ export const Scenario = [
   "long-chat",
   "now-two-lines",
   "now-three-lines",
-  "declined-reason"
+  "declined-reason",
+  "usage-normal",
+  "usage-near-limit",
+  "usage-none"
 ] as const
 export type Scenario = (typeof Scenario)[number]
 
@@ -188,12 +192,14 @@ export class FakeBackend extends Context.Service<
       let connections: Array<ModelConnection> = []
       let devices = new Map<string, Device>()
       let links: Array<AppLink> = []
+      let usage: UsageWorld = makeUsageWorld("normal")
 
       const load = Effect.fn("FakeBackend.load")(function* (world: FixtureWorld) {
         const previous = records
         user = world.user
         integrations = [...world.integrations]
         links = [...world.links]
+        usage = makeUsageWorld("normal")
         connections = [...world.modelConnections]
         devices = new Map()
         records = new Map()
@@ -288,6 +294,26 @@ export class FakeBackend extends Context.Service<
             awakeUntil: DateTime.addDuration(now, awakeFor),
             ...nextWake(record)
           })
+          usage = afterTurn(usage, record.project.id)
+          yield* emitUsage(record)
+        })
+      const projectUsage = (projectId: ProjectId, now: DateTime.Utc) =>
+        usageOf(
+          usage,
+          projectId,
+          active().map((r) => r.project),
+          now
+        )
+      /** As the ProjectDO does after each turn: the header's figures. */
+      const emitUsage = (record: ProjectRecord) =>
+        Effect.gen(function* () {
+          const now = yield* DateTime.now
+          yield* emit(record, ProjectEvent.cases.Usage.make({ usage: glanceOf(projectUsage(record.project.id, now)) }))
+        })
+      const setUsage = (mode: UsageMode) =>
+        Effect.gen(function* () {
+          usage = makeUsageWorld(mode)
+          for (const record of records.values()) yield* emitUsage(record)
         })
       const isAwake = (record: ProjectRecord, now: DateTime.Utc) =>
         record.activity.state !== "idle" ||
@@ -648,6 +674,11 @@ export class FakeBackend extends Context.Service<
           find(projectId).pipe(
             Effect.map(() => ({ url: `wss://fixtures.invalid/projects/${projectId}/live?ticket=${nextId("tkt")}` }))
           ),
+        GetProjectUsage: ({ projectId }) =>
+          Effect.gen(function* () {
+            const record = yield* find(projectId)
+            return projectUsage(record.project.id, yield* DateTime.now)
+          }),
         ListMessages: ({ projectId, before, limit }) =>
           Effect.gen(function* () {
             const record = yield* find(projectId)
@@ -1136,6 +1167,12 @@ export class FakeBackend extends Context.Service<
             if (Option.isSome(message)) yield* setMessage(cabin, message.value)
             return
           }
+          case "usage-normal":
+            return yield* setUsage("normal")
+          case "usage-near-limit":
+            return yield* setUsage("near-limit")
+          case "usage-none":
+            return yield* setUsage("none")
           case "stall-next-write":
             stallNextWrite = true
             return

@@ -109,6 +109,25 @@ describe("TolerantMessage and TolerantProjectEvent", () => {
       decode({ _tag: "WorkingChanged", working: true }),
       ProjectEvent.cases.WorkingChanged.make({ working: true })
     )
+    assert.deepStrictEqual(
+      decode({
+        _tag: "Usage",
+        usage: {
+          provider: "chatgpt",
+          billing: "subscription",
+          weekly: { usedPercent: 38, projectPercent: 4 },
+          observedAt: "2026-11-04T22:10:00.000Z"
+        }
+      }),
+      ProjectEvent.cases.Usage.make({
+        usage: {
+          provider: "chatgpt",
+          billing: "subscription",
+          weekly: { usedPercent: 38, projectPercent: 4 },
+          observedAt: DateTime.makeUnsafe("2026-11-04T22:10:00Z")
+        }
+      })
+    )
   })
 
   it("decode the activity, and drop one with a state this build doesn't know rather than the snapshot", () => {

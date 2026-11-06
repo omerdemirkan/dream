@@ -86,4 +86,19 @@ describe("applyEvent", () => {
     state = applyEvent(state, snapshot([text("z", "2026-11-04T14:00:00Z")]))
     assert.deepStrictEqual(ids(state), ["z"])
   })
+
+  it("takes the header's usage from Usage events, and keeps it through a new snapshot", () => {
+    const usage = {
+      provider: "chatgpt",
+      billing: "subscription",
+      weekly: { usedPercent: 38, projectPercent: 4 },
+      observedAt: DateTime.makeUnsafe("2026-11-04T22:10:00Z")
+    } as const
+    let state = applyEvent(undefined, snapshot([]))
+    assert.isUndefined(state?.usage)
+    state = applyEvent(state, ProjectEvent.cases.Usage.make({ usage }))
+    assert.deepStrictEqual(state?.usage, usage)
+    state = applyEvent(state, snapshot([text("a", "2026-11-04T10:00:00Z")]))
+    assert.deepStrictEqual(state?.usage, usage)
+  })
 })
