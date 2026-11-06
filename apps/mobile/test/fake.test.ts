@@ -60,14 +60,19 @@ describe("fixtures backend through the app's services", () => {
     )
   )
 
-  it.effect("lists open asks oldest first, including later ones for Status", () =>
+  it.effect("counts what needs them now on Home's rows, leaving out access for later", () =>
     run(
       Effect.gen(function* () {
         yield* signIn
-        const asks = yield* (yield* AppClient).ListOpenAsks()
+        const projects = yield* (yield* AppClient).ListProjects()
         assert.deepStrictEqual(
-          asks.map((a) => a.message.id),
-          ["msg_apple", "msg_brieftelegram", "msg_cabinrule", "msg_cabinpick", "msg_gcal", "msg_recipewho"]
+          projects.map((p) => [p.project.title, p.openAsks]),
+          [
+            ["Lift Log", 0],
+            ["Morning Brief", 1],
+            ["Cabin", 3],
+            ["Recipe Scaler", 1]
+          ]
         )
       })
     )

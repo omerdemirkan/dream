@@ -327,7 +327,8 @@ export class Projects extends Context.Service<
             progress_done: projection.progress?.done ?? null,
             progress_total: projection.progress?.total ?? null,
             paused_until: projection.pausedUntil === undefined ? null : DateTime.formatIso(projection.pausedUntil),
-            open_asks: projection.openAsks.length,
+            // What needs them now, as ProjectSummary.openAsks says: an access request for later doesn't count yet.
+            open_asks: projection.openAsks.filter((ask) => !(ask._tag === "Access" && ask.when)).length,
             activity_json: projection.activity === undefined ? null : encodeJson(AgentActivity, projection.activity),
             updated_at: DateTime.formatIso(p.updatedAt)
           })} WHERE id = ${p.id}`,

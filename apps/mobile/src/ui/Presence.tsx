@@ -138,7 +138,9 @@ export function StateLineText(props: { readonly line: StateLine; readonly style?
   const { line } = props
   return (
     <Text numberOfLines={1} style={[{ color: color.t2 }, props.style]}>
-      <Text style={line.strong ? { color: color.t1, fontWeight: "600" } : null}>{line.lead}</Text>
+      <Text style={line.strong ? { color: color.t1, fontWeight: "600" } : line.need ? { color: color.need } : null}>
+        {line.lead}
+      </Text>
       {line.rest ? ` · ${line.rest}` : ""}
     </Text>
   )

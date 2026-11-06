@@ -147,7 +147,7 @@ export function DeviceHost() {
     }
   }, [lastResponse, reply, toast, open, router, setLanding])
 
-  // Pushes that arrive while the app is open: withdrawals, and fresh asks for Home.
+  // Pushes that arrive while the app is open: withdrawals, and news for Home's rows.
   useEffect(() => {
     const received = Notifications.addNotificationReceivedListener((notification) => {
       const data = Push.pushDataOf(notification)

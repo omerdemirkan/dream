@@ -141,6 +141,7 @@ describe("Home (B)", () => {
       line(homeLine(cabin, context(now, [], 2))),
       "Waiting for you · Three prototypes are ready for your reaction."
     )
+    assert.isTrue(homeLine(cabin, context(now, [], 2))?.need)
   })
 
   it("puts working ahead of waiting and paused", () => {

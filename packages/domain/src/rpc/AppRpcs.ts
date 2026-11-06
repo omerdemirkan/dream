@@ -92,7 +92,10 @@ export class AuthedAppRpcs extends RpcGroup.make(
 
   // Home ---------------------------------------------------------------------
   Rpc.make("ListProjects", { success: Schema.Array(ProjectSummary) }),
-  /** The needs-you deck: open questions and access requests across projects, oldest first. */
+  /**
+   * Open questions and access requests across projects, oldest first. Current builds don't call it (Home shows
+   * which projects need them from `ListProjects`); it stays for older builds' needs-you deck.
+   */
   Rpc.make("ListOpenAsks", { success: Schema.Array(OpenAsk) }),
   /**
    * Start a project from an idea. The idea becomes its first message and the

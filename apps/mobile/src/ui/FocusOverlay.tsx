@@ -2,8 +2,8 @@
  * The expanded message grows out of the card that was tapped and shrinks back
  * into its place in that project's Chat, which is then briefly highlighted.
  *
- * It sits above the navigator, so it can open from anywhere (Home's deck,
- * Status, Chat, a notification) while the project's Chat is put underneath it.
+ * It sits above the navigator, so it can open from anywhere (Status, Chat,
+ * a notification, a link) while the project's Chat is put underneath it.
  */
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
 import { Option } from "effect"

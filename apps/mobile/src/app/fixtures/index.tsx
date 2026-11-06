@@ -19,7 +19,7 @@ const sections: ReadonlyArray<{ readonly title: string; readonly jumps: Readonly
   {
     title: "Home",
     jumps: [
-      { title: "Needs you", scenarios: ["reset"], to: "/" },
+      { title: "Projects need you", scenarios: ["reset"], to: "/" },
       { title: "All clear", scenarios: ["reset", "all-clear"], to: "/" },
       { title: "Settings · archived projects", scenarios: ["reset", "archived"], to: "/settings" },
       { title: "New idea", to: "/new" },

@@ -27,8 +27,8 @@ export interface AnswerFailure {
 /** How long Undo is offered (the toast's lifetime in the mock). */
 export const undoWindow = Duration.millis(4200)
 
-/** Reactivity keys refreshed after anything that changes what needs them. */
-export const asksChanged = ["asks", "projects"] as const
+/** Reactivity keys refreshed after anything that changes what needs them (Home's rows count it). */
+export const asksChanged = ["projects"] as const
 
 export class Answers extends Context.Service<
   Answers,

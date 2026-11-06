@@ -1,8 +1,9 @@
 # @dream/mobile
 
 Dream's iPhone app: Expo SDK 58 (React Native 0.88), expo-router, Effect 4.1 with `@effect/atom-react`. The design
-is Deck v3 (`mocks/deck-v3.html`); the one change is that "Something else…" (typed or dictated) lives only in the
-expanded view.
+is Deck v3 (`mocks/deck-v3.html`), with two changes: "Something else…" (typed or dictated) lives only in the
+expanded view, and Home has no needs-you deck. Questions and access requests stay in their project (Chat, the Status
+card, notifications); Home's project rows say which projects are waiting for them.
 
 ## Layout
 
@@ -13,7 +14,7 @@ expanded view.
 | `src/fake` | The fixtures backend: `AppRpcs` handlers and live events over the Deck v3 sample world, with a small simulated agent |
 | `src/state` | The atom runtime and the atoms screens use |
 | `src/platform` | Expo/iOS pieces: keychain, streaming fetch, push, dictation, Google Sign-In |
-| `src/ui` | Components: the deck, Status roadmap, Chat messages, the expanded view and its grow/shrink animation |
+| `src/ui` | Components: Status roadmap, Chat messages, the expanded view and its grow/shrink animation |
 | `modules/dream-native` | Local Expo module (Swift): Live Activity push-to-start and update tokens, launch arguments |
 | `targets/widget` | The Live Activity widget (lock screen + Dynamic Island), via `@bacons/apple-targets` |
 | `scripts/build-ios.sh` | `expo prebuild` + CocoaPods + `xcodebuild`, for the Simulator or TestFlight |
@@ -73,7 +74,7 @@ xcrun simctl launch --terminate-running-process booted build.omer.dream \
 
 | Route | Screen |
 | --- | --- |
-| `/` | Home: the needs-you deck, then projects |
+| `/` | Home: the projects; one waiting for them has an amber dot and "Waiting for you" |
 | `/project/prj_liftlog` · `prj_morningbrief` · `prj_cabin` · `prj_recipescaler` | Status |
 | `…?tab=chat` | Chat; add `&focus=<messageId>` to expand a message, `&land=<messageId>` to land on it highlighted |
 | `/new` · `/new?sample=long` · add `dictate=1` | New idea (the page), with a long brain dump, dictating at the cursor (simulated in the Simulator) |
