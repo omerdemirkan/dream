@@ -45,7 +45,7 @@ export default function Home() {
   const connections = listOf(connectionsResult)
   const needs = projects.some((s) => s.openAsks > 0)
   const hint = profileHint(connections)
-  // Nothing to show and the last try failed (offline, the API down): say so rather than "All clear".
+  // Nothing to show and the last try failed (offline, the API down): say so rather than look empty.
   const unreachable = projects.length === 0 && AsyncResult.isFailure(projectsResult) && !projectsResult.waiting
   // No projects yet: the words and the drawn arrow lead to the input, and nothing else fills the space.
   const empty = projects.length === 0 && AsyncResult.isSuccess(projectsResult)
@@ -111,29 +111,9 @@ export default function Home() {
           </View>
         </View>
         <AppLinksRow projects={projects} />
-        {/* When a project waits for them, its row says so; Home has no section for what they're asked. */}
-        {needs || empty ? (
-          <View style={{ height: 12 }} />
-        ) : (
-          <Text
-            style={{
-              fontSize: 30,
-              fontWeight: "700",
-              letterSpacing: -1.2,
-              lineHeight: 33,
-              color: color.t1,
-              marginTop: 8,
-              marginBottom: 12
-            }}
-          >
-            {AsyncResult.isSuccess(projectsResult) ? "All clear" : ""}
-          </Text>
-        )}
-        {unreachable ? (
-          <Unreachable onRetry={refreshProjects} />
-        ) : needs || empty ? null : AsyncResult.isSuccess(projectsResult) || projects.length > 0 ? (
-          <AllClear projects={projects} />
-        ) : null}
+        {/* Each project's row says whether it waits for them; Home has no summary section above the list. */}
+        <View style={{ height: 12 }} />
+        {unreachable ? <Unreachable onRetry={refreshProjects} /> : null}
         <ConnectionBanner connections={connections} />
         {projects.length > 0 ? (
           <Text style={{ fontSize: 13, fontWeight: "600", color: color.t3, marginBottom: 2 }}>Projects</Text>
@@ -188,38 +168,6 @@ function Unreachable(props: { readonly onRetry: () => void }) {
         Your projects keep running. Check your connection and try again.
       </Text>
       <LinkButton title="Try again" onPress={props.onRetry} />
-    </View>
-  )
-}
-
-function AllClear(props: { readonly projects: ReadonlyArray<ProjectSummary> }) {
-  const building = props.projects.filter((s) => s.project.phase === "building").map((s) => s.project.title)
-  const live = props.projects.filter((s) => s.project.phase === "live").map((s) => s.project.title)
-  // Name two at most; past that a count reads better than a paragraph of titles.
-  const names = (list: ReadonlyArray<string>) =>
-    list.length <= 1 ? (list[0] ?? "") : list.length === 2 ? `${list[0]} and ${list[1]}` : `${list.length} projects`
-  const parts = [
-    building.length > 0 ? `${names(building)} ${building.length > 1 ? "are" : "is"} building` : undefined,
-    live.length > 0 ? `${names(live)} ${live.length > 1 ? "are" : "is"} running` : undefined
-  ].filter(Boolean)
-  const lead = `${parts.length > 0 ? `${parts.join(" and ")}. ` : ""}I’ll tap you the moment that changes.`
-  return (
-    <View
-      style={{
-        borderWidth: 1,
-        borderColor: color.line,
-        borderRadius: 28,
-        paddingTop: 26,
-        paddingHorizontal: 22,
-        paddingBottom: 28,
-        backgroundColor: color.s1,
-        marginBottom: 26
-      }}
-    >
-      <Text style={{ fontSize: 24, fontWeight: "700", letterSpacing: -0.72, color: color.t1, marginBottom: 6 }}>
-        Nothing needs you.
-      </Text>
-      <Text style={{ fontSize: 15, lineHeight: 21.75, color: color.t2 }}>{lead}</Text>
     </View>
   )
 }
