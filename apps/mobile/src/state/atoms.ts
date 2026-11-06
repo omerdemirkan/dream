@@ -323,7 +323,7 @@ export const submitAppleAccessFn = appRuntime.fn(
 )
 
 export const declineAccessFn = appRuntime.fn(
-  Effect.fn(function* (input: AccessRef) {
+  Effect.fn(function* (input: AccessRef & { readonly reason?: string }) {
     const app = yield* AppClient
     return yield* receivedAccess(yield* app.DeclineAccess(input).pipe(withWriteTimeout))
   }),

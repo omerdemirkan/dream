@@ -47,7 +47,8 @@ export const AgentEvent = Schema.TaggedUnion({
      */
     change: Schema.optionalKey(Schema.Literals(["replaced", "restored"]))
   },
-  AccessDeclined: { ...EventFields, messageId: MessageId },
+  /** `reason`: why, if they said (one of the app's one-tap reasons or their own words). */
+  AccessDeclined: { ...EventFields, messageId: MessageId, reason: Schema.optionalKey(Schema.String) },
   /**
    * Something they had connected is gone. Sent for `File` keys, whose file Dream deleted from this sandbox, and for
    * any other connection this project asked for (a card it sent was connected to it). Only dreamd builds that know
@@ -219,7 +220,11 @@ export const renderAgentEvent = (event: AgentEvent, options: RenderOptions = {})
         : change === "restored"
           ? `Their ${label} connection works again: they connected it again. ${renderAccess(label, access)}`
           : `${renderAccess(label, access)} This answers your request ${messageId}.`,
-    AccessDeclined: ({ messageId }) => `They declined your access request ${messageId}.`,
+    AccessDeclined: ({ messageId, reason }) =>
+      reason === undefined
+        ? `They declined your access request ${messageId}.`
+        : `They declined your access request ${messageId}, and said why:\n${quote(reason)}\n` +
+          "Take that into account: find a way that doesn't need it, ask differently, or wait, whichever fits.",
     AccessRemoved: ({ label, access, failure }) => renderRemoved(label, access, failure),
     WakeDue: ({ wakeId, why, run }) => {
       const head = `A wake-up you scheduled came due (${wakeId}): "${why}".`

@@ -127,6 +127,10 @@ Answering moves on: `ask-series` gives Cabin three open questions and the calend
 `msg_cabinpick`, `msg_gcal`, `msg_cabinhold`). Answering one expanded goes to the project's next open ask after a
 beat; answering a card inline in Chat scrolls to the next open card below it.
 
+Declining with a reason: "Don't connect" on an access card or its expanded view opens "Why not?" (one-tap reasons,
+or their own words, typed or dictated). `/project/prj_cabin?decline=msg_gcal` opens it for Cabin's calendar
+request; `declined-reason` shows that request declined with a reason.
+
 ```sh
 xcrun simctl launch --terminate-running-process booted build.omer.dream \
   -dreamScenario signed-in,activity-working -dreamRoute "/project/prj_liftlog?tab=chat"

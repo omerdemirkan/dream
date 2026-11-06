@@ -420,6 +420,41 @@ describe("a project, end to end", () => {
     })
   )
 
+  it.live("access requests: declining with a reason shows it on the card and tells the agent why", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project } = yield* setup(cloud)
+      yield* cloud.alarm(project.id)
+      const dreamd = yield* cloud.sandbox(envFileOf(cloud, project.id).env.DREAM_PROJECT_TOKEN)
+      const request = yield* dreamd.RequestAccess({
+        request: {
+          _tag: "Key",
+          service: "Stripe",
+          host: "api.stripe.com",
+          header: "Authorization",
+          format: "Bearer {key}"
+        },
+        why: "Take payments."
+      })
+      const declined = yield* cloud.phone.DeclineAccess({
+        projectId: project.id,
+        messageId: request.id,
+        reason: "  Use a free option instead "
+      })
+      assert.deepStrictEqual(
+        declined.state._tag === "Declined" ? declined.state.reason : undefined,
+        "Use a free option instead"
+      )
+      yield* cloud.alarm(project.id)
+      const last = cloud.world.delivered.at(-1)!
+      assert.deepStrictEqual(
+        last.events.map((e: any) => [e._tag, e.reason]),
+        [["AccessDeclined", "Use a free option instead"]]
+      )
+      yield* cloud.close
+    })
+  )
+
   it.live("access requests: a key for a host no request goes to is refused, not shown", () =>
     Effect.gen(function* () {
       const cloud = yield* makeCloud()

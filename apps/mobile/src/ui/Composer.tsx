@@ -3,8 +3,9 @@
  *
  * - `ChatComposer`: "Message Dream" at the bottom of Chat (`.compose.quiet`).
  * - `ElseComposer`: "Something else…" in the expanded question (`.else`).
+ * - `ReasonField`: why they decline an access request, in the decline sheet (no send button; the sheet sends).
  */
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { StyleSheet, Text, TextInput, View } from "react-native"
 import { useDictation } from "../platform/dictation.ts"
 import { Bars, IconButton } from "./kit.tsx"
@@ -196,6 +197,59 @@ export function ElseComposer(props: {
           label={dictation.listening ? "Stop dictating" : "Dictate"}
           onPress={dictation.toggle}
           style={dictation.listening ? null : { backgroundColor: color.s2 }}
+        />
+      ) : null}
+    </View>
+  )
+}
+
+export function ReasonField(props: {
+  readonly value: string
+  readonly onChange: (text: string) => void
+  readonly onFocus?: () => void
+  readonly sample?: string
+}) {
+  const value = useRef(props.value)
+  value.current = props.value
+  const dictation = useDictation((heard) => props.onChange(join(value.current, heard)), props.sample)
+  return (
+    <View
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 6,
+        height: 50,
+        paddingLeft: 16,
+        paddingRight: 6,
+        borderRadius: 16,
+        backgroundColor: color.s2,
+        borderWidth: 1,
+        borderColor: dictation.listening ? color.needLine : props.value.trim() ? color.line2 : color.line
+      }}
+    >
+      <View style={{ flex: 1, height: "100%" }}>
+        {props.value ? null : <FieldPlaceholder text="Something else…" color={color.t3} fontSize={16} />}
+        <TextInput
+          value={props.value}
+          onChangeText={props.onChange}
+          onFocus={props.onFocus}
+          style={{ flex: 1, color: color.t1, fontSize: 16 }}
+          maxLength={500}
+          returnKeyType="done"
+          submitBehavior="blurAndSubmit"
+          keyboardAppearance="dark"
+          accessibilityLabel="Another reason"
+        />
+      </View>
+      {dictation.listening ? <Listening heard={dictation.heard} inset={16} radius={16} /> : null}
+      {dictation.available ? (
+        <IconButton
+          icon="mic"
+          size={38}
+          tone={dictation.listening ? "need" : "plain"}
+          label={dictation.listening ? "Stop dictating" : "Dictate"}
+          onPress={dictation.toggle}
+          style={dictation.listening ? null : { backgroundColor: color.s3 }}
         />
       ) : null}
     </View>

@@ -177,6 +177,29 @@ describe("JSON codecs", () => {
     )
   })
 
+  it("carries why they declined an access request, and reads declines from older apps without one", () => {
+    const declinedAt = DateTime.makeUnsafe("2026-10-21T09:04:00Z")
+    const withReason = AccessState.cases.Declined.make({ declinedAt, reason: "Use a free option instead" })
+    assert.deepStrictEqual(roundTrip(AccessState, withReason).decoded, withReason)
+    const old = Schema.decodeUnknownSync(Schema.toCodecJson(AccessState))({
+      _tag: "Declined",
+      declinedAt: "2026-10-21T09:04:00.000Z"
+    })
+    assert.deepStrictEqual(old, AccessState.cases.Declined.make({ declinedAt }))
+    // An empty or very long reason is refused.
+    const reason = Schema.decodeUnknownExit(Domain.DeclineReason)
+    assert.isTrue(Exit.isSuccess(reason("Not now")))
+    assert.isTrue(Exit.isFailure(reason("")))
+    assert.isTrue(Exit.isFailure(reason("x".repeat(501))))
+
+    const fields = { id: "evt_d" as AgentEvent["id"], at: declinedAt, messageId: Fixtures.telegramKey.id }
+    const plain = AgentEvent.cases.AccessDeclined.make(fields)
+    const said = AgentEvent.cases.AccessDeclined.make({ ...fields, reason: "I'd rather not share this" })
+    for (const event of [plain, said]) assert.deepStrictEqual(roundTrip(AgentEvent, event).decoded, event)
+    assert.isTrue(renderAgentEvent(plain).endsWith(`They declined your access request ${Fixtures.telegramKey.id}.`))
+    assert.include(renderAgentEvent(said), "and said why:\n> I'd rather not share this")
+  })
+
   it("adds what changed about a connection without breaking older decoders", () => {
     const fields = { id: "evt_c" as AgentEvent["id"], at: DateTime.makeUnsafe("2026-10-21T09:04:00Z") }
     const replaced = AgentEvent.cases.AccessConnected.make({

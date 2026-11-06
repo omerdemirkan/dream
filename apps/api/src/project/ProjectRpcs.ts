@@ -9,6 +9,7 @@
  */
 import {
   AccessMessage,
+  DeclineReason,
   DeviceId,
   Integration,
   InvalidRequest,
@@ -66,7 +67,7 @@ export class ProjectRpcs extends RpcGroup.make(
     error: Schema.Union([NotFound, InvalidRequest])
   }),
   Rpc.make("DeclineAccess", {
-    payload: { messageId: MessageId },
+    payload: { messageId: MessageId, reason: Schema.optionalKey(DeclineReason) },
     success: AccessMessage,
     error: Schema.Union([NotFound, InvalidRequest])
   }),

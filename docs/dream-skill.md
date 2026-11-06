@@ -53,6 +53,8 @@ this sandbox, including the apps you build. `dream <command> --help` lists every
     - Connecting a provider again replaces the earlier connection and keeps the scopes it had.
   - `--when "around Thursday"` marks a need for later. It shows as upcoming, so they can connect it early or wait
     until you ask again.
+  - They can decline a request instead, and may say why ("Use a free option instead"); the event carries their
+    reason. They can still connect it later from the card.
   - When they connect, you get an event naming the placeholder to use. Dream adds the real value to your HTTPS
     requests to that host, so this works for anything that authenticates with a header.
   - Only a key sent in a header can be swapped in. A key sent in a URL or a request body can't, for example in

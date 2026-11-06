@@ -2,7 +2,7 @@
  * Screen state that isn't data: the expanded message, where Chat should land,
  * the toast, and the media viewer.
  */
-import type { AskMessage, LinkId, MediaRef, MessageId, ProjectId } from "@dream/domain"
+import type { AccessMessage, AskMessage, LinkId, MediaRef, MessageId, ProjectId } from "@dream/domain"
 import { Option } from "effect"
 import { Atom } from "effect/reactivity"
 
@@ -53,6 +53,9 @@ export const toastAtom = Atom.make<Option.Option<Toast>>(Option.none()).pipe(Ato
 
 /** Bumped when a moment calls for asking to send notifications (a first idea, a first answer). */
 export const askPushAtom = Atom.make(0).pipe(Atom.keepAlive)
+
+/** The access request whose decline sheet is up ("Why not?"). */
+export const declineAtom = Atom.make<Option.Option<AccessMessage>>(Option.none()).pipe(Atom.keepAlive)
 
 export const viewerAtom = Atom.make<Option.Option<MediaRef>>(Option.none()).pipe(Atom.keepAlive)
 

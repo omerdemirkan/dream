@@ -212,7 +212,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
           return connected
         }),
 
-      DeclineAccess: ({ messageId }) =>
+      DeclineAccess: ({ messageId, reason }) =>
         Effect.gen(function* () {
           const message = yield* findAccess(messageId)
           if (message.state._tag === "Declined") return message
@@ -221,10 +221,21 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
           }
           const declined = AccessMessage.make({
             ...message,
-            state: AccessState.cases.Declined.make({ declinedAt: yield* DateTime.now })
+            state: AccessState.cases.Declined.make({
+              declinedAt: yield* DateTime.now,
+              ...(reason === undefined ? {} : { reason })
+            })
           })
           yield* core.changeMessage(declined)
-          yield* core.enqueue(yield* event((fields) => AgentEvent.cases.AccessDeclined.make({ ...fields, messageId })))
+          yield* core.enqueue(
+            yield* event((fields) =>
+              AgentEvent.cases.AccessDeclined.make({
+                ...fields,
+                messageId,
+                ...(reason === undefined ? {} : { reason })
+              })
+            )
+          )
           yield* notifier.withdrawFor(declined)
           yield* notifier.asksChanged
           return declined

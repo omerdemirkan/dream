@@ -20,7 +20,7 @@ import type { ProjectState } from "../../data/projectState.ts"
 import { draftKey } from "../../data/Replies.ts"
 import { useViewingProject } from "../../platform/viewing.ts"
 import { clearDraftFn, draftAtom, projectsAtom, sendMessageFn } from "../../state/atoms.ts"
-import { focusAtom, landingAtom } from "../../state/ui.ts"
+import { declineAtom, focusAtom, landingAtom } from "../../state/ui.ts"
 import { useAction } from "../../ui/actions.ts"
 import { ChatTab } from "../../ui/Chat.tsx"
 import { ChatComposer } from "../../ui/Composer.tsx"
@@ -39,7 +39,7 @@ const header = 48
 const gap = 8
 
 export default function ProjectScreen() {
-  const params = useLocalSearchParams<{ id: string; tab?: string; focus?: string; land?: string }>()
+  const params = useLocalSearchParams<{ id: string; tab?: string; focus?: string; land?: string; decline?: string }>()
   const projectId = Option.getOrUndefined(decodeProjectId(params.id))
   if (!projectId) return null
   return (
@@ -48,6 +48,7 @@ export default function ProjectScreen() {
       tab={params.tab === "chat" || params.tab === "status" ? params.tab : undefined}
       focus={params.focus}
       land={params.land}
+      decline={params.decline}
     />
   )
 }
@@ -57,6 +58,7 @@ function Project(props: {
   readonly tab: "status" | "chat" | undefined
   readonly focus: string | undefined
   readonly land: string | undefined
+  readonly decline: string | undefined
 }) {
   const router = useRouter()
   const insets = useSafeAreaInsets()
@@ -91,6 +93,16 @@ function Project(props: {
     setLanding(Option.some({ projectId: props.projectId, messageId, highlight: true, at: Date.now() }))
     router.setParams({ land: undefined })
   }, [props.land, props.projectId, router, setLanding])
+
+  // `?decline=<messageId>`: the "Why not?" sheet for that access request, once the project has it.
+  const setDecline = useAtomSet(declineAtom)
+  useEffect(() => {
+    const messageId = Option.getOrUndefined(decodeMessageId(props.decline))
+    const message = messageId ? state?.messages.find((m) => m.id === messageId) : undefined
+    if (message?._tag !== "Access") return
+    setDecline(Option.some(message))
+    router.setParams({ decline: undefined })
+  }, [props.decline, state, router, setDecline])
 
   // The roadmap opens over Chat (`?tab=status`) and folds back (`?tab=chat`, or an ask expanding from anywhere,
   // so Back from the expanded view returns to Chat).
