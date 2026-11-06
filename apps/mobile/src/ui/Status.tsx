@@ -15,7 +15,7 @@ import type {
 } from "@dream/domain"
 import { accessHeading, isOpenAsk } from "@dream/domain"
 import { DateTime } from "effect"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef } from "react"
 import { type HostInstance, Linking, Pressable, Text, View } from "react-native"
 import Animated, {
   cancelAnimation,
@@ -506,22 +506,8 @@ const earlyNote = (messages: ReadonlyArray<Message>) =>
     ? "I’m looking into this before I ask you anything. That can take a few minutes, so there’s no need to wait around — I’ll send a notification when I have a question."
     : "Thanks. I’m shaping the first version around your answer, and I’ll write when there’s something to look at."
 
-/** The idea as they wrote it, which can run to a paragraph: three lines, and the rest on a tap. */
-function Idea(props: { readonly text: string }) {
-  const [open, setOpen] = useState(false)
-  return (
-    <Text
-      onPress={() => setOpen((o) => !o)}
-      numberOfLines={open ? undefined : 3}
-      style={{ marginTop: 2, fontSize: 16, lineHeight: 23, color: color.t2 }}
-    >
-      {props.text}
-    </Text>
-  )
-}
-
 export function StatusTab(props: { readonly state: ProjectState }) {
-  const { project, status, messages, working } = props.state
+  const { status, messages, working } = props.state
   const byId = new Map(messages.map((m) => [m.id, m] as const))
   const pinned = new Set(status.milestones.flatMap((m) => m.needs.flatMap((n) => (n.messageId ? [n.messageId] : []))))
   const unpinned = openAsksOf(messages).filter((m) => !pinned.has(m.id))
@@ -537,7 +523,6 @@ export function StatusTab(props: { readonly state: ProjectState }) {
         )
   return (
     <View>
-      <Idea text={project.idea} />
       <StatusLine state={props.state} />
       {status.milestones.length === 0 ? (
         <View>
