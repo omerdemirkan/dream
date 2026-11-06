@@ -4,7 +4,7 @@
  */
 import type { ModelProvider, ProjectUsage, ProjectUsageGlance, UsagePeriod, WindowShare } from "@dream/domain"
 import { DateTime } from "effect"
-import { resetLabel } from "./format.ts"
+import { providerName, resetLabel } from "./format.ts"
 
 /** From this much of the week used, the ring turns amber and says what's left. */
 export const nearLimitPercent = 85
@@ -29,6 +29,10 @@ export const tokensLabel = (tokens: number) => {
   if (tokens < 100_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`
   return `${Math.round(tokens / 1_000_000)}M`
 }
+
+/** Cache reads, which dwarf the headline: "+18M read from cache", "+640K read from cache". */
+export const cacheReadLabel = (tokens: number) =>
+  `+${tokens >= 10_000_000 ? `${Math.round(tokens / 1_000_000)}M` : tokensLabel(tokens)} read from cache`
 
 /** One ring's arcs, as fractions of the circle: this project's, then everything else's; the rest is the track. */
 export interface RingArcs {
@@ -94,7 +98,13 @@ export interface UsageSheet {
   }
   /** Near the limit: what's left and until when. */
   readonly callout?: { readonly left: string; readonly rest: string }
-  readonly periods: ReadonlyArray<{ readonly label: string; readonly value: string; readonly detail?: string }>
+  readonly periods: ReadonlyArray<{
+    readonly label: string
+    /** Tokens without cache reads, or "—" when no turn in the period reported any. */
+    readonly value: string
+    readonly detail?: string
+    readonly cacheRead?: string
+  }>
   /** "Your ChatGPT Pro", over each window known. */
   readonly windowsTitle: string
   readonly windows: ReadonlyArray<{
@@ -125,6 +135,7 @@ const planName = (provider: ModelProvider, plan: string | undefined) =>
 const period = (label: string, p: UsagePeriod, of: string) => ({
   label,
   value: p.tokens === undefined ? "—" : tokensLabel(p.tokens),
+  ...(p.tokens !== undefined && p.cacheReadTokens ? { cacheRead: cacheReadLabel(p.cacheReadTokens) } : {}),
   ...(p.sharePercent !== undefined
     ? { detail: `≈${percentLabel(p.sharePercent)} of ${of}` }
     : p.costUsd !== undefined
@@ -209,10 +220,9 @@ export const usageSheet = (
           ]
         : [])
     ],
-    footnote:
-      usage.subagents === "excluded"
-        ? "Tokens are exact but leave out what subagents used. Shares (≈) are estimated from how your plan moved while each project worked."
-        : "Tokens are exact. Shares (≈) are estimated from how your plan moved while each project worked."
+    footnote: `${
+      usage.subagents === "excluded" ? "Tokens are exact but leave out what subagents used." : "Tokens are exact."
+    } Shares (≈) are estimated from how your plan moved while each project worked, so using ${providerName(usage.provider)} elsewhere at the same time can count toward a project.`
   }
 }
 

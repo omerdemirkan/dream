@@ -29,6 +29,18 @@ describe("usageBadge", () => {
     assert.closeTo(badge?.arcs.others ?? 0, 0.34, 1e-9)
   })
 
+  it("names Claude when the plan is Claude's", () => {
+    const claude = usageSheet(
+      { ...Fx.liftLogUsage, provider: "claude", plan: "Claude Max" },
+      "Lift Log",
+      Fx.liftLog.id,
+      now,
+      la
+    )
+    assert.include(claude.footnote, "so using Claude elsewhere at the same time can count toward a project.")
+    assert.strictEqual(claude.windowsTitle, "Your Claude Max")
+  })
+
   it("near the limit, says what's left of the week", () => {
     const badge = usageBadge(glance({ usedPercent: 92, projectPercent: 31 }))
     assert.isTrue(badge?.nearLimit)
@@ -88,9 +100,9 @@ describe("usageSheet", () => {
     assert.strictEqual(sheet.hero?.share, "4%")
     assert.isUndefined(sheet.callout)
     assert.deepStrictEqual(sheet.periods, [
-      { label: "Today", value: "2.1M", detail: "≈2% of week" },
-      { label: "This 5 hours", value: "0.9M", detail: "≈9% of 5 hours" },
-      { label: "This week", value: "9.6M", detail: "≈4% of week" }
+      { label: "Today", value: "2.1M", cacheRead: "+18M read from cache", detail: "≈2% of week" },
+      { label: "This 5 hours", value: "0.9M", cacheRead: "+7.9M read from cache", detail: "≈9% of 5 hours" },
+      { label: "This week", value: "9.6M", cacheRead: "+83M read from cache", detail: "≈4% of week" }
     ])
     assert.strictEqual(sheet.windowsTitle, "Your ChatGPT Pro")
     assert.deepStrictEqual(
@@ -113,14 +125,14 @@ describe("usageSheet", () => {
     assert.strictEqual(sheet.projects[0]?.bar, 1)
     assert.strictEqual(
       sheet.footnote,
-      "Tokens are exact. Shares (≈) are estimated from how your plan moved while each project worked."
+      "Tokens are exact. Shares (≈) are estimated from how your plan moved while each project worked, so using ChatGPT elsewhere at the same time can count toward a project."
     )
   })
 
   it("says when subagents aren't counted, and shows a quiet dash for a period without tokens", () => {
     const usage: ProjectUsage = { ...Fx.liftLogUsage, subagents: "excluded", today: {} }
     const excluded = usageSheet(usage, "Lift Log", Fx.liftLog.id, now, la)
-    assert.include(excluded.footnote, "leave out what subagents used")
+    assert.isTrue(excluded.footnote.startsWith("Tokens are exact but leave out what subagents used. Shares (≈)"))
     assert.deepStrictEqual(excluded.periods[0], { label: "Today", value: "—" })
   })
 

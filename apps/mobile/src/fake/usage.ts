@@ -122,6 +122,8 @@ export const usageOf = (
   const own = world.spend.get(projectId)
   const period = (tokens: number | undefined, share: number | undefined): UsagePeriod => ({
     ...(tokens === undefined ? {} : { tokens: Math.round(tokens) }),
+    // Cache reads run about 8.6 times the rest, as in the domain fixture.
+    ...(tokens ? { cacheReadTokens: Math.round(tokens * 8.6) } : {}),
     ...(share === undefined ? {} : { sharePercent: share })
   })
   const known = world.mode !== "none"
