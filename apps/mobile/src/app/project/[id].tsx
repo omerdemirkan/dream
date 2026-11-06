@@ -4,7 +4,7 @@
  *
  * `?tab=status` opens the roadmap and `?tab=chat` folds it; `?focus=<messageId>`
  * opens that question or access request expanded (deep links and notifications
- * use these).
+ * use these). `?sheet=usage` opens the usage sheet, as tapping the ring in the header does.
  */
 import { type Message, MessageId, type Project as ProjectRecord, ProjectId, type ProjectSummary } from "@dream/domain"
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
@@ -28,6 +28,7 @@ import { useOpenMessage, useProject, useRequestId } from "../../ui/hooks.ts"
 import { IconButton } from "../../ui/kit.tsx"
 import { PresenceTile, StateLineText, useTickingNow } from "../../ui/Presence.tsx"
 import { RoadmapSheet, StatusCardPin } from "../../ui/StatusCard.tsx"
+import { UsageBadge, UsageSheet } from "../../ui/Usage.tsx"
 import { color, gutter } from "../../ui/theme.ts"
 
 const decodeProjectId = Schema.decodeUnknownOption(ProjectId)
@@ -39,7 +40,14 @@ const header = 48
 const gap = 8
 
 export default function ProjectScreen() {
-  const params = useLocalSearchParams<{ id: string; tab?: string; focus?: string; land?: string; decline?: string }>()
+  const params = useLocalSearchParams<{
+    id: string
+    tab?: string
+    focus?: string
+    land?: string
+    decline?: string
+    sheet?: string
+  }>()
   const projectId = Option.getOrUndefined(decodeProjectId(params.id))
   if (!projectId) return null
   return (
@@ -49,6 +57,7 @@ export default function ProjectScreen() {
       focus={params.focus}
       land={params.land}
       decline={params.decline}
+      sheet={params.sheet}
     />
   )
 }
@@ -59,6 +68,7 @@ function Project(props: {
   readonly focus: string | undefined
   readonly land: string | undefined
   readonly decline: string | undefined
+  readonly sheet: string | undefined
 }) {
   const router = useRouter()
   const insets = useSafeAreaInsets()
@@ -121,6 +131,13 @@ function Project(props: {
     Keyboard.dismiss()
     setRoadmap(true)
   }, [])
+
+  const [usage, setUsage] = useState(false)
+  useEffect(() => {
+    if (props.sheet !== "usage") return
+    setUsage(true)
+    router.setParams({ sheet: undefined })
+  }, [props.sheet, router])
 
   // The card folds to one line while they read back through Chat, or type.
   const [away, setAway] = useState(false)
@@ -192,6 +209,7 @@ function Project(props: {
             onPress={() => (router.canGoBack() ? router.back() : router.replace("/"))}
           />
           <Identity project={project} state={state} summary={summary} />
+          <UsageBadge projectId={props.projectId} onPress={() => setUsage(true)} />
         </View>
         {state ? (
           <View style={{ marginTop: gap }}>
@@ -219,6 +237,12 @@ function Project(props: {
           from={away || typing ? 48 : cardHeight}
         />
       ) : null}
+      <UsageSheet
+        projectId={props.projectId}
+        title={project?.title ?? ""}
+        open={usage}
+        onClose={() => setUsage(false)}
+      />
     </View>
   )
 }
