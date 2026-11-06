@@ -111,7 +111,8 @@ export class AuthedAppRpcs extends RpcGroup.make(
   }),
   /**
    * Put a project away: it leaves Home and the deck, its agent stops (nothing is delivered, wakes wait, a turn in
-   * progress is paused with the sandbox) and its published URL stops serving. Nothing is deleted. Archiving an
+   * progress is paused with the sandbox), its Live Activity ends and its published URL stops serving. Nothing is
+   * deleted. Archiving an
    * archived project returns it as it is.
    */
   Rpc.make("ArchiveProject", {

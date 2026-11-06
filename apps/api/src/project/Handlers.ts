@@ -372,6 +372,10 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
           yield* machines.stopMac.pipe(
             Effect.catch((error) => Effect.logWarning("couldn't stop the archived project's Mac", error.message))
           )
+          // A lock screen saying the agent is at work would be wrong from now on.
+          yield* notifier
+            .endLive(undefined)
+            .pipe(Effect.catch((error) => Effect.logWarning("couldn't end the Live Activity", error.message)))
           return at
         }),
 

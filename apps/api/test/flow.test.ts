@@ -1338,8 +1338,16 @@ describe("archiving a project (theirs, reversible)", () => {
         const dreamd = yield* cloud.sandbox(env.DREAM_PROJECT_TOKEN)
         yield* dreamd.AskQuestion({ question: "Kilograms or pounds?", options: ["kg", "lb"] })
         yield* dreamd.Publish({ port: 3000 })
+        yield* dreamd.StartLiveActivity({ content: { title: "Building", step: { current: 1, total: 3 } } })
+        yield* cloud.phone.RegisterLiveActivity({
+          projectId: project.id,
+          deviceId: "8f14e45f-ceea-4e7b-9a0c-6a3f1b2c3d4e" as any,
+          activityId: "activity-1",
+          pushToken: "live-token-1"
+        })
 
         const archived = yield* cloud.phone.ArchiveProject({ projectId: project.id })
+        assert.isDefined(cloud.world.pushes.find((p) => p.kind === "live:end"))
         assert.strictEqual(archived.project.id, project.id)
         assert.deepStrictEqual(yield* cloud.phone.ListProjects(), [])
         assert.deepStrictEqual(yield* cloud.phone.ListOpenAsks(), [])
