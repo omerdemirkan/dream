@@ -19,6 +19,7 @@ import { dotOf, homeLine, presenceOf } from "../data/presence.ts"
 import { hiddenProjectsAtom, modelConnectionsAtom, projectsAtom } from "../state/atoms.ts"
 import { linkSheetAtom } from "../state/ui.ts"
 import { AppLinksRow } from "../ui/AppLinks.tsx"
+import { EmptyInvite } from "../ui/EmptyInvite.tsx"
 import { LinkSheets } from "../ui/LinkSheets.tsx"
 import { Dot, Icon, IconButton, LinkButton, Orb } from "../ui/kit.tsx"
 import { plainText } from "../ui/markdownParse.ts"
@@ -46,6 +47,8 @@ export default function Home() {
   const hint = profileHint(connections)
   // Nothing to show and the last try failed (offline, the API down): say so rather than "All clear".
   const unreachable = projects.length === 0 && AsyncResult.isFailure(projectsResult) && !projectsResult.waiting
+  // No projects yet: the words and the drawn arrow lead to the input, and nothing else fills the space.
+  const empty = projects.length === 0 && AsyncResult.isSuccess(projectsResult)
 
   // While an agent is starting or working, Home checks back every so often, so its row moves on by itself.
   const busy = projects.some((s) => s.activity?.state === "starting" || s.activity?.state === "working")
@@ -109,7 +112,7 @@ export default function Home() {
         </View>
         <AppLinksRow projects={projects} />
         {/* When a project waits for them, its row says so; Home has no section for what they're asked. */}
-        {needs ? (
+        {needs || empty ? (
           <View style={{ height: 12 }} />
         ) : (
           <Text
@@ -128,7 +131,7 @@ export default function Home() {
         )}
         {unreachable ? (
           <Unreachable onRetry={refreshProjects} />
-        ) : needs ? null : AsyncResult.isSuccess(projectsResult) || projects.length > 0 ? (
+        ) : needs || empty ? null : AsyncResult.isSuccess(projectsResult) || projects.length > 0 ? (
           <AllClear projects={projects} />
         ) : null}
         <ConnectionBanner connections={connections} />
@@ -138,6 +141,13 @@ export default function Home() {
         {projects.map((summary, i) => (
           <ProjectRow key={summary.project.id} summary={summary} first={i === 0} open={summary.openAsks} />
         ))}
+        {empty ? (
+          <>
+            {/* Puts the words and the arrow just above the input. */}
+            <View style={{ flex: 1 }} />
+            <EmptyInvite />
+          </>
+        ) : null}
       </ScrollView>
       {/* Keeps the clock readable over a long project list. */}
       <View
@@ -192,10 +202,7 @@ function AllClear(props: { readonly projects: ReadonlyArray<ProjectSummary> }) {
     building.length > 0 ? `${names(building)} ${building.length > 1 ? "are" : "is"} building` : undefined,
     live.length > 0 ? `${names(live)} ${live.length > 1 ? "are" : "is"} running` : undefined
   ].filter(Boolean)
-  const lead =
-    props.projects.length === 0
-      ? "Describe an idea below. I’ll look into it first, then write to you with questions."
-      : `${parts.length > 0 ? `${parts.join(" and ")}. ` : ""}I’ll tap you the moment that changes.`
+  const lead = `${parts.length > 0 ? `${parts.join(" and ")}. ` : ""}I’ll tap you the moment that changes.`
   return (
     <View
       style={{
@@ -210,7 +217,7 @@ function AllClear(props: { readonly projects: ReadonlyArray<ProjectSummary> }) {
       }}
     >
       <Text style={{ fontSize: 24, fontWeight: "700", letterSpacing: -0.72, color: color.t1, marginBottom: 6 }}>
-        {props.projects.length === 0 ? "What should exist?" : "Nothing needs you."}
+        Nothing needs you.
       </Text>
       <Text style={{ fontSize: 15, lineHeight: 21.75, color: color.t2 }}>{lead}</Text>
     </View>

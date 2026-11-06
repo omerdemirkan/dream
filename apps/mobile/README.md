@@ -100,7 +100,7 @@ Spotify), `spotify-stopped` (Lift Log's Spotify connection stopped working: its 
 `unsupported-message`, `now-two-lines` and `now-three-lines` (Lift Log's now sentence on two lines, and cut at two), `long-chat` (an afternoon of Lift Log messages to read back through: open
 `/project/prj_liftlog?land=msg_long8` and the Status card folds to one line), `stall-next-write` (the next answer, message, new idea, key or decline hangs until the app
 gives up after 25 s; the retry goes through), `archived` (Recipe Scaler and Morning Brief are archived: off Home,
-listed under Archived in Settings).
+listed under Archived in Settings). `no-projects` is a new person's Home: no projects and no app links, so the words and the drawn arrow lead to the input.
 
 App links (Deck v3 option A, "Dock"): the row of app icons under Home's header. The sample world has four (three
 made by agents, Cabin's still new with its dot, and Train times added by the person). `links-empty` shows the empty

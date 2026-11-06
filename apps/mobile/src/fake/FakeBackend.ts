@@ -104,6 +104,7 @@ export const Scenario = [
   "archived",
   "ask-series",
   "links-empty",
+  "no-projects",
   "links-new",
   "long-chat",
   "now-two-lines",
@@ -1066,6 +1067,11 @@ export class FakeBackend extends Context.Service<
             stallNextWrite = false
             return yield* load(makeWorld(now))
           case "links-empty":
+            links = []
+            return
+          case "no-projects":
+            // A new person's Home: no projects and no app links yet.
+            records.clear()
             links = []
             return
           case "links-new": {
