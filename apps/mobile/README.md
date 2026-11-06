@@ -79,6 +79,7 @@ xcrun simctl launch --terminate-running-process booted build.omer.dream \
 | `…?tab=status` | The Status card opened over Chat (the whole roadmap); `?tab=chat` folds it |
 | `…?focus=<messageId>` · `…?land=<messageId>` | Expand a message; land on it in Chat, highlighted |
 | `/new` · `/new?sample=long` · add `dictate=1` | New idea (the page), with a long brain dump, dictating at the cursor (simulated in the Simulator) |
+| `/new?starter=fare-watch` · `/new?starters=more` · add `group=schedule` | New idea with a starter's draft (guesses tinted, the first selected, its chip by Send); with More open on all starters or one group. Ids and groups are in `src/data/ideas.ts` |
 | `/project/<id>?sheet=usage` | The usage sheet over the project (the ring in its header opens it) |
 | `/connect` · `/settings` | Subscription connect flow; settings |
 

@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Dream · Starters</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0A0A0C;--s1:#141417;--s2:#1D1D21;--s3:#28282D;--line:rgba(255,255,255,.08);--line2:rgba(255,255,255,.15);
+  --t1:#F5F5F7;--t2:rgba(245,245,247,.64);--t3:rgba(245,245,247,.40);--need:#FFB35C;--need-ink:#1B1204}
+html{background:var(--bg)}
+body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,system-ui,sans-serif;background:var(--bg);color:var(--t1);-webkit-font-smoothing:antialiased;
+  max-width:560px;margin:0 auto;padding:calc(env(safe-area-inset-top) + 28px) 16px calc(env(safe-area-inset-bottom) + 110px)}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;-webkit-tap-highlight-color:transparent}
+h1{font-size:30px;font-weight:700;letter-spacing:-.04em;line-height:1.1;padding:0 4px}
+.lede{font-size:15px;line-height:1.45;color:var(--t2);margin:8px 4px 22px}
+.lab{font-size:13px;font-weight:600;color:var(--t3);margin:26px 4px 10px;display:flex;justify-content:space-between}
+.list{display:flex;flex-direction:column;gap:10px}
+.card{position:relative;display:flex;gap:4px;background:var(--s1);border:1px solid var(--line);border-radius:22px;padding:14px 12px 12px 6px;transition:box-shadow .15s}
+.card.drag{z-index:5;box-shadow:0 18px 40px rgba(0,0,0,.6);border-color:var(--line2);transition:none}
+.handle{flex:none;width:34px;display:flex;flex-direction:column;align-items:center;gap:6px;touch-action:none;cursor:grab;color:var(--t3);padding-top:2px;user-select:none;-webkit-user-select:none}
+.handle .n{font-size:13px;font-weight:600;color:var(--t2);font-variant-numeric:tabular-nums}
+.handle svg{width:18px;height:18px}
+.body{flex:1;min-width:0}
+.line{font-size:17px;line-height:1.35;font-weight:550;letter-spacing:-.015em}
+.meta{font-size:12.5px;color:var(--t3);margin-top:6px}
+.draft{font-size:13.5px;line-height:1.45;color:var(--t2);margin-top:8px;white-space:pre-wrap}
+.g{background:rgba(255,179,92,.16);color:#FFD9AE;border-radius:4px;padding:0 2px}
+.acts{display:flex;align-items:center;gap:8px;margin-top:12px;flex-wrap:wrap}
+.pill{height:34px;min-width:34px;padding:0 12px;border-radius:17px;background:var(--s2);border:1px solid var(--line);font-size:14px;font-weight:550;display:inline-flex;align-items:center;justify-content:center;color:var(--t1)}
+.pill[disabled]{opacity:.3;pointer-events:none}
+.pill.rm{margin-left:auto;color:#FF8A80}
+.pill.on{background:var(--s3)}
+textarea{display:block;width:100%;margin-top:10px;min-height:64px;resize:vertical;background:var(--bg);color:var(--t1);border:1px solid var(--line2);border-radius:14px;padding:10px 12px;font:inherit;font-size:15px;line-height:1.4}
+textarea::placeholder{color:var(--t3)}
+.noted{font-size:12.5px;color:var(--need);margin-top:6px}
+.removed .card{opacity:.45}
+.removed .card .handle{visibility:hidden}
+.removed .pill.rm{color:var(--t1)}
+.empty{font-size:14px;color:var(--t3);padding:4px}
+.bar{position:fixed;left:0;right:0;bottom:0;padding:14px 16px calc(env(safe-area-inset-bottom) + 14px);background:linear-gradient(to top,var(--bg) 65%,rgba(10,10,12,0));display:flex;gap:10px;justify-content:center;z-index:10}
+.bar .in{display:flex;gap:10px;width:100%;max-width:528px}
+.btn{height:52px;border-radius:26px;font-size:16px;font-weight:600;display:flex;align-items:center;justify-content:center}
+.btn.main{flex:1;background:var(--t1);color:#000}
+.btn.sec{padding:0 20px;background:var(--s2);border:1px solid var(--line2);color:var(--t2)}
+.dim{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:20;display:none}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:21;background:#1B1B1F;border-radius:28px 28px 0 0;border-top:1px solid var(--line);padding:12px 18px calc(env(safe-area-inset-bottom) + 18px);max-width:560px;margin:0 auto;display:none;max-height:86vh;overflow:auto}
+.open .dim,.open .sheet{display:block}
+.grab{width:38px;height:5px;border-radius:3px;background:rgba(255,255,255,.22);margin:0 auto 14px}
+.sheet h2{font-size:22px;font-weight:700;letter-spacing:-.03em}
+.sheet p{font-size:14.5px;color:var(--t2);line-height:1.45;margin-top:5px}
+pre{margin-top:14px;background:var(--bg);border:1px solid var(--line2);border-radius:16px;padding:12px 14px;font:13px/1.5 ui-monospace,Menlo,monospace;color:var(--t1);white-space:pre-wrap;word-break:break-word;user-select:text;-webkit-user-select:text}
+.sheet .btn{margin-top:14px;width:100%}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 90px);background:#2c2c31;border:1px solid var(--line2);border-radius:16px;padding:10px 16px;font-size:14px;z-index:30;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.show{opacity:1}
+</style>
+</head>
+<body>
+<h1>Dream starters</h1>
+<p class="lede">These are the ideas New idea suggests under its placeholder. The order is your priority: the top ones show first. Drag the handle (or use the arrows) to reorder, remove any you don’t want, and add a note to change the wording. When you’re done, tap Done and send the message it gives you.</p>
+<div class="lab"><span id="countKept"></span></div>
+<div class="list" id="kept"></div>
+<div class="lab"><span id="countRemoved">Removed</span></div>
+<div class="list removed" id="removed"></div>
+<div class="bar"><div class="in"><button class="btn sec" id="reset">Start over</button><button class="btn main" id="done">Done</button></div></div>
+<div class="dim" id="dim"></div>
+<div class="sheet" id="sheet"><div class="grab"></div><h2>Send this to Dream’s agent</h2><p>Copy it and paste it into your chat. Your edits stay on this page in case you want to change them later.</p><pre id="msg"></pre><button class="btn main" id="copy">Copy</button></div>
+<div class="toast" id="toast">Copied</div>
+<script>
+/* The starters as shipped in apps/mobile/src/data/ideas.ts, in their current order. After changing that list, regenerate this array with
+   node -e 'import("./apps/mobile/src/data/ideas.ts").then(m=>{const g=Object.fromEntries(m.ideaGroups.map(x=>[x.id,x.label]));console.log(JSON.stringify(m.ideas.map(i=>({id:i.id,title:i.title,line:i.line,group:g[i.group],needs:i.needs,draft:i.draft}))))})' */
+const IDEAS = [{"id":"evening-inbox","title":"Evening inbox","line":"Every evening, tell me the three emails I actually need to answer.","group":"Gmail and Calendar","needs":["gmail"],"draft":"Every evening around ⟦9⟧, go through my Gmail and tell me the ⟦three⟧ emails I actually need to answer, and why each one matters. Skip newsletters, receipts and anything automated. If nothing needs me, say so in one line.\n\nSend it as ⟦a notification⟧ I can tap to see the emails."},{"id":"anki-walk","title":"Anki on a walk","line":"A voice tutor that quizzes me on my Anki decks while I walk.","group":"On your phone","needs":[],"draft":"A voice tutor for my ⟦Spanish⟧ Anki deck that I can use with headphones in, on a walk. It reads a card, I answer out loud, and it tells me if I got it. Cards I miss come back sooner.\n\nIt should sync with Anki so my phone app stays right. Sessions of about ⟦15 minutes⟧."},{"id":"before-meetings","title":"Before each meeting","line":"Ten minutes before a meeting, tell me who it’s with and what we last emailed about.","group":"Gmail and Calendar","needs":["calendar","gmail"],"draft":"⟦Ten minutes⟧ before each meeting on my Calendar, send me who it’s with, what we last emailed about, and one thing worth asking. Only for meetings with people ⟦outside my company⟧.\n\nKeep it short enough to read in the lift."},{"id":"fare-watch","title":"Fare watch","line":"Check flights to Lisbon each morning and tell me when one drops under £120.","group":"On a schedule","needs":[],"draft":"Check return flights from ⟦London⟧ to ⟦Lisbon⟧ every morning, for any weekend in ⟦May⟧. Tell me when one drops under ⟦£120⟧, with the link to book it. Otherwise don’t message me."},{"id":"receipts","title":"Receipts to a sheet","line":"Pull the receipts from my Gmail into a monthly spending sheet, by category.","group":"Gmail and Calendar","needs":["gmail","sheets"],"draft":"Once a month, go through my Gmail and pull every receipt into a spending sheet, by category: ⟦food, travel, subscriptions⟧. Flag subscriptions I haven’t used in a while.\n\nPut it in ⟦a Google Sheet⟧ and send me the total."},{"id":"run-club-bot","title":"Running club bot","line":"A Telegram bot that posts Saturday’s route and keeps track of who’s coming.","group":"Bots","needs":[],"draft":"A ⟦Telegram⟧ bot for our running club. Every ⟦Thursday⟧ it posts Saturday’s route with a map, and people tap to say they’re coming. On Friday night it reminds whoever said yes.\n\nI pick the routes from ⟦a list I keep⟧."},{"id":"chore-chart","title":"Chore chart","line":"A chore chart for the kids on our iPad, with stars that add up to pocket money.","group":"On your phone","needs":[],"draft":"A chore chart app for our iPad, for ⟦two kids, 6 and 9⟧. Each chore earns stars, and stars add up to pocket money at ⟦10p each⟧. They tick things off themselves, and I approve at the end of the week."},{"id":"friday-playlist","title":"Friday playlist","line":"Every Friday, a playlist of new songs from artists I actually replay.","group":"On a schedule","needs":["spotify"],"draft":"Every Friday, make me a Spotify playlist of new releases from artists I actually replay, not ones I listened to once. About ⟦25 songs⟧. Leave out ⟦remixes and live versions⟧."},{"id":"sunday-listen","title":"Sunday listen","line":"Share articles to it all week, and on Sunday it reads me the ones I didn’t get to.","group":"On a schedule","needs":[],"draft":"I share articles to it from my phone during the week. On ⟦Sunday morning⟧ it turns the ones I didn’t read into a private podcast I can play in ⟦Overcast⟧, about ⟦30 minutes⟧ long."},{"id":"bin-night","title":"Bin night","line":"Text me the night before bin day, and which bin it is.","group":"On a schedule","needs":[],"draft":"The night before bin day, text me which bin goes out. Use ⟦Oxford⟧ council’s collection calendar for ⟦my postcode⟧, and handle bank holidays."},{"id":"family-car","title":"Family car","line":"A shared calendar for the family car, so everyone sees who has it which day.","group":"On your phone","needs":[],"draft":"A simple app for our ⟦family⟧ car. Anyone can claim a day, everyone sees the week at a glance, and two people can’t take the same ⟦Saturday⟧. It should work for ⟦four⟧ of us, on any phone."},{"id":"newsletter-digest","title":"Newsletter digest","line":"Read my newsletters overnight and send me a five-minute digest at 7.","group":"Gmail and Calendar","needs":["gmail"],"draft":"Read the newsletters that land in my Gmail overnight and send me one digest at ⟦7⟧, short enough to read in ⟦five minutes⟧. Group it by topic, link each story, and skip anything ⟦promotional⟧."},{"id":"lift-log","title":"Strength log","line":"A strength log that reads Apple Health and tells me when to add weight.","group":"On your phone","needs":[],"draft":"An iPhone app to log my ⟦squat, bench and deadlift⟧. It reads my workouts from Apple Health, shows how each lift is going, and tells me when it’s time to add ⟦2.5 kg⟧."},{"id":"dinner-plan","title":"Week of dinners","line":"Every Sunday, plan five dinners we’ll actually eat and send one shopping list.","group":"On a schedule","needs":[],"draft":"Every ⟦Sunday⟧, plan ⟦five⟧ dinners for the week from the things we like, nothing over ⟦40 minutes⟧. Send me one shopping list, sorted by aisle. Remember what we said no to."},{"id":"standup-bot","title":"Standup bot","line":"A Slack bot that asks the team what they’re on each morning and posts one summary.","group":"Bots","needs":["slack"],"draft":"A Slack bot for my team of ⟦six⟧. At ⟦9:30⟧ it asks each person what they’re working on and what’s blocking them, then posts one short summary in ⟦#team⟧. It skips people who are on holiday."},{"id":"wishlist-sales","title":"Wishlist sales","line":"Watch the things on my wishlist and tell me when one goes on sale.","group":"On a schedule","needs":[],"draft":"I keep a wishlist of ⟦about ten⟧ things from different shops. Check their prices ⟦every morning⟧ and tell me when one drops by more than ⟦15%⟧, with the link. Adding one should be as easy as sharing the page."},{"id":"parcels","title":"Today’s parcels","line":"Find the tracking numbers in my Gmail and tell me what arrives today.","group":"Gmail and Calendar","needs":["gmail"],"draft":"Find the tracking numbers in my Gmail and keep track of every parcel. Each morning at ⟦8⟧, tell me what arrives today and roughly when. If something is stuck for more than ⟦three days⟧, say so."},{"id":"birthdays","title":"Birthdays","line":"A week before each birthday on my Calendar, suggest a gift and remind me again the day before.","group":"Gmail and Calendar","needs":["calendar"],"draft":"A ⟦week⟧ before each birthday on my Calendar, suggest a gift for ⟦under £40⟧ based on what I know about them, and remind me again the day before. Keep notes on who liked what."},{"id":"plants","title":"Plant watering","line":"Remind me to water each plant, based on the weather and when I last did it.","group":"On your phone","needs":[],"draft":"I have ⟦eight⟧ plants, ⟦some on the balcony⟧. Remind me when each one needs water, based on the weather and when I last watered it. Tapping the reminder should mark it done."},{"id":"remind-bot","title":"Remind-me bot","line":"A Telegram bot I can text “remind me…” in plain words, that actually reminds me.","group":"Bots","needs":[],"draft":"A ⟦Telegram⟧ bot I can message things like “remind me to call Mum on Sunday afternoon” and it works out when. It reminds me then, and lets me snooze with ⟦one tap⟧."},{"id":"commute","title":"Morning train","line":"Every weekday at 8, tell me if my train is late and which one to take instead.","group":"On a schedule","needs":[],"draft":"Every weekday at ⟦8⟧, check my train from ⟦Oxford⟧ to ⟦London Paddington⟧. If it’s late or cancelled, tell me the best one to take instead. If it’s fine, don’t message me."}];
+const KEY = "dream-starters-editor-v1";
+const byId = Object.fromEntries(IDEAS.map((i) => [i.id, i]));
+const fresh = () => ({ order: IDEAS.map((i) => i.id), removed: [], notes: {} });
+let state = (() => {
+  try {
+    const s = JSON.parse(localStorage.getItem(KEY) || "null");
+    if (!s) return fresh();
+    // Keep only ids that still exist, and add any new ones at the end.
+    const known = (ids) => ids.filter((id) => byId[id]);
+    const order = known(s.order || []), removed = known(s.removed || []);
+    for (const i of IDEAS) if (!order.includes(i.id) && !removed.includes(i.id)) order.push(i.id);
+    return { order, removed, notes: s.notes || {} };
+  } catch { return fresh(); }
+})();
+const save = () => localStorage.setItem(KEY, JSON.stringify(state));
+const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const draftHTML = (d) => esc(d).replace(/⟦(.+?)⟧/g, '<span class="g">$1</span>');
+const needs = (n) => (n.length ? "Uses " + n.map((x) => ({ gmail: "Gmail", calendar: "Calendar", sheets: "Google Sheets", spotify: "Spotify", slack: "Slack" })[x] || x).join(" and ") : "Needs nothing connected");
+const grip = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>';
+const openNotes = new Set();
+
+function card(id, index, removed) {
+  const i = byId[id], note = state.notes[id] || "";
+  const el = document.createElement("div");
+  el.className = "card"; el.dataset.id = id;
+  el.innerHTML = `<div class="handle" aria-label="Drag to reorder">${removed ? "" : `<span class="n">${index + 1}</span>${grip}`}</div>
+  <div class="body"><div class="line">${esc(i.line)}</div>
+  <div class="meta">${esc(i.title)} · ${esc(i.group)} · ${needs(i.needs)}</div>
+  <div class="draft">${draftHTML(i.draft)}</div>
+  ${note && !openNotes.has(id) ? `<div class="noted">Note: ${esc(note)}</div>` : ""}
+  ${openNotes.has(id) ? `<textarea placeholder="How should it read? e.g. “Say Paris, not Lisbon”">${esc(note)}</textarea>` : ""}
+  <div class="acts">${removed ? "" : `<button class="pill" data-a="up" aria-label="Move up" ${index === 0 ? "disabled" : ""}>↑</button><button class="pill" data-a="down" aria-label="Move down" ${index === state.order.length - 1 ? "disabled" : ""}>↓</button>`}
+  <button class="pill ${openNotes.has(id) ? "on" : ""}" data-a="note">${note ? "Edit note" : "Note"}</button>
+  <button class="pill rm" data-a="${removed ? "restore" : "remove"}">${removed ? "Restore" : "Remove"}</button></div></div>`;
+  return el;
+}
+
+function render() {
+  const kept = document.getElementById("kept"), rem = document.getElementById("removed");
+  kept.replaceChildren(...state.order.map((id, n) => card(id, n, false)));
+  rem.replaceChildren(...state.removed.map((id, n) => card(id, n, true)));
+  if (!state.removed.length) rem.innerHTML = '<p class="empty">Nothing removed.</p>';
+  document.getElementById("countKept").textContent = `Shown, in this order · ${state.order.length}`;
+  document.getElementById("countRemoved").textContent = `Removed · ${state.removed.length}`;
+  save();
+}
+
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-a]"); if (!b) return;
+  const id = b.closest(".card").dataset.id, at = state.order.indexOf(id);
+  const a = b.dataset.a;
+  if (a === "up" && at > 0) state.order.splice(at - 1, 0, ...state.order.splice(at, 1));
+  if (a === "down" && at < state.order.length - 1) state.order.splice(at + 1, 0, ...state.order.splice(at, 1));
+  if (a === "remove") { state.order.splice(at, 1); state.removed.unshift(id); }
+  if (a === "restore") { state.removed = state.removed.filter((x) => x !== id); state.order.push(id); }
+  if (a === "note") { if (openNotes.has(id)) openNotes.delete(id); else openNotes.add(id); }
+  render();
+  if (a === "note" && openNotes.has(id)) document.querySelector(`.card[data-id="${id}"] textarea`)?.focus();
+});
+document.addEventListener("input", (e) => {
+  if (e.target.tagName !== "TEXTAREA") return;
+  const id = e.target.closest(".card").dataset.id, v = e.target.value.trim();
+  if (v) state.notes[id] = v; else delete state.notes[id];
+  save();
+});
+
+/* Drag by the handle, with a finger or a mouse: the card follows, and the list reorders as it passes the others. */
+let drag = null;
+document.addEventListener("pointerdown", (e) => {
+  const h = e.target.closest("#kept .handle"); if (!h) return;
+  e.preventDefault();
+  const el = h.closest(".card");
+  drag = { el, id: el.dataset.id, startY: e.clientY, top: el.getBoundingClientRect().top + scrollY };
+  el.classList.add("drag"); h.setPointerCapture(e.pointerId);
+});
+document.addEventListener("pointermove", (e) => {
+  if (!drag) return;
+  const list = document.getElementById("kept"), el = drag.el;
+  const others = [...list.children].filter((c) => c !== el);
+  const y = e.clientY;
+  let before = null;
+  for (const c of others) { const r = c.getBoundingClientRect(); if (y < r.top + r.height / 2) { before = c; break; } }
+  if (before !== el.nextSibling) list.insertBefore(el, before);
+  const nowTop = el.getBoundingClientRect().top + scrollY - (parseFloat(el.dataset.ty || "0"));
+  const ty = y - drag.startY - (nowTop - drag.top);
+  el.dataset.ty = ty; el.style.transform = `translateY(${ty}px)`;
+  if (y < 60) scrollBy(0, -8); else if (y > innerHeight - 120) scrollBy(0, 8);
+});
+const endDrag = () => {
+  if (!drag) return;
+  state.order = [...document.getElementById("kept").children].map((c) => c.dataset.id);
+  drag = null; render();
+};
+document.addEventListener("pointerup", endDrag);
+document.addEventListener("pointercancel", endDrag);
+
+function message() {
+  const lines = ["Dream starters update", "", `Order (${state.order.length}):`];
+  state.order.forEach((id, n) => lines.push(`${n + 1}. ${id} (${byId[id].title})`));
+  lines.push("", `Removed (${state.removed.length}):`);
+  if (state.removed.length) state.removed.forEach((id) => lines.push(`- ${id} (${byId[id].title})`)); else lines.push("- none");
+  const notes = [...state.order, ...state.removed].filter((id) => state.notes[id]);
+  lines.push("", `Notes (${notes.length}):`);
+  if (notes.length) notes.forEach((id) => lines.push(`- ${id}: ${state.notes[id].replace(/\s*\n\s*/g, " ")}`)); else lines.push("- none");
+  return lines.join("\n");
+}
+const sheet = (open) => document.body.classList.toggle("open", open);
+document.getElementById("done").onclick = () => { document.getElementById("msg").textContent = message(); sheet(true); };
+document.getElementById("dim").onclick = () => sheet(false);
+document.getElementById("copy").onclick = async () => {
+  const text = message();
+  try { await navigator.clipboard.writeText(text); }
+  catch { const r = document.createRange(); r.selectNodeContents(document.getElementById("msg")); getSelection().removeAllRanges(); getSelection().addRange(r); document.execCommand("copy"); }
+  const t = document.getElementById("toast"); t.classList.add("show"); setTimeout(() => t.classList.remove("show"), 1400);
+};
+document.getElementById("reset").onclick = () => { if (confirm("Put every starter back as shipped and clear your notes?")) { state = fresh(); openNotes.clear(); render(); } };
+render();
+</script>
+</body>
+</html>

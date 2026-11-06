@@ -25,7 +25,9 @@ const sections: ReadonlyArray<{ readonly title: string; readonly jumps: Readonly
       { title: "New idea", to: "/new" },
       { title: "New idea · long", to: "/new?sample=long" },
       { title: "New idea · dictating", to: "/new?dictate=1" },
-      { title: "New idea · dictating into a long one", to: "/new?sample=long&dictate=1" }
+      { title: "New idea · dictating into a long one", to: "/new?sample=long&dictate=1" },
+      { title: "New idea · more starters", to: "/new?starters=more&group=schedule" },
+      { title: "New idea · a starter's draft", to: "/new?starter=fare-watch" }
     ]
   },
   {
