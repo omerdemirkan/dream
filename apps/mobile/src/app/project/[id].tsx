@@ -4,8 +4,9 @@
  *
  * `?tab=status` opens the roadmap and `?tab=chat` folds it; `?focus=<messageId>`
  * opens that question or access request expanded (deep links and notifications
- * use these). `?sheet=usage` opens the usage sheet, as tapping the ring in the header does. `?work=<workstream id>`
- * writes to that workstream, as tapping its row on the card does.
+ * use these). `?sheet=usage` opens the usage sheet, as tapping the ring in the header does, and
+ * `?sheet=notifications` the Notifications sheet, as the bell does (shown once one of its apps has asked to notify
+ * them). `?work=<workstream id>` writes to that workstream, as tapping its row on the card does.
  */
 import {
   type Message,
@@ -28,8 +29,9 @@ import type { ProjectState } from "../../data/projectState.ts"
 import { draftKey } from "../../data/Replies.ts"
 import { useViewingProject } from "../../platform/viewing.ts"
 import { clearDraftFn, draftAtom, projectsAtom, sendMessageFn } from "../../state/atoms.ts"
-import { declineAtom, focusAtom, landingAtom } from "../../state/ui.ts"
+import { appNotificationsSheetAtom, declineAtom, focusAtom, landingAtom } from "../../state/ui.ts"
 import { useAction } from "../../ui/actions.ts"
+import { AppNotificationsSheet, useOpenAppNotifications } from "../../ui/AppNotifications.tsx"
 import { ChatTab } from "../../ui/Chat.tsx"
 import { ChatComposer } from "../../ui/Composer.tsx"
 import { useOpenMessage, useProject, useRequestId } from "../../ui/hooks.ts"
@@ -145,14 +147,27 @@ function Project(props: {
   }, [])
 
   const [usage, setUsage] = useState(false)
+  const openNotifications = useOpenAppNotifications()
   useEffect(() => {
-    if (props.sheet !== "usage") return
-    setUsage(true)
+    if (props.sheet === "usage") setUsage(true)
+    else if (props.sheet === "notifications") openNotifications(props.projectId)
+    else return
     router.setParams({ sheet: undefined })
-  }, [props.sheet, router])
+  }, [props.sheet, props.projectId, router, openNotifications])
+  // The bell, once one of its apps has asked to notify them.
+  const notifies = state?.messages.some((m) => m._tag === "Access" && m.request._tag === "Notifications") === true
   // A modal sheet shows over whatever is in front, so it closes when this screen stops being it (a link or a
   // notification opening another screen).
-  useFocusEffect(useCallback(() => () => setUsage(false), []))
+  const setNotificationsSheet = useAtomSet(appNotificationsSheetAtom)
+  useFocusEffect(
+    useCallback(
+      () => () => {
+        setUsage(false)
+        setNotificationsSheet(Option.none())
+      },
+      [setNotificationsSheet]
+    )
+  )
 
   // The card folds to one line while they read back through Chat, or type.
   const [away, setAway] = useState(false)
@@ -256,6 +271,17 @@ function Project(props: {
             onPress={() => (router.canGoBack() ? router.back() : router.replace("/"))}
           />
           <Identity project={project} state={state} summary={summary} />
+          {notifies ? (
+            <IconButton
+              icon="bell"
+              size={38}
+              label="Notifications"
+              onPress={() => {
+                Keyboard.dismiss()
+                openNotifications(props.projectId)
+              }}
+            />
+          ) : null}
           <UsageBadge projectId={props.projectId} onPress={() => setUsage(true)} />
         </View>
         {state ? (
@@ -297,6 +323,7 @@ function Project(props: {
         open={usage}
         onClose={() => setUsage(false)}
       />
+      <AppNotificationsSheet projectId={props.projectId} title={project?.title ?? ""} />
     </View>
   )
 }

@@ -34,10 +34,16 @@ export const pushDataOf = (notification: Notifications.Notification): Option.Opt
   return decodePushData(fromPayload ?? fromContent)
 }
 
-export const Category = { message: "message", question: "question", access: "access" } as const
+export const Category = { message: "message", question: "question", access: "access", app: "app" } as const
 export const ReplyAction = "reply"
+/** An app's notification, held on the lock screen: mute that app until tomorrow, or turn it off. */
+export const MuteTodayAction = "mute-today"
+export const TurnOffAction = "turn-off"
 
-/** Categories registered with iOS: questions and messages can be answered from the lock screen. */
+/**
+ * Categories registered with iOS: questions and messages can be answered from the lock screen, and an app's
+ * notification can mute or turn off that app.
+ */
 export const registerCategories = Effect.tryPromise({
   try: () =>
     Promise.all([
@@ -55,7 +61,12 @@ export const registerCategories = Effect.tryPromise({
           textInput: { submitButtonTitle: "Send", placeholder: "Message Dream" }
         }
       ]),
-      Notifications.setNotificationCategoryAsync(Category.access, [])
+      Notifications.setNotificationCategoryAsync(Category.access, []),
+      // The way to quiet one app without turning off Dream in Settings, which would silence the agent too.
+      Notifications.setNotificationCategoryAsync(Category.app, [
+        { identifier: MuteTodayAction, buttonTitle: "Mute for today" },
+        { identifier: TurnOffAction, buttonTitle: "Turn off this app", options: { isDestructive: true } }
+      ])
     ]),
   catch: (cause) => new PushError({ step: "categories", cause })
 }).pipe(Effect.asVoid)
@@ -127,6 +138,7 @@ export const deliveredIds = Effect.tryPromise({
 /** Shows a notification on this phone with the same data shape a real push carries (fixtures mode). */
 export const presentLocal = (push: {
   readonly title: string
+  readonly subtitle?: string | undefined
   readonly body: string
   readonly category: keyof typeof Category
   readonly data: PushData
@@ -134,9 +146,10 @@ export const presentLocal = (push: {
   Effect.tryPromise({
     try: () =>
       Notifications.scheduleNotificationAsync({
-        ...(push.data._tag === "OpenMessage" ? { identifier: push.data.notificationId } : {}),
+        ...(push.data._tag === "Withdraw" ? {} : { identifier: push.data.notificationId }),
         content: {
           title: push.title,
+          ...(push.subtitle === undefined ? {} : { subtitle: push.subtitle }),
           body: push.body,
           categoryIdentifier: push.category,
           sound: "default",

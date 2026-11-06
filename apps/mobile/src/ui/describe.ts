@@ -56,6 +56,8 @@ export const accessExplainer = (message: AccessMessage) => {
         : "Apple has no sign-in for this, so it takes an App Store Connect key (issuer ID, key ID and the .p8 file)."
     case "OAuth":
       return `You’ll sign in with ${oauthService(request)} and approve what it asks for. Dream keeps the sign-in fresh.`
+    case "Notifications":
+      return `${request.often}. They come from ${request.name} itself, and you can quiet it any time.`
   }
 }
 

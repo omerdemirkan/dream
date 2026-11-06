@@ -8,6 +8,8 @@
  * "7:00 AM" read as in the mock, in that time zone, whenever the app runs.
  */
 import type {
+  AppNotification,
+  AppSender,
   AppLink,
   AccessMessage,
   Integration,
@@ -22,6 +24,7 @@ import type {
   ModelConnectionId,
   NotificationId,
   Project,
+  ProjectId,
   QuestionMessage,
   StatusCard,
   TextMessage,
@@ -193,6 +196,7 @@ export const telegramKey: AccessMessage = {
 const briefMessages: ReadonlyArray<Message> = [
   text(morningBrief.id, "msg_briefidea", "2026-10-20T17:50:00Z", "user", morningBrief.idea),
   Fx.gmailAccess,
+  Fx.morningBriefNotificationsCard,
   text(
     morningBrief.id,
     "msg_brieffirst",
@@ -364,6 +368,12 @@ export interface FixtureWorld {
   readonly modelConnections: ReadonlyArray<ModelConnection>
   /** App links on Home (option A, the dock). */
   readonly links: ReadonlyArray<AppLink>
+  /** Projects' apps that notify them, and what each sent. */
+  readonly apps: ReadonlyArray<{
+    readonly projectId: ProjectId
+    readonly senders: ReadonlyArray<AppSender>
+    readonly notifications: ReadonlyArray<AppNotification>
+  }>
 }
 
 const chatgpt: ModelConnection = {
@@ -384,7 +394,14 @@ const world: FixtureWorld = {
   ],
   integrations: [Fx.google],
   modelConnections: [chatgpt],
-  links: Fx.links
+  links: Fx.links,
+  apps: [
+    {
+      projectId: morningBrief.id,
+      senders: [Fx.morningBriefApp],
+      notifications: Fx.morningBriefAppNotifications
+    }
+  ]
 }
 
 /** Moves every `DateTime` in a value by `millis`. */

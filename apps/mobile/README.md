@@ -81,6 +81,7 @@ xcrun simctl launch --terminate-running-process booted build.omer.dream \
 | `/new` · `/new?sample=long` · add `dictate=1` | New idea (the page), with a long brain dump, dictating at the cursor (simulated in the Simulator) |
 | `/new?starter=run-club-bot` | New idea filled with a starter's draft, the cursor after it. Ids are in `src/data/ideas.ts` |
 | `/project/<id>?sheet=usage` | The usage sheet over the project (the ring in its header opens it) |
+| `/project/<id>?sheet=notifications` | The Notifications sheet: the project's apps that notify, their controls, what they sent (the bell opens it) |
 | `/connect` · `/settings` | Subscription connect flow; settings, with the plan card at the top |
 
 Message ids: `msg_cabinrule`, `msg_cabinpick`, `msg_gcal` (Cabin), `msg_apple` (Lift Log), `msg_gmail` and
@@ -114,6 +115,14 @@ icon, Remove); Share is React Native's `Share`, iOS's share sheet with the link 
 picker in this build, so the person's icons are an SF Symbol or an emoji on one of ten colours; Add to Home Screen
 draws the tile as a png (react-native-svg's `toDataURL`) for the gateway to serve as the touch icon, and as the
 link preview's image when the page has none.
+
+Notifications from a project's apps (`dream notify`): an app asks once, with a `Notifications` access card in Chat
+(Allow, or Not now with the decline sheet's reasons), and then notifies under its own name in the `app` category,
+whose actions are Mute for today and Turn off this app. A tap opens the notification's page full screen inside
+Dream, or the project's Notifications sheet when it has none; the bell in the project's header opens the sheet once
+one of its apps has asked. Morning Brief's digest app is allowed in the sample world, with three notifications in its
+history (`msg_briefnotify` is its card). `notify-ask` has Lift Log's app ask (`msg_liftnotify`), and `notify-app`
+delivers a Morning Brief digest as a local notification, as APNs would.
 
 Holding a project on Home opens iOS's context menu (expo-router's `Link.Menu`) with Archive and Delete. Archive
 takes it off Home at once with Undo in the toast; Settings lists archived projects with Restore and Delete. Delete

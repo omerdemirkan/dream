@@ -35,6 +35,7 @@ import { landingAtom, messageRects } from "../state/ui.ts"
 import { nextOpenAsk } from "./asks.ts"
 import { useClearSeen } from "./clearSeen.ts"
 import { useNow, useOpenMessage } from "./hooks.ts"
+import { isNotificationsCard, NotificationsCard } from "./AppNotifications.tsx"
 import { AccessCard, AgentText, QuestionCard, UserBubble } from "./Messages.tsx"
 import { Icon } from "./kit.tsx"
 import { ChatActivityRow } from "./Presence.tsx"
@@ -116,6 +117,8 @@ function AskRow(props: {
     <View>
       {m._tag === "Question" ? (
         <QuestionCard ref={ref} message={m} onOpen={onOpen} onAnswered={() => props.onAnswered(m.id)} />
+      ) : isNotificationsCard(m) ? (
+        <NotificationsCard ref={ref} message={m} onOpen={onOpen} />
       ) : (
         <AccessCard ref={ref} message={m} onOpen={onOpen} />
       )}

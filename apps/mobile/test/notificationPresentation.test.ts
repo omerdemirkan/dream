@@ -1,4 +1,4 @@
-import { MessageId, NotificationId, ProjectId, PushData } from "@dream/domain"
+import { AppId, MessageId, NotificationId, ProjectId, PushData } from "@dream/domain"
 import { assert, describe, it } from "@effect/vitest"
 import { Option } from "effect"
 import { showsWhileOpen } from "../src/data/notificationPresentation.ts"
@@ -30,5 +30,18 @@ describe("showsWhileOpen", () => {
     )
     assert.isFalse(showsWhileOpen(withdraw, undefined))
     assert.isTrue(showsWhileOpen(Option.none(), lift))
+  })
+})
+
+describe("an app's notification while Dream is open", () => {
+  it("shows even on its own project's screen, since it isn't in Chat", () => {
+    const fromApp = Option.some(
+      PushData.cases.OpenApp.make({
+        projectId: lift,
+        app: AppId.make("lift-log"),
+        notificationId: NotificationId.make("6f1c2a54-3b8e-4d2f-9a1e-0c5b7d9e2f41")
+      })
+    )
+    assert.isTrue(showsWhileOpen(fromApp, lift))
   })
 })

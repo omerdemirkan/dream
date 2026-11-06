@@ -20,14 +20,17 @@ import { Button, Icon, LinkButton } from "./kit.tsx"
 import { color } from "./theme.ts"
 
 /** The one-tap reasons. A sign-in they don't use reads better than a key they don't have. */
-export const declineReasons = (message: AccessMessage): ReadonlyArray<string> => [
-  message.request._tag === "Google" || message.request._tag === "OAuth"
-    ? `I don’t use ${accessLabel(message.request)}`
-    : "I don’t have one",
-  "I’d rather not share this",
-  "Use a free option instead",
-  "Not now"
-]
+export const declineReasons = (message: AccessMessage): ReadonlyArray<string> =>
+  message.request._tag === "Notifications"
+    ? ["Too often for me", "Only when it’s important", "I’ll check the app myself", "Not now"]
+    : [
+        message.request._tag === "Google" || message.request._tag === "OAuth"
+          ? `I don’t use ${accessLabel(message.request)}`
+          : "I don’t have one",
+        "I’d rather not share this",
+        "Use a free option instead",
+        "Not now"
+      ]
 
 /** Opens the decline sheet for this access request (one sheet for the app, in `DeclineHost`). */
 export function useDecline(message: AccessMessage) {
@@ -60,6 +63,7 @@ function DeclineSheet(props: {
   readonly onClosed: () => void
 }) {
   const m = props.message
+  const notifications = m.request._tag === "Notifications"
   const insets = useSafeAreaInsets()
   const decline = useAction(declineAccessFn)
   const [picked, setPicked] = useState<string | undefined>(undefined)
@@ -143,9 +147,18 @@ function DeclineSheet(props: {
             })}
           </View>
           <View style={{ marginTop: 12 }}>
-            <ReasonField value={typed} onChange={setTyped} sample="I'll make an account next week" />
+            <ReasonField
+              value={typed}
+              onChange={setTyped}
+              sample={notifications ? "Only once a day, in the morning" : "I'll make an account next week"}
+            />
           </View>
-          <Button title="Don’t connect" busy={decline.busy} onPress={confirm} style={{ marginTop: 20 }} />
+          <Button
+            title={notifications ? "Don’t allow" : "Don’t connect"}
+            busy={decline.busy}
+            onPress={confirm}
+            style={{ marginTop: 20 }}
+          />
           <LinkButton title="Cancel" onPress={props.onClose} />
         </Animated.View>
       </KeyboardAvoidingView>

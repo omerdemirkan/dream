@@ -181,7 +181,11 @@ export const Card = forwardRef<HostInstance, CardProps>(function Card(props, ref
   )
 })
 
-function CardHead(props: { readonly label: string; readonly later?: boolean; readonly tag?: string | undefined }) {
+export function CardHead(props: {
+  readonly label: string
+  readonly later?: boolean
+  readonly tag?: string | undefined
+}) {
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 9 }}>
       <Text
@@ -291,7 +295,7 @@ export function ReadMore(props: { readonly onOpen: () => void }) {
 }
 
 /** A resolved question or access request: a quiet row in place (`.msg.done`). */
-function ResolvedRow(props: {
+export function ResolvedRow(props: {
   readonly label: string
   readonly title: string
   readonly strong?: boolean
@@ -523,6 +527,8 @@ function OpenAccessBody(props: { readonly message: AccessMessage; readonly onOpe
           <Icon name="chev" size={14} color={color.t3} />
         </Pressable>
       )
+    case "Notifications":
+      return null
   }
 }
 

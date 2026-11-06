@@ -11,6 +11,8 @@
 import {
   type AccessMessage,
   type AppLink,
+  type AppNotification,
+  type AppSender,
   type LinkId,
   linkHost,
   type AgentActivity,
@@ -73,8 +75,9 @@ import {
 /** A notification the fake would have sent through APNs. The app shows it as a local notification. */
 export interface FakePush {
   readonly title: string
+  readonly subtitle?: string | undefined
   readonly body: string
-  readonly category: "message" | "question" | "access"
+  readonly category: "message" | "question" | "access" | "app"
   readonly data: PushData
 }
 
@@ -118,7 +121,9 @@ export const Scenario = [
   "workstreams",
   "workstreams-waiting",
   "workstreams-many",
-  "workstreams-one"
+  "workstreams-one",
+  "notify-ask",
+  "notify-app"
 ] as const
 export type Scenario = (typeof Scenario)[number]
 
@@ -211,6 +216,9 @@ export class FakeBackend extends Context.Service<
       let devices = new Map<string, Device>()
       let links: Array<AppLink> = []
       let usage: UsageWorld = makeUsageWorld("normal")
+      // Projects' apps that notify, and what each sent (newest first).
+      let appSenders = new Map<ProjectId, Array<AppSender>>()
+      let appSent = new Map<ProjectId, Array<AppNotification>>()
 
       const load = Effect.fn("FakeBackend.load")(function* (world: FixtureWorld) {
         const previous = records
@@ -219,6 +227,8 @@ export class FakeBackend extends Context.Service<
         links = [...world.links]
         usage = makeUsageWorld("normal")
         connections = [...world.modelConnections]
+        appSenders = new Map(world.apps.map((a) => [a.projectId, [...a.senders]]))
+        appSent = new Map(world.apps.map((a) => [a.projectId, [...a.notifications]]))
         devices = new Map()
         records = new Map()
         const now = yield* DateTime.now
@@ -517,6 +527,8 @@ export class FakeBackend extends Context.Service<
               for (const message of record.messages)
                 if (message.notificationId && (message._tag === "Text" || isOpenAsk(message)))
                   live.add(message.notificationId.toLowerCase())
+            for (const sent of appSent.values())
+              for (const n of sent) if (n.withdrawnAt === undefined) live.add(n.id.toLowerCase())
             return { stale: notificationIds.filter((id) => !live.has(id.toLowerCase())) }
           }),
         ListProjects: () => Effect.sync(() => Array.from(active(), summaryOf)),
@@ -885,9 +897,64 @@ export class FakeBackend extends Context.Service<
                 state: { _tag: "Declined", declinedAt: yield* DateTime.now, ...(reason ? { reason } : {}) }
               }
               yield* setMessage(record, declined)
+              if (message.request._tag === "Notifications" && declined.state._tag === "Declined") {
+                const state = declined.state
+                setSender(projectId, message.request.app, (sender) => ({ ...sender, state }))
+              }
               return declined
             })
           ),
+        GetAppNotifications: ({ projectId }) =>
+          Effect.map(find(projectId), () => ({
+            apps: [...(appSenders.get(projectId) ?? [])],
+            notifications: [...(appSent.get(projectId) ?? [])]
+          })),
+        AllowAppNotifications: ({ projectId, messageId }) =>
+          stallable(
+            Effect.gen(function* () {
+              const { record, message } = yield* findMessage(projectId, messageId)
+              if (message._tag !== "Access" || message.request._tag !== "Notifications")
+                return yield* new NotFound({ entity: "notifications request", id: messageId })
+              if (message.state._tag === "Allowed") return message
+              const allowedAt = yield* DateTime.now
+              const allowed: AccessMessage = { ...message, state: { _tag: "Allowed", allowedAt } }
+              yield* setMessage(record, allowed)
+              setSender(projectId, message.request.app, (sender) => ({
+                ...sender,
+                state: { _tag: "Allowed", allowedAt }
+              }))
+              return allowed
+            })
+          ),
+        UpdateAppNotifications: ({ projectId, app, delivery, mutedUntil }) =>
+          stallable(
+            Effect.gen(function* () {
+              const sender = (appSenders.get(projectId) ?? []).find((a) => a.id === app)
+              if (!sender) return yield* new NotFound({ entity: "app", id: app })
+              if (sender.state._tag !== "Allowed")
+                return yield* new InvalidRequest({ message: `${sender.name} can't notify you yet; allow it first.` })
+              const { mutedUntil: _, ...rest } = sender
+              const until = mutedUntil === undefined ? sender.mutedUntil : (mutedUntil ?? undefined)
+              const next: AppSender = {
+                ...rest,
+                delivery: delivery ?? sender.delivery,
+                ...(until === undefined ? {} : { mutedUntil: until })
+              }
+              setSender(projectId, app, () => next)
+              return next
+            })
+          ),
+        OpenedAppNotification: ({ projectId, notificationId }) =>
+          Effect.gen(function* () {
+            const sent = appSent.get(projectId) ?? []
+            if (!sent.some((n) => n.id === notificationId))
+              return yield* new NotFound({ entity: "notification", id: notificationId })
+            const now = yield* DateTime.now
+            appSent.set(
+              projectId,
+              sent.map((n) => (n.id === notificationId && n.openedAt === undefined ? { ...n, openedAt: now } : n))
+            )
+          }),
         ListIntegrations: () => Effect.sync(() => [...integrations]),
         DisconnectIntegration: ({ integrationId }) =>
           Effect.gen(function* () {
@@ -984,6 +1051,91 @@ export class FakeBackend extends Context.Service<
       })
 
       /** Lift Log asks to connect Spotify (`msg_spotify`), unless it already has. */
+      const setSender = (projectId: ProjectId, app: AppSender["id"], change: (sender: AppSender) => AppSender) =>
+        appSenders.set(
+          projectId,
+          (appSenders.get(projectId) ?? []).map((sender) => (sender.id === app ? change(sender) : sender))
+        )
+
+      /** Lift Log's app asks to notify them, as `dream notify setup` would. */
+      const askToNotify = (now: DateTime.Utc) =>
+        Effect.gen(function* () {
+          const lift = Array.from(records.values()).find((r) => r.project.slug === "lift-log")
+          if (!lift || lift.messages.some((m) => m.id === "msg_liftnotify")) return
+          const card: AccessMessage = {
+            _tag: "Access",
+            id: "msg_liftnotify" as MessageId,
+            projectId: lift.project.id,
+            createdAt: now,
+            notificationId: yield* notificationId(),
+            request: {
+              _tag: "Notifications",
+              app: "lift-log" as AppSender["id"],
+              name: "Lift Log",
+              often: "After a workout, a few times a week",
+              icon: { _tag: "Symbol", name: "dumbbell" },
+              color: "purple"
+            },
+            why: "When it’s time to add weight to a lift",
+            state: { _tag: "Open" }
+          }
+          appSenders.set(lift.project.id, [
+            ...(appSenders.get(lift.project.id) ?? []).filter((a) => a.id !== "lift-log"),
+            {
+              id: "lift-log" as AppSender["id"],
+              name: "Lift Log",
+              icon: { _tag: "Symbol", name: "dumbbell" },
+              color: "purple",
+              url: `${lift.project.publicUrl}/`,
+              why: card.why,
+              often: "After a workout, a few times a week",
+              messageId: card.id,
+              state: { _tag: "Waiting" },
+              delivery: "immediate",
+              createdAt: now
+            }
+          ])
+          yield* setMessage(lift, card)
+          yield* push(lift, card, "Let Lift Log notify you: When it’s time to add weight to a lift")
+        })
+
+      /** Morning Brief's digest arrives, from the app itself. */
+      const appNotifies = (now: DateTime.Utc) =>
+        Effect.gen(function* () {
+          const brief = Array.from(records.values()).find((r) => r.project.slug === "morning-brief")
+          const app = brief ? (appSenders.get(brief.project.id) ?? [])[0] : undefined
+          if (!brief || !app) return
+          const notification: AppNotification = {
+            id: yield* notificationId(),
+            app: app.id,
+            title: "Today’s digest: 7 newsletters, 6 minutes",
+            text: "Stratechery on the chip deal, Money Stuff on the bond rally, and a long one from Platformer.",
+            url: `${brief.project.publicUrl}/digest/today`,
+            key: "digest",
+            outcome: "sent",
+            sentAt: now
+          }
+          appSent.set(brief.project.id, [
+            notification,
+            ...(appSent.get(brief.project.id) ?? []).map((n) =>
+              n.key === "digest" && n.replacedAt === undefined ? { ...n, replacedAt: now } : n
+            )
+          ])
+          yield* PubSub.publish(pushes, {
+            title: app.name,
+            subtitle: notification.title,
+            body: notification.text,
+            category: "app",
+            data: {
+              _tag: "OpenApp",
+              projectId: brief.project.id,
+              app: app.id,
+              notificationId: notification.id,
+              ...(notification.url === undefined ? {} : { url: notification.url })
+            }
+          })
+        })
+
       const askSpotify = (now: DateTime.Utc) =>
         Effect.gen(function* () {
           const lift = Array.from(records.values()).find((r) => r.project.slug === "lift-log")
@@ -1203,6 +1355,10 @@ export class FakeBackend extends Context.Service<
             return
           case "spotify-ask":
             return yield* askSpotify(now)
+          case "notify-ask":
+            return yield* askToNotify(now)
+          case "notify-app":
+            return yield* appNotifies(now)
           case "spotify-stopped": {
             // Lift Log's Spotify connection, which Spotify stopped renewing.
             yield* askSpotify(now)
