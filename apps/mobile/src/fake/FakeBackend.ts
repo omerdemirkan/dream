@@ -476,6 +476,17 @@ export class FakeBackend extends Context.Service<
               return { project: record.project, archivedAt: record.archivedAt }
             })
           ),
+        DeleteProject: ({ projectId }) =>
+          stallable(
+            Effect.gen(function* () {
+              const record = yield* find(projectId)
+              records.delete(projectId)
+              integrations = integrations.filter(
+                (integration) => !(integration.access._tag === "File" && integration.access.projectId === projectId)
+              )
+              yield* PubSub.shutdown(record.events)
+            })
+          ),
         RestoreProject: ({ projectId }) =>
           stallable(
             Effect.gen(function* () {

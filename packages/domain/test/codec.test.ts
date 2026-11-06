@@ -468,8 +468,8 @@ describe("archiving (additive)", () => {
     assert.deepStrictEqual(decoded, archived)
   })
 
-  it("adds ArchiveProject, RestoreProject and ListArchivedProjects behind the session", () => {
-    for (const tag of ["ArchiveProject", "RestoreProject"]) {
+  it("adds ArchiveProject, RestoreProject, DeleteProject and ListArchivedProjects behind the session", () => {
+    for (const tag of ["ArchiveProject", "RestoreProject", "DeleteProject"]) {
       const rpc = AuthedAppRpcs.requests.get(tag)!
       const payload = Schema.toCodecJson(rpc.payloadSchema)
       assert.deepStrictEqual(Schema.decodeUnknownSync(payload)({ projectId: Fixtures.cabin.id }), {
@@ -481,5 +481,6 @@ describe("archiving (additive)", () => {
     const success = Schema.toCodecJson(list.successSchema)
     assert.deepStrictEqual(Schema.decodeUnknownSync(success)([]), [])
     assert.isFalse(PublicAppRpcs.requests.has("ArchiveProject"))
+    assert.isFalse(PublicAppRpcs.requests.has("DeleteProject"))
   })
 })

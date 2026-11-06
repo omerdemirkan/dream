@@ -50,6 +50,11 @@ export const gateway = (host: string, raw: Request) =>
         if (result.failure._tag !== "NotFound") {
           return page(502, "Waking up", "The app couldn't be reached just now. Try again in a moment.")
         }
+        if (result.failure.entity === "project") {
+          // Deleted: forget the host, so this isolate asks D1 again (which knows nothing of it).
+          hostCache.delete(host)
+          return page(404, "Nothing here", "There's no app at this address.")
+        }
         return result.failure.entity === ArchivedEntity
           ? page(
               404,

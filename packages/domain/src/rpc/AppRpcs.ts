@@ -129,6 +129,15 @@ export class AuthedAppRpcs extends RpcGroup.make(
     success: ProjectSummary,
     error: NotFound
   }),
+  /**
+   * Delete a project for good, archived or not: its sandbox (code and app), chat, status, published link, media and
+   * the file keys only it had. Connections their other projects share stay. Its notifications are withdrawn and its
+   * Live Activity ends. There's no undo. Deleting one that's already gone is `NotFound`.
+   */
+  Rpc.make("DeleteProject", {
+    payload: { projectId: ProjectId },
+    error: NotFound
+  }),
   /** Their archived projects for Settings, most recently archived first. */
   Rpc.make("ListArchivedProjects", { success: Schema.Array(ArchivedProject) }),
 

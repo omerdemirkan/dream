@@ -34,6 +34,8 @@ import { Google } from "../integrations/Google.ts"
 import { timingSafeEqual } from "../lib/Bytes.ts"
 import { messageIdFor, newProjectId, projectIdFor } from "../lib/Ids.ts"
 import { ProjectClients } from "../project/Client.ts"
+import { deleteProject } from "../project/Deletion.ts"
+import { MediaStore } from "./Media.ts"
 
 export const bearer = (headers: Headers.Headers): Option.Option<string> =>
   Option.flatMap(Headers.get(headers, "authorization"), (value) => {
@@ -115,6 +117,7 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
     const access = yield* Access
     const modelConnect = yield* ModelConnect
     const connectLinks = yield* ConnectLinks
+    const mediaStore = yield* MediaStore
 
     const me = Effect.gen(function* () {
       return (yield* CurrentUser).userId
@@ -189,6 +192,16 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
           const project = yield* owned(projectId)
           const archivedAt = yield* clients.use(projectId, (client) => client.Archive())
           return { project, archivedAt }
+        }),
+
+      DeleteProject: ({ projectId }) =>
+        Effect.gen(function* () {
+          yield* owned(projectId)
+          yield* deleteProject(projectId).pipe(
+            Effect.provideService(ProjectClients, clients),
+            Effect.provideService(Projects, projects),
+            Effect.provideService(MediaStore, mediaStore)
+          )
         }),
 
       RestoreProject: ({ projectId }) =>

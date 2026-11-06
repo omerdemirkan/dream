@@ -234,7 +234,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
 
       IntegrationGone: ({ integration, failure }) =>
         Effect.gen(function* () {
-          if (Option.isSome(yield* store.getSingleton(...Singletons.retired))) return
+          if (Option.isSome(yield* store.getSingleton(...Singletons.deleted))) return
           const now = yield* DateTime.now
           const cards = (yield* store.accessMessagesFor(integration.id)).filter(
             (message) => message.state._tag === "Connected"
@@ -271,7 +271,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
 
       IntegrationRestored: ({ integration, tell }) =>
         Effect.gen(function* () {
-          if (Option.isSome(yield* store.getSingleton(...Singletons.retired))) return
+          if (Option.isSome(yield* store.getSingleton(...Singletons.deleted))) return
           const now = yield* DateTime.now
           const cards = (yield* store.accessMessagesFor(integration.id)).filter(
             (message) => message.state._tag === "Disconnected" && message.state.reason === "failed"
@@ -300,7 +300,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
 
       KeyFileReplaced: ({ integration }) =>
         Effect.gen(function* () {
-          if (Option.isSome(yield* store.getSingleton(...Singletons.retired))) return
+          if (Option.isSome(yield* store.getSingleton(...Singletons.deleted))) return
           yield* sandbox.keyFilesChanged
           // The event names the request it was connected through, which every file key has.
           const card = (yield* store.accessMessagesFor(integration.id)).at(-1)
@@ -331,15 +331,23 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
 
       GatewayTarget: () => sandbox.gatewayTarget,
 
-      Retire: () =>
+      Delete: () =>
         Effect.gen(function* () {
           const now = yield* DateTime.now
-          yield* store.putSingleton(...Singletons.retired, { at: now })
+          // First, so everything after this (dreamd, the alarm, a delivery under way) finds it deleted.
+          yield* store.putSingleton(...Singletons.deleted, { at: now })
           yield* store.clearSchedule(DateTime.formatIso(now))
-          yield* sandbox.destroy
           yield* alarm.reschedule
+          yield* sandbox.destroy
+          yield* machines.stopMac.pipe(
+            Effect.catch((error) => Effect.logWarning("couldn't stop the deleted project's Mac", error.message))
+          )
           const current = yield* core.projectOption
           if (Option.isSome(current)) {
+            yield* notifier.withdraw(yield* store.unwithdrawnNotifications)
+            yield* notifier
+              .endLive(undefined)
+              .pipe(Effect.catch((error) => Effect.logWarning("couldn't end the Live Activity", error.message)))
             // Its file keys were for this project alone, and the sandbox that held them is gone.
             for (const row of yield* connections.integrations(current.value.ownerId)) {
               if (row.access_json._tag !== "File" || row.access_json.projectId !== current.value.id) continue
@@ -348,6 +356,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
             }
             yield* projects.remove(current.value.id)
           }
+          yield* store.wipe
         }),
 
       Archive: () =>

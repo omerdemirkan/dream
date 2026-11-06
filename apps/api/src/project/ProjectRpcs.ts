@@ -94,11 +94,12 @@ export class ProjectRpcs extends RpcGroup.make(
   /** Refresh their ChatGPT tokens now and push them to every sandbox of theirs. */
   Rpc.make("RefreshModelCredential", { error: UpstreamFailure }),
   /**
-   * Destroys the project, for the operator's cleanup (`/admin/projects/:id/archive`): kills its sandbox, deletes its
-   * file keys, drops its wakes and undelivered events, and removes it from Home. There's no undoing it, so the phone
-   * never reaches it.
+   * Deletes the project for good (`DeleteProject`, and the operator's `/admin/projects/:id/archive`): kills its
+   * sandbox and any Mac, withdraws its notifications and ends its Live Activity, deletes its file keys and its Home
+   * row, and empties this DO but for a tombstone, so nothing late (an alarm, a delivery under way, dreamd) brings
+   * any of it back. Its media in R2 is the Worker's to remove.
    */
-  Rpc.make("Retire", {}),
+  Rpc.make("Delete", {}),
   /**
    * They archived the project (`ArchiveProject`): hold the agent and pause the sandbox, keeping everything. Returns
    * when it was archived (the first time, for a repeat).

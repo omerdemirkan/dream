@@ -179,9 +179,11 @@ export class SandboxManager extends Context.Service<
       const update = (f: (record: SandboxRecord) => SandboxRecord) =>
         Effect.flatMap(core.sandbox, (r) => core.saveSandbox(f(r)))
 
-      /** Retired for good, or archived until they restore it: either way, nothing runs. */
+      const deleted = Effect.map(store.getSingleton(...Singletons.deleted), Option.isSome)
+
+      /** Deleted, or archived until they restore it: either way, nothing runs. */
       const held = Effect.gen(function* () {
-        if (Option.isSome(yield* store.getSingleton(...Singletons.retired))) return true
+        if (yield* deleted) return true
         return Option.isSome(yield* store.getSingleton(...Singletons.archived))
       })
 
@@ -587,6 +589,11 @@ export class SandboxManager extends Context.Service<
         }
         // Archived while the sandbox was being created or resumed: leave the events for after the restore.
         if (yield* held) {
+          // Deleted meanwhile: the sandbox it just created or resumed goes too.
+          if (yield* deleted) {
+            yield* e2b.kill(access.sandboxId).pipe(Effect.ignore)
+            return yield* update((r) => ({ ...withoutStarting(r), status: "none" }))
+          }
           yield* update(withoutStarting)
           return yield* pauseSandbox(access.sandboxId)
         }

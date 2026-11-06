@@ -24,7 +24,7 @@ import { Context, Effect, Layer, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import * as Migrator from "effect/sql/Migrator"
 import { SandboxAccess } from "../e2b/E2B.ts"
-import { decodeFirst, decodeRows, encodeJson, exec, jsonCodec } from "../db/Sql.ts"
+import { decodeFirst, decodeJson, decodeRows, encodeJson, exec, jsonCodec } from "../db/Sql.ts"
 
 // ---------------------------------------------------------------------------
 // Internal state shapes
@@ -257,8 +257,12 @@ export class Store extends Context.Service<
 
     readonly setTimer: (name: TimerName, dueMs: number) => Effect.Effect<void>
     readonly clearTimer: (name: TimerName) => Effect.Effect<void>
-    /** Retiring: drop every timer, wake and undelivered event. */
+    /** Deleting: drop every timer, wake and undelivered event. */
     readonly clearSchedule: (at: string) => Effect.Effect<void>
+    /** Deleting: empty every table but the `deleted` tombstone. */
+    readonly wipe: Effect.Effect<void>
+    /** Sent notifications not yet withdrawn. */
+    readonly unwithdrawnNotifications: Effect.Effect<ReadonlyArray<NotificationId>>
     readonly dueTimers: (nowMs: number) => Effect.Effect<ReadonlyArray<TimerName>>
     readonly nextTimerMs: Effect.Effect<Option.Option<number>>
   }
@@ -441,6 +445,36 @@ export class Store extends Context.Service<
           yield* exec(sql`UPDATE events SET delivered_at = ${at} WHERE delivered_at IS NULL`)
         })
 
+      const wipe = Effect.forEach(
+        [
+          "messages",
+          "schedules",
+          "notifications",
+          "events",
+          "browser_sessions",
+          "timers",
+          "project",
+          "status",
+          "sandbox",
+          "live_activity",
+          "mac",
+          "usage_pause",
+          "owner_archived"
+        ],
+        clearSingleton,
+        { discard: true }
+      )
+
+      const unwithdrawnNotifications = sql`SELECT json FROM notifications`.pipe(
+        decodeRows(JsonRow),
+        Effect.map((rows) =>
+          rows
+            .map((row) => decodeJson(NotificationRecord, row.json))
+            .filter((record) => record.withdrawnAt === undefined)
+            .map((record) => record.id)
+        )
+      )
+
       const dueTimers = (nowMs: number) =>
         sql`SELECT name FROM timers WHERE due_ms <= ${nowMs} ORDER BY due_ms`.pipe(
           decodeRows(Schema.Struct({ name: Schema.String })),
@@ -481,6 +515,8 @@ export class Store extends Context.Service<
         setTimer,
         clearTimer,
         clearSchedule,
+        wipe,
+        unwithdrawnNotifications,
         dueTimers,
         nextTimerMs
       })
@@ -498,8 +534,8 @@ export const Singletons = {
   liveActivity: ["live_activity", LiveActivityRecord] as const,
   mac: ["mac", MacRecord] as const,
   usagePause: ["usage_pause", UsagePause] as const,
-  /** Retired by the operator (`ProjectRpcs.Retire`). The table is older than the name. */
-  retired: ["archived", Schema.Struct({ at: Schema.DateTimeUtc })] as const,
+  /** Deleted (`ProjectRpcs.Delete`): the tombstone `wipe` keeps. The table is older than the name. */
+  deleted: ["archived", Schema.Struct({ at: Schema.DateTimeUtc })] as const,
   /** Archived by its owner (`ProjectRpcs.Archive`), until they restore it: the agent is held, nothing is lost. */
   archived: ["owner_archived", Schema.Struct({ at: Schema.DateTimeUtc })] as const
 }

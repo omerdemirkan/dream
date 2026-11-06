@@ -48,6 +48,9 @@ export const makeR2 = (dir?: string) => {
         writeFileSync(`${file(key)}.type`, stored.contentType ?? "")
       }
       return meta(key)
+    },
+    delete: async (keys: string | ReadonlyArray<string>) => {
+      for (const key of typeof keys === "string" ? [keys] : keys) objects.delete(key)
     }
   }
   return { bucket: bucket as unknown as R2Bucket, objects }

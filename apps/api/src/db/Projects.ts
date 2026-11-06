@@ -192,7 +192,10 @@ export class Projects extends Context.Service<
     readonly project: (projection: ProjectProjection) => Effect.Effect<void>
     /** The deck: open asks of their projects but the archived ones. */
     readonly openAsks: (userId: UserId) => Effect.Effect<ReadonlyArray<OpenAsk>>
-    /** Removes a retired project from Home (its other rows stay for the record). */
+    /**
+     * Removes a deleted project's row and open asks. Its notifications stay, withdrawn, so a phone can still learn
+     * they're stale; its usage rows stay as the machine-time record (ids and minutes, nothing of its content).
+     */
     readonly remove: (id: ProjectId) => Effect.Effect<void>
 
     readonly recordNotification: (row: {
@@ -215,6 +218,9 @@ export class Projects extends Context.Service<
       readonly objectKey: string
     }) => Effect.Effect<void>
     readonly media: (id: MediaId) => Effect.Effect<Option.Option<MediaRow>>
+    /** The R2 keys of a project's media. */
+    readonly mediaKeys: (projectId: ProjectId) => Effect.Effect<ReadonlyArray<string>>
+    readonly removeMedia: (projectId: ProjectId) => Effect.Effect<void>
     readonly markUploaded: (id: MediaId, at: DateTime.Utc) => Effect.Effect<void>
 
     readonly recordUsage: (row: {
@@ -392,6 +398,14 @@ export class Projects extends Context.Service<
       const media = (id: MediaId) =>
         sql`SELECT * FROM media WHERE id = ${id}`.pipe(decodeFirst(MediaRow), Effect.map(Option.fromUndefinedOr))
 
+      const mediaKeys = (projectId: ProjectId) =>
+        sql`SELECT object_key FROM media WHERE project_id = ${projectId}`.pipe(
+          decodeRows(Schema.Struct({ object_key: Schema.String })),
+          Effect.map((rows) => rows.map((row) => row.object_key))
+        )
+
+      const removeMedia = (projectId: ProjectId) => exec(sql`DELETE FROM media WHERE project_id = ${projectId}`)
+
       const markUploaded = (id: MediaId, at: DateTime.Utc) =>
         exec(sql`UPDATE media SET uploaded_at = ${DateTime.formatIso(at)} WHERE id = ${id}`)
 
@@ -433,6 +447,8 @@ export class Projects extends Context.Service<
         staleNotifications,
         insertMedia,
         media,
+        mediaKeys,
+        removeMedia,
         markUploaded,
         recordUsage
       })
