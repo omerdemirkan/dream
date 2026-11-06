@@ -45,6 +45,7 @@ const page: TextStyle = {
 const pad = { paddingHorizontal: gutter, paddingTop: 18, paddingBottom: 28 } as const
 /** The field draws each line 3 pt lower than Text does with the same line height (measured in the Simulator). */
 const livePad = { ...pad, paddingTop: pad.paddingTop + 3 } as const
+const placeholderPosition: TextStyle = { position: "absolute", top: 0, left: 0, right: 0, color: color.t3 }
 
 function useSeconds(running: boolean) {
   const [seconds, setSeconds] = useState(0)
@@ -177,6 +178,12 @@ export default function NewIdea() {
       </View>
       {/* The field stays put under the live text, so it comes back scrolled where it was. */}
       <View style={{ flex: 1 }}>
+        {/* The placeholder as Text where the field draws its first line (UIKit's drifts and loses the tracking). */}
+        {text ? null : (
+          <Text pointerEvents="none" accessible={false} style={[page, livePad, placeholderPosition]}>
+            {"What do you want to exist?\nThink out loud. Messy is fine."}
+          </Text>
+        )}
         <TextInput
           ref={input}
           value={text}
@@ -189,8 +196,6 @@ export default function NewIdea() {
           }}
           multiline
           submitBehavior="newline"
-          placeholder={"What do you want to exist?\nThink out loud. Messy is fine."}
-          placeholderTextColor={color.t3}
           keyboardAppearance="dark"
           selectionColor={color.need}
           textAlignVertical="top"
