@@ -9,3 +9,6 @@ dist/
 .DS_Store
 coverage/
 packages/dreamd/scratch/
+
+# macOS resource forks (copied off build Macs)
+._*
