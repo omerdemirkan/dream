@@ -16,7 +16,7 @@ import { useNow, useOpenMessage } from "./hooks.ts"
 import { Dot, Icon } from "./kit.tsx"
 import { NeedLine, StatusRoadmap } from "./Status.tsx"
 import { type CardView, cardOf, type Track } from "./statusView.ts"
-import { color, needGlow } from "./theme.ts"
+import { bigTextScale, color, needGlow } from "./theme.ts"
 
 const easing = Easing.bezier(0.22, 0.8, 0.2, 1)
 
@@ -79,6 +79,7 @@ function Full(props: { readonly view: CardView }) {
       <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
         <Text
           numberOfLines={now ? 2 : 3}
+          maxFontSizeMultiplier={bigTextScale}
           style={
             now
               ? { flex: 1, fontSize: 17, lineHeight: 23, letterSpacing: -0.2, color: view.paused ? color.t2 : color.t1 }
