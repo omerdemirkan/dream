@@ -62,7 +62,6 @@ const glyphs = {
   link: "link",
   dots: "ellipsis",
   plusApp: "plus.app",
-  shuffle: "shuffle",
   globe: "globe"
 } as const satisfies Record<string, SymbolViewProps["name"]>
 

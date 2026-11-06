@@ -12,7 +12,7 @@
  * guesses tinted and the first selected, so typing replaces it; a chip by Send
  * names where it came from, and its × clears the page.
  *
- * `/new?starter=<idea id>` opens with a draft, `/new?starters=more&group=<group>` with More open.
+ * `/new?starter=<idea id>` opens with a draft.
  */
 import { useAtomSet } from "@effect/atom-react"
 import { useLocalSearchParams, useRouter } from "expo-router"
@@ -32,7 +32,7 @@ import { KeyboardAvoidingView } from "react-native-keyboard-controller"
 import Animated, { FadeIn } from "react-native-reanimated"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { caretAt, ideaToSend, insertAt, placeTake, type Selection, wordCountLabel } from "../data/draft.ts"
-import { draftRuns, type Idea, ideaGroups, ideas, parseDraft, shiftGuesses } from "../data/ideas.ts"
+import { draftRuns, type Idea, ideas, parseDraft, shiftGuesses } from "../data/ideas.ts"
 import { longIdea } from "../fake/fixtures.ts"
 import { useDictation } from "../platform/dictation.ts"
 import { createProjectFn } from "../state/atoms.ts"
@@ -79,8 +79,6 @@ export default function NewIdea() {
     text?: string
     sample?: string
     starter?: string
-    starters?: string
-    group?: string
   }>()
   const insets = useSafeAreaInsets()
   const barBottom = Math.max(insets.bottom, 12) + 2
@@ -297,11 +295,7 @@ export default function NewIdea() {
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ paddingHorizontal: gutter, paddingTop: 8, paddingBottom: 24 }}
             >
-              <Starters
-                more={params.starters === "more"}
-                group={ideaGroups.find((g) => g.id === params.group)?.id}
-                onPick={startFrom}
-              />
+              <Starters onPick={startFrom} />
             </ScrollView>
           </Animated.View>
         )}
