@@ -147,6 +147,11 @@ describe("JSON codecs", () => {
       assert.deepStrictEqual(roundTrip(AgentEvent, event).decoded, event)
     }
     assert.deepStrictEqual(roundTrip(UsageSnapshot, Fixtures.usage).decoded, Fixtures.usage)
+    assert.deepStrictEqual(roundTrip(Domain.ProjectUsage, Fixtures.liftLogUsage).decoded, Fixtures.liftLogUsage)
+    const glance = ProjectEvent.cases.Usage.make({
+      usage: { provider: "claude", billing: "subscription", observedAt: Fixtures.usage.observedAt }
+    })
+    assert.deepStrictEqual(roundTrip(ProjectEvent, glance).decoded, glance)
     assert.deepStrictEqual(roundTrip(IntegrationAccess, Fixtures.google.access).decoded, Fixtures.google.access)
   })
 

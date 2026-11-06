@@ -10,6 +10,7 @@ import { Rpc, RpcGroup } from "effect/rpc"
 import { Message } from "../Message.ts"
 import { AgentActivity, Project } from "../Project.ts"
 import { StatusCard } from "../Status.ts"
+import { ProjectUsageGlance } from "../Usage.ts"
 
 /**
  * What the phone receives. The first event of every subscription is a
@@ -36,7 +37,9 @@ export const ProjectEvent = Schema.TaggedUnion({
   /** Sent alongside `ActivityChanged`, for app builds that predate it. */
   WorkingChanged: { working: Schema.Boolean },
   /** The agent started bringing its sandbox up, started or finished a turn, or its next wake changed. */
-  ActivityChanged: { activity: AgentActivity }
+  ActivityChanged: { activity: AgentActivity },
+  /** The project header's usage, after each turn. App builds that predate it skip it. */
+  Usage: { usage: ProjectUsageGlance }
 })
 export type ProjectEvent = typeof ProjectEvent.Type
 

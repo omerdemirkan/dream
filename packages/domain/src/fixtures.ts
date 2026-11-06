@@ -12,7 +12,7 @@ import type { MediaRef } from "./Media.ts"
 import type { AccessMessage, Message, QuestionMessage, TextMessage } from "./Message.ts"
 import type { Project } from "./Project.ts"
 import type { StatusCard } from "./Status.ts"
-import type { UsageSnapshot } from "./Usage.ts"
+import type { ProjectUsage, UsageSnapshot } from "./Usage.ts"
 import type { User } from "./User.ts"
 
 const at = (iso: string) => DateTime.makeUnsafe(iso)
@@ -221,6 +221,30 @@ export const usage: UsageSnapshot = {
   plan: "ChatGPT Pro",
   fiveHour: { usedPercent: 41, resetsAt: at("2026-11-04T23:40:00Z") },
   weekly: { usedPercent: 38, resetsAt: at("2026-11-09T08:00:00Z") },
+  observedAt: at("2026-11-04T22:10:00Z")
+}
+
+/**
+ * Lift Log's usage sheet: about 4% of a week that's 38% used, the rest spread over the other projects and use
+ * outside Dream (Deck v3, project usage option A).
+ */
+export const liftLogUsage: ProjectUsage = {
+  provider: "chatgpt",
+  billing: "subscription",
+  plan: "ChatGPT Pro",
+  weekly: { usedPercent: 38, projectPercent: 4, resetsAt: at("2026-11-09T08:00:00Z") },
+  fiveHourWindow: { usedPercent: 41, projectPercent: 9, resetsAt: at("2026-11-04T23:40:00Z") },
+  today: { tokens: 2_140_000, sharePercent: 2 },
+  fiveHour: { tokens: 910_000, sharePercent: 9 },
+  week: { tokens: 9_620_000, sharePercent: 4 },
+  projects: [
+    { projectId: ids.recipe, title: "Recipe Scaler", icon: "frying.pan", sharePercent: 19 },
+    { projectId: ids.lift, title: "Lift Log", icon: "dumbbell", sharePercent: 4 },
+    { projectId: ids.cabin, title: "Cabin", icon: "house", sharePercent: 3 },
+    { projectId: ids.brief, title: "Morning Brief", icon: "sun.horizon", sharePercent: 2 }
+  ],
+  outsideDreamPercent: 10,
+  subagents: "included",
   observedAt: at("2026-11-04T22:10:00Z")
 }
 
