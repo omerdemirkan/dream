@@ -157,18 +157,18 @@ export const linkForPath = <A extends { readonly url: string }>(
 const escapeHtml = (text: string) =>
   text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] ?? c)
 
-/** Tile colours as the phone draws them (top of the gradient), for the manifest's colours. */
+/** Tile colours as the phone draws them (the top of `linkTile`'s gradients in the app), for the manifest. */
 const tileColors: Record<LinkRow["color"], string> = {
-  red: "#FF6B5E",
-  orange: "#FFC37A",
-  yellow: "#FFD95A",
-  green: "#4C8A63",
-  teal: "#4FD1C5",
-  blue: "#5AA8FF",
-  purple: "#8B5CF6",
-  pink: "#FF8AC2",
-  graphite: "#4A4A52",
-  light: "#F4F2EC"
+  red: "#FF7A6B",
+  orange: "#FFC680",
+  yellow: "#FFE07A",
+  green: "#4F8E66",
+  teal: "#5BD6C9",
+  blue: "#62AEFF",
+  purple: "#8E5CF7",
+  pink: "#FF93C6",
+  graphite: "#55555D",
+  light: "#F6F4EE"
 }
 
 /** What goes into the page's head: its Home Screen name, manifest and icon, and the one-time steps. */
@@ -188,21 +188,21 @@ export const homeScreenHead = (
 
 /**
  * Takes the marker out of the address bar before the app's scripts run (so the icon they add opens the plain URL),
- * then points at Safari's ••• until they tap anywhere.
+ * then points at Safari's ••• until they tap the page, or for 20 seconds (a tap on Safari's own bar doesn't reach it).
  */
 const hintScript = (title: string) =>
   `(function(){try{var u=new URL(location.href);u.searchParams.delete(${JSON.stringify(HomeScreenHintParam)});` +
   `history.replaceState(history.state,"",u.pathname+u.search+u.hash)}catch(e){}` +
   `var show=function(){var d=document.createElement("div");d.setAttribute("role","status");` +
-  `d.style.cssText="position:fixed;z-index:2147483647;left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom) + 64px);` +
+  `d.style.cssText="position:fixed;z-index:2147483647;left:12px;right:12px;bottom:16px;` +
   `background:#141417;color:#F5F5F7;border-radius:22px;padding:16px 18px;font:500 17px/1.3 -apple-system,system-ui,sans-serif;` +
   `box-shadow:0 12px 40px rgba(0,0,0,.35);-webkit-font-smoothing:antialiased";` +
   `d.innerHTML='<div>Tap <b style=\"letter-spacing:1px\">•••</b> then Share, then Add to Home Screen.</div>` +
   `<div style=\"margin-top:6px;font-size:14px;font-weight:400;color:rgba(245,245,247,.5)\"></div>` +
-  `<span style=\"position:absolute;right:26px;bottom:-8px;width:18px;height:18px;background:#141417;transform:rotate(45deg);border-radius:3px\"></span>';` +
+  `<span style=\"position:absolute;right:37px;bottom:-8px;width:18px;height:18px;background:#141417;transform:rotate(45deg);border-radius:3px\"></span>';` +
   `d.children[1].textContent="Shown because you asked Dream to add "+${JSON.stringify(title).replace(/</g, "\\u003c")}+". Gone once you tap.";` +
   `document.body.appendChild(d);var gone=function(){d.remove();removeEventListener("pointerdown",gone,true)};` +
-  `addEventListener("pointerdown",gone,true)};` +
+  `addEventListener("pointerdown",gone,true);setTimeout(gone,20000)};` +
   `document.readyState==="loading"?addEventListener("DOMContentLoaded",show):show()})()`
 
 /** The app's HTML with its Home Screen name and icon taken from their link, if they have one to this page. */

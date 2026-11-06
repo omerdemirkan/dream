@@ -7,6 +7,9 @@
  */
 import {
   type AccessMessage,
+  type LinkColor,
+  type LinkIcon,
+  type LinkId,
   type IntegrationId,
   type Message,
   type MessageId,
@@ -114,12 +117,76 @@ export const deleteProjectFn = appRuntime.fn(
   })
 )
 
+// ---------------------------------------------------------------------------
+// App links (the row of app icons at the top of Home)
+// ---------------------------------------------------------------------------
+
+export const linksAtom = appRuntime
+  .atom(AppClient.use((app) => app.ListLinks()))
+  .pipe(Atom.withReactivity(["links"]), Atom.keepAlive)
+
+export const addLinkFn = appRuntime.fn(
+  Effect.fn(function* (input: {
+    readonly url: string
+    readonly title: string
+    readonly icon?: LinkIcon | undefined
+    readonly color: LinkColor
+    readonly requestId: RequestId
+  }) {
+    const app = yield* AppClient
+    const { icon, ...rest } = input
+    return yield* app.AddLink({ ...rest, ...(icon === undefined ? {} : { icon }) }).pipe(withWriteTimeout)
+  }),
+  { reactivityKeys: ["links"] }
+)
+
+export const updateLinkFn = appRuntime.fn(
+  Effect.fn(function* (input: {
+    readonly linkId: LinkId
+    readonly title?: string
+    readonly icon?: LinkIcon | null
+    readonly color?: LinkColor
+  }) {
+    const app = yield* AppClient
+    return yield* app.UpdateLink(input).pipe(withWriteTimeout)
+  }),
+  { reactivityKeys: ["links"] }
+)
+
+export const removeLinkFn = appRuntime.fn(
+  Effect.fn(function* (linkId: LinkId) {
+    const app = yield* AppClient
+    yield* app.RemoveLink({ linkId }).pipe(withWriteTimeout)
+  }),
+  { reactivityKeys: ["links"] }
+)
+
+/** Takes a new link's dot away; nothing to report if it fails. */
+export const markLinkOpenedFn = appRuntime.fn(
+  Effect.fn(function* (linkId: LinkId) {
+    const app = yield* AppClient
+    yield* app.MarkLinkOpened({ linkId }).pipe(Effect.ignore)
+  }),
+  { reactivityKeys: ["links"] }
+)
+
+/** Hands the gateway the tile as a png, and returns the URL to open in Safari. */
+export const prepareHomeScreenFn = appRuntime.fn(
+  Effect.fn(function* (input: { readonly linkId: LinkId; readonly iconPng?: string | undefined }) {
+    const app = yield* AppClient
+    const { iconPng, linkId } = input
+    return yield* app
+      .PrepareHomeScreen({ linkId, ...(iconPng === undefined ? {} : { iconPng }) })
+      .pipe(withWriteTimeout)
+  })
+)
+
 /** Refreshes everything Home shows, e.g. when the app returns to the foreground or a push arrives. */
 export const refreshHomeFn = appRuntime.fn(
   Effect.fn(function* () {
     yield* Effect.void
   }),
-  { reactivityKeys: ["projects", "connections"] }
+  { reactivityKeys: ["projects", "connections", "links"] }
 )
 
 /** `requestId` stays the same when they retry the same idea, so a retry can't start a second project. */
@@ -341,7 +408,7 @@ export const scenarioFn = appRuntime.fn(
       yield* session.signIn({ token: result.sessionToken, user: result.user })
     }
   }),
-  { reactivityKeys: ["projects", "connections", "integrations"] }
+  { reactivityKeys: ["projects", "connections", "integrations", "links"] }
 )
 
 // ---------------------------------------------------------------------------

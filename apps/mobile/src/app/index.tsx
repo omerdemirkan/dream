@@ -1,19 +1,24 @@
 /**
- * Home: their projects, each saying whether it's waiting for them (questions
- * and access requests live in the project). The composer at the bottom starts
- * a new idea.
+ * Home: the row of app links, then their projects, each saying whether it's
+ * waiting for them (questions and access requests live in the project). The
+ * composer at the bottom starts a new idea.
+ *
+ * `/?sheet=add`, `/?sheet=icon&link=<id>` and `/?sheet=home-screen&link=<id>` open the app link sheets.
  */
-import type { ModelConnection, ProjectSummary } from "@dream/domain"
-import { useAtomRefresh, useAtomValue } from "@effect/atom-react"
+import type { LinkId, ModelConnection, ProjectSummary } from "@dream/domain"
+import { useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react"
 import { Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
-import { Redirect, useRouter } from "expo-router"
+import { Redirect, useLocalSearchParams, useRouter } from "expo-router"
 import { useEffect } from "react"
 import { Pressable, ScrollView, Text, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { phaseLabel, providerName, usageLeft, usageLine } from "../data/format.ts"
 import { dotOf, homeLine, presenceOf } from "../data/presence.ts"
 import { hiddenProjectsAtom, modelConnectionsAtom, projectsAtom } from "../state/atoms.ts"
+import { linkSheetAtom } from "../state/ui.ts"
+import { AppLinksRow } from "../ui/AppLinks.tsx"
+import { LinkSheets } from "../ui/LinkSheets.tsx"
 import { Dot, Icon, IconButton, LinkButton, Orb } from "../ui/kit.tsx"
 import { plainText } from "../ui/markdownParse.ts"
 import { PresenceTile, StateLineText, useTickingNow } from "../ui/Presence.tsx"
@@ -48,6 +53,14 @@ export default function Home() {
     return () => clearInterval(id)
   }, [busy, refreshProjects])
 
+  const params = useLocalSearchParams<{ sheet?: string; link?: string }>()
+  const setSheet = useAtomSet(linkSheetAtom)
+  useEffect(() => {
+    if (params.sheet === "add") setSheet(Option.some({ kind: "add" }))
+    else if ((params.sheet === "icon" || params.sheet === "home-screen") && params.link)
+      setSheet(Option.some({ kind: params.sheet, linkId: params.link as LinkId }))
+  }, [params.sheet, params.link, setSheet])
+
   // Nothing runs without a subscription: a new person connects one first.
   if (AsyncResult.isSuccess(connectionsResult) && connections.length === 0) return <Redirect href="/connect" />
 
@@ -68,6 +81,7 @@ export default function Home() {
           <Text style={{ fontSize: 17, fontWeight: "700", letterSpacing: -0.34, color: color.t1, flex: 1 }}>Dream</Text>
           <IconButton icon="person" size={34} label="Settings" onPress={() => router.push("/settings")} />
         </View>
+        <AppLinksRow projects={projects} />
         {/* When a project waits for them, its row says so; Home has no section for what they're asked. */}
         {needs ? (
           <View style={{ height: 12 }} />
@@ -115,6 +129,7 @@ export default function Home() {
         }}
       />
       <Dock />
+      <LinkSheets projects={projects} />
     </View>
   )
 }

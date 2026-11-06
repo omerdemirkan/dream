@@ -93,13 +93,11 @@ export const LinkTitle = Schema.String.check(
   Schema.isMaxLength(LinkTitleMaxLength)
 )
 
-/**
- * How wide the label under a tile can be, in points of 12 pt SF Pro: the tile's column is 72 pt, less a little so
- * an estimate a few points short still fits.
- */
+/** How wide the label under a tile can be, in points of 12 pt SF Pro (the app's `labelWidth`, 8 pt between labels). */
 const labelWidth = 68
 
-// Advance widths at 12 pt, from Helvetica's metrics (close to SF Pro's at this size). Others count as wide.
+// Advance widths at 12 pt, from Helvetica's metrics, which run about 5% narrower than SF Pro's (measured in the
+// Simulator: "Morning Brief" is 74.7 pt). Others count as wide.
 const narrow = new Map<string, number>(
   Object.entries({
     " ": 278,
@@ -147,7 +145,7 @@ const charWidth = (char: string): number => {
   if (/[A-Z]/.test(char)) return (/[FTZJ]/.test(char) ? 611 : 667) * 0.012
   return 1000 * 0.012
 }
-const widthOf = (text: string) => [...text].reduce((sum, char) => sum + charWidth(char), 0)
+const widthOf = (text: string) => [...text].reduce((sum, char) => sum + charWidth(char), 0) * 1.05
 
 /**
  * What the label under the tile reads: the whole title when it fits on the one line, else as much as fits and
