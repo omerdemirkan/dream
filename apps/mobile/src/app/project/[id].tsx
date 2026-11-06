@@ -152,6 +152,9 @@ function Project(props: {
   )
 
   const top = insets.top + 4
+  // Messages scrolling up fade out before they reach the Status card, so a line never sits flush against it.
+  // Chat starts just below the fade, so its first message isn't dimmed at rest.
+  const fade = 28
   const cardTop = top + header + gap
   // The composer sits this far above the home indicator, and 10 pt above the keyboard, riding it as it moves.
   const composerBottom = Math.max(insets.bottom, 12) + 2
@@ -165,7 +168,7 @@ function Project(props: {
         <View style={{ flex: 1 }}>
           <ChatTab
             state={state}
-            topInset={cardTop + (cardHeight || 150) + 14}
+            topInset={cardTop + (cardHeight || 150) + fade}
             bottomInset={24}
             keyboardOffset={keyboardOffset}
             onAway={setAway}
@@ -225,9 +228,9 @@ function Project(props: {
             position: "absolute",
             left: 0,
             right: 0,
-            bottom: -18,
-            height: 18,
-            experimental_backgroundImage: `linear-gradient(${color.bg}, rgba(10,10,12,0))`
+            bottom: -fade,
+            height: fade,
+            experimental_backgroundImage: `linear-gradient(${color.bg} 12%, rgba(10,10,12,0))`
           }}
         />
       </View>
