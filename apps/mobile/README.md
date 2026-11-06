@@ -81,7 +81,7 @@ xcrun simctl launch --terminate-running-process booted build.omer.dream \
 | `/new` · `/new?sample=long` · add `dictate=1` | New idea (the page), with a long brain dump, dictating at the cursor (simulated in the Simulator) |
 | `/new?starter=run-club-bot` | New idea with a starter's draft (guesses tinted, the first selected, its chip by Send). Ids are in `src/data/ideas.ts` |
 | `/project/<id>?sheet=usage` | The usage sheet over the project (the ring in its header opens it) |
-| `/connect` · `/settings` | Subscription connect flow; settings |
+| `/connect` · `/settings` | Subscription connect flow; settings, with the plan card at the top |
 
 Message ids: `msg_cabinrule`, `msg_cabinpick`, `msg_gcal` (Cabin), `msg_apple` (Lift Log), `msg_gmail` and
 `msg_brieftelegram` (Morning Brief; the last-resort key file card), `msg_recipewho` (Recipe Scaler), `msg_spotify`
@@ -145,6 +145,13 @@ each of the simulated agent's turns adds a little (the header follows `ProjectEv
 is the heavy week: 92% used, the ring's arc and "8% left" in amber, and a line in the sheet saying what's left and
 until when. `usage-none` is a world where no usage is known: the header shows nothing, and the sheet's tokens read
 "—". `usage-normal` goes back to the default.
+
+The plan's usage lives in Settings, not on Home (usage in Settings, option B): the connected subscription is a plan
+card with what's left of the week, the five-hour and week bars (all projects in white, everything else in grey),
+each project's share of the week, and the footnote, drawn with the sheet's own pieces (`ui/Usage.tsx`). Its shares
+come from `GetAccountUsage`; against an API without it the card shows the connection's own windows and no shares.
+Near the limit (`usage-near-limit`) the card turns amber with the limit callout, and Home's profile button gets an
+amber dot, only then.
 
 ```sh
 xcrun simctl launch --terminate-running-process booted build.omer.dream \
