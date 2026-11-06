@@ -173,6 +173,34 @@ export const fitLine = (
   return { shown: `${shown.trimEnd()}…`, whole: false }
 }
 
+/**
+ * `text` wrapped at word boundaries into lines `width` points wide in the system font at `size` points, as iOS
+ * lays out a paragraph (a word too long for a line breaks within it). An estimate, like `fitLine`.
+ */
+export const wrapLines = (text: string, width: number, size: number): ReadonlyArray<string> => {
+  const room = (width * 12) / size
+  const lines: Array<string> = []
+  let line = ""
+  for (const word of text.split(/\s+/).filter((w) => w.length > 0)) {
+    const joined = line === "" ? word : `${line} ${word}`
+    if (widthOf(joined) <= room) {
+      line = joined
+      continue
+    }
+    if (line !== "") lines.push(line)
+    line = ""
+    for (const char of [...word]) {
+      if (line !== "" && widthOf(`${line}${char}`) > room) {
+        lines.push(line)
+        line = ""
+      }
+      line += char
+    }
+  }
+  if (line !== "") lines.push(line)
+  return lines
+}
+
 // ---------------------------------------------------------------------------
 // A link
 // ---------------------------------------------------------------------------

@@ -8,7 +8,7 @@
  */
 import { Schema } from "effect"
 import { MessageId } from "./Ids.ts"
-import { fitLine } from "./Links.ts"
+import { fitLine, wrapLines } from "./Links.ts"
 import { MediaRef } from "./Media.ts"
 import { ProjectPhase } from "./Project.ts"
 
@@ -44,7 +44,7 @@ export const StatusCard = Schema.Struct({
   phase: ProjectPhase,
   /** When the current phase began ("Building · day 3"). */
   phaseSince: Schema.DateTimeUtc,
-  /** One sentence: one line on the card above Chat (see `nowOnCard`), the large line when it's opened. */
+  /** One sentence: meant for one line on the card above Chat, which shows up to two (see `nowOnCard`); large when opened. */
   now: Schema.optionalKey(Schema.String),
   /** No longer shown (see above). */
   justDid: Schema.optionalKey(Schema.String),
@@ -59,9 +59,17 @@ export const StatusCard = Schema.Struct({
 })
 export type StatusCard = typeof StatusCard.Type
 
-/** The card's one line for `now` on a 6.3" iPhone: 17 pt type, about 300 pt wide beside the card’s chevron (315 here: the estimate runs a little wide; checked in the Simulator). */
-export const nowOnCard = (now: string): { readonly shown: string; readonly whole: boolean } =>
-  fitLine(now.replace(/\s+/g, " ").trim(), 315, 17)
+/**
+ * How `now` lays out on the card above Chat on a 6.3" iPhone: 17 pt type, about 300 pt wide beside the card's
+ * chevron (315 here: the estimate runs a little wide; checked in the Simulator). It's meant for one line; the card
+ * shows up to two, and past two it shows `shown`, cut with "…".
+ */
+export const nowOnCard = (now: string): { readonly lines: number; readonly shown: string; readonly whole: boolean } => {
+  const text = now.replace(/\s+/g, " ").trim()
+  const lines = wrapLines(text, 315, 17)
+  if (lines.length <= 2) return { lines: lines.length, shown: text, whole: true }
+  return { lines: lines.length, shown: `${lines[0]} ${fitLine(lines.slice(1).join(" "), 315, 17).shown}`, whole: false }
+}
 
 /** The amber line for a need: "Your OpenAI API key" → "Needs your OpenAI API key". */
 export const needLine = (what: string): string => {

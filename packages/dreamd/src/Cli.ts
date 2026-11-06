@@ -534,7 +534,7 @@ const status = Command.make(
     icon: lineFlag("icon", "SF Symbol name for the project tile, e.g. dumbbell."),
     now: lineFlag(
       "now",
-      "One sentence on what you're doing now: one line (about 35 characters) on the card above their Chat, large when they open it, and under the project's name on Home."
+      "One sentence on what you're doing now, best kept to one line on the card above their Chat (about 35 characters); it shows up to two, then cuts. Large when they open it, and under the project's name on Home."
     ),
     justDid: lineFlag("just-did", "No longer shown in the app; kept so older scripts still run."),
     next: lineFlag("next", "No longer shown in the app; kept so older scripts still run."),

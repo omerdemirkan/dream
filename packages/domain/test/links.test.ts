@@ -121,8 +121,14 @@ describe("app links", () => {
 
 describe("the Status card's lines", () => {
   it("cuts a long now sentence and phrases a need", () => {
-    assert.isTrue(nowOnCard("Building the charts").whole)
-    assert.isFalse(nowOnCard("Building progress charts for squat, bench and deadlift, then the rest timer").whole)
+    assert.strictEqual(nowOnCard("Building the charts").lines, 1)
+    const two = nowOnCard("Building progress charts for squat, bench and deadlift.")
+    assert.deepStrictEqual([two.lines, two.whole], [2, true])
+    const three = nowOnCard(
+      "Building progress charts for squat, bench and deadlift, then wiring the rest timer into its own Live Activity."
+    )
+    assert.deepStrictEqual([three.lines, three.whole], [3, false])
+    assert.isTrue(three.shown.endsWith("…"))
     assert.strictEqual(needLine("Your OpenAI API key"), "Needs your OpenAI API key")
     assert.strictEqual(needLine("Google Calendar"), "Needs Google Calendar")
   })

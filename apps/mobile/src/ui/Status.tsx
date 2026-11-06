@@ -41,28 +41,30 @@ export function NeedLine(props: {
       <Dot kind="need" />
       <Text
         numberOfLines={props.size === "open" ? 2 : 1}
-        style={{ flex: 1, fontSize: props.size === "open" ? 18 : 16, letterSpacing: -0.2, color: color.need }}
+        style={{ flex: 1, fontSize: props.size === "open" ? 16.5 : 16, letterSpacing: -0.2, color: color.need }}
       >
         {need.text}
       </Text>
-      {need.more > 0 ? <Text style={{ fontSize: 14, color: color.need, opacity: 0.7 }}>{`+${need.more}`}</Text> : null}
+      {need.more > 0 ? (
+        <Text style={{ fontSize: 13.5, color: color.need, opacity: 0.7 }}>{`+${need.more}`}</Text>
+      ) : null}
       {props.chevron ? <Icon name="chev" size={15} color={color.need} weight="semibold" /> : null}
     </Pressable>
   )
 }
 
 function Marker(props: { readonly state: Milestone["state"] }) {
-  const box = { width: 24, height: 24, borderRadius: 12, alignItems: "center", justifyContent: "center" } as const
+  const box = { width: 21, height: 21, borderRadius: 10.5, alignItems: "center", justifyContent: "center" } as const
   if (props.state === "done")
     return (
       <View style={[box, { backgroundColor: color.t1 }]}>
-        <Icon name="check" size={12} color={color.black} weight="bold" />
+        <Icon name="check" size={11} color={color.black} weight="bold" />
       </View>
     )
   if (props.state === "current")
     return (
       <View style={[box, { borderWidth: 2, borderColor: color.t1 }]}>
-        <View style={{ width: 9, height: 9, borderRadius: 4.5, backgroundColor: color.t1 }} />
+        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color.t1 }} />
       </View>
     )
   return <View style={[box, { borderWidth: 1.5, borderStyle: "dashed", borderColor: "rgba(255,255,255,0.3)" }]} />
@@ -73,15 +75,15 @@ function MilestoneLine(props: { readonly milestone: Milestone }) {
   const m = props.milestone
   const when = m.state === "current" ? "Now" : m.date ? milestoneDate(m.date, now) : undefined
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 14, minHeight: 36 }}>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 13, minHeight: 32 }}>
       <Marker state={m.state} />
       <Text
         numberOfLines={1}
-        style={{ flex: 1, fontSize: 17, letterSpacing: -0.25, color: m.state === "upcoming" ? color.t3 : color.t1 }}
+        style={{ flex: 1, fontSize: 16, letterSpacing: -0.2, color: m.state === "upcoming" ? color.t3 : color.t1 }}
       >
         {m.title}
       </Text>
-      {when ? <Text style={{ fontSize: 14, color: color.t3 }}>{when}</Text> : null}
+      {when ? <Text style={{ fontSize: 13, color: color.t3 }}>{when}</Text> : null}
     </View>
   )
 }
@@ -110,9 +112,9 @@ function PublishedApp(props: { readonly project: Project }) {
         })
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
-      {link ? <LinkTile look={link} size={44} /> : <Tile icon={project.icon} size="lg" />}
+      {link ? <LinkTile look={link} size={40} /> : <Tile icon={project.icon} size="md" />}
       <View style={{ flex: 1 }}>
-        <Text numberOfLines={1} style={{ fontSize: 16, fontWeight: "600", color: color.t1 }}>
+        <Text numberOfLines={1} style={{ fontSize: 15, fontWeight: "600", color: color.t1 }}>
           {link?.title ?? project.title}
         </Text>
         <Text numberOfLines={1} style={{ fontSize: 13, color: color.t3, marginTop: 2 }}>
@@ -124,14 +126,14 @@ function PublishedApp(props: { readonly project: Project }) {
         accessibilityLabel={`Open ${link?.title ?? project.title}`}
         onPress={open}
         style={({ pressed }) => ({
-          height: 36,
-          paddingHorizontal: 18,
-          borderRadius: 18,
+          height: 32,
+          paddingHorizontal: 16,
+          borderRadius: 16,
           justifyContent: "center",
           backgroundColor: pressed ? color.line2 : color.s3
         })}
       >
-        <Text style={{ fontSize: 15, fontWeight: "600", color: color.t1 }}>Open</Text>
+        <Text style={{ fontSize: 14, fontWeight: "600", color: color.t1 }}>Open</Text>
       </Pressable>
     </View>
   )
@@ -157,8 +159,15 @@ export function StatusRoadmap(props: { readonly state: ProjectState; readonly on
         <Text
           style={
             view.stand === "now"
-              ? { flex: 1, fontSize: 25, lineHeight: 31, letterSpacing: -0.6, color: view.paused ? color.t2 : color.t1 }
-              : { flex: 1, fontSize: 17, lineHeight: 24, letterSpacing: -0.2, color: color.t2 }
+              ? {
+                  flex: 1,
+                  fontSize: 21,
+                  lineHeight: 27,
+                  fontWeight: "600",
+                  letterSpacing: -0.4,
+                  color: view.paused ? color.t2 : color.t1
+                }
+              : { flex: 1, fontSize: 16, lineHeight: 22, letterSpacing: -0.15, color: color.t2 }
           }
         >
           {view.text}
@@ -168,7 +177,7 @@ export function StatusRoadmap(props: { readonly state: ProjectState; readonly on
           size={14}
           color={color.t3}
           weight="semibold"
-          style={{ marginTop: 8, transform: [{ rotate: "180deg" }] }}
+          style={{ marginTop: 6, transform: [{ rotate: "180deg" }] }}
         />
       </Pressable>
       {view.need ? (

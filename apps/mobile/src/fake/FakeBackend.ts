@@ -93,7 +93,9 @@ export const Scenario = [
   "ask-series",
   "links-empty",
   "links-new",
-  "long-chat"
+  "long-chat",
+  "now-two-lines",
+  "now-three-lines"
 ] as const
 export type Scenario = (typeof Scenario)[number]
 
@@ -1151,6 +1153,18 @@ export class FakeBackend extends Context.Service<
             const at = lift.messages.indexOf(update)
             lift.messages = [...lift.messages.slice(0, at), ...added, ...lift.messages.slice(at)]
             return yield* emit(lift, snapshotOf(lift))
+          }
+          case "now-two-lines":
+          case "now-three-lines": {
+            // Lift Log's now sentence running long: two lines on the card, or three, which the card cuts to two.
+            const lift = Array.from(records.values()).find((r) => r.project.slug === "lift-log")
+            if (!lift) return
+            return yield* setStatus(lift, {
+              now:
+                name === "now-two-lines"
+                  ? "Building progress charts for squat, bench and deadlift."
+                  : "Building progress charts for squat, bench and deadlift, then wiring the rest timer into its own Live Activity."
+            })
           }
           case "activity-sent":
             return yield* liftStage("sent", now)

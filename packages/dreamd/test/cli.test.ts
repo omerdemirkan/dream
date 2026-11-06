@@ -509,11 +509,19 @@ describe("dream status", () => {
   it("echoes what the card shows: the now line as cut, the track, needs, and what's not shown", () => {
     const now = DateTime.makeUnsafe("2026-11-04T22:12:00Z")
     const out = status(Fx.liftLogStatus, now)
-    assert.include(out, "The card above their Chat cuts it to")
+    assert.include(out, "It takes two lines on the card above their Chat")
     assert.include(out, "Track: 3 of 5 (Progress charts)")
     assert.include(out, 'need: amber "Needs your Apple Developer account" while msg_apple is open')
     assert.include(out, "Not shown in the app: just did, next.")
     const short = status({ ...Fx.liftLogStatus, now: "Building the charts" }, now)
     assert.include(short, `Now: "Building the charts" (fits the card's one line)`)
+    const long = status(
+      {
+        ...Fx.liftLogStatus,
+        now: `${Fx.liftLogStatus.now} Then the rest timer, with its own Live Activity and sounds.`
+      },
+      now
+    )
+    assert.include(long, "Too long: the card above their Chat cuts it to two lines")
   })
 })

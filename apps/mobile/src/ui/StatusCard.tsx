@@ -78,7 +78,7 @@ function Full(props: { readonly view: CardView }) {
     <View style={{ paddingHorizontal: 18, paddingTop: 16, paddingBottom: view.need ? 14 : 16 }}>
       <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
         <Text
-          numberOfLines={now ? 1 : 3}
+          numberOfLines={now ? 2 : 3}
           style={
             now
               ? { flex: 1, fontSize: 17, lineHeight: 23, letterSpacing: -0.2, color: view.paused ? color.t2 : color.t1 }
