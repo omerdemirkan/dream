@@ -38,6 +38,20 @@ function Listening(props: { readonly heard: string; readonly inset: number; read
 }
 
 /**
+ * The field's placeholder, drawn as Text behind an empty field rather than by UIKit, whose placeholder can sit
+ * below the caret, with stale tracking, once the field has been edited, cleared or reused for another field.
+ */
+export function FieldPlaceholder(props: { readonly text: string; readonly color: string; readonly fontSize: number }) {
+  return (
+    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { justifyContent: "center" }]}>
+      <Text numberOfLines={1} accessible={false} style={{ fontSize: props.fontSize, color: props.color }}>
+        {props.text}
+      </Text>
+    </View>
+  )
+}
+
+/**
  * Sending hands the text to `onSend` with a `sent` callback. The field keeps
  * the text until the write goes through, so a failed or timed-out send leaves
  * it there to try again.
@@ -87,18 +101,19 @@ export function ChatComposer(props: {
         boxShadow: "0 10px 34px rgba(0,0,0,0.55)"
       }}
     >
-      <TextInput
-        value={text}
-        onChangeText={setText}
-        placeholder="Message Dream"
-        placeholderTextColor={color.t2}
-        style={{ flex: 1, color: color.t1, fontSize: 16, height: "100%" }}
-        returnKeyType="send"
-        onSubmitEditing={send}
-        submitBehavior="submit"
-        keyboardAppearance="dark"
-        accessibilityLabel="Message Dream"
-      />
+      <View style={{ flex: 1, height: "100%" }}>
+        {text ? null : <FieldPlaceholder text="Message Dream" color={color.t2} fontSize={16} />}
+        <TextInput
+          value={text}
+          onChangeText={setText}
+          style={{ flex: 1, color: color.t1, fontSize: 16 }}
+          returnKeyType="send"
+          onSubmitEditing={send}
+          submitBehavior="submit"
+          keyboardAppearance="dark"
+          accessibilityLabel="Message Dream"
+        />
+      </View>
       {dictation.listening ? <Listening heard={dictation.heard} inset={20} radius={28} /> : null}
       {has && !dictation.listening ? (
         <IconButton
@@ -149,18 +164,19 @@ export function ElseComposer(props: {
         borderColor: dictation.listening ? color.needLine : color.line2
       }}
     >
-      <TextInput
-        value={text}
-        onChangeText={setText}
-        placeholder="Something else…"
-        placeholderTextColor={color.t3}
-        style={{ flex: 1, color: color.t1, fontSize: props.large ? 17 : 16, height: "100%" }}
-        returnKeyType="send"
-        onSubmitEditing={send}
-        submitBehavior="submit"
-        keyboardAppearance="dark"
-        accessibilityLabel="Something else"
-      />
+      <View style={{ flex: 1, height: "100%" }}>
+        {text ? null : <FieldPlaceholder text="Something else…" color={color.t3} fontSize={props.large ? 17 : 16} />}
+        <TextInput
+          value={text}
+          onChangeText={setText}
+          style={{ flex: 1, color: color.t1, fontSize: props.large ? 17 : 16 }}
+          returnKeyType="send"
+          onSubmitEditing={send}
+          submitBehavior="submit"
+          keyboardAppearance="dark"
+          accessibilityLabel="Something else"
+        />
+      </View>
       {dictation.listening ? <Listening heard={dictation.heard} inset={16} radius={props.large ? 18 : 16} /> : null}
       {has && !dictation.listening ? (
         <IconButton

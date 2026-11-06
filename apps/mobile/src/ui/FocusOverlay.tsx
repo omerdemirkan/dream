@@ -11,6 +11,7 @@ import { AsyncResult } from "effect/reactivity"
 import { usePathname, useRouter } from "expo-router"
 import { useEffect, useRef } from "react"
 import { StyleSheet, useWindowDimensions, View } from "react-native"
+import { KeyboardAvoidingView } from "react-native-keyboard-controller"
 import Animated, {
   Easing,
   interpolateColor,
@@ -19,6 +20,7 @@ import Animated, {
   withSequence,
   withTiming
 } from "react-native-reanimated"
+import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { scheduleOnRN } from "react-native-worklets"
 import { projectsAtom } from "../state/atoms.ts"
 import { type Focus, focusAtom, landingAtom, messageRects, type Rect } from "../state/ui.ts"
@@ -42,6 +44,7 @@ export function FocusOverlay() {
 function FocusLayer(props: { readonly focus: Focus }) {
   const { focus } = props
   const { width: W, height: H } = useWindowDimensions()
+  const insets = useSafeAreaInsets()
   const router = useRouter()
   const pathname = usePathname()
   const setFocus = useAtomSet(focusAtom)
@@ -149,11 +152,18 @@ function FocusLayer(props: { readonly focus: Focus }) {
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none" accessibilityViewIsModal>
       <Animated.View style={[{ position: "absolute", overflow: "hidden" }, container]}>
         <Animated.View style={[{ position: "absolute", width: W, height: H }, inner]}>
-          {message?._tag === "Question" ? (
-            <ExpandedQuestion message={message} project={project} onBack={back} />
-          ) : message?._tag === "Access" ? (
-            <ExpandedAccess message={message} project={project} onBack={back} />
-          ) : null}
+          {/* The bottom ("Something else…", a key field) rides the keyboard, ending 10 pt above it. */}
+          <KeyboardAvoidingView
+            behavior="padding"
+            keyboardVerticalOffset={-(Math.max(insets.bottom, 12) + 6 - 10)}
+            style={{ flex: 1 }}
+          >
+            {message?._tag === "Question" ? (
+              <ExpandedQuestion message={message} project={project} onBack={back} />
+            ) : message?._tag === "Access" ? (
+              <ExpandedAccess message={message} project={project} onBack={back} />
+            ) : null}
+          </KeyboardAvoidingView>
         </Animated.View>
       </Animated.View>
     </View>

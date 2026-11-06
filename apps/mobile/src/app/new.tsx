@@ -11,8 +11,6 @@ import { useAtomSet } from "@effect/atom-react"
 import { useLocalSearchParams, useRouter } from "expo-router"
 import { useEffect, useRef, useState } from "react"
 import {
-  Keyboard,
-  KeyboardAvoidingView,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -23,6 +21,7 @@ import {
   type TextStyle,
   View
 } from "react-native"
+import { KeyboardAvoidingView } from "react-native-keyboard-controller"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { caretAt, ideaToSend, insertAt, placeTake, type Selection, wordCountLabel } from "../data/draft.ts"
 import { longIdea } from "../fake/fixtures.ts"
@@ -46,19 +45,7 @@ const page: TextStyle = {
 const pad = { paddingHorizontal: gutter, paddingTop: 18, paddingBottom: 28 } as const
 /** The field draws each line 3 pt lower than Text does with the same line height (measured in the Simulator). */
 const livePad = { ...pad, paddingTop: pad.paddingTop + 3 } as const
-
-function useKeyboardShown() {
-  const [shown, setShown] = useState(false)
-  useEffect(() => {
-    const show = Keyboard.addListener("keyboardWillShow", () => setShown(true))
-    const hide = Keyboard.addListener("keyboardWillHide", () => setShown(false))
-    return () => {
-      show.remove()
-      hide.remove()
-    }
-  }, [])
-  return shown
-}
+const placeholderPosition: TextStyle = { position: "absolute", top: 0, left: 0, right: 0, color: color.t3 }
 
 function useSeconds(running: boolean) {
   const [seconds, setSeconds] = useState(0)
@@ -77,7 +64,7 @@ export default function NewIdea() {
   const router = useRouter()
   const params = useLocalSearchParams<{ dictate?: string; text?: string; sample?: string }>()
   const insets = useSafeAreaInsets()
-  const keyboard = useKeyboardShown()
+  const barBottom = Math.max(insets.bottom, 12) + 2
   const [text, setText] = useState(() => params.text ?? (params.sample === "long" ? longIdea : ""))
   const textRef = useRef(text)
   textRef.current = text
@@ -169,7 +156,12 @@ export default function NewIdea() {
   }
 
   return (
-    <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: color.bg }}>
+    // The bar rides the keyboard frame by frame, from above the home indicator to 10 pt above the keyboard.
+    <KeyboardAvoidingView
+      behavior="padding"
+      keyboardVerticalOffset={-(barBottom - 10)}
+      style={{ flex: 1, backgroundColor: color.bg }}
+    >
       <View
         style={{
           flexDirection: "row",
@@ -186,6 +178,12 @@ export default function NewIdea() {
       </View>
       {/* The field stays put under the live text, so it comes back scrolled where it was. */}
       <View style={{ flex: 1 }}>
+        {/* The placeholder as Text where the field draws its first line (UIKit's drifts and loses the tracking). */}
+        {text ? null : (
+          <Text pointerEvents="none" accessible={false} style={[page, livePad, placeholderPosition]}>
+            {"What do you want to exist?\nThink out loud. Messy is fine."}
+          </Text>
+        )}
         <TextInput
           ref={input}
           value={text}
@@ -198,8 +196,6 @@ export default function NewIdea() {
           }}
           multiline
           submitBehavior="newline"
-          placeholder={"What do you want to exist?\nThink out loud. Messy is fine."}
-          placeholderTextColor={color.t3}
           keyboardAppearance="dark"
           selectionColor={color.need}
           textAlignVertical="top"
@@ -225,7 +221,7 @@ export default function NewIdea() {
           height: 56,
           marginHorizontal: 16,
           marginTop: 8,
-          marginBottom: keyboard ? 10 : Math.max(insets.bottom, 12) + 2
+          marginBottom: barBottom
         }}
       >
         {dictation.available ? (

@@ -4,7 +4,8 @@
  * sample person.
  */
 import { useState } from "react"
-import { KeyboardAvoidingView, Text, TextInput, View } from "react-native"
+import { Text, TextInput, View } from "react-native"
+import { KeyboardAvoidingView } from "react-native-keyboard-controller"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { googleSignInAvailable } from "../platform/google.ts"
 import { devSignInFn, signInWithGoogleFn } from "../state/atoms.ts"
