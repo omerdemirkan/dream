@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dream · App links on Home · four options</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Inter,-apple-system,system-ui,sans-serif;background:#E8E6E1;color:#17171a;-webkit-font-smoothing:antialiased;padding:40px 48px 64px}
+.k{font-size:12px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#8a877f}
+h1{font-size:42px;letter-spacing:-.04em;font-weight:700;margin-top:8px}
+.lede{max-width:760px;font-size:16px;line-height:1.5;color:#55534d;margin-top:10px}
+h2{font-size:24px;letter-spacing:-.03em;margin:44px 0 4px}
+h2 span{color:#8a877f;font-weight:500}
+.d{font-size:15px;line-height:1.45;color:#55534d;max-width:860px}
+.d b{color:#17171a;font-weight:600}
+.row{display:flex;gap:22px;margin-top:16px;overflow-x:auto;padding-bottom:8px}
+figure{flex:none;width:250px}
+figure img{width:250px;border-radius:34px;display:block;box-shadow:0 0 0 6px #060607,0 24px 40px -20px rgba(30,24,12,.5)}
+figcaption{font-size:13px;color:#6b6962;line-height:1.4;margin-top:16px}
+figcaption b{display:block;color:#17171a;font-weight:600;font-size:13px}
+table{border-collapse:collapse;margin-top:14px;font-size:14px;line-height:1.4;max-width:980px}
+td,th{text-align:left;padding:9px 14px 9px 0;border-top:1px solid rgba(0,0,0,.09);vertical-align:top}
+th{font-size:12px;color:#8a877f;font-weight:600;letter-spacing:.06em;text-transform:uppercase;border-top:0}
+td:first-child{font-weight:600;white-space:nowrap}
+.pick{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;background:#17171a;color:#fff;border-radius:6px;padding:3px 7px;margin-left:8px;vertical-align:4px}
+</style>
+</head>
+<body>
+<div class="k">Dream · Home · after the Needs you deck</div>
+<h1>App links</h1>
+<p class="lede">Projects build things the person opens: a web app, a digest page, a booking site. App links put those on Home, where the Needs you deck was. A project’s agent adds one when it publishes something worth opening (<code>dream link</code>), and the person can add one from a project’s published URL or any link. Long-pressing a link opens a menu: Open, Add to Home Screen, Rename, Change icon, Copy link, Remove. Every phone is 1206 × 2622 (iPhone 17 Pro).</p>
+
+<h2>A · Dock <span class="pick">Pick</span></h2>
+<p class="d"><b>A row of app icons under the header, like a second iOS dock.</b> It’s the smallest change to Home and reads exactly like the icons the links can become. The trade-off: about five icons fit before the row scrolls, and who made a link only shows when you hold it.</p>
+<div class="row">
+  <figure><img src="A1-dock.png"><figcaption><b>A1-dock</b>Agent-made links get the app’s real icon; Cabin was just published (white dot, like iOS’s new-app dot). Train times was added by the person and gets a monogram.</figcaption></figure>
+  <figure><img src="A2-dock-empty.png"><figcaption><b>A2-dock-empty</b>No links yet: one dashed Add tile and a line saying what lands here.</figcaption></figure>
+  <figure><img src="A3-dock-add.png"><figcaption><b>A3-dock-add</b>Add: paste any link, or pick from what projects published that isn’t on Home yet.</figcaption></figure>
+  <figure><img src="A4-dock-hold.png"><figcaption><b>A4-dock-hold</b>Long-press lifts the icon. The menu header says who made it and where it goes.</figcaption></figure>
+</div>
+
+<h2>B · Cards</h2>
+<p class="d"><b>A 2-column grid of cards, each with a live preview of the page.</b> You can see what’s inside before you open it, and Dream already loads every published URL after each turn, so it could keep the previews fresh. The trade-off: four cards take half the screen and push projects below the fold, and previews need a screenshot pipeline.</p>
+<div class="row">
+  <figure><img src="B1-cards.png"><figcaption><b>B1-cards</b>Agent links carry a line the agent writes (“Book a weekend”); the person’s say “Added by you”.</figcaption></figure>
+  <figure><img src="B2-cards-empty.png"><figcaption><b>B2-cards-empty</b>An Add card and a quiet card explaining previews.</figcaption></figure>
+  <figure><img src="B3-cards-add.png"><figcaption><b>B3-cards-add</b>The same add sheet, from Add in the section header.</figcaption></figure>
+  <figure><img src="B4-cards-hold.png"><figcaption><b>B4-cards-hold</b>The whole card lifts; same menu.</figcaption></figure>
+</div>
+
+<h2>C · Chips in each row</h2>
+<p class="d"><b>No new section: a project with something to open gets an Open chip on its row.</b> It’s the calmest Home, and every link stays tied to the project it came from. The trade-off: links to other sites need a “Links” row, each project gets one chip at most, and the chip pushes out the progress bar.</p>
+<div class="row">
+  <figure><img src="C1-chips.png"><figcaption><b>C1-chips</b>Open chips carry the app’s icon. The person’s own links collect in a Links row.</figcaption></figure>
+  <figure><img src="C2-chips-empty.png"><figcaption><b>C2-chips-empty</b>Today’s Home, plus one hint line.</figcaption></figure>
+  <figure><img src="C3-chips-add.png"><figcaption><b>C3-chips-add</b>Add from a project’s long-press, or Home’s, using the same sheet.</figcaption></figure>
+  <figure><img src="C4-chips-hold.png"><figcaption><b>C4-chips-hold</b>Holding the chip lifts the row; the menu is the link’s, not the project’s.</figcaption></figure>
+</div>
+
+<h2>D · Shelf</h2>
+<p class="d"><b>An “Apps” card above Projects, one row per link with an Open button, like an App Store list.</b> It’s the clearest about what each link is and who made it, and it has room for the agent’s live line. The trade-off: it’s the heaviest option, each link costs a full row, and Home then has two lists that look alike.</p>
+<div class="row">
+  <figure><img src="D1-shelf.png"><figcaption><b>D1-shelf</b>Icon, name, the agent’s line or “Added by you · domain”, and Open.</figcaption></figure>
+  <figure><img src="D2-shelf-empty.png"><figcaption><b>D2-shelf-empty</b>One placeholder row that names what’s coming.</figcaption></figure>
+  <figure><img src="D3-shelf-add.png"><figcaption><b>D3-shelf-add</b>The same add sheet.</figcaption></figure>
+  <figure><img src="D4-shelf-hold.png"><figcaption><b>D4-shelf-hold</b>The row lifts; same menu.</figcaption></figure>
+</div>
+
+<h2>Add to Home Screen <span>· the same in every option</span></h2>
+<p class="d"><b>Safari’s own Add to Home Screen, made easy.</b> On iOS 26 every site added from Safari opens as a web app: its own icon, full screen. Dream’s gateway serves a manifest and apple-touch-icon for each published app from the link’s name and icon, so Safari gets them right. It takes 5 taps from Dream’s menu: Add to Home Screen → Open in Safari → ••• → Share → Add to Home Screen → Add (one more if Add to Home Screen needs a scroll).</p>
+<div class="row">
+  <figure><img src="H1-home-screen-sheet.png"><figcaption><b>H1-home-screen-sheet</b>From the menu: a preview of the icon and the three Safari steps.</figcaption></figure>
+  <figure><img src="H2-safari-hint.png"><figcaption><b>H2-safari-hint</b>On published apps, the gateway shows a one-time pointer at •••, only when Dream opened the page for this.</figcaption></figure>
+  <figure><img src="H3-safari-add.png"><figcaption><b>H3-safari-add</b>Safari’s sheet already has Dream’s icon and name; Open as Web App is on by default.</figcaption></figure>
+  <figure><img src="H4-on-home-screen.png"><figcaption><b>H4-on-home-screen</b>A real icon next to their other apps.</figcaption></figure>
+  <figure><img src="W1-widget-later.png"><figcaption><b>W1-widget-later</b>Later, with a TestFlight build: a WidgetKit widget of the same links. Taps go through Dream.</figcaption></figure>
+</div>
+
+<h2>What iOS allows</h2>
+<table>
+<tr><th>Path</th><th>Taps</th><th>Result</th><th>Verdict</th></tr>
+<tr><td>Safari Add to Home Screen</td><td>~5 (4 inside Safari)</td><td>A real icon that opens full screen as a web app (default on iOS 26, no manifest needed). Icon and name come from the site; Dream’s gateway can supply both for published apps.</td><td>Use it. Works today, no native build.</td></tr>
+<tr><td>Share sheet inside Dream</td><td>—</td><td>Add to Home Screen only appears for apps with the managed <code>com.apple.developer.web-browser</code> entitlement, which is for browsers.</td><td>Not available to Dream.</td></tr>
+<tr><td>Web Clip profile (.mobileconfig)</td><td>~8, plus passcode</td><td>A true icon with Dream’s image; FullScreen works. Install: download → Allow → Settings → Profile Downloaded → Install → passcode → Install → Done, with a “Not Verified” warning unless signed. The key that would open links in Dream (TargetApplicationBundleIdentifier) works only through MDM.</td><td>No: a device-management detour for an icon.</td></tr>
+<tr><td>App Intents + Shortcuts</td><td>~8</td><td>The person builds or finds a shortcut, then adds it to the Home Screen from the Shortcuts app. Shortcuts’ glyph unless they pick a photo; it runs through Shortcuts.</td><td>No: most taps and the weakest icon.</td></tr>
+<tr><td>WidgetKit widget</td><td>~5</td><td>Home Screen edit → Add Widget → Dream → size → Add. Shows several links and updates when an agent adds one. Smallest size is 2×2; taps open Dream, which then opens the link.</td><td>Later, with the next native build.</td></tr>
+</table>
+</body>
+</html>

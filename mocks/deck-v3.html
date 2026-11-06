@@ -51,6 +51,9 @@ ul,ol{list-style:none}
 .isl-m{width:37px;height:37px;border-radius:50%;background:#000;display:grid;place-items:center;margin:0 auto}
 .isl-row{display:flex;justify-content:center;gap:16px;align-items:center}
 
+/* static screens (rendered PNGs) on the overview */
+.dev img{display:block;width:390px;height:844px;object-fit:cover;border-radius:48px}
+
 /* option cards on the overview */
 .fig.opt figcaption{visibility:hidden}
 .optc{width:340px;height:864px;border-radius:44px;background:#F3F1EC;border:1px solid rgba(0,0,0,.07);padding:40px 32px;display:flex;flex-direction:column;gap:22px}
@@ -1490,7 +1493,30 @@ const FRAMES = [
   {n:'17', t:'Prototype reactions · Cabin', c:'Swipe three throwaway directions; react to each.', r:'protos'},
   {n:'18', t:'Project · Morning Brief · Status', c:'The roadmap keeps going after launch: runs, repairs, what’s next.', r:'brief'},
   {n:'19', t:'Chat · Morning Brief', c:'A connected Gmail request, resolved in the thread.', r:'briefChat'},
-  {n:'20', t:'Project · paused', c:'Hitting your ChatGPT usage limit is calm, not alarming.', r:'liftPaused'}
+  {n:'20', t:'Project · paused', c:'Hitting your ChatGPT usage limit is calm, not alarming.', r:'liftPaused'},
+  {card:'intro', k:'Home · after the Needs you deck', t:'App links', body:['Projects build things the person opens, and today the only way in is through the project. App links are launchers for those things, on Home where the Needs you deck was. An agent adds one when it publishes something worth opening (dream link); the person can add any link.','Four directions follow, each with links, empty, adding one, and the long-press menu. These are static renders; all of them and a comparison are in screens/app-links/index.html.'], list:['Agent-made links get the app’s real icon and a line the agent keeps current. The person’s links say “Added by you”.','Long-press: Open, Add to Home Screen, Rename, Change icon, Copy link, Remove.','Add to Home Screen goes through Safari (iOS 26 opens it as a web app). Dream’s gateway supplies the icon and name. About 5 taps; the flow follows the options.']},
+  {card:'A', t:'Dock', gap:1, what:'A row of app icons under the header, like a second iOS dock. The person’s links get a monogram when the site has no icon.', why:'Smallest change to Home, and it looks exactly like the icons the links can become on the Home Screen.', cost:'About five icons fit before the row scrolls, and who made a link only shows when you hold it.'},
+  {n:'A1', t:'A · Dock', c:'Cabin was just published (white dot). Train times was added by the person.', img:'screens/app-links/A1-dock.png'},
+  {n:'A2', t:'A · Empty', c:'One dashed Add tile and a line saying what lands here.', img:'screens/app-links/A2-dock-empty.png'},
+  {n:'A3', t:'A · Adding one', c:'Paste any link, or pick from what projects published.', img:'screens/app-links/A3-dock-add.png'},
+  {n:'A4', t:'A · Long-press', c:'The icon lifts; the menu says who made it and where it goes.', img:'screens/app-links/A4-dock-hold.png'},
+  {card:'B', t:'Cards', gap:1, what:'A 2-column grid of cards, each with a live preview of the page it opens.', why:'You can see what’s inside before you open it. Dream already loads each published URL after every turn, so it could keep the previews fresh.', cost:'Four cards take half the screen, and previews need a screenshot pipeline.'},
+  {n:'B1', t:'B · Cards', c:'Agent links carry the agent’s line; the person’s say “Added by you”.', img:'screens/app-links/B1-cards.png'},
+  {n:'B2', t:'B · Empty', c:'An Add card and a quiet card explaining previews.', img:'screens/app-links/B2-cards-empty.png'},
+  {n:'B4', t:'B · Long-press', c:'The whole card lifts; same menu.', img:'screens/app-links/B4-cards-hold.png'},
+  {card:'C', t:'Chips', gap:1, what:'No new section. A project with something to open gets an Open chip on its row; links to other sites collect in a Links row.', why:'The calmest Home, and every link stays tied to the project it came from.', cost:'Links to other sites need a home of their own, each project gets one chip at most, and the chip pushes out the progress bar.'},
+  {n:'C1', t:'C · Chips', c:'Open chips carry the app’s icon.', img:'screens/app-links/C1-chips.png'},
+  {n:'C2', t:'C · Empty', c:'Today’s Home, plus one hint line.', img:'screens/app-links/C2-chips-empty.png'},
+  {n:'C4', t:'C · Long-press', c:'Holding the chip lifts the row; the menu is the link’s.', img:'screens/app-links/C4-chips-hold.png'},
+  {card:'D', t:'Shelf', gap:1, what:'An Apps card above Projects, one row per link with an Open button, like an App Store list.', why:'Clearest about what each link is and who made it, with room for the agent’s line.', cost:'Heaviest: each link costs a row, and Home gets two lists that look alike.'},
+  {n:'D1', t:'D · Shelf', c:'Icon, name, the agent’s line or the domain, and Open.', img:'screens/app-links/D1-shelf.png'},
+  {n:'D2', t:'D · Empty', c:'One placeholder row naming what’s coming.', img:'screens/app-links/D2-shelf-empty.png'},
+  {n:'D4', t:'D · Long-press', c:'The row lifts; same menu.', img:'screens/app-links/D4-shelf-hold.png'},
+  {n:'H1', t:'Add to Home Screen', gap:1, c:'From the menu: the icon as it will look, and the three Safari steps.', img:'screens/app-links/H1-home-screen-sheet.png'},
+  {n:'H2', t:'In Safari', c:'On published apps, the gateway points at ••• once, only when Dream opened the page for this.', img:'screens/app-links/H2-safari-hint.png'},
+  {n:'H3', t:'Safari’s sheet', c:'Dream’s icon and name are already there; Open as Web App is on by default.', img:'screens/app-links/H3-safari-add.png'},
+  {n:'H4', t:'On the Home Screen', c:'A real icon that opens full screen.', img:'screens/app-links/H4-on-home-screen.png'},
+  {n:'W1', t:'Later · widget', c:'With a TestFlight build: a WidgetKit widget of the same links.', img:'screens/app-links/W1-widget-later.png'}
 ];
 const phones=[];
 function islandSpec(n){
@@ -1518,6 +1544,7 @@ function mountBoard(){
   phones.length=0; const strip=document.getElementById('strip'); strip.innerHTML='';
   FRAMES.forEach((f,idx)=>{
     if(f.card){ strip.insertAdjacentHTML('beforeend', optCard(f)); return; }
+    if(f.img){ strip.insertAdjacentHTML('beforeend', `<figure class="fig${f.gap?' gap':''}"><figcaption><span class="n">${f.n}</span><span><span class="t">${f.t}</span><span class="c">${f.c}</span></span></figcaption><div class="dev"><img src="${f.img}" alt="${f.t}"></div></figure>`); return; }
     const fig=document.createElement('figure'); fig.className='fig'+(f.gap?' gap':'');
     fig.innerHTML=`<figcaption><span class="n">${f.n}</span><span><span class="t">${f.t}</span><span class="c">${f.c}</span></span><button class="rs">Reset</button></figcaption><div class="dev"></div>`;
     strip.appendChild(fig);

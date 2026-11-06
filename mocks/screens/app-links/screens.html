@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dream · App links · screens</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="deck.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Inter,-apple-system,system-ui,sans-serif;background:#0A0A0C;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;background:none;border:0;text-align:inherit}
+/* iPhone 17 Pro in points: 402 × 874, rendered at 3× to 1206 × 2622 */
+.scr{width:402px;height:874px;--sb:58px}
+.sb{padding:14px 32px 0 50px}
+.top .ib{margin-left:auto;width:34px;height:34px}
+.scroll{overflow:hidden}
+
+/* the person's apps: real icons, as they'll sit on the Home Screen */
+.app{display:grid;place-items:center;color:#fff;flex:none;position:relative;border-radius:22.5%;overflow:hidden}
+.app::after{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 .5px rgba(255,255,255,.18);pointer-events:none}
+.app.lift{background:linear-gradient(135deg,#6c4be0,#ff8a5c)}
+.app.brief{background:linear-gradient(165deg,#ffd27f,#ee7a52)}
+.app.cabin{background:linear-gradient(165deg,#4c7d5e,#1f3b2c);color:#f3ead7}
+.app.train{background:#F2F1EE;color:#16161a;font-weight:700;letter-spacing:-.04em}
+.app.add{background:transparent;border:1.5px dashed var(--line2);color:var(--t2)}
+.app.add::after{display:none}
+.app .i svg{stroke-width:2}
+
+.newdot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--t1);margin-right:5px;vertical-align:1px}
+.shead{display:flex;align-items:center;justify-content:space-between;margin:2px 0 12px}
+.shead .lab-s{margin:0}
+.shead .ad{font-size:13px;font-weight:600;color:var(--t2)}
+.hint{font-size:13px;color:var(--t3);line-height:1.4}
+
+/* A · dock */
+.dockrow{display:flex;justify-content:space-between;margin:0 -4px 26px}
+.dk{width:66px;display:flex;flex-direction:column;align-items:center;gap:7px;flex:none}
+.dk span{font-size:12px;font-weight:500;color:var(--t1);white-space:nowrap;letter-spacing:-.005em}
+.dk.add span{color:var(--t3)}
+.emptydock{display:flex;align-items:center;gap:14px;padding:14px 16px;border:1px dashed var(--line2);border-radius:22px;margin-bottom:26px}
+.emptydock p{font-size:14px;color:var(--t2);line-height:1.4;flex:1}
+
+/* B · cards */
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:26px}
+.card{border-radius:22px;background:var(--s1);border:1px solid var(--line);overflow:hidden}
+.card .thumb{height:118px;position:relative;overflow:hidden;border-bottom:1px solid var(--line)}
+.card .meta{display:flex;align-items:center;gap:10px;padding:10px 12px 12px}
+.card .meta b{display:block;font-size:15px;font-weight:600;letter-spacing:-.015em}
+.card .meta small{display:block;font-size:12px;color:var(--t3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card .meta div{min-width:0}
+.card.addc{display:grid;place-items:center;border-style:dashed;border-color:var(--line2);background:transparent;min-height:128px;color:var(--t2);font-size:14px;font-weight:500;text-align:center}
+.card.addc .i{display:grid;margin:0 auto 8px}
+
+/* mini page previews (thumbnails of what each link opens) */
+.pv-lift{position:absolute;inset:0;background:#101015;padding:12px}
+.pv-lift h6{font-size:9px;color:rgba(255,255,255,.5);font-weight:600;letter-spacing:.06em;text-transform:uppercase}
+.pv-lift strong{display:block;font-size:20px;color:#fff;font-weight:700;letter-spacing:-.03em;margin-top:2px}
+.pv-lift strong em{font-style:normal;font-size:11px;color:#ff9a6c;font-weight:600;margin-left:4px}
+.pv-lift svg{position:absolute;left:0;right:0;bottom:8px;width:100%}
+.pv-brief{position:absolute;inset:0;background:#F6F1E7;padding:12px 12px;color:#2a241b}
+.pv-brief h6{font-size:8px;letter-spacing:.12em;text-transform:uppercase;color:#a0927a;font-weight:600}
+.pv-brief strong{display:block;font-family:Georgia,serif;font-size:15px;line-height:1.1;margin:3px 0 7px;font-weight:700}
+.pv-brief i{display:block;height:4px;border-radius:2px;background:#d9cfbd;margin-top:5px}
+.pv-cabin{position:absolute;inset:0;background:#F3EEE3;padding:11px 12px;color:#1f3b2c}
+.pv-cabin strong{display:block;font-size:12px;font-weight:700;letter-spacing:-.01em}
+.pv-cabin .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-top:8px}
+.pv-cabin .cal i{height:11px;border-radius:3px;background:#e2dccd}
+.pv-cabin .cal i.k{background:#4c7d5e}
+.pv-cabin .cal i.o{background:#e9b26a}
+.pv-train{position:absolute;inset:0;background:#fff;padding:11px 12px;color:#111;font-size:9px}
+.pv-train strong{display:block;font-size:12px;margin-bottom:7px}
+.pv-train div{display:flex;justify-content:space-between;padding:4px 0;border-top:1px solid #eee;font-variant-numeric:tabular-nums}
+
+/* C · chips in rows */
+.chip{display:flex;align-items:center;gap:6px;height:30px;padding:0 11px 0 4px;border-radius:15px;background:var(--s2);border:1px solid var(--line);font-size:13px;font-weight:600;color:var(--t1)}
+.row .r .chip{color:var(--t1)}
+
+/* D · shelf rows */
+.srow{display:flex;align-items:center;gap:14px;padding:10px 0;border-top:1px solid var(--line)}
+.shelf .srow:first-child{border-top:0}
+.srow .tt{flex:1;min-width:0}
+.srow .t{font-size:17px;font-weight:600;letter-spacing:-.015em}
+.srow .s{font-size:13.5px;color:var(--t2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.open{height:30px;padding:0 15px;border-radius:15px;background:var(--s3);font-size:14px;font-weight:600;color:var(--t1);display:grid;place-items:center}
+.shelfwrap{border-radius:24px;background:var(--s1);border:1px solid var(--line);padding:4px 14px;margin-bottom:26px}
+
+/* long-press: iOS context menu over a blurred Home */
+.blur{position:absolute;inset:0;backdrop-filter:blur(22px) saturate(.8);-webkit-backdrop-filter:blur(22px);background:rgba(0,0,0,.42);z-index:30}
+.lift-it{position:absolute;z-index:31}
+.menu{position:absolute;z-index:32;width:254px;border-radius:16px;background:rgba(44,44,49,.94);overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+.menu .mh{padding:11px 16px 10px;font-size:12.5px;color:var(--t3);line-height:1.35;border-bottom:1px solid rgba(255,255,255,.07)}
+.menu .mh b{display:block;color:var(--t2);font-weight:600;font-size:13px}
+.menu .mi{display:flex;align-items:center;justify-content:space-between;height:44px;padding:0 16px;font-size:16px;color:var(--t1);border-top:1px solid rgba(255,255,255,.07)}
+.menu .mh+.mi{border-top:0}
+.menu .mi.sep{border-top:7px solid rgba(0,0,0,.28)}
+.menu .mi.red{color:#FF6961}
+
+/* sheets */
+.dim{position:absolute;inset:0;background:rgba(0,0,0,.5);z-index:30}
+.sht{position:absolute;left:0;right:0;bottom:0;z-index:31;background:#1B1B1F;border-radius:30px 30px 0 0;padding:10px 20px calc(var(--hi) + 18px);border-top:1px solid var(--line)}
+.grab{width:38px;height:5px;border-radius:3px;background:rgba(255,255,255,.22);margin:0 auto 14px}
+.sht h2{font-size:22px;font-weight:700;letter-spacing:-.03em}
+.sht .sub{font-size:14.5px;color:var(--t2);line-height:1.45;margin-top:5px}
+.field{display:flex;align-items:center;gap:10px;height:52px;padding:0 14px;border-radius:16px;background:var(--s1);border:1px solid var(--line2);font-size:16px;margin-top:10px}
+.field .v{flex:1;color:var(--t1)}
+.field .v.ph{color:var(--t3)}
+.field .tag{font-size:13px;color:var(--t3)}
+.sht .k{font-size:13px;font-weight:600;color:var(--t3);margin:18px 0 0}
+.pick{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--line)}
+.pick:first-of-type{border-top:0}
+.pick .tt{flex:1;min-width:0}
+.pick b{display:block;font-size:16px;font-weight:600;letter-spacing:-.01em}
+.pick small{display:block;font-size:13px;color:var(--t3);margin-top:1px}
+.pick .ab{font-size:14px;font-weight:600;color:var(--t1);height:30px;padding:0 13px;border-radius:15px;background:var(--s3);display:grid;place-items:center}
+.preview{display:flex;align-items:center;gap:14px;margin-top:16px;padding:12px;border-radius:18px;background:var(--s1);border:1px solid var(--line)}
+.preview .tt b{display:block;font-size:16px;font-weight:600}
+.preview .tt small{font-size:13px;color:var(--t3)}
+.preview .ch{margin-left:auto;font-size:14px;font-weight:600;color:var(--t2)}
+.sht .btn{margin-top:18px}
+.steps{display:grid;gap:0;margin-top:16px;border-radius:18px;background:var(--s1);border:1px solid var(--line);padding:2px 14px}
+.steps li{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--line);font-size:15px;color:var(--t1)}
+.steps li:first-child{border-top:0}
+.steps .n{width:24px;height:24px;border-radius:50%;background:var(--s3);display:grid;place-items:center;font-size:13px;font-weight:600;color:var(--t2);flex:none}
+.steps .gl{margin-left:auto;color:var(--t2)}
+.wall{height:150px;border-radius:20px;margin-top:16px;position:relative;overflow:hidden;background:radial-gradient(80% 90% at 20% 10%,#3b4f86 0%,transparent 60%),radial-gradient(70% 80% at 90% 100%,#6d4a8e 0%,transparent 60%),#151b2e;display:flex;align-items:center;justify-content:center;gap:22px}
+.wall .hs{display:flex;flex-direction:column;align-items:center;gap:6px;opacity:.5}
+.wall .hs.me{opacity:1}
+.wall .hs>span:last-child{font-size:12px;color:#fff;font-weight:500}
+.ghosticon{width:62px;height:62px;border-radius:22.5%;background:rgba(255,255,255,.18)}
+
+/* Safari (iOS 26) and the iPhone Home Screen */
+.saf{position:absolute;inset:0;background:#F3EEE3}
+.saf .page{position:absolute;inset:0;padding:calc(var(--sb) + 10px) 22px 0;color:#1f3b2c}
+.saf .page h1{font-size:30px;letter-spacing:-.04em;line-height:1.05;font-weight:700}
+.saf .page p{font-size:15px;color:#5d6b5f;margin-top:8px;line-height:1.4}
+.saf .cal2{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-top:20px}
+.saf .cal2 i{height:38px;border-radius:9px;background:#e2dccd;display:grid;place-items:center;font-style:normal;font-size:12px;color:#7d8478}
+.saf .cal2 i.k{background:#4c7d5e;color:#fff}
+.saf .cal2 i.o{background:#e9b26a;color:#3d2a10}
+.saf~.sb::before{display:none}
+.saf-bar{position:absolute;left:12px;right:12px;bottom:28px;height:52px;border-radius:26px;background:rgba(250,250,250,.86);backdrop-filter:blur(20px);box-shadow:0 6px 24px rgba(0,0,0,.15);display:flex;align-items:center;gap:8px;padding:0 8px;color:#111;z-index:3}
+.saf-bar .u{flex:1;text-align:center;font-size:15px;font-weight:500}
+.saf-bar .c{width:38px;height:38px;border-radius:50%;display:grid;place-items:center}
+.ios-dim{position:absolute;inset:0;background:rgba(0,0,0,.28);z-index:4}
+.ios-sheet{position:absolute;left:8px;right:8px;bottom:8px;border-radius:38px;background:#F2F2F7;z-index:5;padding:14px 18px 24px;color:#000}
+.ios-sheet .bar{display:flex;align-items:center;justify-content:space-between;height:44px}
+.ios-sheet .bar b{font-size:17px;font-weight:600}
+.ios-sheet .bar .x{width:36px;height:36px;border-radius:50%;background:#e3e3e8;display:grid;place-items:center;color:#555}
+.ios-sheet .bar .ok{height:36px;padding:0 16px;border-radius:18px;background:#0A84FF;color:#fff;font-weight:600;font-size:16px;display:grid;place-items:center}
+.ios-card{background:#fff;border-radius:16px;margin-top:14px;padding:12px;display:flex;gap:14px;align-items:center}
+.ios-card .tt{flex:1}
+.ios-card .nm{font-size:17px;padding-bottom:9px;border-bottom:1px solid #e5e5ea}
+.ios-card .url{font-size:14px;color:#8e8e93;padding-top:9px}
+.ios-row{background:#fff;border-radius:16px;margin-top:14px;padding:0 14px;height:50px;display:flex;align-items:center;justify-content:space-between;font-size:17px}
+.tog{width:51px;height:31px;border-radius:16px;background:#34C759;position:relative}
+.tog::after{content:"";position:absolute;right:2px;top:2px;width:27px;height:27px;border-radius:50%;background:#fff;box-shadow:0 2px 4px rgba(0,0,0,.2)}
+.ios-note{font-size:13px;color:#6e6e73;padding:8px 14px 0;line-height:1.35}
+.coach{position:absolute;left:16px;right:16px;bottom:94px;z-index:3;border-radius:20px;background:#141417;color:#F5F5F7;padding:14px 16px;font-size:14.5px;line-height:1.4;box-shadow:0 12px 30px rgba(0,0,0,.3)}
+.coach b{font-weight:600}
+.coach small{display:block;color:rgba(245,245,247,.5);font-size:12px;margin-top:4px}
+.coach::after{content:"";position:absolute;right:30px;bottom:-7px;width:14px;height:14px;background:#141417;transform:rotate(45deg);border-radius:3px}
+.spring{position:absolute;inset:0;background:radial-gradient(90% 60% at 10% 0%,#3b4f86 0%,transparent 60%),radial-gradient(80% 60% at 100% 100%,#6d4a8e 0%,transparent 60%),#121729;padding:calc(var(--sb) + 22px) 26px 0}
+.spring .g{display:grid;grid-template-columns:repeat(4,1fr);row-gap:24px}
+.spring .hs{display:flex;flex-direction:column;align-items:center;gap:6px}
+.spring .hs>span:last-child{font-size:12px;color:#fff;font-weight:500;letter-spacing:-.01em;text-shadow:0 1px 2px rgba(0,0,0,.3)}
+.sys{width:62px;height:62px;border-radius:22.5%}
+.spring .tray{position:absolute;left:14px;right:14px;bottom:24px;height:92px;border-radius:34px;background:rgba(255,255,255,.16);backdrop-filter:blur(20px);display:flex;align-items:center;justify-content:space-around;padding:0 12px}
+.widget{grid-column:span 4;border-radius:24px;background:rgba(20,20,23,.82);backdrop-filter:blur(20px);padding:14px;display:grid;grid-template-columns:repeat(4,1fr);gap:8px;height:158px;align-content:center}
+.widget .hs>span:last-child{text-shadow:none;color:rgba(255,255,255,.85)}
+.widget-cap{grid-column:span 4;text-align:center;font-size:12px;color:#fff;margin-top:-16px;font-weight:500}
+.toast2{position:absolute;left:50%;transform:translateX(-50%);top:calc(var(--sb) + 2px);z-index:9;background:#2C2C31;border-radius:20px;padding:10px 16px;font-size:14px;color:var(--t1);white-space:nowrap;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="deck.js"></script>
+<script>
+Object.assign(IC, {
+  plus:'<path d="M12 5v14M5 12h14"/>',
+  person:'<circle cx="12" cy="8.5" r="3.6"/><path d="M5 19.5c1.3-3.300 4-5 7-5s5.700 1.700 7 5"/>',
+  openx:'<path d="M14 5h5v5M19 5l-8 8M18 14v4.5a1.500 1.500 0 01-1.500 1.500h-11A1.500 1.500 0 014 18.500v-11A1.500 1.500 0 015.500 6H10"/>',
+  addhome:'<rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 8.500v7M8.500 12h7"/>',
+  pencil:'<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.500 6.500l4 4"/>',
+  image:'<rect x="4" y="5" width="16" height="14" rx="3"/><circle cx="9.500" cy="10" r="1.600"/><path d="M5 17l4.500-4 3 2.500L16 12l3.500 3.500"/>',
+  trash:'<path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/>',
+  link:'<path d="M10 14a4 4 0 005.700 0l3-3a4 4 0 00-5.700-5.700l-1 1"/><path d="M14 10a4 4 0 00-5.700 0l-3 3a4 4 0 005.700 5.700l1-1"/>',
+  dots:'<circle cx="6" cy="12" r="1.500"/><circle cx="12" cy="12" r="1.500"/><circle cx="18" cy="12" r="1.500"/>',
+  share:'<path d="M12 15V4M8 8l4-4 4 4M6 11v8.500h12V11"/>',
+  aa:'<path d="M3.500 17l3.500-9 3.500 9M4.800 14h4.400M13 17l3.500-9 3.500 9M14.300 14h4.400"/>',
+  copy:'<rect x="8" y="8" width="11" height="11" rx="2.500"/><path d="M16 8V6.500A1.500 1.500 0 0014.500 5h-8A1.500 1.500 0 005 6.500v8A1.500 1.500 0 006.500 16H8"/>'
+});
+FILLED.add('dots');
+const sbar = (dark=true) => `<div class="sb" style="${dark?'':'color:#000'}">${dark?STATUS:STATUS.replaceAll('#fff','#000')}</div>`;
+const hi = (dark=true) => `<div class="hi" style="${dark?'':'background:rgba(0,0,0,.8)'}"></div>`;
+
+/* content */
+const APPS = {
+  lift:{name:'Lift Log', ico:'dumbbell', by:'lift', url:'lift-log-2hd8.omer.build', sub:'Squat up 5 kg this month'},
+  brief:{name:'Brief', full:'Morning Brief', ico:'sun', by:'brief', url:'morning-brief-k3x9.omer.build', sub:'Today’s digest · 4 min'},
+  cabin:{name:'Cabin', ico:'cabin', by:'cabin', url:'cabin-7fq2.omer.build', sub:'Book a weekend', fresh:true},
+  train:{name:'Train times', mono:'T', url:'traintimes.org.uk/oxford/london', sub:'Added by you'}
+};
+const PRJ = {lift:'Lift Log', brief:'Morning Brief', cabin:'Cabin', recipe:'Recipe Scaler'};
+const PICO = {lift:'dumbbell', brief:'sun', cabin:'cabin', recipe:'pot'};
+const appIcon = (k, s=60) => { const a=APPS[k]; return `<span class="app ${k}" style="width:${s}px;height:${s}px;${a.mono?`font-size:${s*.5}px`:''}">${a.mono?a.mono:ico(a.ico, s*.5)}</span>`; };
+const addIcon = (s=60) => `<span class="app add" style="width:${s}px;height:${s}px">${ico('plus', s*.4)}</span>`;
+const ptile = (k) => `<span class="tile">${ico(PICO[k],22)}</span>`;
+const header = (need=true) => `<div class="top"><span class="orb ${need?'need':''}"></span><b>Dream</b><span class="ib">${ico('person',18)}</span></div>`;
+const rows = (chips={}) => {
+  const r = (k, sub, right) => `<div class="row">${ptile(k)}<div class="tt"><div class="t">${PRJ[k]}</div><div class="s">${sub}</div></div><div class="r">${chips[k]||right}</div></div>`;
+  return `<div class="lab-s">Projects</div>
+  ${r('lift','Building · progress charts','<span class="pbar"><i class="d"></i><i class="d"></i><i class="n"></i><i></i><i></i></span>')}
+  ${r('brief','Sent today’s digest at 7:00','<span>Live</span>')}
+  ${r('cabin','Building · the booking flow','<span class="pbar"><i class="d"></i><i class="d"></i><i class="n"></i><i></i></span>')}
+  ${r('recipe','Interviewing · 1 question','<i class="dot need"></i>')}`;
+};
+const usage = `<p class="usage"><i></i>ChatGPT Pro · 62% of this week left</p>`;
+const composer = `<div class="dock"><div class="compose"><span class="ph">Describe an idea…</span><span class="mc">${ico('mic',20)}</span></div></div>`;
+const home = (body, extra='') => `<div class="scr"><div class="view"><div class="scroll">${header()}<div style="height:12px"></div>${body}</div>${composer}</div>${sbar()}${hi()}${extra}</div>`;
+
+/* the context menu every option shares; where it sits and what lifts differs */
+const menu = (k, pos) => { const a=APPS[k]; const by = a.by ? `<b>Made by ${PRJ[a.by]}</b>${a.url}` : `<b>Added by you</b>${a.url}`;
+  return `<div class="menu" style="${pos}"><div class="mh">${by}</div>
+  <div class="mi">Open${ico('openx',19)}</div>
+  <div class="mi">Add to Home Screen${ico('addhome',19)}</div>
+  <div class="mi sep">Rename${ico('pencil',19)}</div>
+  <div class="mi">Change icon${ico('image',19)}</div>
+  <div class="mi">Copy link${ico('copy',19)}</div>
+  <div class="mi sep red">Remove${ico('trash',19)}</div></div>`; };
+
+/* adding by hand: one sheet, opened from wherever the option puts “Add” */
+const addSheet = (title='Add an app') => `<div class="dim"></div><div class="sht"><div class="grab"></div>
+  <h2>${title}</h2><p class="sub">Anything your projects publish, or any link. It opens full screen from here.</p>
+  <div class="field">${ico('link',18)}<span class="v ph">Paste a link</span></div>
+  <div class="k">From your projects</div>
+  <div class="pick">${ptile('cabin')}<div class="tt"><b>Cabin · Admin</b><small>cabin-7fq2.omer.build/admin</small></div><span class="ab">Add</span></div>
+  <div class="pick">${ptile('brief')}<div class="tt"><b>Morning Brief · Archive</b><small>morning-brief-k3x9.omer.build/archive</small></div><span class="ab">Add</span></div>
+  <div class="pick">${ptile('recipe')}<div class="tt"><b>Recipe Scaler</b><small>Not published yet</small></div></div>
+</div>`;
+
+/* thumbnails for option B */
+const PV = {
+  lift:`<div class="pv-lift"><h6>Squat · 8 weeks</h6><strong>105 kg<em>+5</em></strong><svg viewBox="0 0 160 60" height="58" preserveAspectRatio="none"><path d="M0 52 L20 48 L40 46 L60 40 L80 38 L100 30 L120 26 L140 18 L160 12" fill="none" stroke="#ff8a5c" stroke-width="2.200"/><path d="M0 56 L20 55 L40 52 L60 50 L80 47 L100 45 L120 42 L140 40 L160 36" fill="none" stroke="#8f74f0" stroke-width="2" opacity=".8"/></svg></div>`,
+  brief:`<div class="pv-brief"><h6>Thursday · 4 min</h6><strong>The AI chip glut, and why rents fell</strong><i style="width:92%"></i><i style="width:80%"></i><i style="width:86%"></i><i style="width:52%"></i></div>`,
+  cabin:`<div class="pv-cabin"><strong>Claim a weekend</strong><div class="cal">${Array.from({length:28},(_, i)=>`<i class="${[5,6,12,13].includes(i)?'k':[19,20].includes(i)?'o':''}"></i>`).join('')}</div></div>`,
+  train:`<div class="pv-train"><strong>Oxford → London</strong><div><span>14:31</span><span>On time</span></div><div><span>14:52</span><span>On time</span></div><div><span>15:01</span><span>3 late</span></div></div>`
+};
+const card = (k) => { const a=APPS[k]; const sub = a.by ? a.sub : 'Added by you';
+  return `<div class="card"><div class="thumb">${PV[k]}</div><div class="meta">${appIcon(k,30)}<div><b>${a.fresh?'<i class="newdot"></i>':''}${a.name}</b><small>${sub}</small></div></div></div>`; };
+
+const S = {};
+
+/* ───────── A · Dock ───────── */
+const dockRow = (keys, addTile=true) => `<div class="dockrow">${keys.map(k=>`<div class="dk">${appIcon(k,60)}<span>${APPS[k].fresh?'<i class="newdot"></i>':''}${APPS[k].name}</span></div>`).join('')}${addTile?`<div class="dk add">${addIcon(60)}<span>Add</span></div>`:''}</div>`;
+S.A1 = () => home(`${dockRow(['lift','brief','cabin','train'])}${rows()}${usage}`);
+S.A2 = () => home(`<div class="emptydock">${addIcon(52)}<p>Apps your projects publish show up here, like icons on your Home Screen. Add any link too.</p></div>${rows()}${usage}`);
+S.A3 = () => home(`${dockRow(['lift','brief','cabin','train'])}${rows()}${usage}`, addSheet());
+S.A4 = () => home(`${dockRow(['lift','brief','cabin','train'])}${rows()}${usage}`,
+  `<div class="blur"></div><div class="lift-it" style="left:160px;top:110px;transform:scale(1.15);transform-origin:top left"><div class="dk">${appIcon('cabin',62)}<span style="font-size:12px;font-weight:500"><i class="newdot"></i>Cabin</span></div></div>${menu('cabin','right:20px;top:220px')}`);
+
+/* ───────── B · Cards ───────── */
+S.B1 = () => home(`<div class="shead"><span class="lab-s">Apps</span><span class="ad">Add</span></div><div class="grid">${['cabin','lift','brief','train'].map(card).join('')}</div>${rows()}${usage}`);
+S.B2 = () => home(`<div class="shead"><span class="lab-s">Apps</span></div><div class="grid"><div class="card addc"><div>${ico('plus',22)}Add a link</div></div><div class="card addc" style="border-style:solid;border-color:var(--line);color:var(--t3);font-weight:400;padding:0 16px;font-size:13px;line-height:1.4">When a project publishes something worth opening, it lands here with a live preview.</div></div>${rows()}${usage}`);
+S.B3 = () => home(`<div class="shead"><span class="lab-s">Apps</span><span class="ad">Add</span></div><div class="grid">${['cabin','lift','brief','train'].map(card).join('')}</div>${rows()}${usage}`, addSheet());
+S.B4 = () => home(`<div class="shead"><span class="lab-s">Apps</span><span class="ad">Add</span></div><div class="grid">${['cabin','lift','brief','train'].map(card).join('')}</div>${rows()}${usage}`,
+  `<div class="blur"></div><div class="lift-it" style="left:20px;top:104px;width:175px;transform:scale(1.06);transform-origin:top left">${card('cabin')}</div>${menu('cabin','left:20px;top:310px')}`);
+
+/* ───────── C · Chips in each row ───────── */
+const chip = (k) => `<span class="chip">${appIcon(k,22)}Open</span>`;
+const chips = {lift:chip('lift'), brief:chip('brief'), cabin:chip('cabin')};
+const linksRow = `<div class="row" style="border-top:1px solid var(--line)"><span class="tile">${ico('link',20)}</span><div class="tt"><div class="t">Links</div><div class="s">Added by you</div></div><div class="r">${chip('train').replace('Open','Train times')}</div></div>`;
+S.C1 = () => home(`${rows(chips)}${linksRow}${usage}`);
+S.C2 = () => home(`${rows()}<p class="hint" style="margin-top:14px">When a project publishes something you can open, an Open button appears on its row. Hold a project to add a link to it.</p>${usage}`);
+S.C3 = () => home(`${rows(chips)}${linksRow}${usage}`, addSheet('Add a link'));
+S.C4 = () => home(`${rows(chips)}${linksRow}${usage}`,
+  `<div class="blur"></div><div class="lift-it" style="left:20px;top:226px;width:362px;transform:scale(1.03);transform-origin:top left;background:var(--bg);border-radius:18px;padding:0 12px"><div class="row" style="border:0">${ptile('cabin')}<div class="tt"><div class="t">Cabin</div><div class="s">Building · the booking flow</div></div><div class="r">${chip('cabin')}</div></div></div>${menu('cabin','right:20px;top:316px')}`);
+
+/* ───────── D · Shelf ───────── */
+const srow = (k) => { const a=APPS[k]; const by = a.by ? a.sub : `Added by you · traintimes.org.uk`;
+  return `<div class="srow">${appIcon(k,48)}<div class="tt"><div class="t">${a.fresh?'<i class="newdot"></i>':''}${a.full||a.name}</div><div class="s">${by}</div></div><span class="open">Open</span></div>`; };
+S.D1 = () => home(`<div class="shead"><span class="lab-s">Apps</span><span class="ad">Add</span></div><div class="shelfwrap shelf">${['cabin','lift','brief','train'].map(srow).join('')}</div>${rows()}`);
+S.D2 = () => home(`<div class="shead"><span class="lab-s">Apps</span><span class="ad">Add</span></div><div class="shelfwrap"><div class="srow" style="border:0">${addIcon(48)}<div class="tt"><div class="t" style="color:var(--t2)">No apps yet</div><div class="s" style="white-space:normal">Cabin will put its booking site here when it’s ready.</div></div></div></div>${rows()}${usage}`);
+S.D3 = () => home(`<div class="shead"><span class="lab-s">Apps</span><span class="ad">Add</span></div><div class="shelfwrap shelf">${['cabin','lift','brief','train'].map(srow).join('')}</div>${rows()}`, addSheet());
+S.D4 = () => home(`<div class="shead"><span class="lab-s">Apps</span><span class="ad">Add</span></div><div class="shelfwrap shelf">${['cabin','lift','brief','train'].map(srow).join('')}</div>${rows()}`,
+  `<div class="blur"></div><div class="lift-it" style="left:20px;top:132px;width:362px;transform:scale(1.03);transform-origin:top left;background:var(--s1);border-radius:20px;padding:0 14px">${srow('cabin')}</div>${menu('cabin','right:20px;top:216px')}`);
+
+/* ───────── H · Add to Home Screen, the same in every option ───────── */
+S.H1 = () => home(`${dockRow(['lift','brief','cabin','train'])}${rows()}${usage}`, `<div class="dim"></div><div class="sht"><div class="grab"></div>
+  <h2>Put Cabin on your Home Screen</h2><p class="sub">Safari adds it as an app: its own icon, full screen, no address bar.</p>
+  <div class="wall"><div class="hs"><span class="ghosticon"></span><span>&nbsp;</span></div><div class="hs me">${appIcon('cabin',62)}<span>Cabin</span></div><div class="hs"><span class="ghosticon"></span><span>&nbsp;</span></div></div>
+  <ol class="steps"><li><span class="n">1</span>Tap the three dots in Safari<span class="gl">${ico('dots',20)}</span></li><li><span class="n">2</span>Share, then Add to Home Screen<span class="gl">${ico('addhome',20)}</span></li><li><span class="n">3</span>Tap Add</li></ol>
+  <button class="btn">Open in Safari</button></div>`);
+const safari = (extra) => `<div class="scr" style="background:#F3EEE3"><div class="saf"><div class="page"><h1>Claim a weekend</h1><p>The Ashdown cabin. Pick a weekend; the family sees it at once.</p><div class="cal2">${Array.from({length:35},(_, i)=>`<i class="${[5,6,12,13].includes(i)?'k':[19,20].includes(i)?'o':''}">${i+1<=30?i+1:''}</i>`).join('')}</div></div>
+  <div class="saf-bar"><span class="c">${ico('back',20)}</span><span class="u">cabin-7fq2.omer.build</span><span class="c">${ico('dots',22)}</span></div>${extra||''}</div>${sbar(false)}${hi(false)}</div>`;
+S.H2 = () => safari(`<div class="coach"><b>Tap ••• then Share, then Add to Home Screen.</b><small>Shown because you asked Dream to add Cabin. Gone once you tap.</small></div>`);
+S.H3 = () => safari(`<div class="ios-dim"></div><div class="ios-sheet"><div class="bar"><span class="x">${ico('close',16)}</span><b>Add to Home Screen</b><span class="ok">Add</span></div>
+  <div class="ios-card">${appIcon('cabin',60)}<div class="tt"><div class="nm">Cabin</div><div class="url">cabin-7fq2.omer.build</div></div></div>
+  <div class="ios-row">Open as Web App<span class="tog"></span></div>
+  <p class="ios-note">Dream’s gateway gives every published app this icon and name, so Safari already has them right.</p></div>`);
+const sys = (bg) => `<span class="sys" style="background:${bg}"></span>`;
+const hs = (inner, name) => `<div class="hs">${inner}<span>${name}</span></div>`;
+S.H4 = () => `<div class="scr"><div class="spring"><div class="g">
+  ${hs(sys('linear-gradient(#5ac8fa,#007aff)'),'Mail')}${hs(sys('linear-gradient(#fff,#e5e5ea)'),'Calendar')}${hs(sys('linear-gradient(#ffd60a,#ff9f0a)'),'Notes')}${hs(sys('linear-gradient(#30d158,#248a3d)'),'Maps')}
+  ${hs(sys('linear-gradient(#1c1c1e,#3a3a3c)'),'Dream')}${hs(sys('linear-gradient(#ff375f,#ff2d55)'),'Music')}${hs(appIcon('lift',62),'Lift Log')}${hs(appIcon('cabin',62),'Cabin')}
+  </div></div><div class="toast2" style="top:auto;bottom:140px">Opens full screen, like an app</div>
+  <div class="spring" style="background:none;pointer-events:none;padding:0"><div class="tray">${sys('linear-gradient(#30d158,#248a3d)')}${sys('linear-gradient(#5ac8fa,#007aff)')}${sys('linear-gradient(#e5e5ea,#fff)')}${sys('linear-gradient(#ff9f0a,#ff375f)')}</div></div>
+  ${sbar()}${hi()}</div>`;
+S.W1 = () => `<div class="scr"><div class="spring"><div class="g">
+  ${hs(sys('linear-gradient(#5ac8fa,#007aff)'),'Mail')}${hs(sys('linear-gradient(#fff,#e5e5ea)'),'Calendar')}${hs(sys('linear-gradient(#ffd60a,#ff9f0a)'),'Notes')}${hs(sys('linear-gradient(#30d158,#248a3d)'),'Maps')}
+  <div class="widget">${['cabin','lift','brief','train'].map(k=>hs(appIcon(k,56),APPS[k].name)).join('')}</div><div class="widget-cap">Dream</div>
+  ${hs(sys('linear-gradient(#1c1c1e,#3a3a3c)'),'Dream')}${hs(sys('linear-gradient(#ff375f,#ff2d55)'),'Music')}
+  </div></div>
+  <div class="spring" style="background:none;pointer-events:none;padding:0"><div class="tray">${sys('linear-gradient(#30d158,#248a3d)')}${sys('linear-gradient(#5ac8fa,#007aff)')}${sys('linear-gradient(#e5e5ea,#fff)')}${sys('linear-gradient(#ff9f0a,#ff375f)')}</div></div>
+  ${sbar()}${hi()}</div>`;
+
+const id = location.hash.slice(1) || 'A1';
+document.getElementById('root').innerHTML = (S[id]||S.A1)();
+window.SCREENS = Object.keys(S);
+</script>
+</body>
+</html>
