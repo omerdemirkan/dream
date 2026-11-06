@@ -3,7 +3,16 @@
  * Lift Log about 4% of it (`@dream/domain/fixtures`' `liftLogUsage`), a heavy week near the limit, and a world
  * where nothing is known yet. Each simulated turn adds a little to the project that ran it.
  */
-import type { Project, ProjectId, ProjectUsage, ProjectUsageGlance, UsagePeriod } from "@dream/domain"
+import type {
+  AccountUsage,
+  Project,
+  ProjectId,
+  ProjectShare,
+  ProjectUsage,
+  ProjectUsageGlance,
+  UsagePeriod,
+  UsageSnapshot
+} from "@dream/domain"
 import * as Fx from "@dream/domain/fixtures"
 import { DateTime } from "effect"
 
@@ -112,6 +121,65 @@ const fiveHourReset = (now: DateTime.Utc) => {
   return DateTime.makeUnsafe(Math.ceil((DateTime.toEpochMillis(now) + 3.5 * 3_600_000) / step) * step)
 }
 
+/** Every project that used some of the week, largest share first. */
+const sharesOf = (world: UsageWorld, projects: ReadonlyArray<Project>): Array<ProjectShare> =>
+  projects
+    .flatMap((project) => {
+      const spend = world.spend.get(project.id)
+      return spend && spend.week > 0
+        ? [
+            {
+              projectId: project.id,
+              title: project.title,
+              ...(project.icon ? { icon: project.icon } : {}),
+              sharePercent: spend.week
+            }
+          ]
+        : []
+    })
+    .sort((a, b) => b.sharePercent - a.sharePercent)
+
+const sum = (values: Iterable<number>) => [...values].reduce((a, b) => a + b, 0)
+
+/** Settings' plan card (`GetAccountUsage`): the same windows, every project's part together. */
+export const accountOf = (world: UsageWorld, projects: ReadonlyArray<Project>, now: DateTime.Utc): AccountUsage => {
+  const spends = [...world.spend.values()]
+  const known = world.mode !== "none"
+  return {
+    provider: "chatgpt",
+    billing: "subscription",
+    plan: "ChatGPT Pro",
+    ...(known
+      ? {
+          fiveHour: {
+            usedPercent: world.fiveUsed,
+            dreamPercent: Math.min(world.fiveUsed, sum(spends.map((s) => s.five))),
+            resetsAt: fiveHourReset(now)
+          },
+          weekly: {
+            usedPercent: world.weekUsed,
+            dreamPercent: Math.min(world.weekUsed, sum(spends.map((s) => s.week))),
+            resetsAt: nextMonday(now)
+          },
+          outsideDreamPercent: world.outside
+        }
+      : {}),
+    projects: known ? sharesOf(world, projects) : [],
+    observedAt: now
+  }
+}
+
+/** The connection's own usage, kept in step with the world so Home's hint and Settings agree with the sheet. */
+export const connectionUsageOf = (world: UsageWorld, base: UsageSnapshot, now: DateTime.Utc): UsageSnapshot =>
+  world.mode === "none"
+    ? base
+    : {
+        ...base,
+        fiveHour: { usedPercent: world.fiveUsed, resetsAt: fiveHourReset(now) },
+        weekly: { usedPercent: world.weekUsed, resetsAt: nextMonday(now) },
+        observedAt: now
+      }
+
 /** The usage sheet for one project (`GetProjectUsage`). */
 export const usageOf = (
   world: UsageWorld,
@@ -127,21 +195,7 @@ export const usageOf = (
     ...(share === undefined ? {} : { sharePercent: share })
   })
   const known = world.mode !== "none"
-  const shares = projects
-    .flatMap((project) => {
-      const spend = world.spend.get(project.id)
-      return spend && spend.week > 0
-        ? [
-            {
-              projectId: project.id,
-              title: project.title,
-              ...(project.icon ? { icon: project.icon } : {}),
-              sharePercent: spend.week
-            }
-          ]
-        : []
-    })
-    .sort((a, b) => b.sharePercent - a.sharePercent)
+  const shares = sharesOf(world, projects)
   return {
     provider: "chatgpt",
     billing: "subscription",

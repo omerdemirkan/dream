@@ -12,7 +12,7 @@ import { useUpdates } from "expo-updates"
 import { type ReactNode, useState } from "react"
 import { Pressable, ScrollView, Text, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
-import { dayLabel, providerName, resetLabel, usageDetail } from "../data/format.ts"
+import { dayLabel, providerName } from "../data/format.ts"
 import {
   archivedProjectsAtom,
   disconnectIntegrationFn,
@@ -29,6 +29,7 @@ import { applyUpdate, runningUpdate } from "../platform/updates.ts"
 import { appConfig } from "../state/runtime.ts"
 import { useAction, useToast } from "../ui/actions.ts"
 import { integrationReach, integrationSummary } from "../ui/describe.ts"
+import { PlanCard } from "../ui/PlanCard.tsx"
 import { useProjectActions } from "../ui/ProjectMenu.tsx"
 import { SecretField } from "../ui/Expanded.tsx"
 import { Button, Icon, IconButton, Lab } from "../ui/kit.tsx"
@@ -235,21 +236,14 @@ function ConnectionRow(props: { readonly connection: ModelConnection }) {
   const router = useRouter()
   const disconnect = useAction(disconnectModelConnectionFn)
   const c = props.connection
-  const usage = c.usage ? usageDetail(c.usage) : undefined
-  const resets = c.usage?.weekly?.resetsAt ? ` · resets ${resetLabel(c.usage.weekly.resetsAt)}` : ""
-  const subtitle =
-    c.status === "connected"
-      ? `${usage ?? "Connected"}${usage ? resets : ""}`
-      : c.status === "pending"
-        ? "Finishing sign-in…"
-        : c.status === "expired"
-          ? "Sign-in expired"
-          : "Sign-in failed"
-  return c.status === "connected" || c.status === "pending" ? (
+  // A connected subscription is the plan card: its usage, and each project's share of it.
+  if (c.status === "connected")
+    return <PlanCard connection={c} disconnecting={disconnect.busy} onDisconnect={() => disconnect.run(c.id)} />
+  return c.status === "pending" ? (
     <Row
       icon="spark"
       title={c.usage?.plan ?? providerName(c.provider)}
-      subtitle={subtitle}
+      subtitle="Finishing sign-in…"
       action="Disconnect"
       busy={disconnect.busy}
       onAction={() => disconnect.run(c.id)}
@@ -258,7 +252,7 @@ function ConnectionRow(props: { readonly connection: ModelConnection }) {
     <Row
       icon="spark"
       title={providerName(c.provider)}
-      subtitle={subtitle}
+      subtitle={c.status === "expired" ? "Sign-in expired" : "Sign-in failed"}
       action="Reconnect"
       onAction={() => router.push("/connect")}
     />

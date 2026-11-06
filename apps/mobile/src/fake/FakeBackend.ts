@@ -57,7 +57,16 @@ import {
   questionWithContext,
   vagueAccess
 } from "./fixtures.ts"
-import { afterTurn, glanceOf, makeUsageWorld, type UsageMode, type UsageWorld, usageOf } from "./usage.ts"
+import {
+  accountOf,
+  afterTurn,
+  glanceOf,
+  makeUsageWorld,
+  connectionUsageOf,
+  type UsageMode,
+  type UsageWorld,
+  usageOf
+} from "./usage.ts"
 
 /** A notification the fake would have sent through APNs. The app shows it as a local notification. */
 export interface FakePush {
@@ -295,6 +304,7 @@ export class FakeBackend extends Context.Service<
             ...nextWake(record)
           })
           usage = afterTurn(usage, record.project.id)
+          yield* syncConnectionUsage
           yield* emitUsage(record)
         })
       const projectUsage = (projectId: ProjectId, now: DateTime.Utc) =>
@@ -313,8 +323,18 @@ export class FakeBackend extends Context.Service<
       const setUsage = (mode: UsageMode) =>
         Effect.gen(function* () {
           usage = makeUsageWorld(mode)
+          yield* syncConnectionUsage
           for (const record of records.values()) yield* emitUsage(record)
         })
+      /** The ChatGPT connection's usage follows the world, as dreamd's reports would. */
+      const syncConnectionUsage = Effect.gen(function* () {
+        const now = yield* DateTime.now
+        connections = connections.map((c) =>
+          c.status === "connected" && c.provider === "chatgpt" && c.usage
+            ? { ...c, usage: connectionUsageOf(usage, c.usage, now) }
+            : c
+        )
+      })
       const isAwake = (record: ProjectRecord, now: DateTime.Utc) =>
         record.activity.state !== "idle" ||
         (record.activity.awakeUntil !== undefined && DateTime.isGreaterThan(record.activity.awakeUntil, now))
@@ -678,6 +698,17 @@ export class FakeBackend extends Context.Service<
           Effect.gen(function* () {
             const record = yield* find(projectId)
             return projectUsage(record.project.id, yield* DateTime.now)
+          }),
+        GetAccountUsage: ({ provider }) =>
+          Effect.gen(function* () {
+            const connected = connections.some((c) => c.status === "connected" && c.provider === provider)
+            if (!connected || provider !== "chatgpt")
+              return yield* new NotFound({ entity: "model connection", id: provider })
+            return accountOf(
+              usage,
+              active().map((r) => r.project),
+              yield* DateTime.now
+            )
           }),
         ListMessages: ({ projectId, before, limit }) =>
           Effect.gen(function* () {

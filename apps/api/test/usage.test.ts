@@ -5,7 +5,7 @@ import { assert, describe, it } from "@effect/vitest"
 import type { ProjectId, UsageSnapshot } from "@dream/domain"
 import { DateTime } from "effect"
 import type { LoggedTurn } from "../src/db/TurnUsage.ts"
-import { buildProjectUsage, startOfDayMs } from "../src/usage/ProjectUsage.ts"
+import { buildAccountUsage, buildProjectUsage, startOfDayMs } from "../src/usage/ProjectUsage.ts"
 import {
   attributeWindow,
   costWeights,
@@ -341,6 +341,38 @@ describe("the usage sheet", () => {
     )
     assert.strictEqual(usage.outsideDreamPercent, 35)
     assert.isUndefined(usage.subagents, "t3 couldn't say")
+  })
+
+  it("gives Settings' plan card every project's part of each window together, and each one's share", () => {
+    const account = buildAccountUsage({ provider: "claude", snapshot: snapshot(), turns, nowMs, projects })
+    assert.strictEqual(account.plan, "Claude Max")
+    assert.strictEqual(account.billing, "subscription")
+    // The week: A 2 and B 1. The five hours: t2 and t3 saw 32 → 38, all of it Dream's.
+    assert.deepStrictEqual(account.weekly, {
+      usedPercent: 38,
+      dreamPercent: 3,
+      resetsAt: DateTime.makeUnsafe(WEEK_RESETS)
+    })
+    assert.deepStrictEqual(account.fiveHour, {
+      usedPercent: 41,
+      dreamPercent: 6,
+      resetsAt: DateTime.makeUnsafe(FIVE_RESETS)
+    })
+    assert.deepStrictEqual(
+      account.projects.map((p) => [p.title, p.sharePercent]),
+      [
+        ["Anki Voice", 2],
+        ["Lift Log", 1]
+      ]
+    )
+    assert.strictEqual(account.outsideDreamPercent, 35)
+
+    // Without a usage report nothing is known: no windows, no shares.
+    const unknown = buildAccountUsage({ provider: "claude", snapshot: undefined, turns, nowMs, projects })
+    assert.deepStrictEqual(
+      [unknown.weekly, unknown.fiveHour, unknown.outsideDreamPercent, unknown.projects],
+      [undefined, undefined, undefined, []]
+    )
   })
 
   it("says subagents are included only when every turn of the week says so", () => {

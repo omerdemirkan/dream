@@ -2,9 +2,19 @@
  * How a project's use of the subscription reads on screen: the ring in the project header (Deck v3, project usage
  * option A) and the usage sheet it opens. Pure, so it's tested in Node. Tokens are exact; shares are estimates.
  */
-import type { ModelProvider, ProjectUsage, ProjectUsageGlance, UsagePeriod, WindowShare } from "@dream/domain"
+import type {
+  AccountUsage,
+  ModelConnection,
+  ModelProvider,
+  ProjectShare,
+  ProjectUsage,
+  ProjectUsageGlance,
+  UsagePeriod,
+  UsageSnapshot,
+  WindowShare
+} from "@dream/domain"
 import { DateTime } from "effect"
-import { providerName, resetLabel } from "./format.ts"
+import { providerName, resetLabel, usageDetail } from "./format.ts"
 
 /** From this much of the week used, the ring turns amber and says what's left. */
 export const nearLimitPercent = 85
@@ -83,6 +93,104 @@ export const usageBadge = (glance: ProjectUsageGlance | undefined): UsageBadge |
 const leftPercent = (window: WindowShare) => 100 - Math.round(window.usedPercent)
 
 // ---------------------------------------------------------------------------
+// Pieces the project sheet and Settings' plan card share
+// ---------------------------------------------------------------------------
+
+/**
+ * One window as a bar: what they're looking at (this project in its sheet, all their projects in Settings) in
+ * white, everything else in grey, the rest the track.
+ */
+export interface WindowBarView {
+  /** "5 hours", "Week" */
+  readonly label: string
+  /** "41% used" */
+  readonly used: string
+  /** "resets 11:40 PM" */
+  readonly resets?: string
+  /** Bar widths, 0–1: the part in focus, then everything else's. */
+  readonly focus: number
+  readonly others: number
+  readonly nearLimit: boolean
+}
+
+/** One project's share of the week, or use outside Dream's. */
+export interface ShareRowView {
+  readonly key: string
+  readonly title: string
+  readonly icon?: string
+  readonly share: string
+  /** Bar width, 0–1, against the largest share listed. */
+  readonly bar: number
+  /** The project whose sheet this is: drawn in white. */
+  readonly current: boolean
+  readonly outside: boolean
+}
+
+const windowBar = (
+  label: string,
+  usedPercent: number,
+  focusPercent: number,
+  resetsAt: DateTime.Utc | undefined,
+  now: DateTime.Utc,
+  timeZone: string | undefined
+): WindowBarView => {
+  const used = clamp(usedPercent / 100)
+  const focus = clamp(Math.min(focusPercent, usedPercent) / 100)
+  return {
+    label,
+    used: `${Math.round(usedPercent)}% used`,
+    ...(resetsAt ? { resets: `resets ${resetLabel(resetsAt, now, timeZone)}` } : {}),
+    focus,
+    others: used - focus,
+    nearLimit: usedPercent >= nearLimitPercent
+  }
+}
+
+/** Every project's share, largest first as given, then Outside Dream's; bars against the largest. */
+const shareRows = (
+  projects: ReadonlyArray<ProjectShare>,
+  outsideDreamPercent: number | undefined,
+  currentId: string | undefined
+): ReadonlyArray<ShareRowView> => {
+  const largest = Math.max(0, ...projects.map((p) => p.sharePercent), outsideDreamPercent ?? 0)
+  const bar = (percent: number) => (largest > 0 ? percent / largest : 0)
+  return [
+    ...projects.map((p) => ({
+      key: p.projectId,
+      title: p.title,
+      ...(p.icon ? { icon: p.icon } : {}),
+      share: percentLabel(p.sharePercent),
+      bar: bar(p.sharePercent),
+      current: p.projectId === currentId,
+      outside: false
+    })),
+    ...(outsideDreamPercent !== undefined
+      ? [
+          {
+            key: "outside",
+            title: "Outside Dream",
+            share: percentLabel(outsideDreamPercent),
+            bar: bar(outsideDreamPercent),
+            current: false,
+            outside: true
+          }
+        ]
+      : [])
+  ]
+}
+
+/** Near the limit: what's left and until when, the same words in the sheet and in Settings. */
+const limitCallout = (
+  usedPercent: number,
+  resetsAt: DateTime.Utc | undefined,
+  now: DateTime.Utc,
+  timeZone?: string
+) => ({
+  left: `${100 - Math.round(usedPercent)}% of your week is left`,
+  rest: `${resetsAt ? `, until ${resetLabel(resetsAt, now, timeZone)}` : ""}. If it runs out, your projects pause and pick up on their own when it resets.`
+})
+
+// ---------------------------------------------------------------------------
 // The sheet
 // ---------------------------------------------------------------------------
 
@@ -107,25 +215,8 @@ export interface UsageSheet {
   }>
   /** "Your ChatGPT Pro", over each window known. */
   readonly windowsTitle: string
-  readonly windows: ReadonlyArray<{
-    readonly label: string
-    readonly used: string
-    readonly resets?: string
-    /** Bar widths, 0–1: this project's part, then everything else's. */
-    readonly project: number
-    readonly others: number
-    readonly nearLimit: boolean
-  }>
-  readonly projects: ReadonlyArray<{
-    readonly key: string
-    readonly title: string
-    readonly icon?: string
-    readonly share: string
-    /** Bar width, 0–1, against the largest share listed. */
-    readonly bar: number
-    readonly current: boolean
-    readonly outside: boolean
-  }>
+  readonly windows: ReadonlyArray<WindowBarView>
+  readonly projects: ReadonlyArray<ShareRowView>
   readonly footnote: string
 }
 
@@ -153,23 +244,8 @@ export const usageSheet = (
   const plan = planName(usage.provider, usage.plan)
   const week = usage.weekly
   const nearLimit = week !== undefined && week.usedPercent >= nearLimitPercent
-  const window = (label: string, w: WindowShare | undefined) => {
-    if (!w) return []
-    const used = clamp(w.usedPercent / 100)
-    const project = clamp(Math.min(w.projectPercent, w.usedPercent) / 100)
-    return [
-      {
-        label,
-        used: `${Math.round(w.usedPercent)}% used`,
-        ...(w.resetsAt ? { resets: `resets ${resetLabel(w.resetsAt, now, timeZone)}` } : {}),
-        project,
-        others: used - project,
-        nearLimit: w.usedPercent >= nearLimitPercent
-      }
-    ]
-  }
-  const largest = Math.max(0, ...usage.projects.map((p) => p.sharePercent), usage.outsideDreamPercent ?? 0)
-  const bar = (percent: number) => (largest > 0 ? percent / largest : 0)
+  const window = (label: string, w: WindowShare | undefined) =>
+    w ? [windowBar(label, w.usedPercent, w.projectPercent, w.resetsAt, now, timeZone)] : []
   return {
     subtitle: `${projectTitle} · ${usage.billing === "apiKey" ? "API key" : plan}`,
     ...(week
@@ -182,14 +258,7 @@ export const usageSheet = (
           }
         }
       : {}),
-    ...(week && nearLimit
-      ? {
-          callout: {
-            left: `${leftPercent(week)}% of your week is left`,
-            rest: `${week.resetsAt ? `, until ${resetLabel(week.resetsAt, now, timeZone)}` : ""}. If it runs out, your projects pause and pick up on their own when it resets.`
-          }
-        }
-      : {}),
+    ...(week && nearLimit ? { callout: limitCallout(week.usedPercent, week.resetsAt, now, timeZone) } : {}),
     periods: [
       period("Today", usage.today, "week"),
       period("This 5 hours", usage.fiveHour, "5 hours"),
@@ -197,29 +266,7 @@ export const usageSheet = (
     ],
     windowsTitle: `Your ${plan}`,
     windows: [...window("5 hours", usage.fiveHourWindow), ...window("Week", week)],
-    projects: [
-      ...usage.projects.map((p) => ({
-        key: p.projectId,
-        title: p.title,
-        ...(p.icon ? { icon: p.icon } : {}),
-        share: percentLabel(p.sharePercent),
-        bar: bar(p.sharePercent),
-        current: p.projectId === projectId,
-        outside: false
-      })),
-      ...(usage.outsideDreamPercent !== undefined
-        ? [
-            {
-              key: "outside",
-              title: "Outside Dream",
-              share: percentLabel(usage.outsideDreamPercent),
-              bar: bar(usage.outsideDreamPercent),
-              current: false,
-              outside: true
-            }
-          ]
-        : [])
-    ],
+    projects: shareRows(usage.projects, usage.outsideDreamPercent, projectId),
     footnote: `${
       usage.subagents === "excluded" ? "Tokens are exact but leave out what subagents used." : "Tokens are exact."
     } Shares (≈) are estimated from how your plan moved while each project worked, so using ${providerName(usage.provider)} elsewhere at the same time can count toward a project.`
@@ -238,3 +285,73 @@ const legend = (week: WindowShare) => {
 }
 
 const clamp = (fraction: number) => Math.min(1, Math.max(0, fraction))
+
+// ---------------------------------------------------------------------------
+// Settings' plan card (Deck v3, usage in Settings option B)
+// ---------------------------------------------------------------------------
+
+export interface PlanCard {
+  /** "ChatGPT Pro" */
+  readonly title: string
+  /** "62% of this week left", "paused until 3:40 PM", or "Connected" while nothing is known. */
+  readonly detail: string
+  /** The week is nearly used up (or a limit is hit): amber border, callout and bars. */
+  readonly nearLimit: boolean
+  readonly callout?: { readonly left: string; readonly rest: string }
+  /** The five hours and the week, all their projects together in white. */
+  readonly windows: ReadonlyArray<WindowBarView>
+  /** Every project's share of the week; empty when the API can't say (it predates `GetAccountUsage`). */
+  readonly projects: ReadonlyArray<ShareRowView>
+  /** Shown with the shares, which it explains. */
+  readonly footnote?: string
+}
+
+/** Whether a subscription's week is nearly used up, or one of its limits is hit. */
+export const snapshotNearLimit = (usage: UsageSnapshot | undefined) =>
+  usage !== undefined &&
+  (usage.limitedUntil !== undefined || (usage.weekly !== undefined && usage.weekly.usedPercent >= nearLimitPercent))
+
+/** The amber dot on Home's profile button: shown only when a connected subscription is near its limit. */
+export const profileHint = (connections: ReadonlyArray<ModelConnection>) =>
+  connections.some((c) => c.status === "connected" && snapshotNearLimit(c.usage))
+
+/**
+ * A connected subscription in Settings. `account` (`GetAccountUsage`) is newer than the connection's own usage
+ * and splits each window between their projects and the rest; without it, the windows come from the connection,
+ * drawn all grey because nothing says how much of them was Dream's, and there are no project shares.
+ */
+export const planCard = (
+  connection: ModelConnection,
+  account: AccountUsage | undefined,
+  now: DateTime.Utc,
+  timeZone?: string
+): PlanCard => {
+  const usage = connection.usage
+  const title = usage?.plan ?? account?.plan ?? providerName(connection.provider)
+  const week = account?.weekly ?? usage?.weekly
+  const nearLimit = usage?.limitedUntil !== undefined || (week !== undefined && week.usedPercent >= nearLimitPercent)
+  const bar = (label: string, name: "fiveHour" | "weekly") => {
+    const split = account?.[name]
+    if (split) return [windowBar(label, split.usedPercent, split.dreamPercent, split.resetsAt, now, timeZone)]
+    const whole = usage?.[name]
+    return whole ? [windowBar(label, whole.usedPercent, 0, whole.resetsAt, now, timeZone)] : []
+  }
+  const projects = account ? shareRows(account.projects, account.outsideDreamPercent, undefined) : []
+  const detail =
+    usage?.limitedUntil === undefined && account?.weekly
+      ? `${100 - Math.round(account.weekly.usedPercent)}% of this week left`
+      : ((usage ? usageDetail(usage, timeZone) : undefined) ?? "Connected")
+  return {
+    title,
+    detail,
+    nearLimit,
+    ...(nearLimit && week ? { callout: limitCallout(week.usedPercent, week.resetsAt, now, timeZone) } : {}),
+    windows: [...bar("5 hours", "fiveHour"), ...bar("Week", "weekly")],
+    projects,
+    ...(projects.length > 0
+      ? {
+          footnote: `Shares (≈) are estimated from how your plan moved while each project worked. Outside Dream is the rest: ${providerName(connection.provider)} used anywhere else.`
+        }
+      : {})
+  }
+}

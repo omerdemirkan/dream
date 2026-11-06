@@ -28,7 +28,7 @@ import {
   TextMessage
 } from "../Message.ts"
 import { ArchivedProject, Harness, Project, ProjectSummary } from "../Project.ts"
-import { ModelProvider, ProjectUsage } from "../Usage.ts"
+import { AccountUsage, ModelProvider, ProjectUsage } from "../Usage.ts"
 import { Device, TimeZone, User } from "../User.ts"
 
 /** An open question or access request for the Home deck, with the project it belongs to. */
@@ -234,6 +234,16 @@ export class AuthedAppRpcs extends RpcGroup.make(
   Rpc.make("GetProjectUsage", {
     payload: { projectId: ProjectId },
     success: ProjectUsage,
+    error: NotFound
+  }),
+  /**
+   * Settings' plan card: how full each window of their `provider` subscription is, about how much of it their
+   * projects used together, and each project's share of the week. Fails with `NotFound` when that subscription
+   * isn't connected. Phones fall back to the connection's `usage` without project shares when an API lacks it.
+   */
+  Rpc.make("GetAccountUsage", {
+    payload: { provider: ModelProvider },
+    success: AccountUsage,
     error: NotFound
   }),
   /** Older Chat history, newest first, before `before`. The live snapshot carries the recent messages. */

@@ -10,6 +10,7 @@ import { Clock, DateTime, Effect, Fiber, Layer, Option, Redacted, Stream, Subscr
 import { Reactivity } from "effect/reactivity"
 import { Socket } from "effect/socket"
 import { TestClock } from "effect/testing"
+import { AccountUsages } from "../src/data/AccountUsages.ts"
 import { AppClient } from "../src/data/AppClient.ts"
 import { Answers } from "../src/data/Answers.ts"
 import { withWriteTimeout, writeTimeout } from "../src/data/errors.ts"
@@ -17,7 +18,7 @@ import { makeAppLayer } from "../src/data/AppLayer.ts"
 import { ProjectArchive } from "../src/data/ProjectArchive.ts"
 import { ProjectStates } from "../src/data/ProjectStates.ts"
 import { ProjectUsages } from "../src/data/ProjectUsages.ts"
-import { usageBadge } from "../src/data/usage.ts"
+import { profileHint, usageBadge } from "../src/data/usage.ts"
 import { chatRowOf, presenceOf, receiptOf } from "../src/data/presence.ts"
 import { SecureStorage } from "../src/data/SecureStorage.ts"
 import { randomUuid, Session } from "../src/data/Session.ts"
@@ -384,6 +385,41 @@ describe("the agent's presence in fixtures (A+B+C)", () => {
         const none = yield* usages.sheet(lift)
         assert.isUndefined(none.weekly)
         assert.isUndefined(none.week.tokens)
+      })
+    )
+  )
+
+  it.effect("Settings' plan card follows the same usage world, and the profile hint shows only near the limit", () =>
+    run(
+      Effect.gen(function* () {
+        yield* signIn
+        const app = yield* AppClient
+        const accounts = yield* AccountUsages
+        const backend = yield* FakeBackend
+        const plan = yield* accounts.plan("chatgpt")
+        assert.strictEqual(plan?.plan, "ChatGPT Pro")
+        assert.strictEqual(plan?.weekly?.usedPercent, 38)
+        assert.strictEqual(plan?.weekly?.dreamPercent, 28)
+        assert.strictEqual(plan?.outsideDreamPercent, 10)
+        assert.deepStrictEqual(
+          plan?.projects.map((p) => p.title),
+          ["Recipe Scaler", "Lift Log", "Cabin", "Morning Brief"]
+        )
+        // No Claude subscription in the sample world.
+        assert.isUndefined(yield* accounts.plan("claude"))
+        assert.isFalse(profileHint(yield* app.ListModelConnections()))
+
+        yield* backend.scenario("usage-near-limit")
+        const near = yield* accounts.plan("chatgpt")
+        assert.strictEqual(near?.weekly?.usedPercent, 92)
+        const connections = yield* app.ListModelConnections()
+        assert.strictEqual(connections[0]?.usage?.weekly?.usedPercent, 92)
+        assert.isTrue(profileHint(connections))
+
+        yield* backend.scenario("usage-none")
+        const none = yield* accounts.plan("chatgpt")
+        assert.isUndefined(none?.weekly)
+        assert.deepStrictEqual(none?.projects, [])
       })
     )
   )

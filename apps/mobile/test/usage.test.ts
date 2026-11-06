@@ -1,8 +1,19 @@
-import type { ProjectUsage, ProjectUsageGlance } from "@dream/domain"
+import type { AccountUsage, ModelConnection, ModelConnectionId, ProjectUsage, ProjectUsageGlance } from "@dream/domain"
 import * as Fx from "@dream/domain/fixtures"
 import { assert, describe, it } from "@effect/vitest"
-import { DateTime } from "effect"
-import { latestGlance, percentLabel, ringArcs, tokensLabel, usageBadge, usageSheet } from "../src/data/usage.ts"
+import { DateTime, Effect, Layer } from "effect"
+import { AccountUsages } from "../src/data/AccountUsages.ts"
+import { AppClient, type AppRpcClient } from "../src/data/AppClient.ts"
+import {
+  latestGlance,
+  percentLabel,
+  planCard,
+  profileHint,
+  ringArcs,
+  tokensLabel,
+  usageBadge,
+  usageSheet
+} from "../src/data/usage.ts"
 
 const la = "America/Los_Angeles"
 const now = Fx.liftLogUsage.observedAt
@@ -154,4 +165,109 @@ describe("usageSheet", () => {
     assert.isUndefined(unknown.hero)
     assert.deepStrictEqual(unknown.windows, [])
   })
+})
+
+describe("Settings' plan card", () => {
+  const connection = (
+    usage: ModelConnection["usage"],
+    status: ModelConnection["status"] = "connected"
+  ): ModelConnection => ({
+    id: "mc_chatgpt" as ModelConnectionId,
+    provider: "chatgpt",
+    status,
+    ...(usage ? { usage } : {})
+  })
+  const near: AccountUsage = {
+    ...Fx.accountUsage,
+    weekly: { usedPercent: 92, dreamPercent: 78, resetsAt: DateTime.makeUnsafe("2026-11-09T16:00:00Z") }
+  }
+
+  it("reads like the mock: what's left, both windows with all projects in white, every project and Outside Dream", () => {
+    const card = planCard(connection(Fx.usage), Fx.accountUsage, now, la)
+    assert.strictEqual(card.title, "ChatGPT Pro")
+    assert.strictEqual(card.detail, "62% of this week left")
+    assert.isFalse(card.nearLimit)
+    assert.isUndefined(card.callout)
+    assert.deepStrictEqual(
+      card.windows.map((w) => [w.label, w.used, w.resets, w.focus, w.nearLimit]),
+      [
+        ["5 hours", "41% used", "resets 3:40 PM", 0.3, false],
+        ["Week", "38% used", "resets Mon 12:00 AM", 0.28, false]
+      ]
+    )
+    assert.closeTo(card.windows[1]?.others ?? 0, 0.1, 1e-9)
+    assert.deepStrictEqual(
+      card.projects.map((p) => [p.title, p.share, p.current, p.outside]),
+      [
+        ["Recipe Scaler", "19%", false, false],
+        ["Lift Log", "4%", false, false],
+        ["Cabin", "3%", false, false],
+        ["Morning Brief", "2%", false, false],
+        ["Outside Dream", "10%", false, true]
+      ]
+    )
+    assert.strictEqual(card.projects[0]?.bar, 1)
+    assert.match(card.footnote ?? "", /estimated/)
+  })
+
+  it("near the limit: amber, and says what's left until when", () => {
+    const card = planCard(connection(Fx.usage), near, now, la)
+    assert.isTrue(card.nearLimit)
+    assert.strictEqual(card.detail, "8% of this week left")
+    assert.strictEqual(card.callout?.left, "8% of your week is left")
+    assert.match(card.callout?.rest ?? "", /^, until Mon 8:00 AM\./)
+  })
+
+  it("without GetAccountUsage, shows the connection's own windows all grey, and no shares", () => {
+    const card = planCard(connection(Fx.usage), undefined, now, la)
+    assert.strictEqual(card.detail, "62% of this week left")
+    assert.deepStrictEqual(
+      card.windows.map((w) => [w.label, w.focus, w.others]),
+      [
+        ["5 hours", 0, 0.41],
+        ["Week", 0, 0.38]
+      ]
+    )
+    assert.deepStrictEqual(card.projects, [])
+    assert.isUndefined(card.footnote)
+    // Nothing known at all: just connected.
+    const bare = planCard(connection(undefined), undefined, now, la)
+    assert.deepStrictEqual([bare.title, bare.detail, bare.windows], ["ChatGPT", "Connected", []])
+  })
+
+  it("says when it's paused at a limit, in amber", () => {
+    const limited = {
+      ...Fx.usage,
+      limitedUntil: { window: "fiveHour" as const, until: DateTime.makeUnsafe("2026-11-04T23:40:00Z") }
+    }
+    const card = planCard(connection(limited), Fx.accountUsage, now, la)
+    assert.strictEqual(card.detail, "paused until 3:40 PM")
+    assert.isTrue(card.nearLimit)
+  })
+
+  it("puts the amber dot on Home's profile button only near the limit", () => {
+    assert.isFalse(profileHint([connection(Fx.usage)]))
+    assert.isFalse(profileHint([connection(undefined)]))
+    const heavy = { ...Fx.usage, weekly: { usedPercent: 92 } }
+    assert.isTrue(profileHint([connection(heavy)]))
+    assert.isFalse(profileHint([connection(heavy, "expired")]))
+  })
+
+  it.effect("an API from before GetAccountUsage leaves the card without shares instead of failing", () =>
+    Effect.gen(function* () {
+      const usages = yield* AccountUsages
+      assert.isUndefined(yield* usages.plan("chatgpt"))
+    }).pipe(
+      Effect.provide(
+        AccountUsages.layer.pipe(
+          Layer.provide(
+            // The RPC server answers a request it doesn't know with a defect.
+            Layer.succeed(AppClient, {
+              GetAccountUsage: () => Effect.die("Unknown request tag: GetAccountUsage")
+            } as unknown as AppRpcClient)
+          )
+        )
+      )
+    )
+  )
 })

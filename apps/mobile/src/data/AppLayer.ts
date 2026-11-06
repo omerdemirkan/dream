@@ -15,6 +15,7 @@ import { Answers } from "./Answers.ts"
 import { LiveProjects } from "./LiveProjects.ts"
 import { ProjectArchive } from "./ProjectArchive.ts"
 import { ProjectStates } from "./ProjectStates.ts"
+import { AccountUsages } from "./AccountUsages.ts"
 import { ProjectUsages } from "./ProjectUsages.ts"
 import { Replies } from "./Replies.ts"
 import type { SecureStorage } from "./SecureStorage.ts"
@@ -38,6 +39,7 @@ export const makeAppLayer = (config: AppConfigShape, platform: Platform) =>
   Layer.mergeAll(
     Answers.layer,
     ProjectUsages.layer.pipe(Layer.provideMerge(ProjectStates.layer)),
+    AccountUsages.layer,
     Replies.layer,
     ProjectArchive.layer
   ).pipe(

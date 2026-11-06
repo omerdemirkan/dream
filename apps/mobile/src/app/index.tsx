@@ -13,7 +13,8 @@ import { Redirect, useLocalSearchParams, useRouter } from "expo-router"
 import { useEffect } from "react"
 import { Pressable, ScrollView, Text, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
-import { phaseLabel, providerName, usageLeft, usageLine } from "../data/format.ts"
+import { phaseLabel, providerName } from "../data/format.ts"
+import { profileHint } from "../data/usage.ts"
 import { dotOf, homeLine, presenceOf } from "../data/presence.ts"
 import { hiddenProjectsAtom, modelConnectionsAtom, projectsAtom } from "../state/atoms.ts"
 import { linkSheetAtom } from "../state/ui.ts"
@@ -42,6 +43,7 @@ export default function Home() {
   const connectionsResult = useAtomValue(modelConnectionsAtom)
   const connections = listOf(connectionsResult)
   const needs = projects.some((s) => s.openAsks > 0)
+  const hint = profileHint(connections)
   // Nothing to show and the last try failed (offline, the API down): say so rather than "All clear".
   const unreachable = projects.length === 0 && AsyncResult.isFailure(projectsResult) && !projectsResult.waiting
 
@@ -71,7 +73,7 @@ export default function Home() {
           flexGrow: 1,
           paddingTop: insets.top + 4,
           paddingHorizontal: gutter,
-          // Ends just above the docked input, so the usage line sits there when the list is short.
+          // Ends just above the docked input.
           paddingBottom: Math.max(insets.bottom, 12) + 2 + 56 + 22
         }}
         showsVerticalScrollIndicator={false}
@@ -79,7 +81,31 @@ export default function Home() {
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10, height: 38 }}>
           <Orb need={needs} />
           <Text style={{ fontSize: 17, fontWeight: "700", letterSpacing: -0.34, color: color.t1, flex: 1 }}>Dream</Text>
-          <IconButton icon="person" size={34} label="Settings" onPress={() => router.push("/settings")} />
+          <View>
+            <IconButton
+              icon="person"
+              size={34}
+              label={hint ? "Settings: your subscription is nearly used up this week" : "Settings"}
+              onPress={() => router.push("/settings")}
+            />
+            {/* Only near the limit: their plan's usage lives in Settings. */}
+            {hint ? (
+              <View
+                pointerEvents="none"
+                style={{
+                  position: "absolute",
+                  right: -2,
+                  top: -2,
+                  width: 11,
+                  height: 11,
+                  borderRadius: 5.5,
+                  backgroundColor: color.need,
+                  borderWidth: 2.5,
+                  borderColor: color.bg
+                }}
+              />
+            ) : null}
+          </View>
         </View>
         <AppLinksRow projects={projects} />
         {/* When a project waits for them, its row says so; Home has no section for what they're asked. */}
@@ -112,9 +138,6 @@ export default function Home() {
         {projects.map((summary, i) => (
           <ProjectRow key={summary.project.id} summary={summary} first={i === 0} open={summary.openAsks} />
         ))}
-        {/* Pushes usage to the bottom of a short list; a long one scrolls it out of view. */}
-        <View style={{ flex: 1 }} />
-        <Usage connections={connections} />
       </ScrollView>
       {/* Keeps the clock readable over a long project list. */}
       <View
@@ -306,22 +329,6 @@ function ProjectRow(props: { readonly summary: ProjectSummary; readonly first: b
         )}
       </Pressable>
     </ProjectLink>
-  )
-}
-
-function Usage(props: { readonly connections: ReadonlyArray<ModelConnection> }) {
-  const usage = props.connections.find((c) => c.status === "connected" && c.usage)?.usage
-  const line = usage ? usageLine(usage) : undefined
-  if (!usage || !line) return null
-  return (
-    <View style={{ marginTop: 18, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10 }}>
-      <View
-        style={{ width: 44, height: 3, borderRadius: 2, backgroundColor: "rgba(255,255,255,0.14)", overflow: "hidden" }}
-      >
-        <View style={{ width: `${Math.round(usageLeft(usage) * 100)}%`, height: 3, backgroundColor: color.t2 }} />
-      </View>
-      <Text style={{ fontSize: 13, color: color.t3 }}>{line}</Text>
-    </View>
   )
 }
 

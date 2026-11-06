@@ -979,6 +979,19 @@ describe("a project, end to end", () => {
       // The tokens shown are still only the first turn's, which counted its subagents.
       assert.strictEqual(after.subagents, "included")
 
+      // Settings' plan card: the same windows and shares, seen from all their projects.
+      const account = yield* cloud.phone.GetAccountUsage({ provider: "claude" })
+      assert.strictEqual(account.plan, "Claude Max")
+      assert.deepStrictEqual(account.weekly, { usedPercent: 23, dreamPercent: 3, resetsAt: weekResets })
+      assert.deepStrictEqual(
+        account.projects.map((p) => [p.projectId, p.sharePercent]),
+        [[project.id, 3]]
+      )
+      assert.strictEqual(account.outsideDreamPercent, 20)
+      // No ChatGPT subscription is connected.
+      const none = yield* Effect.flip(cloud.phone.GetAccountUsage({ provider: "chatgpt" }))
+      assert.strictEqual(none._tag, "NotFound")
+
       // Someone else's project is not found.
       const other = yield* cloud.phone.DevSignIn({ email: "other@example.com", secret: Redacted.make("dev-secret") })
       cloud.session.token = Redacted.value(other.sessionToken)

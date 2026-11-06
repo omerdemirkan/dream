@@ -30,6 +30,7 @@ import { type AnswerInput, Answers, asksChanged } from "../data/Answers.ts"
 import { withWriteTimeout } from "../data/errors.ts"
 import { ProjectArchive } from "../data/ProjectArchive.ts"
 import { ProjectStates } from "../data/ProjectStates.ts"
+import { AccountUsages } from "../data/AccountUsages.ts"
 import { ProjectUsages } from "../data/ProjectUsages.ts"
 import { Replies, type Reply, type ReplyTarget } from "../data/Replies.ts"
 import { Session } from "../data/Session.ts"
@@ -211,6 +212,11 @@ export const projectAtom = Atom.family((projectId: ProjectId) =>
 /** The header's usage figures for a project; `undefined` while none are known. */
 export const usageGlanceAtom = Atom.family((projectId: ProjectId) =>
   appRuntime.atom(Stream.unwrap(ProjectUsages.useSync((usages) => usages.glance(projectId))))
+)
+
+/** Settings' plan card for one subscription, fetched when Settings opens; `undefined` when the API can't say. */
+export const accountUsageAtom = Atom.family((provider: ModelProvider) =>
+  appRuntime.atom(AccountUsages.use((usages) => usages.plan(provider)))
 )
 
 /** The usage sheet, fetched when it opens (refresh it to fetch again). */

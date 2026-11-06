@@ -148,6 +148,23 @@ describe("JSON codecs", () => {
     }
     assert.deepStrictEqual(roundTrip(UsageSnapshot, Fixtures.usage).decoded, Fixtures.usage)
     assert.deepStrictEqual(roundTrip(Domain.ProjectUsage, Fixtures.liftLogUsage).decoded, Fixtures.liftLogUsage)
+    assert.deepStrictEqual(roundTrip(Domain.AccountUsage, Fixtures.accountUsage).decoded, Fixtures.accountUsage)
+    // Absent windows stay absent; a share above 100 isn't a percent.
+    const unknown: Domain.AccountUsage = {
+      provider: "claude",
+      billing: "subscription",
+      projects: [],
+      observedAt: Fixtures.usage.observedAt
+    }
+    assert.deepStrictEqual(roundTrip(Domain.AccountUsage, unknown).decoded, unknown)
+    assert.isTrue(
+      Exit.isFailure(
+        Schema.decodeUnknownExit(Domain.AccountUsage)({
+          ...Schema.encodeSync(Domain.AccountUsage)(Fixtures.accountUsage),
+          weekly: { usedPercent: 120, dreamPercent: 10 }
+        })
+      )
+    )
     const glance = ProjectEvent.cases.Usage.make({
       usage: { provider: "claude", billing: "subscription", observedAt: Fixtures.usage.observedAt }
     })
