@@ -111,11 +111,14 @@ const initialActivity = (slug: string, working: boolean, now: DateTime.Utc): Age
   }
 }
 
-/** The mock's one scenario: at 2:02 PM, with Lift Log asleep, they ask about estimated 1RM; it replies at 2:09. */
-const liftAsk = { id: "msg_ask1rm" as MessageId, text: "Can the charts show estimated 1RM, not just the weight?" }
+/**
+ * The mock's one scenario, with a question the sample chat hasn't had yet: at 2:02 PM, with Lift Log asleep, they
+ * ask something; its computer starts, it works, and it replies at 2:09.
+ */
+const liftAsk = { id: "msg_askrest" as MessageId, text: "Can the rest timer start on its own after each set?" }
 const liftReply = {
-  id: "msg_reply1rm" as MessageId,
-  text: "Yes. I’ll plot estimated 1RM and mark the sessions where I’d have told you to add weight."
+  id: "msg_replyrest" as MessageId,
+  text: "Yes. It’ll start the moment you log a set, and buzz when it’s time for the next one."
 }
 type ActivityStage = "sent" | "starting" | "working" | "done"
 

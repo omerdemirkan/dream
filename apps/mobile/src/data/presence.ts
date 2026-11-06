@@ -102,7 +102,7 @@ const weekday = (dt: DateTime.Utc, timeZone?: string) =>
   )
 
 /** "4 PM", "6:55 AM": whole hours drop their minutes, as the mock writes them. */
-const clock = (dt: DateTime.Utc, timeZone?: string) => timeLabel(dt, timeZone).replace(":00 ", " ")
+const clock = (dt: DateTime.Utc, timeZone?: string) => timeLabel(dt, timeZone).replace(/:00(?=\s)/u, "")
 
 /** A time ahead: just the clock within a day ("wakes 6:55 AM" tomorrow morning), else "Tue 6:55 AM". */
 export const aheadLabel = (dt: DateTime.Utc, now: DateTime.Utc, timeZone?: string) =>
