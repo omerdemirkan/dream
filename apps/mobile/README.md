@@ -9,12 +9,12 @@ card, notifications); Home's project rows say which projects are waiting for the
 
 | Path | What |
 | --- | --- |
-| `src/app` | Routes: Home (`index`), `project/[id]` (Status / Chat), `new`, `sign-in`, `connect`, `settings`, `oauth/google`, `oauth/[provider]`, `fixtures/[scenario]` |
+| `src/app` | Routes: Home (`index`), `project/[id]` (Chat with the Status card on top), `new`, `sign-in`, `connect`, `settings`, `oauth/google`, `oauth/[provider]`, `fixtures/[scenario]` |
 | `src/data` | Services (no React Native): `AppClient` (AppRpcs over HTTP), `LiveProjects` (ProjectLiveRpcs over WebSocket, re-subscribing with a fresh ticket), `ProjectStates`, `Answers`, `Session`, formatting |
 | `src/fake` | The fixtures backend: `AppRpcs` handlers and live events over the Deck v3 sample world, with a small simulated agent |
 | `src/state` | The atom runtime and the atoms screens use |
 | `src/platform` | Expo/iOS pieces: keychain, streaming fetch, push, dictation, Google Sign-In |
-| `src/ui` | Components: Status roadmap, Chat messages, the expanded view and its grow/shrink animation |
+| `src/ui` | Components: the Status card and its roadmap, Chat messages, the expanded view and its grow/shrink animation |
 | `modules/dream-native` | Local Expo module (Swift): Live Activity push-to-start and update tokens, launch arguments |
 | `targets/widget` | The Live Activity widget (lock screen + Dynamic Island), via `@bacons/apple-targets` |
 | `scripts/build-ios.sh` | `expo prebuild` + CocoaPods + `xcodebuild`, for the Simulator or TestFlight |
@@ -75,8 +75,9 @@ xcrun simctl launch --terminate-running-process booted build.omer.dream \
 | Route | Screen |
 | --- | --- |
 | `/` | Home: the projects; one waiting for them has an amber dot and "Waiting for you" |
-| `/project/prj_liftlog` · `prj_morningbrief` · `prj_cabin` · `prj_recipescaler` | Status |
-| `…?tab=chat` | Chat; add `&focus=<messageId>` to expand a message, `&land=<messageId>` to land on it highlighted |
+| `/project/prj_liftlog` · `prj_morningbrief` · `prj_cabin` · `prj_recipescaler` | Chat, with the Status card pinned under the header (Lift Log working, Cabin needing them) |
+| `…?tab=status` | The Status card opened over Chat (the whole roadmap); `?tab=chat` folds it |
+| `…?focus=<messageId>` · `…?land=<messageId>` | Expand a message; land on it in Chat, highlighted |
 | `/new` · `/new?sample=long` · add `dictate=1` | New idea (the page), with a long brain dump, dictating at the cursor (simulated in the Simulator) |
 | `/connect` · `/settings` | Subscription connect flow; settings |
 
@@ -94,7 +95,8 @@ Scenarios (`dream://fixtures/<name>?to=/path`, or `-dreamScenario a,b`): `signed
 `live-activity`, `live-activity-needs` (start a Live Activity on the phone), `spotify-ask` (Lift Log asks to connect
 Spotify), `spotify-stopped` (Lift Log's Spotify connection stopped working: its card says so and connects again),
 `long-question`, `vague-access`, `question-context` (see the message ids above),
-`unsupported-message`, `stall-next-write` (the next answer, message, new idea, key or decline hangs until the app
+`unsupported-message`, `long-chat` (an afternoon of Lift Log messages to read back through: open
+`/project/prj_liftlog?land=msg_long8` and the Status card folds to one line), `stall-next-write` (the next answer, message, new idea, key or decline hangs until the app
 gives up after 25 s; the retry goes through), `archived` (Recipe Scaler and Morning Brief are archived: off Home,
 listed under Archived in Settings).
 

@@ -495,3 +495,47 @@ export const questionWithContext = (projectId: Project["id"], now: DateTime.Utc)
   meanwhile: "I’ll keep building the set tracker; only the coach depends on this.",
   state: { _tag: "Open" }
 })
+
+/**
+ * An afternoon of back-and-forth in Lift Log, ending `before` (the Health import update), so Chat is long enough
+ * to read back through. `msg_long1` opens it.
+ */
+export const longChat = (projectId: Project["id"], before: DateTime.Utc): ReadonlyArray<TextMessage> => {
+  const lines: ReadonlyArray<readonly ["user" | "agent", string]> = [
+    ["user", "Quick one: I mostly train at 6 AM. Can the app be ready with today’s plan before I leave the house?"],
+    [
+      "agent",
+      "Yes. I’ll have Today work out the plan overnight from your last sessions, so it’s waiting when you open it. No spinner at 6 AM."
+    ],
+    ["user", "And if I skip a day?"],
+    [
+      "agent",
+      "Then the plan simply moves. Nothing scolds you, and the weights stay where they were until you’ve actually lifted them."
+    ],
+    ["user", "Perfect. I also do some kettlebell work on Sundays, does that matter?"],
+    [
+      "agent",
+      "It shows up in Apple Health as functional strength training, so I’ll keep it in your history without counting it towards squat, bench or deadlift."
+    ],
+    ["user", "Makes sense. Could the charts go back further than a year?"],
+    [
+      "agent",
+      "They can. Your export has workouts back to 2023, so the charts will start there, with the last 12 weeks shown first."
+    ],
+    ["user", "Great, thanks."],
+    [
+      "agent",
+      "I’m testing the import against the sample export now. I’ll send a recording once a whole year comes through cleanly."
+    ]
+  ]
+  return lines.map(([from, body], i) => ({
+    _tag: "Text",
+    id: msg(`msg_long${i + 1}`),
+    projectId,
+    createdAt: DateTime.subtract(before, { minutes: (lines.length - i) * 9 }),
+    from,
+    text: body,
+    media: [],
+    ...(from === "user" ? { seenAt: DateTime.subtract(before, { minutes: (lines.length - i) * 9 - 1 }) } : {})
+  }))
+}

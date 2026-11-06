@@ -1,5 +1,5 @@
 /**
- * The Status tab: a living roadmap the agent keeps current with `dream status`.
+ * The Status card: a living roadmap the agent keeps current with `dream status`.
  */
 import { Schema } from "effect"
 import { MessageId } from "./Ids.ts"

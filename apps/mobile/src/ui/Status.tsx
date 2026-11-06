@@ -1,5 +1,5 @@
 /**
- * The Status tab: the live roadmap the agent keeps with `dream status`.
+ * The opened Status card: the live roadmap the agent keeps with `dream status`.
  * What it's doing now, what it just did, what's next, and what it needs from
  * them, pinned to the milestone where it matters.
  */
@@ -35,6 +35,7 @@ import { Dot, Icon, Lab } from "./kit.tsx"
 import { MarkdownText } from "./Markdown.tsx"
 import { MediaStrip } from "./Media.tsx"
 import { plainText } from "./markdownParse.ts"
+import { earlyNote, focusIndex } from "./statusView.ts"
 import { color, gutter } from "./theme.ts"
 
 // ---------------------------------------------------------------------------
@@ -324,20 +325,6 @@ function NeedView(props: { readonly need: Need; readonly messages: ReadonlyMap<M
 // The roadmap
 // ---------------------------------------------------------------------------
 
-/** The milestone that carries now / just did / media / next: the current one, else the latest done. */
-const focusIndex = (milestones: ReadonlyArray<Milestone>) => {
-  const current = milestones.findIndex((m) => m.state === "current")
-  if (current !== -1) return current
-  let best = -1
-  milestones.forEach((m, i) => {
-    if (m.state !== "done") return
-    const prev = milestones[best]
-    if (best === -1 || (m.date && prev?.date && DateTime.isGreaterThan(m.date, prev.date)) || (m.date && !prev?.date))
-      best = i
-  })
-  return best
-}
-
 function Node(props: { readonly state: Milestone["state"]; readonly paused: boolean }) {
   const pulse = useSharedValue(0)
   const isNow = props.state === "current" && !props.paused
@@ -495,18 +482,11 @@ function FocusBlocks(props: {
 }
 
 // ---------------------------------------------------------------------------
-// The tab
+// The whole card
 // ---------------------------------------------------------------------------
 
-/** Before the agent writes a Status card: still looking into it, unless they've already answered something. */
-const earlyNote = (messages: ReadonlyArray<Message>) =>
-  !messages.some(
-    (m) => (m._tag === "Question" || m._tag === "Access") && m.state._tag !== "Open" && m.state._tag !== "Withdrawn"
-  )
-    ? "I’m looking into this before I ask you anything. That can take a few minutes, so there’s no need to wait around — I’ll send a notification when I have a question."
-    : "Thanks. I’m shaping the first version around your answer, and I’ll write when there’s something to look at."
-
-export function StatusTab(props: { readonly state: ProjectState }) {
+/** Everything the Status card holds, shown when they open it over Chat. */
+export function StatusRoadmap(props: { readonly state: ProjectState }) {
   const { status, messages, working } = props.state
   const byId = new Map(messages.map((m) => [m.id, m] as const))
   const pinned = new Set(status.milestones.flatMap((m) => m.needs.flatMap((n) => (n.messageId ? [n.messageId] : []))))

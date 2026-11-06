@@ -31,13 +31,19 @@ const sections: ReadonlyArray<{ readonly title: string; readonly jumps: Readonly
   {
     title: "Projects",
     jumps: [
-      { title: "Lift Log · Status", scenarios: ["reset"], to: "/project/prj_liftlog" },
+      { title: "Lift Log · working", scenarios: ["reset"], to: "/project/prj_liftlog" },
+      { title: "Lift Log · Status card open", scenarios: ["reset"], to: "/project/prj_liftlog?tab=status" },
       { title: "Lift Log · paused", scenarios: ["reset", "paused"], to: "/project/prj_liftlog" },
-      { title: "Lift Log · Chat", scenarios: ["reset"], to: "/project/prj_liftlog?tab=chat" },
-      { title: "Morning Brief · Status", scenarios: ["reset"], to: "/project/prj_morningbrief" },
-      { title: "Morning Brief · Chat", scenarios: ["reset"], to: "/project/prj_morningbrief?tab=chat" },
-      { title: "Cabin · Status", scenarios: ["reset"], to: "/project/prj_cabin" },
-      { title: "Cabin · Chat", scenarios: ["reset"], to: "/project/prj_cabin?tab=chat" },
+      {
+        title: "Lift Log · long Chat, scrolled up",
+        scenarios: ["reset", "long-chat"],
+        to: "/project/prj_liftlog?land=msg_long8"
+      },
+      { title: "Morning Brief", scenarios: ["reset"], to: "/project/prj_morningbrief" },
+      { title: "Morning Brief · Status card open", scenarios: ["reset"], to: "/project/prj_morningbrief?tab=status" },
+      { title: "Cabin · needs you", scenarios: ["reset"], to: "/project/prj_cabin" },
+      { title: "Cabin · Status card open", scenarios: ["reset"], to: "/project/prj_cabin?tab=status" },
+      { title: "New idea · early", scenarios: ["reset", "activity-new-idea"], to: "/project/prj_newidea" },
       { title: "Cabin · Chat · resolved", scenarios: ["reset", "cabin-resolved"], to: "/project/prj_cabin?tab=chat" },
       {
         title: "Cabin · question withdrawn",
@@ -54,8 +60,7 @@ const sections: ReadonlyArray<{ readonly title: string; readonly jumps: Readonly
         scenarios: ["reset", "stall-next-write"],
         to: "/project/prj_cabin?tab=chat"
       },
-      { title: "Recipe Scaler · Status", scenarios: ["reset"], to: "/project/prj_recipescaler" },
-      { title: "Recipe Scaler · Chat", scenarios: ["reset"], to: "/project/prj_recipescaler?tab=chat" }
+      { title: "Recipe Scaler", scenarios: ["reset"], to: "/project/prj_recipescaler" }
     ]
   },
   {

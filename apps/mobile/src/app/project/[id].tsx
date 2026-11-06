@@ -1,37 +1,42 @@
 /**
- * A project: Status (the live roadmap) and Chat (only what Dream chose to send).
+ * A project: Chat (only what Dream chose to send) with the Status card pinned
+ * under the header, which opens over Chat into the whole roadmap.
  *
- * `?tab=chat` opens Chat; `?focus=<messageId>` opens that question or access
- * request expanded (deep links and notifications use both).
+ * `?tab=status` opens the roadmap and `?tab=chat` folds it; `?focus=<messageId>`
+ * opens that question or access request expanded (deep links and notifications
+ * use these).
  */
 import { type Message, MessageId, type Project as ProjectRecord, ProjectId, type ProjectSummary } from "@dream/domain"
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
 import { Option, Schema } from "effect"
 import { AsyncResult } from "effect/reactivity"
 import { useLocalSearchParams, useRouter } from "expo-router"
-import { useEffect } from "react"
-import { Pressable, ScrollView, Text, View } from "react-native"
-import { KeyboardStickyView } from "react-native-keyboard-controller"
+import { useCallback, useEffect, useState } from "react"
+import { Keyboard, Text, View } from "react-native"
+import { KeyboardStickyView, useKeyboardState } from "react-native-keyboard-controller"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { dotOf, headerLine, presenceOf } from "../../data/presence.ts"
 import type { ProjectState } from "../../data/projectState.ts"
 import { draftKey } from "../../data/Replies.ts"
 import { useViewingProject } from "../../platform/viewing.ts"
 import { clearDraftFn, draftAtom, projectsAtom, sendMessageFn } from "../../state/atoms.ts"
-import { landingAtom } from "../../state/ui.ts"
+import { focusAtom, landingAtom } from "../../state/ui.ts"
 import { useAction } from "../../ui/actions.ts"
 import { ChatTab } from "../../ui/Chat.tsx"
 import { ChatComposer } from "../../ui/Composer.tsx"
 import { useOpenMessage, useProject, useRequestId } from "../../ui/hooks.ts"
-import { Dot, IconButton } from "../../ui/kit.tsx"
+import { IconButton } from "../../ui/kit.tsx"
 import { PresenceTile, StateLineText, useTickingNow } from "../../ui/Presence.tsx"
-import { StatusTab } from "../../ui/Status.tsx"
+import { RoadmapSheet, StatusCardPin } from "../../ui/StatusCard.tsx"
 import { color, gutter } from "../../ui/theme.ts"
 
 const decodeProjectId = Schema.decodeUnknownOption(ProjectId)
 const decodeMessageId = Schema.decodeUnknownOption(MessageId)
 
-const header = 124
+/** The back button, icon and title row. */
+const header = 48
+/** Between the header and the card, and between the card and Chat's first message. */
+const gap = 8
 
 export default function ProjectScreen() {
   const params = useLocalSearchParams<{ id: string; tab?: string; focus?: string; land?: string }>()
@@ -40,7 +45,7 @@ export default function ProjectScreen() {
   return (
     <Project
       projectId={projectId}
-      tab={params.tab === "chat" ? "chat" : "status"}
+      tab={params.tab === "chat" || params.tab === "status" ? params.tab : undefined}
       focus={params.focus}
       land={params.land}
     />
@@ -49,7 +54,7 @@ export default function ProjectScreen() {
 
 function Project(props: {
   readonly projectId: ProjectId
-  readonly tab: "status" | "chat"
+  readonly tab: "status" | "chat" | undefined
   readonly focus: string | undefined
   readonly land: string | undefined
 }) {
@@ -87,8 +92,35 @@ function Project(props: {
     router.setParams({ land: undefined })
   }, [props.land, props.projectId, router, setLanding])
 
-  const needsYou = state?.messages.some(needsThem)
+  // The roadmap opens over Chat (`?tab=status`) and folds back (`?tab=chat`, or an ask expanding from anywhere,
+  // so Back from the expanded view returns to Chat).
+  const [roadmap, setRoadmap] = useState(false)
+  useEffect(() => {
+    if (!props.tab) return
+    setRoadmap(props.tab === "status")
+    router.setParams({ tab: undefined })
+  }, [props.tab, router])
+  const focus = Option.getOrUndefined(useAtomValue(focusAtom))
+  const expanded = focus?.projectId === props.projectId
+  useEffect(() => {
+    if (expanded) setRoadmap(false)
+  }, [expanded])
+  const openRoadmap = useCallback(() => {
+    Keyboard.dismiss()
+    setRoadmap(true)
+  }, [])
+
+  // The card folds to one line while they read back through Chat, or type.
+  const [away, setAway] = useState(false)
+  const typing = useKeyboardState((k) => k.isVisible)
+  const [cardHeight, setCardHeight] = useState(0)
+  const onCardHeight = useCallback(
+    (height: number) => setCardHeight((h) => (Math.abs(h - height) > 1 ? height : h)),
+    []
+  )
+
   const top = insets.top + 4
+  const cardTop = top + header + gap
   // The composer sits this far above the home indicator, and 10 pt above the keyboard, riding it as it moves.
   const composerBottom = Math.max(insets.bottom, 12) + 2
   const keyboardOffset = composerBottom - 10
@@ -98,43 +130,36 @@ function Project(props: {
   return (
     <View style={{ flex: 1, backgroundColor: color.bg }}>
       {state ? (
-        props.tab === "chat" ? (
-          <View style={{ flex: 1 }}>
-            <ChatTab state={state} topInset={top + header} bottomInset={24} keyboardOffset={keyboardOffset} />
-            <KeyboardStickyView
-              offset={{ opened: keyboardOffset }}
-              style={{ paddingHorizontal: 16, paddingBottom: composerBottom, paddingTop: 10 }}
-            >
-              <ChatComposer
-                busy={send.busy}
-                draft={draft?.text}
-                onSend={(text, sent) =>
-                  send.run(
-                    { projectId: props.projectId, text, requestId: requestId.for(text) },
-                    {
-                      onSuccess: () => {
-                        requestId.done()
-                        if (draft) clearDraft(chat)
-                        sent()
-                      }
-                    }
-                  )
-                }
-              />
-            </KeyboardStickyView>
-          </View>
-        ) : (
-          <ScrollView
-            contentContainerStyle={{
-              paddingTop: top + header,
-              paddingHorizontal: gutter,
-              paddingBottom: insets.bottom + 40
-            }}
-            showsVerticalScrollIndicator={false}
+        <View style={{ flex: 1 }}>
+          <ChatTab
+            state={state}
+            topInset={cardTop + (cardHeight || 150) + 14}
+            bottomInset={24}
+            keyboardOffset={keyboardOffset}
+            onAway={setAway}
+          />
+          <KeyboardStickyView
+            offset={{ opened: keyboardOffset }}
+            style={{ paddingHorizontal: 16, paddingBottom: composerBottom, paddingTop: 10 }}
           >
-            <StatusTab state={state} />
-          </ScrollView>
-        )
+            <ChatComposer
+              busy={send.busy}
+              draft={draft?.text}
+              onSend={(text, sent) =>
+                send.run(
+                  { projectId: props.projectId, text, requestId: requestId.for(text) },
+                  {
+                    onSuccess: () => {
+                      requestId.done()
+                      if (draft) clearDraft(chat)
+                      sent()
+                    }
+                  }
+                )
+              }
+            />
+          </KeyboardStickyView>
+        </View>
       ) : null}
       <View
         style={{
@@ -156,15 +181,11 @@ function Project(props: {
           />
           <Identity project={project} state={state} summary={summary} />
         </View>
-        <View style={{ flexDirection: "row", gap: 28, marginTop: 6, borderBottomWidth: 1, borderColor: color.line }}>
-          <Tab title="Status" on={props.tab === "status"} onPress={() => router.setParams({ tab: "status" })} />
-          <Tab
-            title="Chat"
-            on={props.tab === "chat"}
-            need={needsYou === true}
-            onPress={() => router.setParams({ tab: "chat" })}
-          />
-        </View>
+        {state ? (
+          <View style={{ marginTop: gap }}>
+            <StatusCardPin state={state} compact={away || typing} onRoadmap={openRoadmap} onHeight={onCardHeight} />
+          </View>
+        ) : null}
         <View
           pointerEvents="none"
           style={{
@@ -177,6 +198,15 @@ function Project(props: {
           }}
         />
       </View>
+      {state ? (
+        <RoadmapSheet
+          state={state}
+          open={roadmap}
+          onClose={() => setRoadmap(false)}
+          top={cardTop}
+          from={away || typing ? 48 : cardHeight}
+        />
+      ) : null}
     </View>
   )
 }
@@ -228,37 +258,3 @@ function Identity(props: {
 }
 
 const needsThem = (m: Message) => m._tag !== "Text" && m.state._tag === "Open" && !(m._tag === "Access" && m.when)
-
-function Tab(props: {
-  readonly title: string
-  readonly on: boolean
-  readonly need?: boolean
-  readonly onPress: () => void
-}) {
-  return (
-    <Pressable
-      accessibilityRole="tab"
-      accessibilityState={{ selected: props.on }}
-      onPress={props.onPress}
-      style={{ paddingTop: 10, paddingBottom: 12, flexDirection: "row", alignItems: "center", gap: 7 }}
-    >
-      <Text style={{ fontSize: 16, fontWeight: "600", letterSpacing: -0.16, color: props.on ? color.t1 : color.t3 }}>
-        {props.title}
-      </Text>
-      {props.need ? <Dot kind="need" /> : null}
-      {props.on ? (
-        <View
-          style={{
-            position: "absolute",
-            left: 0,
-            right: 0,
-            bottom: -1,
-            height: 2,
-            borderRadius: 1,
-            backgroundColor: color.t1
-          }}
-        />
-      ) : null}
-    </Pressable>
-  )
-}
