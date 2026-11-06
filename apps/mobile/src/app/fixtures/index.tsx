@@ -21,11 +21,14 @@ const sections: ReadonlyArray<{ readonly title: string; readonly jumps: Readonly
     jumps: [
       { title: "Projects need you", scenarios: ["reset"], to: "/" },
       { title: "All clear", scenarios: ["reset", "all-clear"], to: "/" },
+      { title: "No projects yet · starters", scenarios: ["reset", "no-projects"], to: "/" },
       { title: "Settings · archived projects", scenarios: ["reset", "archived"], to: "/settings" },
       { title: "New idea", to: "/new" },
       { title: "New idea · long", to: "/new?sample=long" },
       { title: "New idea · dictating", to: "/new?dictate=1" },
-      { title: "New idea · dictating into a long one", to: "/new?sample=long&dictate=1" }
+      { title: "New idea · dictating into a long one", to: "/new?sample=long&dictate=1" },
+      { title: "New idea · more starters", to: "/new?starters=more&group=schedule" },
+      { title: "New idea · a starter's draft", to: "/new?starter=fare-watch" }
     ]
   },
   {

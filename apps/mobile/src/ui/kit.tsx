@@ -62,6 +62,7 @@ const glyphs = {
   link: "link",
   dots: "ellipsis",
   plusApp: "plus.app",
+  shuffle: "shuffle",
   globe: "globe"
 } as const satisfies Record<string, SymbolViewProps["name"]>
 
@@ -96,6 +97,24 @@ export function Icon(props: {
  */
 const symbolName = (name: string | undefined): SymbolViewProps["name"] =>
   (name && name.length > 0 ? name : "sparkle") as SymbolViewProps["name"]
+
+/** Any SF Symbol by name, for content that names its own (a starter on New idea). */
+export function SymbolIcon(props: { readonly name: string; readonly size?: number; readonly color?: string }) {
+  const size = props.size ?? 18
+  return (
+    <SymbolView
+      name={symbolName(props.name)}
+      size={size}
+      tintColor={props.color ?? color.t3}
+      weight="medium"
+      resizeMode="scaleAspectFit"
+      accessible={false}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={{ width: size, height: size }}
+    />
+  )
+}
 
 /** SF Symbol names are lowercase ASCII words joined by dots; agents often pick an emoji instead. */
 const isSymbolName = (name: string | undefined) => name === undefined || /^[a-z0-9]+(\.[a-z0-9]+)*$/.test(name)
