@@ -106,6 +106,11 @@ for you, paused until 4 PM), and `activity-new-idea` (a new idea's first half-mi
 until 6:55 AM; a message to any project goes through Sent, then Seen as delivery begins (with "starting" if it was asleep), working, then the
 reply and "Done for now".
 
+Answering moves on: `ask-series` gives Cabin three open questions and the calendar request (`msg_cabinrule`,
+`msg_cabinpick`, `msg_gcal`, `msg_cabinhold`), with Lift Log's, Morning Brief's and Recipe Scaler's asks also in
+Home's deck. Answering one expanded goes to the project's next open ask (or, opened from the deck, the deck's next
+card) after a beat; answering a card inline in Chat scrolls to the next open card below it.
+
 ```sh
 xcrun simctl launch --terminate-running-process booted build.omer.dream \
   -dreamScenario signed-in,activity-working -dreamRoute "/project/prj_liftlog?tab=chat"

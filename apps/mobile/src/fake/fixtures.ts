@@ -241,6 +241,18 @@ export const calendarAccess: AccessMessage = {
   notificationId: "9a7b6c5d-4e3f-4a1b-8c2d-3e4f5a6b7c8d" as NotificationId
 }
 
+/** A third open question for Cabin, after the calendar request (scenario `ask-series`). */
+export const cabinHold = (projectId: Project["id"], now: DateTime.Utc): QuestionMessage => ({
+  _tag: "Question",
+  id: msg("msg_cabinhold"),
+  projectId,
+  createdAt: now,
+  question: "How long can one family hold a weekend before confirming?",
+  options: ["24 hours", "3 days", "A week"],
+  why: "Holds that never turn into stays block everyone else.",
+  state: { _tag: "Open" }
+})
+
 const cabinMessages: ReadonlyArray<Message> = [
   text(cabin.id, "msg_cabinidea", "2026-11-02T18:00:00Z", "user", cabin.idea),
   text(

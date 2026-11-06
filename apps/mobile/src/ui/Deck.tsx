@@ -187,7 +187,7 @@ function FrontCard(props: {
     ]
   }))
   const m = props.ask.message
-  const onOpen = () => open({ projectId: m.projectId, messageId: m.id, message: m, from: ref })
+  const onOpen = () => open({ projectId: m.projectId, messageId: m.id, message: m, from: ref, scope: "deck" })
   // Worklets copy what they close over, so they get the callback rather than all of props.
   const onLeft = props.onLeft
   const onAnswer = (option: string) => {

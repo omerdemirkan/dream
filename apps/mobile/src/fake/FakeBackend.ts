@@ -45,6 +45,7 @@ import type { Rpc, RpcGroup } from "effect/rpc"
 import { TolerantMessage } from "../data/Tolerant.ts"
 import {
   type FixtureWorld,
+  cabinHold,
   longQuestion,
   makeWorld,
   newIntegrationId,
@@ -82,7 +83,8 @@ export const Scenario = [
   "activity-working",
   "activity-done",
   "activity-home",
-  "activity-new-idea"
+  "activity-new-idea",
+  "ask-series"
 ] as const
 export type Scenario = (typeof Scenario)[number]
 
@@ -969,6 +971,12 @@ export class FakeBackend extends Context.Service<
           case "stall-next-write":
             stallNextWrite = true
             return
+          case "ask-series": {
+            // Cabin: three open questions and the calendar request; Home's deck also has Lift Log's and others'.
+            const cabin = Array.from(records.values()).find((r) => r.project.slug === "cabin")
+            if (!cabin || cabin.messages.some((m) => m.id === "msg_cabinhold")) return
+            return yield* setMessage(cabin, cabinHold(cabin.project.id, now))
+          }
           case "activity-sent":
             return yield* liftStage("sent", now)
           case "activity-starting":

@@ -22,6 +22,15 @@ export interface Focus {
   readonly origin: Rect | undefined
   /** The message as the opener knew it, shown until the project's live state has it. */
   readonly message: AskMessage | undefined
+  /**
+   * Where answering it moves on to: the project's next open ask in Chat order, or Home's next deck card
+   * (across projects). Absent means the project.
+   */
+  readonly scope?: "project" | "deck"
+  /** Opened by answering the one before, so it slides in rather than growing. */
+  readonly advanced?: boolean
+  /** The asks answered on the way here, which a stale list may still show as open. */
+  readonly passed?: ReadonlyArray<MessageId>
 }
 
 export const focusAtom = Atom.make<Option.Option<Focus>>(Option.none()).pipe(Atom.keepAlive)
