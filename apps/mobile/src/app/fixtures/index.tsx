@@ -34,6 +34,8 @@ const sections: ReadonlyArray<{ readonly title: string; readonly jumps: Readonly
       { title: "Lift Log · working", scenarios: ["reset"], to: "/project/prj_liftlog" },
       { title: "Lift Log · Status card open", scenarios: ["reset"], to: "/project/prj_liftlog?tab=status" },
       { title: "Lift Log · paused", scenarios: ["reset", "paused"], to: "/project/prj_liftlog" },
+      { title: "Lift Log · now on two lines", scenarios: ["reset", "now-two-lines"], to: "/project/prj_liftlog" },
+      { title: "Lift Log · now cut at two lines", scenarios: ["reset", "now-three-lines"], to: "/project/prj_liftlog" },
       {
         title: "Lift Log · long Chat, scrolled up",
         scenarios: ["reset", "long-chat"],

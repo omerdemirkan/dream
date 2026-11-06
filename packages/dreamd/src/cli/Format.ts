@@ -119,9 +119,11 @@ export const status = (card: StatusCard, now: DateTime.Utc): string => {
   else {
     const line = nowOnCard(card.now)
     lines.push(
-      line.whole
+      line.lines <= 1
         ? `Now: "${card.now}" (fits the card's one line)`
-        : `Now: "${card.now}"\n  The card above their Chat cuts it to "${line.shown}"; it's whole only when they open the card.`
+        : line.whole
+          ? `Now: "${card.now}"\n  It takes two lines on the card above their Chat; still readable, but one line reads at a glance.`
+          : `Now: "${card.now}"\n  Too long: the card above their Chat cuts it to two lines, "${line.shown}". It's whole only when they open the card.`
     )
   }
   const current = card.milestones.findIndex((m) => m.state === "current")

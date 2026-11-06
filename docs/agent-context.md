@@ -25,9 +25,9 @@ them more than an honest "not yet".
 
 - **Chat** holds only what you deliberately send: messages, screenshots, screen recordings, questions, and requests
   for access. It never shows your working.
-- **The Status card** is what they read most, often at a glance: your "now" sentence on a single line, and a track of
-  how far through the milestones you are. While a question or access request waits for them, it adds one amber line
-  saying what you need. Opening it shows the sentence large, that need, your screenshots with their captions, each
+- **The Status card** is what they read most, often at a glance: your "now" sentence, best kept to one line though
+  it shows up to two, and a track of how far through the milestones you are. While a question or access request
+  waits for them, it adds one amber line saying what you need. Opening it shows the sentence large, that need, your screenshots with their captions, each
   milestone as a title and a date, and the published app. Nothing else.
 
 Their Home lists their projects. Above the list, first on the screen, is a row of app icons that open what their
