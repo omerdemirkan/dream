@@ -33,6 +33,7 @@ import type { ProjectState } from "../data/projectState.ts"
 import { loadEarlierFn } from "../state/atoms.ts"
 import { landingAtom, messageRects } from "../state/ui.ts"
 import { nextOpenAsk } from "./asks.ts"
+import { useClearSeen } from "./clearSeen.ts"
 import { useNow, useOpenMessage } from "./hooks.ts"
 import { AccessCard, AgentText, QuestionCard, UserBubble } from "./Messages.tsx"
 import { Icon } from "./kit.tsx"
@@ -220,6 +221,7 @@ export function ChatTab(props: {
   const scroll = useRef<ScrollViewInstance>(null)
   const positions = useRef(new Map<MessageId, { y: number; height: number }>())
   const viewport = useRef(0)
+  const offset = useRef(0)
   const nearBottom = useRef(true)
   const away = useRef(false)
   const loadingEarlier = useRef(false)
@@ -263,7 +265,15 @@ export function ChatTab(props: {
     [scrollTo]
   )
 
+  // Notifications about messages they've now seen leave Notification Center. The Status card covers the top inset.
+  const checkSeen = useClearSeen({
+    messages: state.messages,
+    positions,
+    window: () => ({ top: offset.current + props.topInset, bottom: offset.current + viewport.current })
+  })
+
   const onContentSizeChange = () => {
+    checkSeen()
     if (wanted) return
     if (!landed.current || nearBottom.current) {
       scroll.current?.scrollToEnd({ animated: landed.current })
@@ -274,6 +284,8 @@ export function ChatTab(props: {
   const onScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent
     const fromBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height)
+    offset.current = contentOffset.y
+    checkSeen()
     nearBottom.current = fromBottom < 160
     // Some slack each way, so the Status card doesn't flicker between sizes around one point.
     const isAway = away.current ? fromBottom > 90 : fromBottom > 300
@@ -324,9 +336,10 @@ export function ChatTab(props: {
     rows.push(
       <View
         key={message.id}
-        onLayout={(e) =>
+        onLayout={(e) => {
           positions.current.set(message.id, { y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })
-        }
+          checkSeen()
+        }}
         style={props.scope !== undefined && workstream !== props.scope ? { opacity: 0.32 } : undefined}
       >
         {label !== undefined && workstream !== undefined && onReply ? (
@@ -350,7 +363,10 @@ export function ChatTab(props: {
         paddingHorizontal: gutter,
         gap: 14
       }}
-      onLayout={(e) => (viewport.current = e.nativeEvent.layout.height)}
+      onLayout={(e) => {
+        viewport.current = e.nativeEvent.layout.height
+        checkSeen()
+      }}
       onContentSizeChange={onContentSizeChange}
       onScroll={onScroll}
       scrollEventThrottle={64}
