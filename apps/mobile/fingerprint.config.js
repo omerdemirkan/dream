@@ -5,8 +5,12 @@
  *
  * Left out, because they don't change native code: version and build number (every TestFlight upload has a new
  * one), `extra` (the JavaScript reads it from the update itself) and package.json scripts.
+ *
+ * The widget's Swift sources are added by hand: Expo's sources cover only its `expo-target.config.js`, and a
+ * widget-only change (the Live Activity's shape, say) needs a TestFlight build, not an update. Only the Swift
+ * files, because prebuild generates the widget's Info.plist and asset catalog on the build Mac.
  */
-const { existsSync, readFileSync } = require("node:fs")
+const { existsSync, readdirSync, readFileSync } = require("node:fs")
 const { resolve } = require("node:path")
 
 const certificate = resolve(__dirname, process.env.DREAM_UPDATES_CERTIFICATE ?? "certs/updates-certificate.pem")
@@ -24,14 +28,20 @@ module.exports = {
     "ExpoConfigExtraSection",
     "PackageJsonScriptsAll"
   ],
-  extraSources: existsSync(certificate)
-    ? [
-        {
-          type: "contents",
-          id: "updatesCertificate",
-          contents: readFileSync(certificate, "utf8"),
-          reasons: ["expo-updates code signing certificate"]
-        }
-      ]
-    : []
+  extraSources: [
+    ...readdirSync(resolve(__dirname, "targets/widget"))
+      .filter((file) => file.endsWith(".swift"))
+      .sort()
+      .map((file) => ({ type: "file", filePath: `targets/widget/${file}`, reasons: ["Live Activity widget"] })),
+    ...(existsSync(certificate)
+      ? [
+          {
+            type: "contents",
+            id: "updatesCertificate",
+            contents: readFileSync(certificate, "utf8"),
+            reasons: ["expo-updates code signing certificate"]
+          }
+        ]
+      : [])
+  ]
 }

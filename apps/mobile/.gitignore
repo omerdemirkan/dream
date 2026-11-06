@@ -46,3 +46,7 @@ example
 
 # Native build output
 /build
+
+# Generated into the widget target by prebuild (@bacons/apple-targets)
+/targets/widget/Info.plist
+/targets/widget/Assets.xcassets/
