@@ -16,6 +16,7 @@ import { modelConnectionsAtom, openAsksAtom, projectsAtom } from "../state/atoms
 import { Deck, Segments } from "../ui/Deck.tsx"
 import { usePendingAnswers } from "../ui/hooks.ts"
 import { Dot, Icon, IconButton, LinkButton, Orb } from "../ui/kit.tsx"
+import { plainText } from "../ui/markdownParse.ts"
 import { PresenceTile, StateLineText, useTickingNow } from "../ui/Presence.tsx"
 import { color, gutter } from "../ui/theme.ts"
 
@@ -243,6 +244,8 @@ function ProjectRow(props: {
   const router = useRouter()
   const { project, progress } = props.summary
   const open = props.asks.filter((ask) => ask.project.id === project.id).length
+  // The Status card's now line, as plain text: markdown and any lines after the first don't fit here.
+  const headline = project.headline ? plainText(project.headline).split("\n")[0] || undefined : undefined
   const now = useTickingNow(props.summary.activity?.state === "working")
   const presence = presenceOf({
     activity: props.summary.activity,
@@ -254,9 +257,9 @@ function ProjectRow(props: {
     now,
     harness: project.harness,
     openAsks: open,
-    headline: project.headline
+    headline
   })
-  const sub = project.headline ?? phaseLabel(project.phase)
+  const sub = headline ?? phaseLabel(project.phase)
   return (
     <Pressable
       accessibilityRole="button"

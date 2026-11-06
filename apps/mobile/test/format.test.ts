@@ -2,7 +2,7 @@ import * as Fx from "@dream/domain/fixtures"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime } from "effect"
 import { dayLabel, dayOfPhase, milestoneDate, shortDuration, timeLabel, usageLine } from "../src/data/format.ts"
-import { parseBlocks, parseInline, plainText } from "../src/ui/markdownParse.ts"
+import { inlineLines, parseBlocks, parseInline, plainText } from "../src/ui/markdownParse.ts"
 
 const la = "America/Los_Angeles"
 const at = (iso: string) => DateTime.makeUnsafe(iso)
@@ -108,6 +108,28 @@ describe("markdown", () => {
     assert.strictEqual(
       plainText("## **Live!** 🌱\n\nOpen [it](https://x.omer.build).\n\n```\nnpm start\n```\n- one\n- `two`"),
       "Live! 🌱\nOpen it.\none\ntwo"
+    )
+  })
+
+  it("reads a table row by row and a quote as one block", () => {
+    const blocks = parseBlocks("| Plan | Price |\n|---|:---:|\n| Voice | $0.06 |\n\n> Billed by OpenAI\n> monthly")
+    assert.deepStrictEqual(blocks, [
+      {
+        kind: "table",
+        rows: [
+          ["Plan", "Price"],
+          ["Voice", "$0.06"]
+        ]
+      },
+      { kind: "quote", text: "Billed by OpenAI\nmonthly" }
+    ])
+    assert.strictEqual(plainText("| **Plan** | Price |\n|---|---|"), "Plan · Price")
+  })
+
+  it("puts a question an agent wrote as a whole message into lines for its heading", () => {
+    assert.deepStrictEqual(
+      inlineLines("Two ways:\n\n- **OpenAI voice**: natural\n- **No key**\n\n```\nx\n```\n---\nWhich?"),
+      ["Two ways:", "• **OpenAI voice**: natural", "• **No key**", "Which?"]
     )
   })
 

@@ -1,7 +1,7 @@
 /**
  * A small markdown reader for agent messages: paragraphs, headings, bullet and
- * numbered lists, rules, fenced code, **bold**, *italic*, `code`,
- * [links](https://…) and bare URLs.
+ * numbered lists, rules, fenced code, quotes, tables (too wide for a phone, so
+ * read row by row), **bold**, *italic*, `code`, [links](https://…) and bare URLs.
  */
 export type Inline =
   | { readonly kind: "text"; readonly text: string }
@@ -35,6 +35,8 @@ export const parseInline = (source: string): ReadonlyArray<Inline> => {
 
 type Block =
   | { readonly kind: "paragraph"; readonly text: string }
+  | { readonly kind: "quote"; readonly text: string }
+  | { readonly kind: "table"; readonly rows: ReadonlyArray<ReadonlyArray<string>> }
   | { readonly kind: "heading"; readonly text: string }
   | { readonly kind: "list"; readonly ordered: boolean; readonly start: number; readonly items: ReadonlyArray<string> }
   | { readonly kind: "code"; readonly text: string }
@@ -45,6 +47,17 @@ const heading = /^\s*#{1,6}\s+(.*)$/
 const rule = /^\s*([-*_])(\s*\1){2,}\s*$/
 const bullet = /^\s*[-*•+]\s+(.*)$/
 const numbered = /^\s*(\d+)[.)]\s+(.*)$/
+const quote = /^\s*>\s?(.*)$/
+const tableRow = /^\s*\|.*\|\s*$/
+const tableDivider = /^\s*\|?(\s*:?-+:?\s*\|)+\s*(:?-+:?\s*)?$/
+
+const cells = (line: string) =>
+  line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim())
 
 /**
  * Line by line, the way agents write: a `**Label:**` line straight above its
@@ -74,6 +87,25 @@ export const parseBlocks = (source: string): ReadonlyArray<Block> => {
     if (line.trim().length === 0) {
       // A blank line ends a paragraph; a list continues if the next item follows.
       if (paragraph.length > 0) flush()
+      continue
+    }
+    if (tableRow.test(line)) {
+      flush()
+      const rows: Array<ReadonlyArray<string>> = []
+      for (; i < lines.length && tableRow.test(lines[i] ?? ""); i++) {
+        if (!tableDivider.test(lines[i] ?? "")) rows.push(cells(lines[i] ?? ""))
+      }
+      i--
+      blocks.push({ kind: "table", rows })
+      continue
+    }
+    const q = quote.exec(line)
+    if (q) {
+      flush()
+      const quoted = [q[1] ?? ""]
+      while (i + 1 < lines.length && quote.test(lines[i + 1] ?? ""))
+        quoted.push(quote.exec(lines[++i] ?? "")?.[1] ?? "")
+      blocks.push({ kind: "quote", text: quoted.join("\n") })
       continue
     }
     const h = heading.exec(line)
@@ -119,14 +151,40 @@ export const parseBlocks = (source: string): ReadonlyArray<Block> => {
 const inlineText = (nodes: ReadonlyArray<Inline>): string =>
   nodes.map((node) => (node.kind === "text" || node.kind === "code" ? node.text : inlineText(node.children))).join("")
 
+/** A table row on one line: "Plan · Price · Limits". */
+export const tableLine = (row: ReadonlyArray<string>) => row.filter((cell) => cell.length > 0).join(" · ")
+
+/**
+ * The markdown as lines of inline markdown, for text that sits in one run, like a heading or a clamped preview:
+ * list items keep their bullet, a table reads row by row, code and rules drop out.
+ */
+export const inlineLines = (source: string): ReadonlyArray<string> =>
+  parseBlocks(source).flatMap((block) => {
+    switch (block.kind) {
+      case "paragraph":
+      case "heading":
+      case "quote":
+        return [block.text]
+      case "list":
+        return block.items.map((item, i) => `${block.ordered ? `${block.start + i}.` : "•"} ${item}`)
+      case "table":
+        return block.rows.map(tableLine)
+      case "code":
+      case "rule":
+        return []
+    }
+  })
+
 /** The message as plain text, one line per block, for a preview: no markers, no code. */
 export const plainText = (source: string): string =>
   parseBlocks(source)
     .flatMap((block) =>
-      block.kind === "paragraph" || block.kind === "heading"
+      block.kind === "paragraph" || block.kind === "heading" || block.kind === "quote"
         ? [inlineText(parseInline(block.text))]
         : block.kind === "list"
           ? block.items.map((item) => inlineText(parseInline(item)))
-          : []
+          : block.kind === "table"
+            ? block.rows.map((row) => inlineText(parseInline(tableLine(row))))
+            : []
     )
     .join("\n")

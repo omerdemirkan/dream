@@ -3,7 +3,7 @@
  * right there. Tap the heading to expand it; answers can be undone for a few
  * seconds.
  */
-import type { AccessMessage, OpenAsk, QuestionMessage } from "@dream/domain"
+import { type AccessMessage, accessHeading, type OpenAsk, type QuestionMessage } from "@dream/domain"
 import { useAtomSet } from "@effect/atom-react"
 import { useEffect, useRef, useState } from "react"
 import { type HostInstance, Pressable, Text, View } from "react-native"
@@ -15,6 +15,8 @@ import { useSignInAccess, useToast } from "./actions.ts"
 import { accessExplainer } from "./describe.ts"
 import { useOpenMessage } from "./hooks.ts"
 import { Choices, GoogleButton, Icon, SignInButton, Tile } from "./kit.tsx"
+import { MarkdownText } from "./Markdown.tsx"
+import { ReadMore } from "./Messages.tsx"
 import { color, needGlow } from "./theme.ts"
 
 const cardShell = {
@@ -43,26 +45,51 @@ function Who(props: { readonly ask: OpenAsk; readonly label: string; readonly on
   )
 }
 
-function Heading(props: { readonly title: string; readonly tldr: string | undefined; readonly onOpen: () => void }) {
+/** The heading and its TL;DR, clamped: one that runs long steps down a size, and the rest opens on a tap. */
+function Heading(props: {
+  readonly title: string
+  readonly tldr: string | undefined
+  readonly context?: string | undefined
+  readonly onOpen: () => void
+}) {
+  const [cut, setCut] = useState<Record<string, boolean>>({})
+  const track = (part: string) => (clamped: boolean) =>
+    setCut((parts) => (parts[part] === clamped ? parts : { ...parts, [part]: clamped }))
+  const long = props.title.length > 100
   return (
     <Pressable onPress={props.onOpen} accessibilityRole="button" accessibilityHint="Opens it full screen">
-      <Text
+      <MarkdownText
+        source={props.title}
+        numberOfLines={long ? 5 : 4}
+        onClamp={track("title")}
         style={{
-          fontSize: 25,
-          lineHeight: 28.5,
-          fontWeight: "700",
-          letterSpacing: -0.75,
+          fontSize: long ? 19 : 25,
+          lineHeight: long ? 24 : 28.5,
+          fontWeight: long ? "600" : "700",
+          letterSpacing: long ? -0.4 : -0.75,
           color: color.t1,
           marginTop: 13,
           marginBottom: 7,
           marginHorizontal: 2
         }}
-      >
-        {props.title}
-      </Text>
+      />
       {props.tldr ? (
-        <Text style={{ fontSize: 14.5, lineHeight: 20.6, color: color.t2, marginHorizontal: 2 }}>{props.tldr}</Text>
+        <MarkdownText
+          source={props.tldr}
+          numberOfLines={2}
+          onClamp={track("tldr")}
+          style={{ fontSize: 14.5, lineHeight: 20.6, color: color.t2, marginHorizontal: 2 }}
+        />
       ) : null}
+      {props.context ? (
+        <MarkdownText
+          source={props.context}
+          numberOfLines={3}
+          onClamp={track("context")}
+          style={{ fontSize: 14.5, lineHeight: 20.6, color: color.t1, marginTop: 8, marginHorizontal: 2 }}
+        />
+      ) : null}
+      {Object.values(cut).some(Boolean) ? <ReadMore onOpen={props.onOpen} /> : null}
     </Pressable>
   )
 }
@@ -77,7 +104,12 @@ function QuestionFront(props: {
   return (
     <>
       <Who ask={props.ask} label="Question" onOpen={props.onOpen} />
-      <Heading title={props.message.question} tldr={props.message.why} onOpen={props.onOpen} />
+      <Heading
+        title={props.message.question}
+        tldr={props.message.why}
+        context={props.message.context}
+        onOpen={props.onOpen}
+      />
       <Choices
         options={props.message.options}
         selected={picked}
@@ -94,10 +126,11 @@ function QuestionFront(props: {
 
 function AccessFront(props: { readonly ask: OpenAsk; readonly message: AccessMessage; readonly onOpen: () => void }) {
   const signIn = useSignInAccess(props.message)
+  const heading = accessHeading(props.message)
   return (
     <>
       <Who ask={props.ask} label="Access" onOpen={props.onOpen} />
-      <Heading title={props.message.why} tldr={accessExplainer(props.message)} onOpen={props.onOpen} />
+      <Heading title={heading.title} tldr={heading.reason ?? accessExplainer(props.message)} onOpen={props.onOpen} />
       {props.message.request._tag === "Google" ? (
         <GoogleButton compact busy={signIn.busy} onPress={signIn.start} />
       ) : props.message.request._tag === "OAuth" ? (

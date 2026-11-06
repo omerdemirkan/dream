@@ -3,7 +3,7 @@
  * eyebrow and title as the card in Chat; more room, more context, and the
  * fastest ways to answer. "Something else…" (typed or dictated) lives only here.
  */
-import type { AccessMessage, Project, QuestionMessage } from "@dream/domain"
+import { type AccessMessage, accessHeading, type Project, type QuestionMessage } from "@dream/domain"
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
 import { Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
@@ -44,6 +44,7 @@ import {
   whenTag
 } from "./describe.ts"
 import { BackPill, Button, Choices, Dot, GoogleButton, Icon, Lab, LinkButton, SignInButton, Tile } from "./kit.tsx"
+import { Markdown, MarkdownText } from "./Markdown.tsx"
 import { answerText } from "./Messages.tsx"
 import { color, gutter } from "./theme.ts"
 
@@ -77,24 +78,31 @@ function Shell(props: {
           <Text style={{ fontSize: 14, fontWeight: "600", color: color.t1 }}>{props.project?.title}</Text>
           {props.eyebrow}
         </View>
-        <Text
-          style={{
-            fontSize: props.titleSize ?? 32,
-            lineHeight: (props.titleSize ?? 32) * 1.08,
-            fontWeight: "700",
-            letterSpacing: -0.04 * (props.titleSize ?? 32),
-            color: color.t1,
-            marginTop: 22,
-            marginBottom: 14
-          }}
-        >
-          {props.title}
-        </Text>
+        <MarkdownText source={props.title} style={titleStyle(props.title, props.titleSize ?? 32)} />
         {props.body}
       </ScrollView>
       <View style={{ paddingHorizontal: gutter, paddingBottom: Math.max(insets.bottom, 12) + 6 }}>{props.bottom}</View>
     </View>
   )
+}
+
+/**
+ * The heading at `size`, stepped down when it runs long: a question an agent wrote as a whole message reads as
+ * text, not a poster.
+ */
+const titleStyle = (title: string, size: number) => {
+  const length = title.length
+  const fontSize = length > 280 ? 19 : length > 160 ? 22 : length > 90 ? Math.min(size, 26) : size
+  const poster = fontSize >= 26
+  return {
+    fontSize,
+    lineHeight: fontSize * (poster ? 1.08 : 1.3),
+    fontWeight: poster ? ("700" as const) : ("600" as const),
+    letterSpacing: -0.04 * fontSize * (poster ? 1 : 0.5),
+    color: color.t1,
+    marginTop: 22,
+    marginBottom: 14
+  }
 }
 
 const Eyebrow = (props: { readonly text: string; readonly need?: boolean }) => (
@@ -103,11 +111,17 @@ const Eyebrow = (props: { readonly text: string; readonly need?: boolean }) => (
   </Text>
 )
 
-const Lead = (props: { readonly children: ReactNode; readonly style?: object }) => (
-  <Text style={[{ fontSize: 17, lineHeight: 24, letterSpacing: -0.085, color: color.t2 }, props.style]}>
-    {props.children}
-  </Text>
-)
+const Lead = (props: { readonly children: ReactNode; readonly style?: object }) =>
+  typeof props.children === "string" ? (
+    <MarkdownText
+      source={props.children}
+      style={[{ fontSize: 17, lineHeight: 24, letterSpacing: -0.085, color: color.t2 }, props.style]}
+    />
+  ) : (
+    <Text style={[{ fontSize: 17, lineHeight: 24, letterSpacing: -0.085, color: color.t2 }, props.style]}>
+      {props.children}
+    </Text>
+  )
 
 // ---------------------------------------------------------------------------
 // Question
@@ -223,6 +237,11 @@ export function ExpandedQuestion(props: {
       body={
         <>
           {m.why ? <Lead>{m.why}</Lead> : null}
+          {m.context ? (
+            <View style={{ marginTop: m.why ? 16 : 0 }}>
+              <Markdown source={m.context} style={{ fontSize: 17, lineHeight: 25 }} />
+            </View>
+          ) : null}
           {m.meanwhile ? (
             <View
               style={{
@@ -566,6 +585,7 @@ export function ExpandedAccess(props: {
   const signIn = useSignInAccess(m)
   const disconnect = useAction(disconnectIntegrationFn)
   const titleSize = oauth ? 32 : 30
+  const heading = accessHeading(m)
 
   if (m.state._tag === "Connected") {
     const integrationId = m.state.integrationId
@@ -574,7 +594,7 @@ export function ExpandedAccess(props: {
         project={props.project}
         onBack={props.onBack}
         eyebrow={<Eyebrow text="Access · connected" />}
-        title={m.why}
+        title={heading.title}
         titleSize={titleSize}
         body={
           <>
@@ -682,11 +702,12 @@ export function ExpandedAccess(props: {
           ) : null}
         </>
       }
-      title={m.why}
+      title={heading.title}
       titleSize={titleSize}
       body={
         <>
           {gone ? <Lead style={{ marginBottom: 12 }}>{gone.lead}</Lead> : null}
+          {heading.reason ? <Lead style={{ color: color.t1, marginBottom: 12 }}>{heading.reason}</Lead> : null}
           <Lead>{accessExplainer(m)}</Lead>
           {keyFile ? <KeyFileWarning /> : <Shared oauth={oauth} />}
           {oauth ? <Vault /> : null}

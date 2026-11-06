@@ -3,7 +3,7 @@
  * media), a question, and an access request, plus their resolved rows.
  * Questions and access requests open into the expanded view when tapped.
  */
-import type { AccessMessage, MediaRef, QuestionMessage, TextMessage } from "@dream/domain"
+import { type AccessMessage, accessHeading, type MediaRef, type QuestionMessage, type TextMessage } from "@dream/domain"
 import * as Clipboard from "expo-clipboard"
 import { forwardRef, type ReactNode, useState } from "react"
 import { type HostInstance, Pressable, Text, View, useWindowDimensions } from "react-native"
@@ -22,7 +22,7 @@ import {
 } from "./describe.ts"
 import { useAction, useSignInAccess, useToast } from "./actions.ts"
 import { GoogleButton, Choices, Icon, SignInButton } from "./kit.tsx"
-import { Markdown } from "./Markdown.tsx"
+import { Markdown, MarkdownText } from "./Markdown.tsx"
 import { MediaTile } from "./Media.tsx"
 import { Receipt } from "./Presence.tsx"
 import { color, gutter, needGlow } from "./theme.ts"
@@ -215,9 +215,15 @@ function CardHead(props: { readonly label: string; readonly later?: boolean; rea
   )
 }
 
-function CardTitle(props: { readonly children: string }) {
+type Clamp = { readonly lines?: number; readonly onClamp?: (clamped: boolean) => void }
+
+/** The heading, in the agent's markdown; a question that runs long is clamped (`ReadMore` opens the rest). */
+function CardTitle(props: { readonly children: string } & Clamp) {
   return (
-    <Text
+    <MarkdownText
+      source={props.children}
+      numberOfLines={props.lines}
+      onClamp={props.onClamp}
       style={{
         fontSize: 19,
         lineHeight: 23,
@@ -226,17 +232,59 @@ function CardTitle(props: { readonly children: string }) {
         color: color.t1,
         paddingHorizontal: 2
       }}
-    >
-      {props.children}
-    </Text>
+    />
   )
 }
 
-function CardText(props: { readonly children: string }) {
+function CardText(props: { readonly children: string } & Clamp) {
   return (
-    <Text style={{ fontSize: 14, lineHeight: 20, color: color.t2, marginTop: 6, marginHorizontal: 2 }}>
-      {props.children}
-    </Text>
+    <MarkdownText
+      source={props.children}
+      numberOfLines={props.lines}
+      onClamp={props.onClamp}
+      style={{ fontSize: 14, lineHeight: 20, color: color.t2, marginTop: 6, marginHorizontal: 2 }}
+    />
+  )
+}
+
+/** A question's context, at body size: its first few lines, the rest when expanded. */
+function CardContext(props: { readonly children: string } & Clamp) {
+  return (
+    <MarkdownText
+      source={props.children}
+      numberOfLines={props.lines}
+      onClamp={props.onClamp}
+      style={{ fontSize: 15, lineHeight: 21, letterSpacing: -0.1, color: color.t1, marginTop: 10, marginHorizontal: 2 }}
+    />
+  )
+}
+
+/** Which parts of a card were cut short, so it can say there's more. */
+function useClamps() {
+  const [cut, setCut] = useState<ReadonlySet<string>>(new Set())
+  const track = (part: string) => (clamped: boolean) =>
+    setCut((parts) => {
+      if (parts.has(part) === clamped) return parts
+      const next = new Set(parts)
+      if (clamped) next.add(part)
+      else next.delete(part)
+      return next
+    })
+  return { clamped: cut.size > 0, track }
+}
+
+/** Under a clamped card: the way to the rest, which the expanded view shows. */
+export function ReadMore(props: { readonly onOpen: () => void }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={props.onOpen}
+      hitSlop={8}
+      style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 8, marginHorizontal: 2 }}
+    >
+      <Text style={{ fontSize: 14, fontWeight: "600", color: color.t1 }}>Read all</Text>
+      <Icon name="chev" size={12} color={color.t2} />
+    </Pressable>
   )
 }
 
@@ -274,16 +322,15 @@ function ResolvedRow(props: {
         >
           {props.label}
         </Text>
-        <Text
+        <MarkdownText
+          source={props.title}
           numberOfLines={2}
           style={
             props.strong
               ? { fontSize: 15.5, lineHeight: 20, fontWeight: "600", color: color.t1, marginTop: 3 }
               : { fontSize: 14.5, lineHeight: 20, color: color.t2, marginTop: 3 }
           }
-        >
-          {props.title}
-        </Text>
+        />
         <Text style={{ fontSize: 14.5, color: color.t2, marginTop: 5 }}>{props.detail}</Text>
       </View>
       <Icon name="chev" size={14} color={color.t3} style={{ marginTop: 1 }} />
@@ -306,6 +353,7 @@ export const QuestionCard = forwardRef<
   const answer = useAction(answerNowFn)
   const toast = useToast()
   const [picked, setPicked] = useState<string | undefined>(undefined)
+  const clamps = useClamps()
   if (m.state._tag === "Answered") {
     const said = m.state.answer._tag === "Choice" ? "You chose" : "You said"
     return (
@@ -339,8 +387,20 @@ export const QuestionCard = forwardRef<
   return (
     <Card ref={ref} tone="need" onOpen={props.onOpen}>
       <CardHead label="Question" />
-      <CardTitle>{m.question}</CardTitle>
-      {m.why ? <CardText>{m.why}</CardText> : null}
+      <CardTitle lines={4} onClamp={clamps.track("question")}>
+        {m.question}
+      </CardTitle>
+      {m.why ? (
+        <CardText lines={3} onClamp={clamps.track("why")}>
+          {m.why}
+        </CardText>
+      ) : null}
+      {m.context ? (
+        <CardContext lines={4} onClamp={clamps.track("context")}>
+          {m.context}
+        </CardContext>
+      ) : null}
+      {clamps.clamped ? <ReadMore onOpen={props.onOpen} /> : null}
       <Choices
         options={m.options}
         selected={picked}
@@ -500,6 +560,7 @@ export const AccessCard = forwardRef<HostInstance, { readonly message: AccessMes
       )
     }
     const later = m.when !== undefined
+    const heading = accessHeading(m)
     return (
       <Card ref={ref} tone={later ? "later" : "need"} onOpen={props.onOpen}>
         <CardHead
@@ -507,7 +568,14 @@ export const AccessCard = forwardRef<HostInstance, { readonly message: AccessMes
           later={later}
           tag={m.when ? whenTag(m.when) : undefined}
         />
-        <CardTitle>{m.why}</CardTitle>
+        <CardTitle lines={4}>{heading.title}</CardTitle>
+        {heading.reason ? (
+          <MarkdownText
+            source={heading.reason}
+            numberOfLines={2}
+            style={{ fontSize: 15, lineHeight: 21, color: color.t1, marginTop: 6, marginHorizontal: 2 }}
+          />
+        ) : null}
         <CardText>{accessExplainer(m)}</CardText>
         <OpenAccessBody message={m} onOpen={props.onOpen} />
         {isKeyFile(m.request) ? (

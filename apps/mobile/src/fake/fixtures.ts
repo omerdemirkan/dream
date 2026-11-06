@@ -420,7 +420,7 @@ export const liveActivitySamples: Record<
 }
 
 // ---------------------------------------------------------------------------
-// What agents actually send (scenarios `long-question`, `vague-access`)
+// What agents actually send (scenarios `long-question`, `vague-access`, `question-context`)
 // ---------------------------------------------------------------------------
 
 /** A whole message sent as the question, markdown and all, the way an agent once did. */
@@ -457,5 +457,23 @@ export const vagueAccess = (projectId: Project["id"], now: DateTime.Utc): Access
     format: "Bearer {key}"
   },
   why: "Powers the voice coach that talks you through your sets",
+  state: { _tag: "Open" }
+})
+
+/** The same decision as `longQuestion`, asked as Dream means it: a short question, with what it takes to decide under it. */
+export const questionWithContext = (projectId: Project["id"], now: DateTime.Utc): QuestionMessage => ({
+  _tag: "Question",
+  id: msg("msg_voice"),
+  projectId,
+  createdAt: now,
+  notificationId: "9c3e5a7b-2d4f-4b6a-8e0c-3a5c7e9b1d2f" as NotificationId,
+  question: "Which voice should the coach use?",
+  options: ["OpenAI voice", "Your phone’s voice"],
+  why: "Your ChatGPT sign-in can’t power live voice, so it’s one of these.",
+  context: [
+    "**OpenAI voice** sounds natural, answers quickly and copes when you talk over it. It needs the OpenAI key I asked for, and costs a few cents a session.",
+    "**Your phone’s voice** is free and needs no key, but it sounds flatter, and each session counts against your Claude limits."
+  ].join("\n\n"),
+  meanwhile: "I’ll keep building the set tracker; only the coach depends on this.",
   state: { _tag: "Open" }
 })
