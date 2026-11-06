@@ -19,13 +19,16 @@ import {
   NotFound,
   Project,
   QuestionAnswer,
+  RelayForward,
+  RelayForwardResult,
+  RelayId,
   QuestionMessage,
   TextMessage,
   UpstreamFailure,
   UsageWindowName,
   WorkstreamId
 } from "@dream/domain"
-import { Schema } from "effect"
+import { Redacted, Schema } from "effect"
 import { Rpc, RpcGroup } from "effect/rpc"
 
 export const InternalRpcPath = "/internal/rpc"
@@ -37,6 +40,21 @@ export const GatewayTarget = Schema.Struct({
   trafficAccessToken: Schema.String
 })
 export type GatewayTarget = typeof GatewayTarget.Type
+
+/** A relay's key, decrypted for its RelayDO: the integration's value and how it's sent. */
+export const RelayCredential = Schema.Struct({
+  key: Schema.RedactedFromValue(Schema.String),
+  host: Schema.String,
+  header: Schema.String,
+  format: Schema.String
+})
+export type RelayCredential = typeof RelayCredential.Type
+
+/** The header a `Key` integration's request carries, as Dream's egress rules write it. */
+export const credentialHeader = (credential: RelayCredential): readonly [string, string] => [
+  credential.header,
+  credential.format.replaceAll("{key}", Redacted.value(credential.key))
+]
 
 export class ProjectRpcs extends RpcGroup.make(
   /** Called once by CreateProject: stores the project, adds the idea as the first message and wakes the agent. */
@@ -117,6 +135,24 @@ export class ProjectRpcs extends RpcGroup.make(
   Rpc.make("Archive", { success: Schema.DateTimeUtc }),
   /** They restored it (`RestoreProject`): the agent goes on with what was waiting. Nothing for one that isn't archived. */
   Rpc.make("Restore", {}),
+  // From the project's RelayDOs. `NotFound` means the relay is no longer this project's to hold (it was removed, or
+  // the project archived or deleted): the RelayDO closes its line and forgets everything.
+  /** Hand a relay's events to dreamd, which posts them to the app. Failures come back in the result, to retry. */
+  Rpc.make("RelayDeliver", {
+    payload: { relayId: RelayId, deliveries: Schema.NonEmptyArray(RelayForward) },
+    success: RelayForwardResult,
+    error: NotFound
+  }),
+  /** The relay's key, decrypted. `InvalidRequest` when it's gone, failed, or no longer fits the relay. */
+  Rpc.make("RelayCredential", {
+    payload: { relayId: RelayId },
+    success: RelayCredential,
+    error: Schema.Union([NotFound, InvalidRequest])
+  }),
+  /** Something about the relay the agent should hear (it stopped, or the app hasn't taken events for an hour). */
+  Rpc.make("RelayAlert", { payload: { relayId: RelayId, reason: Schema.NonEmptyString }, error: NotFound }),
+  /** Whether the relay is still this project's to hold; asked now and then by a line that's been quiet. */
+  Rpc.make("RelayActive", { payload: { relayId: RelayId }, success: Schema.Boolean }),
   /** They renamed, re-iconed or removed one of the agent's app links: tell the agent (`AgentEvent.LinkEdited`). */
   Rpc.make("LinkEdited", {
     payload: {

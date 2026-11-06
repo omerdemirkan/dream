@@ -1,8 +1,8 @@
 /**
  * One Durable Object per project (SQLite-backed): chat, questions and access
  * requests, the Status card, scheduled wakes, the sandbox, the Live Activity,
- * sent notifications, and the agent's event inbox. Its alarm fires wakes and
- * retries delivery.
+ * sent notifications, the agent's event inbox, and the list of its relays
+ * (each held by a RelayDO). Its alarm fires wakes and retries delivery.
  *
  * Two separate surfaces on `fetch`:
  * - `LivePath`: WebSocket upgrades (forwarded by the Worker after it checks
@@ -20,6 +20,7 @@ import type { HttpClientRequest } from "effect/http"
 import { HttpServerRequest } from "effect/http/HttpServerRequest"
 import * as HttpServerResponse from "effect/http/HttpServerResponse"
 import { RpcMiddleware, RpcServer } from "effect/rpc"
+import { type NamespaceLike, stubFetch } from "./lib/StubFetch.ts"
 import { platformLayer } from "./Platform.ts"
 import type { ProjectFetch } from "./project/Client.ts"
 import { DoRpcs } from "./project/Client.ts"
@@ -27,6 +28,7 @@ import { AgentHandlers, LiveHandlers, ProjectHandlers, SandboxAuthServer } from 
 import { projectLayer } from "./project/Layer.ts"
 import { InternalRpcPath, LivePath } from "./project/ProjectRpcs.ts"
 import { Scheduler } from "./project/Scheduler.ts"
+import type { RelayFetch } from "./relay/RelayClients.ts"
 import { Database } from "./Resources.ts"
 
 /** Keeps the object alive while an RPC on the socket is in flight (as alchemy's RpcDurableObject does). */
@@ -49,8 +51,13 @@ export default class ProjectDO extends Cloudflare.DurableObject<ProjectDO>()(
             : never
         )(request)
 
+      // Its relays' RelayDOs, through the Worker's env (see lib/StubFetch.ts).
+      // `get` reads the Worker's env (its bindings); `runtime.env` holds only what alchemy captured at init.
+      const relays = yield* runtime.get<NamespaceLike>("RelayDO")
+      const fetchRelay: RelayFetch = (relayId, request) => stubFetch(relays, relayId, request)
+
       const services = projectLayer(state.raw.storage as unknown as DurableObjectStorage).pipe(
-        Layer.provideMerge(platformLayer({ d1: d1 as any, fetchProject }))
+        Layer.provideMerge(platformLayer({ d1: d1 as any, fetchProject, fetchRelay }))
       )
       const handlers = Layer.mergeAll(ProjectHandlers, AgentHandlers, SandboxAuthServer, LiveHandlers).pipe(
         Layer.provideMerge(services)

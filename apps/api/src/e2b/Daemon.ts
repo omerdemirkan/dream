@@ -10,6 +10,9 @@ import {
   DaemonRpcs,
   DefaultDaemonPort,
   HttpRpcSerialization,
+  type RelayForward,
+  type RelayForwardResult,
+  type RelayId,
   Routes,
   UpstreamFailure
 } from "@dream/domain"
@@ -30,6 +33,17 @@ export class Daemon extends Context.Service<
       events: readonly [AgentEvent, ...Array<AgentEvent>],
       timeZone?: string | undefined
     ) => Effect.Effect<ReadonlyArray<string>, UpstreamFailure | DaemonRestarting>
+    /** Hands a relay's events to dreamd, which posts them to the app on `port`. Waits until the app has answered. */
+    readonly forwardRelay: (
+      sandbox: SandboxAccess,
+      daemonToken: string,
+      request: {
+        readonly relayId: RelayId
+        readonly port: number
+        readonly path: string
+        readonly deliveries: readonly [RelayForward, ...Array<RelayForward>]
+      }
+    ) => Effect.Effect<RelayForwardResult, UpstreamFailure | DaemonRestarting>
     readonly health: (
       sandbox: SandboxAccess,
       daemonToken: string
@@ -94,13 +108,22 @@ export class Daemon extends Context.Service<
           Effect.mapError((error) => (error._tag === "DaemonRestarting" ? error : failure("Delivering events")(error)))
         )
 
+      const forwardRelay: Context.Service.Shape<typeof Daemon>["forwardRelay"] = (sandbox, daemonToken, request) =>
+        withClient(sandbox, daemonToken, (client) => client.ForwardRelay(request)).pipe(
+          // dreamd gives the app two minutes per event.
+          Effect.timeout("25 minutes"),
+          Effect.mapError((error) =>
+            error._tag === "DaemonRestarting" ? error : failure("Handing relay events to dreamd")(error)
+          )
+        )
+
       const health = (sandbox: SandboxAccess, daemonToken: string) =>
         withClient(sandbox, daemonToken, (client) => client.Health()).pipe(
           Effect.timeout("15 seconds"),
           Effect.mapError(failure("Checking dreamd"))
         )
 
-      return Daemon.of({ deliver, health })
+      return Daemon.of({ deliver, forwardRelay, health })
     })
   )
 }

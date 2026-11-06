@@ -1,4 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
+import { DiscordDefaultIntents, type IntegrationId, type Relay, type RelayId, RelaySource } from "@dream/domain"
 import { dreamSkill } from "@dream/agent-context"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
@@ -8,7 +9,7 @@ import { CliOutput, Command } from "effect/cli"
 import { FetchHttpClient } from "effect/http"
 import { dream } from "../src/Cli.ts"
 import { Dream } from "../src/cli/Client.ts"
-import { accessRequested, integrations, linkAdded, pageCheck, status } from "../src/cli/Format.ts"
+import { accessRequested, integrations, linkAdded, pageCheck, relay, relayAdded, status } from "../src/cli/Format.ts"
 import * as Fx from "@dream/domain/fixtures"
 import { PageCheck, PageLoad } from "../src/cli/PageCheck.ts"
 import {
@@ -523,5 +524,67 @@ describe("dream status", () => {
       now
     )
     assert.include(long, "Too long: the card above their Chat cuts it to two lines")
+  })
+})
+
+describe("dream relay", () => {
+  it.effect("checks the path and the feed before asking Dream", () =>
+    Effect.gen(function* () {
+      assert.include(yield* run(["relay", "discord", "--to", "hooks/discord"]), 'starts with "/"')
+      assert.include(yield* run(["relay", "websocket", "ws://feed.example.com", "--to", "/hooks"]), "wss://")
+      assert.isTrue((yield* run(["relay", "discord"])).startsWith("--to is missing: the path on your app"))
+      assert.isTrue((yield* run(["relay", "remove"])).startsWith("<relay-id> is missing.\nExample: dream relay remove"))
+      // A good invocation gets past the checks, to the socket (absent here).
+      assert.notInclude(yield* run(["relay", "discord", "--to", "/hooks/discord"]), "--to")
+    })
+  )
+
+  const base: Relay = {
+    id: "rly_1" as RelayId,
+    source: RelaySource.cases.Discord.make({
+      integrationId: "int_1" as IntegrationId,
+      intents: DiscordDefaultIntents,
+      events: ["MESSAGE_CREATE"],
+      mentionsOnly: true
+    }),
+    target: { path: "/hooks/discord", port: 3000 },
+    createdAt: DateTime.makeUnsafe("2026-11-05T08:00:00Z"),
+    state: "connected",
+    since: DateTime.makeUnsafe("2026-11-05T08:00:00Z"),
+    account: "Helper#0001",
+    waiting: 0,
+    delivered: 12,
+    dropped: 0,
+    problems: []
+  }
+
+  it("prints what it holds, where it delivers and how it's doing", () => {
+    assert.strictEqual(
+      relay(base, now),
+      [
+        "rly_1: Discord MESSAGE_CREATE (only mentions and DMs) → localhost:3000 /hooks/discord",
+        "  connected for 2h 0m as Helper#0001; 12 delivered, 0 waiting"
+      ].join("\n")
+    )
+    const failing: Relay = {
+      ...base,
+      label: "prices",
+      source: RelaySource.cases.WebSocket.make({ url: "wss://feed.example.com", send: [] }),
+      target: { path: "/hooks/feed" },
+      state: "failed",
+      since: DateTime.makeUnsafe("2026-11-05T09:55:00Z"),
+      waiting: 3,
+      dropped: 1,
+      problems: [{ at: DateTime.makeUnsafe("2026-11-05T09:55:00Z"), message: "The feed refused the key (401)." }]
+    }
+    assert.strictEqual(
+      relay(failing, now),
+      [
+        'rly_1 "prices": WebSocket wss://feed.example.com → the published port /hooks/feed',
+        "  failed 5m ago; `dream relay restart rly_1` once it's fixed; 12 delivered, 3 waiting, 1 dropped",
+        "  5m ago: The feed refused the key (401)."
+      ].join("\n")
+    )
+    assert.include(relayAdded(base, now), "signed with the key in /home/user/.dream/relay.key")
   })
 })

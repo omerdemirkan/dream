@@ -1,30 +1,39 @@
 /**
- * Keeping the sandbox awake between turns. E2B pauses a sandbox five minutes
- * after it woke, whatever runs in it: requests, CPU and open connections don't
- * count. So while dreamd has work the agent isn't doing in a turn, it asks the
- * API (`StayAwake`, about once a minute) to keep the sandbox up five more
+ * Keeping the sandbox awake between turns, and letting it go back to sleep. E2B pauses a sandbox five minutes after
+ * it woke, whatever runs in it: requests, CPU and open connections don't count. So while dreamd has work the agent
+ * isn't doing in a turn, it asks the API (`StayAwake`, about once a minute) to keep the sandbox up five more
  * minutes:
  *
- * - while a scheduled `--run` command runs (`Commands`), and
+ * - while a scheduled `--run` command runs (`Commands`),
+ * - while the app is taking a relay's delivery (`RelayForwarder`), and
  * - while the published app is in use. Each request through E2B's proxy leaves
  *   the app's port a TIME_WAIT entry in the kernel's TCP table for a minute,
  *   and an open WebSocket (or a request still being answered) shows as
  *   ESTABLISHED. The proxy keeps no idle connections, so both mean real use.
  *   Connections from inside the sandbox (on loopback) don't count, so a
  *   process polling its own app can't keep the sandbox up; a scheduled
- *   command calling the app counts as the command.
+ *   command calling the app counts as the command, and a relay delivery as
+ *   the delivery.
  *   A connection that stays open with nothing new arriving stops counting
  *   after `QuietConnectionLimit`, so a tab left open can't hold the sandbox up
  *   forever.
  *
+ * The other way round: when the sandbox woke only to run a scheduled command or take a relay delivery, it shouldn't
+ * then sit idle for five minutes. Once that work is done and `SleepAfter` has passed with nothing else going on (no
+ * turn running or waiting, no command pending, nobody using the app or a turn ended in the last `RecentlyBusy`),
+ * dreamd asks the API to put it to sleep now (`Sleep`). The API checks its own side too (a turn starting, events on
+ * their way) before it pauses the sandbox. Anything that would have woken the sandbox still does.
+ *
  * During a turn the ProjectDO's keepalive already holds a longer timeout, and
- * the API leaves that alone. A Worker older than `StayAwake` refuses it: that's
- * logged once, and dreamd carries on as before.
+ * the API leaves that alone. A Worker older than `StayAwake` or `Sleep` refuses
+ * it: that's logged once, and dreamd carries on as before.
  */
-import { Clock, Context, Duration, Effect, FileSystem, Layer, Option, Ref, Schedule } from "effect"
-import { Api } from "./Api.ts"
+import { Clock, Context, DateTime, Duration, Effect, FileSystem, Layer, Option, Ref, Stream } from "effect"
+import { Agent } from "./Agent.ts"
+import { Api, type ApiError, type AwakeReason, type SleepReason } from "./Api.ts"
 import { Commands } from "./Commands.ts"
 import { Published } from "./Published.ts"
+import { RelayForwarder } from "./Relays.ts"
 
 /** How often dreamd looks. More often than `TIME_WAIT` lasts (60 s), so no request goes unseen. */
 export const CheckEvery = Duration.seconds(30)
@@ -32,6 +41,40 @@ export const CheckEvery = Duration.seconds(30)
 export const SendEvery = Duration.minutes(1)
 /** An open connection with no new request counts this long. */
 export const QuietConnectionLimit = Duration.hours(2)
+/** How long dreamd waits after a command or relay delivery finishes before asking to sleep, for more to arrive. */
+export const SleepAfter = Duration.seconds(5)
+/** The app used, or a turn ended, this recently: the sandbox stays up on its own timeout instead. */
+export const RecentlyBusy = Duration.minutes(5)
+
+/** What dreamd knows when it considers asking to sleep. */
+export interface SleepCheck {
+  readonly commandRunning: boolean
+  /** Scheduled commands delivered but not started yet. */
+  readonly commandsPending: number
+  readonly relayDelivering: boolean
+  readonly turnRunning: boolean
+  /** Events waiting for a turn. */
+  readonly queued: number
+  readonly appInUse: boolean
+  readonly lastAppUseMs: number | undefined
+  readonly lastTurnEndedMs: number | undefined
+  readonly nowMs: number
+}
+
+/** Whether nothing in the sandbox needs it awake any more. */
+export const nothingLeft = (check: SleepCheck): boolean => {
+  const recent = (ms: number | undefined) => ms !== undefined && check.nowMs - ms < Duration.toMillis(RecentlyBusy)
+  return (
+    !check.commandRunning &&
+    check.commandsPending === 0 &&
+    !check.relayDelivering &&
+    !check.turnRunning &&
+    check.queued === 0 &&
+    !check.appInUse &&
+    !recent(check.lastAppUseMs) &&
+    !recent(check.lastTurnEndedMs)
+  )
+}
 
 /** The published port's inbound connections: those still open, and how many closed in the last minute. */
 export interface PortTraffic {
@@ -124,7 +167,7 @@ export class AppTraffic extends Context.Service<
 export class Awake extends Context.Service<
   Awake,
   {
-    /** Look every `CheckEvery`, and ask to stay awake while there's work, forever. */
+    /** Look every `CheckEvery`, and when work finishes; ask to stay awake while there's work, and to sleep after. */
     readonly run: Effect.Effect<never>
   }
 >()("@dream/dreamd/Awake") {
@@ -132,14 +175,38 @@ export class Awake extends Context.Service<
     Awake,
     Effect.gen(function* () {
       const api = yield* Api
+      const agent = yield* Agent
       const commands = yield* Commands
+      const relays = yield* RelayForwarder
       const published = yield* Published
       const traffic = yield* AppTraffic
       const use = yield* Ref.make(noUse)
       /** Work seen since the last `StayAwake`. */
-      const pending = yield* Ref.make(Option.none<"command" | "app">())
+      const pending = yield* Ref.make(Option.none<AwakeReason>())
       const lastSentMs = yield* Ref.make<number | undefined>(undefined)
+      /** Work that finished since the sandbox last asked to sleep: what it would say it woke for. */
+      const finished = yield* Ref.make(Option.none<SleepReason>())
       const failing = yield* Ref.make(false)
+      const sleepFailing = yield* Ref.make(false)
+
+      /** Logs the first failure of a run of them, and the recovery. */
+      const reported = (flag: Ref.Ref<boolean>, what: string) => (effect: Effect.Effect<void, ApiError>) =>
+        effect.pipe(
+          Effect.matchEffect({
+            onFailure: (error) =>
+              Ref.getAndSet(flag, true).pipe(
+                Effect.flatMap((already) =>
+                  already
+                    ? Effect.void
+                    : Effect.logWarning(`Couldn't ask to ${what}; carrying on without it`, { error: error.message })
+                )
+              ),
+            onSuccess: () =>
+              Ref.getAndSet(flag, false).pipe(
+                Effect.flatMap((was) => (was ? Effect.logInfo(`Asking to ${what} works again`) : Effect.void))
+              )
+          })
+        )
 
       const look = Effect.gen(function* () {
         const nowMs = yield* Clock.currentTimeMillis
@@ -150,11 +217,45 @@ export class Awake extends Context.Service<
           yield* Ref.set(use, seen.state)
           app = seen.inUse
         }
-        const reason = (yield* commands.busy) ? "command" : app ? "app" : undefined
-        if (reason !== undefined) {
-          // A command outranks the app, for the API's log.
+        const commandRunning = yield* commands.busy
+        const relayDelivering = yield* relays.busy
+        // A command outranks a delivery, which outranks the app, for the API's log.
+        const reason: AwakeReason | undefined = commandRunning
+          ? "command"
+          : relayDelivering
+            ? "relay"
+            : app
+              ? "app"
+              : undefined
+
+        if (reason === undefined) {
+          const woke = yield* Ref.get(finished)
+          if (Option.isSome(woke)) {
+            const status = yield* agent.status
+            const check: SleepCheck = {
+              commandRunning,
+              commandsPending: yield* commands.pending,
+              relayDelivering,
+              turnRunning: status.turn === "running",
+              queued: status.queued,
+              appInUse: app,
+              lastAppUseMs: (yield* Ref.get(use)).lastRequestMs,
+              lastTurnEndedMs: Option.getOrUndefined(yield* agent.lastTurnEnded),
+              nowMs
+            }
+            // One ask per stretch of work: if the API says no, the sandbox sleeps on its timeout.
+            yield* Ref.set(finished, Option.none())
+            if (nothingLeft(check)) {
+              yield* Ref.set(pending, Option.none())
+              yield* Effect.logInfo("Nothing left to do; asking to sleep", { woke: woke.value })
+              return yield* api
+                .sleep(woke.value, DateTime.makeUnsafe(nowMs))
+                .pipe(reported(sleepFailing, "put the sandbox to sleep"))
+            }
+          }
+        } else {
           yield* Ref.update(pending, (current) =>
-            reason === "app" && Option.isSome(current) ? current : Option.some(reason)
+            Option.isSome(current) && rank(current.value) >= rank(reason) ? current : Option.some(reason)
           )
         }
         const due = yield* Ref.get(pending)
@@ -162,35 +263,34 @@ export class Awake extends Context.Service<
         if (Option.isNone(due) || (last !== undefined && nowMs - last < Duration.toMillis(SendEvery))) return
         yield* Ref.set(pending, Option.none())
         yield* Ref.set(lastSentMs, nowMs)
-        yield* api.stayAwake(due.value).pipe(
-          Effect.matchEffect({
-            onFailure: (error) =>
-              Ref.getAndSet(failing, true).pipe(
-                Effect.flatMap((already) =>
-                  already
-                    ? Effect.void
-                    : Effect.logWarning("Couldn't ask to keep the sandbox awake; carrying on without it", {
-                        error: error.message
-                      })
-                )
-              ),
-            onSuccess: () =>
-              Ref.getAndSet(failing, false).pipe(
-                Effect.flatMap((was) =>
-                  was ? Effect.logInfo("Asking to keep the sandbox awake works again") : Effect.void
-                )
-              )
-          })
-        )
+        yield* api.stayAwake(due.value).pipe(reported(failing, "keep the sandbox awake"))
       })
 
+      const workDone = Stream.merge(
+        commands.finished.pipe(Stream.map((): SleepReason => "command")),
+        relays.finished.pipe(Stream.map((): SleepReason => "relay"))
+      ).pipe(
+        // A command outranks a delivery here too.
+        Stream.tap((reason) =>
+          Ref.update(finished, (current) =>
+            Option.isSome(current) && current.value === "command" ? current : Option.some(reason)
+          )
+        ),
+        Stream.debounce(SleepAfter)
+      )
+
       return Awake.of({
-        run: look.pipe(
-          Effect.catchCause((cause) => Effect.logWarning("Couldn't check whether the sandbox has work", cause)),
-          Effect.repeat(Schedule.spaced(CheckEvery)),
+        run: Stream.merge(Stream.tick(CheckEvery), workDone).pipe(
+          Stream.runForEach(() =>
+            look.pipe(
+              Effect.catchCause((cause) => Effect.logWarning("Couldn't check whether the sandbox has work", cause))
+            )
+          ),
           Effect.andThen(Effect.never)
         )
       })
     })
   )
 }
+
+const rank = (reason: AwakeReason): number => (reason === "command" ? 3 : reason === "relay" ? 2 : 1)

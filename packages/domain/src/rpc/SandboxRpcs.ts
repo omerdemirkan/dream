@@ -17,13 +17,24 @@ import { Rpc, RpcGroup } from "effect/rpc"
 import { SandboxAuth } from "../Auth.ts"
 import { Integration } from "../Connections.ts"
 import { InvalidRequest, NotFound, UpstreamFailure } from "../Errors.ts"
-import { BrowserSessionId, EventId, LinkId, MediaId, MessageId, NotificationId, WakeId, WorkstreamId } from "../Ids.ts"
+import {
+  BrowserSessionId,
+  EventId,
+  LinkId,
+  MediaId,
+  MessageId,
+  NotificationId,
+  RelayId,
+  WakeId,
+  WorkstreamId
+} from "../Ids.ts"
 import { AppLink, LinkColor, LinkIcon, LinkTitle, LinkUrl } from "../Links.ts"
 import { LiveActivityContent } from "../LiveActivity.ts"
 import { BrowserSession, MacSshAccess, MacStatus } from "../Machines.ts"
 import { MediaContentType, MediaRef, MediaUploadTarget } from "../Media.ts"
 import { AccessMessage, AccessRequest, Message, QuestionMessage, TextMessage } from "../Message.ts"
 import { ProjectPhase } from "../Project.ts"
+import { Relay, RelaySource, RelayTarget } from "../Relay.ts"
 import { Milestone, StatusCard } from "../Status.ts"
 import { TurnUsage, UsageSnapshot } from "../Usage.ts"
 import { Wake, WakeWhen } from "../Wake.ts"
@@ -219,6 +230,25 @@ export class SandboxRpcs extends RpcGroup.make(
     error: InvalidRequest
   }),
 
+  // Relays ---------------------------------------------------------------------------------
+  /**
+   * `dream relay discord|websocket … --to <path> [--port <port>]`: Dream holds a line open from its Worker and POSTs
+   * each event to the app. `InvalidRequest` when the project has `RelaysPerProject` already, when the key named
+   * isn't one of theirs (or isn't for that host), or when a Discord relay has no key to use. Added after the first
+   * release.
+   */
+  Rpc.make("AddRelay", {
+    payload: { source: RelaySource, target: RelayTarget, label: Schema.optionalKey(Schema.NonEmptyString) },
+    success: Relay,
+    error: InvalidRequest
+  }),
+  /** `dream relay list`: each relay with its state, what's waiting, and recent problems. */
+  Rpc.make("ListRelays", { success: Schema.Array(Relay) }),
+  /** `dream relay remove <relay-id>`: closes the line and drops what's waiting. */
+  Rpc.make("RemoveRelay", { payload: { relayId: RelayId }, error: NotFound }),
+  /** `dream relay restart <relay-id>`: opens the line afresh, e.g. once a failed one's cause is fixed. */
+  Rpc.make("RestartRelay", { payload: { relayId: RelayId }, success: Relay, error: NotFound }),
+
   // App links on their Home ------------------------------------------------------------
   /**
    * `dream link add <url> --title … [--icon <symbol|emoji|file>] [--color …]`. `InvalidRequest` when the project
@@ -305,9 +335,23 @@ export class SandboxRpcs extends RpcGroup.make(
     }
   }),
   /**
-   * Keep the sandbox up: a scheduled `--run` command is running, or the published app is in use. dreamd sends it
-   * about once a minute while either holds, and Dream keeps the sandbox awake until five minutes from then (longer
-   * timeouts, like a turn's, stay). Nothing for an archived project.
+   * Keep the sandbox up: a scheduled `--run` command is running, the published app is in use, or the app is taking
+   * a relay's delivery ("relay", added after the first release). dreamd sends it about once a minute while any
+   * holds, and Dream keeps the sandbox awake until five minutes from then (longer timeouts, like a turn's, stay).
+   * Nothing for an archived project.
    */
-  Rpc.make("StayAwake", { payload: { reason: Schema.Literals(["command", "app"]) } })
+  Rpc.make("StayAwake", { payload: { reason: Schema.Literals(["command", "app", "relay"]) } }),
+  /**
+   * dreamd has nothing left to do: the scheduled command or relay delivery it woke for is done, no turn is running
+   * or waiting, and nobody has used the app for a few minutes. Dream pauses the sandbox now rather than when its
+   * timeout runs out, unless something on its side still needs it (a turn, events on their way, a delivery under
+   * way, the few minutes after a turn). Added after the first release; an older API refuses it.
+   */
+  Rpc.make("Sleep", {
+    payload: {
+      reason: Schema.Literals(["command", "relay"]),
+      /** When dreamd last looked and saw nothing to do; anything handed to it after that may not have been seen. */
+      checkedAt: Schema.DateTimeUtc
+    }
+  })
 ).middleware(SandboxAuth) {}

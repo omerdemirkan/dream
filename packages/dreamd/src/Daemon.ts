@@ -3,8 +3,10 @@
  * `DREAM_DAEMON_PORT` (the ProjectDO delivers events there), serves the
  * `dream` CLI on the `DREAM_SOCKET` Unix socket (forwarding to the API), runs
  * scheduled commands, runs one harness turn at a time, looks at the
- * published URL after each, and keeps the sandbox awake while a scheduled
- * command runs or the published app is in use (see `Awake.ts`).
+ * published URL after each, posts relay deliveries to the app (`Relays.ts`),
+ * keeps the sandbox awake while a scheduled command runs, a delivery is under
+ * way or the published app is in use, and asks for it to sleep once the work
+ * it woke for is done (see `Awake.ts`).
  *
  * It exits when its env file changes, so its supervisor restarts it with the
  * new configuration, and it always exits promptly (see `Shutdown.ts`).
@@ -22,6 +24,7 @@ import { Harness } from "./harness/Harness.ts"
 import { Inbox } from "./Inbox.ts"
 import { Outreach } from "./Outreach.ts"
 import { Published } from "./Published.ts"
+import { RelayForwarder } from "./Relays.ts"
 import { DaemonServer, SocketServer } from "./Servers.ts"
 import { Shutdown } from "./Shutdown.ts"
 import { readRelease, version } from "./version.ts"
@@ -95,7 +98,9 @@ export const main = Effect.gen(function* () {
 })
 
 /** Everything `main` needs, given the harness, how to shut down, the config and the platform. */
-export const layerWith = <E, R>(base: Layer.Layer<Harness | Shutdown | PageCheck | AppTraffic, E, R>) =>
+export const layerWith = <E, R>(
+  base: Layer.Layer<Harness | Shutdown | PageCheck | AppTraffic | RelayForwarder, E, R>
+) =>
   Layer.mergeAll(DaemonServer, SocketServer).pipe(
     Layer.provideMerge(Awake.layer),
     Layer.provideMerge(Layer.mergeAll(Agent.layer, Commands.layer)),
@@ -109,7 +114,8 @@ export const layerWithoutConfig = layerWith(
     Harness.layer,
     Shutdown.layer,
     AppTraffic.layer,
-    PageCheck.layer.pipe(Layer.provide(FetchHttpClient.layer))
+    PageCheck.layer.pipe(Layer.provide(FetchHttpClient.layer)),
+    RelayForwarder.layer.pipe(Layer.provide(FetchHttpClient.layer))
   )
 )
 

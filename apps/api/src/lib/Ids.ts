@@ -13,6 +13,7 @@ import {
   ModelConnectionId,
   NotificationId,
   ProjectId,
+  RelayId,
   type RequestId,
   UserId,
   WakeId,
@@ -50,6 +51,7 @@ export const newModelConnectionId = make(ModelConnectionId, IdPrefix.modelConnec
 export const newLinkId = make(LinkId, IdPrefix.link)
 export const newWorkstreamId = make(WorkstreamId, IdPrefix.workstream)
 export const newBrowserSessionId = make(BrowserSessionId, IdPrefix.browserSession)
+export const newRelayId = make(RelayId, IdPrefix.relay)
 export const newSecretId = (): Effect.Effect<string> => Effect.sync(() => `sec_${randomToken(22)}`)
 export const newNotificationId = (): Effect.Effect<NotificationId> =>
   Effect.sync(() => Schema.decodeUnknownSync(NotificationId)(crypto.randomUUID()))

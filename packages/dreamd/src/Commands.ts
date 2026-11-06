@@ -5,7 +5,7 @@
  * the end of the output. Commands that were running when dreamd stopped run
  * again when it starts.
  */
-import { Context, Duration, Effect, Fiber, FiberSet, FileSystem, Layer, Option, Ref, Stream } from "effect"
+import { Context, Duration, Effect, Fiber, FiberSet, FileSystem, Layer, Option, PubSub, Ref, Stream } from "effect"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
 import { DreamdConfig } from "./Config.ts"
 import { agentEnv } from "./harness/HarnessEnv.ts"
@@ -23,6 +23,10 @@ export class Commands extends Context.Service<
     readonly run: Effect.Effect<never>
     /** Whether a command is running now. */
     readonly busy: Effect.Effect<boolean>
+    /** Commands delivered and not finished yet, running or about to. */
+    readonly pending: Effect.Effect<number>
+    /** Emits each time a command finishes, once it no longer counts as running. */
+    readonly finished: Stream.Stream<void>
   }
 >()("@dream/dreamd/Commands") {
   static readonly layer = Layer.effect(
@@ -36,6 +40,7 @@ export class Commands extends Context.Service<
       const env = agentEnv(process.env, config)
       const running = yield* Ref.make<ReadonlySet<string>>(new Set())
       const fibers = yield* FiberSet.make()
+      const done = yield* PubSub.unbounded<void>()
 
       const execute = Effect.fn("Commands.execute")(function* (command: string) {
         const tail = yield* Ref.make("")
@@ -81,7 +86,11 @@ export class Commands extends Context.Service<
           Effect.catch((error) =>
             Effect.logError("Couldn't record a scheduled command's result", { error: error.message })
           ),
-          Effect.ensuring(Ref.update(running, (ids) => new Set([...ids].filter((id) => id !== event.id))))
+          Effect.ensuring(
+            Ref.update(running, (ids) => new Set([...ids].filter((id) => id !== event.id))).pipe(
+              Effect.andThen(PubSub.publish(done, undefined))
+            )
+          )
         )
 
       const run = inbox.changes.pipe(
@@ -96,7 +105,12 @@ export class Commands extends Context.Service<
         Effect.andThen(Effect.never)
       )
 
-      return Commands.of({ run, busy: Effect.map(Ref.get(running), (ids) => ids.size > 0) })
+      return Commands.of({
+        run,
+        busy: Effect.map(Ref.get(running), (ids) => ids.size > 0),
+        pending: Effect.map(inbox.commands, (commands) => commands.length),
+        finished: Stream.fromPubSub(done)
+      })
     })
   )
 }

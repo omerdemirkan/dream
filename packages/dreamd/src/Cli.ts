@@ -31,6 +31,14 @@ import {
   type NotificationId,
   ProjectPhase,
   QuestionMessage,
+  DiscordDefaultEvents,
+  DiscordDefaultIntents,
+  type IntegrationId,
+  Relay,
+  type RelayId,
+  RelaySource,
+  relayPathProblem,
+  relayUrlProblem,
   StatusCard,
   TextMessage,
   UsageSnapshot,
@@ -959,6 +967,209 @@ const wake = Command.make(
 )
 
 // ---------------------------------------------------------------------------
+// Relays
+// ---------------------------------------------------------------------------
+
+const relayFlags = {
+  to: Flag.String("to").pipe(
+    Flag.withDescription("The path on your app each event is POSTed to, e.g. /hooks/discord.")
+  ),
+  port: Flag.Int("port").pipe(
+    Flag.withDescription("Your app's port in this sandbox. Leave it out to use the published port."),
+    Flag.optional
+  ),
+  label: Flag.String("label").pipe(Flag.withDescription("A name for it in `dream relay list`."), Flag.optional),
+  json
+}
+
+const relayTarget = (input: { readonly to: string; readonly port: Option.Option<number> }) =>
+  Effect.gen(function* () {
+    const problem = relayPathProblem(input.to)
+    if (problem !== undefined) return yield* fail(problem)
+    return defined({ path: input.to, port: Option.getOrUndefined(input.port) })
+  })
+
+const addRelay = (
+  source: RelaySource,
+  input: {
+    readonly to: string
+    readonly port: Option.Option<number>
+    readonly label: Option.Option<string>
+    readonly json: boolean
+  }
+) =>
+  Effect.gen(function* () {
+    const dream = yield* Dream
+    const target = yield* relayTarget(input)
+    const added = yield* userFacing(
+      dream.AddRelay(defined({ source, target, label: Option.getOrUndefined(input.label) }))
+    )
+    yield* show(input.json, Relay, added, Format.relayAdded(added, yield* now))
+  })
+
+const relayDiscord = Command.make(
+  "discord",
+  {
+    ...relayFlags,
+    key: Flag.String("key").pipe(
+      Flag.withDescription(
+        "The id of their Discord bot key (`dream access list`). Leave it out when they have exactly one."
+      ),
+      Flag.optional
+    ),
+    events: Flag.String("events").pipe(
+      Flag.withDescription(`Gateway events to forward, comma-separated (default ${DiscordDefaultEvents.join(",")}).`),
+      Flag.optional
+    ),
+    mentions: Flag.Boolean("mentions").pipe(
+      Flag.withDescription("Forward only messages that mention the bot, reply to it, or are sent to it directly."),
+      Flag.withDefault(false)
+    ),
+    channel: Flag.String("channel").pipe(
+      Flag.withDescription("Forward only events in this channel id. Repeat for more."),
+      Flag.atLeast(0)
+    ),
+    intents: Flag.Int("intents").pipe(
+      Flag.withDescription(
+        `Gateway intents as a number (default ${DiscordDefaultIntents}: servers, messages, DMs, message content).`
+      ),
+      Flag.optional
+    )
+  },
+  (input) =>
+    Effect.gen(function* () {
+      const events = Option.match(input.events, {
+        onNone: () => DiscordDefaultEvents,
+        onSome: (list) =>
+          list
+            .split(",")
+            .map((event) => event.trim().toUpperCase())
+            .filter((event) => event.length > 0)
+      })
+      const [first, ...rest] = events
+      if (first === undefined) return yield* fail("Name at least one event with --events, like MESSAGE_CREATE.")
+      yield* addRelay(
+        RelaySource.cases.Discord.make(
+          defined({
+            integrationId: Option.getOrUndefined(input.key) as IntegrationId | undefined,
+            intents: Option.getOrElse(input.intents, () => DiscordDefaultIntents),
+            events: [first, ...rest] as const,
+            mentionsOnly: input.mentions,
+            channels: input.channel.length === 0 ? undefined : input.channel
+          })
+        ),
+        input
+      )
+    })
+).pipe(
+  Command.withDescription(
+    "Hold the bot's Discord Gateway session open from Dream and POST each event (MESSAGE_CREATE by default) to your app."
+  ),
+  Command.withExamples([{ command: "dream relay discord --to /hooks/discord --port 3000 --mentions" }])
+)
+
+const relayWebSocket = Command.make(
+  "websocket",
+  {
+    url: Argument.String("url").pipe(Argument.withDescription("The feed's wss:// URL.")),
+    ...relayFlags,
+    send: Flag.String("send").pipe(
+      Flag.withDescription("A message to send after each connect, like a subscribe. Repeat for more, in order."),
+      Flag.atLeast(0)
+    ),
+    key: Flag.String("key").pipe(
+      Flag.withDescription("The id of one of their keys (`dream access list`) whose header goes on the connection."),
+      Flag.optional
+    ),
+    ping: Flag.String("ping").pipe(
+      Flag.withDescription("A message to send every --ping-every seconds, for feeds that drop quiet clients."),
+      Flag.optional
+    ),
+    pingEvery: Flag.Int("ping-every").pipe(
+      Flag.withDescription("Seconds between pings (default 30)."),
+      Flag.withDefault(30)
+    ),
+    silence: Flag.Int("silence").pipe(
+      Flag.withDescription("Reconnect when nothing arrives for this many seconds."),
+      Flag.optional
+    ),
+    match: Flag.String("match").pipe(Flag.withDescription("Forward only messages containing this text."), Flag.optional)
+  },
+  (input) =>
+    Effect.gen(function* () {
+      const problem = relayUrlProblem(input.url)
+      if (problem !== undefined) return yield* fail(problem)
+      yield* addRelay(
+        RelaySource.cases.WebSocket.make(
+          defined({
+            url: input.url,
+            send: input.send,
+            integrationId: Option.getOrUndefined(input.key) as IntegrationId | undefined,
+            ping: Option.match(input.ping, {
+              onNone: () => undefined,
+              onSome: (message) => ({ message, everySeconds: input.pingEvery })
+            }),
+            silenceSeconds: Option.getOrUndefined(input.silence),
+            match: Option.getOrUndefined(input.match)
+          })
+        ),
+        input
+      )
+    })
+).pipe(
+  Command.withDescription("Hold a WebSocket feed open from Dream and POST each message to your app."),
+  Command.withExamples([
+    {
+      command:
+        'dream relay websocket wss://ws-feed.exchange.coinbase.com --send \'{"type":"subscribe","product_ids":["BTC-USD"],"channels":["ticker"]}\' --to /hooks/prices --port 3000'
+    }
+  ])
+)
+
+const relayList = Command.make("list", { json }, (input) =>
+  Effect.gen(function* () {
+    const dream = yield* Dream
+    const list = yield* userFacing(dream.ListRelays())
+    yield* show(input.json, Schema.Array(Relay), list, Format.relays(list, yield* now))
+  })
+).pipe(Command.withDescription("Each relay with its state, what's waiting, and recent problems."))
+
+const relayRemove = Command.make("remove", { relayId: Argument.String("relay-id") }, (input) =>
+  Effect.gen(function* () {
+    const dream = yield* Dream
+    yield* userFacing(dream.RemoveRelay({ relayId: input.relayId as RelayId }))
+    yield* Console.log(`Removed ${input.relayId}; its line is closed and what was waiting is dropped.`)
+  })
+).pipe(
+  Command.withDescription("Close a relay's line and drop what's waiting."),
+  Command.withExamples([{ command: "dream relay remove rly_abc123" }])
+)
+
+const relayRestart = Command.make("restart", { relayId: Argument.String("relay-id"), json }, (input) =>
+  Effect.gen(function* () {
+    const dream = yield* Dream
+    const restarted = yield* userFacing(dream.RestartRelay({ relayId: input.relayId as RelayId }))
+    yield* show(input.json, Relay, restarted, `Restarting.\n${Format.relay(restarted, yield* now)}`)
+  })
+).pipe(
+  Command.withDescription("Open a relay's line afresh, e.g. once a failed one's cause is fixed."),
+  Command.withExamples([{ command: "dream relay restart rly_abc123" }])
+)
+
+const relay = Command.make("relay", { json }, (input) =>
+  Effect.gen(function* () {
+    const dream = yield* Dream
+    const list = yield* userFacing(dream.ListRelays())
+    yield* show(input.json, Schema.Array(Relay), list, Format.relays(list, yield* now))
+  })
+).pipe(
+  Command.withDescription(
+    "Have Dream hold a line open while the sandbox sleeps (Discord's Gateway, a WebSocket feed) and POST each event to your app."
+  ),
+  Command.withSubcommands([relayDiscord, relayWebSocket, relayList, relayRemove, relayRestart])
+)
+
+// ---------------------------------------------------------------------------
 // Hosting and media
 // ---------------------------------------------------------------------------
 
@@ -1376,7 +1587,7 @@ const usage = Command.make("usage", { json }, (input) =>
 
 export const dream = Command.make("dream").pipe(
   Command.withDescription(
-    "Reach the person and Dream from this sandbox: messages, questions, access, status, workstreams, wake-ups, publishing, app links on their Home, a browser, a Mac, and usage."
+    "Reach the person and Dream from this sandbox: messages, questions, access, status, workstreams, wake-ups, relays, publishing, app links on their Home, a browser, a Mac, and usage."
   ),
   Command.withSubcommands([
     message,
@@ -1387,6 +1598,7 @@ export const dream = Command.make("dream").pipe(
     workCommand,
     live,
     wake,
+    relay,
     publish,
     link,
     media,

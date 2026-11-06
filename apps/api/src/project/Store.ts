@@ -15,6 +15,9 @@ import {
   MessageId,
   NotificationId,
   Project,
+  RelayId,
+  RelaySource,
+  RelayTarget,
   StatusCard,
   UsageSnapshot,
   UsageWindowName,
@@ -135,6 +138,18 @@ export const NotificationRecord = Schema.Struct({
 })
 export type NotificationRecord = typeof NotificationRecord.Type
 
+/** A relay this project holds, as the agent asked for it (with its key resolved). Its state is its RelayDO's. */
+export const RelayRecord = Schema.Struct({
+  id: RelayId,
+  source: RelaySource,
+  target: RelayTarget,
+  label: Schema.optionalKey(Schema.String),
+  createdAt: Schema.DateTimeUtc,
+  /** SHA-256 of the key value last handed to its RelayDO, to tell when they replaced it. */
+  keyHash: Schema.optionalKey(Schema.String)
+})
+export type RelayRecord = typeof RelayRecord.Type
+
 export const StoredEvent = Schema.Struct({
   id: EventId,
   event: AgentEvent,
@@ -196,6 +211,10 @@ export const migrations = Migrator.fromRecord({
   "0003_owner_archived": Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     yield* sql`CREATE TABLE owner_archived (id INTEGER PRIMARY KEY CHECK (id = 1), json TEXT NOT NULL)`
+  }),
+  "0004_relays": Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    yield* sql`CREATE TABLE relays (id TEXT PRIMARY KEY, created_at TEXT NOT NULL, json TEXT NOT NULL)`
   })
 })
 
@@ -253,6 +272,11 @@ export class Store extends Context.Service<
     readonly markDelivered: (ids: ReadonlyArray<EventId>, at: string) => Effect.Effect<void>
     /** Events by id, delivered or not, in inbox order. Unknown ids are left out. */
     readonly events: (ids: ReadonlyArray<EventId>) => Effect.Effect<ReadonlyArray<AgentEvent>>
+
+    readonly putRelay: (record: RelayRecord) => Effect.Effect<void>
+    /** Oldest first. */
+    readonly relays: Effect.Effect<ReadonlyArray<RelayRecord>>
+    readonly deleteRelay: (id: RelayId) => Effect.Effect<void>
 
     readonly putBrowser: (record: BrowserRecord) => Effect.Effect<void>
     readonly browser: (id: string) => Effect.Effect<Option.Option<BrowserRecord>>
@@ -416,6 +440,19 @@ export class Store extends Context.Service<
               Effect.map((rows) => rows.map((row) => Schema.decodeUnknownSync(jsonCodec(AgentEvent))(row.json)))
             )
 
+      const putRelay = (record: RelayRecord) =>
+        exec(sql`
+          INSERT INTO relays (id, created_at, json) VALUES (${record.id}, ${encodeJson(Schema.DateTimeUtc, record.createdAt)},
+            ${encodeJson(RelayRecord, record)})
+          ON CONFLICT (id) DO UPDATE SET json = excluded.json`)
+
+      const relays = sql`SELECT json FROM relays ORDER BY created_at, id`.pipe(
+        decodeRows(JsonRow),
+        Effect.map((rows) => rows.map((row) => decodeJson(RelayRecord, row.json)))
+      )
+
+      const deleteRelay = (id: RelayId) => exec(sql`DELETE FROM relays WHERE id = ${id}`)
+
       const putBrowser = (record: BrowserRecord) =>
         exec(sql`
           INSERT INTO browser_sessions (id, json, ended) VALUES (${record.id}, ${encodeJson(BrowserRecord, record)},
@@ -462,7 +499,8 @@ export class Store extends Context.Service<
           "live_activity",
           "mac",
           "usage_pause",
-          "owner_archived"
+          "owner_archived",
+          "relays"
         ],
         clearSingleton,
         { discard: true }
@@ -512,6 +550,9 @@ export class Store extends Context.Service<
         pendingEvents,
         markDelivered,
         events,
+        putRelay,
+        relays,
+        deleteRelay,
         putBrowser,
         browser,
         openBrowsers,

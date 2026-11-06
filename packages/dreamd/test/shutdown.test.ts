@@ -15,6 +15,7 @@ import { DreamdConfig } from "../src/Config.ts"
 import { layerWith, main } from "../src/Daemon.ts"
 import { Harness, type HarnessError, type TurnResult, TurnOutcome } from "../src/harness/Harness.ts"
 import { makeSpawned, stopAll } from "../src/harness/LocalSandbox.ts"
+import { RelayForwarder } from "../src/Relays.ts"
 import { Shutdown } from "../src/Shutdown.ts"
 import { configRecord, daemonClient, fakeApi, freePort, noPageChecks, tempDir, userMessage } from "./support.ts"
 
@@ -36,7 +37,8 @@ const dreamd = (dir: string, envFile: string, apiPort: number, turns: Queue.Queu
             Harness.layerTest({ turns, log }),
             Shutdown.layerTest({ grace: "300 millis" }),
             noPageChecks,
-            AppTraffic.layerNone
+            AppTraffic.layerNone,
+            RelayForwarder.layerNone
           )
         ).pipe(Layer.provideMerge(DreamdConfig.layerFromRecord(env, envFile)), Layer.provideMerge(NodeServices.layer))
       ),

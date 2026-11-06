@@ -19,6 +19,8 @@ import {
   MessageId,
   NotFound,
   type ProjectId,
+  type Relay,
+  RelayId,
   Routes,
   SandboxAuth,
   SandboxRpcs,
@@ -73,6 +75,7 @@ const Handlers = SandboxRpcs.toLayer(
         )
         return yield* report
       })
+    const relays = yield* Ref.make<ReadonlyArray<Relay>>([])
     const about = { projectTitle: "Dev project", publicUrl: "https://dev-3000.dream.example" }
     const findLink = (linkId: LinkId) =>
       Effect.flatMap(Ref.get(links), (all) => {
@@ -301,8 +304,45 @@ const Handlers = SandboxRpcs.toLayer(
         log("ReportUsage", encode(SandboxRpcs.requests.get("ReportUsage")!.payloadSchema, payload)).pipe(
           Effect.andThen(Ref.set(usage, Option.some(payload.usage)))
         ),
+      AddRelay: (payload) =>
+        Effect.gen(function* () {
+          yield* log("AddRelay", payload)
+          const relay: Relay = {
+            id: RelayId.make(id("rly")),
+            ...(payload.label === undefined ? {} : { label: payload.label }),
+            source: payload.source,
+            target: payload.target,
+            createdAt: yield* DateTime.now,
+            state: "connecting",
+            waiting: 0,
+            delivered: 0,
+            dropped: 0,
+            problems: []
+          }
+          yield* Ref.update(relays, (all) => [...all, relay])
+          return relay
+        }),
+      ListRelays: () => log("ListRelays", {}).pipe(Effect.andThen(Ref.get(relays))),
+      RemoveRelay: ({ relayId }) =>
+        Effect.gen(function* () {
+          yield* log("RemoveRelay", { relayId })
+          const all = yield* Ref.get(relays)
+          if (!all.some((relay) => relay.id === relayId)) return yield* new NotFound({ entity: "relay", id: relayId })
+          yield* Ref.set(
+            relays,
+            all.filter((relay) => relay.id !== relayId)
+          )
+        }),
+      RestartRelay: ({ relayId }) =>
+        Effect.gen(function* () {
+          yield* log("RestartRelay", { relayId })
+          const relay = (yield* Ref.get(relays)).find((each) => each.id === relayId)
+          if (relay === undefined) return yield* new NotFound({ entity: "relay", id: relayId })
+          return relay
+        }),
       ReportTurn: (payload) => log("ReportTurn", payload),
-      StayAwake: (payload) => log("StayAwake", payload)
+      StayAwake: (payload) => log("StayAwake", payload),
+      Sleep: (payload) => log("Sleep", payload)
     }
   })
 )

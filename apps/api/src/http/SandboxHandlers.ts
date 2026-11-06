@@ -191,8 +191,13 @@ export const WorkerSandboxHandlers = SandboxRpcs.toLayer(
           return connection.value.usage_json
         }),
       ReportUsage: (payload) => forward((c) => c.ReportUsage(payload)),
+      AddRelay: (payload) => forwardUnlessLeaking(payload, (c) => c.AddRelay(payload)),
+      ListRelays: () => forward((c) => c.ListRelays()),
+      RemoveRelay: (payload) => forward((c) => c.RemoveRelay(payload)),
+      RestartRelay: (payload) => forward((c) => c.RestartRelay(payload)),
       ReportTurn: (payload) => forward((c) => c.ReportTurn(payload)),
-      StayAwake: (payload) => forward((c) => c.StayAwake(payload))
+      StayAwake: (payload) => forward((c) => c.StayAwake(payload)),
+      Sleep: (payload) => forward((c) => c.Sleep(payload))
     }
   })
 )

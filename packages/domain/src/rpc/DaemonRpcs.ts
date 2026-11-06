@@ -8,7 +8,8 @@ import { Rpc, RpcGroup } from "effect/rpc"
 import { AgentEvent } from "../AgentEvent.ts"
 import { DaemonAuth } from "../Auth.ts"
 import { DaemonRestarting } from "../Errors.ts"
-import { EventId } from "../Ids.ts"
+import { EventId, RelayId } from "../Ids.ts"
+import { RelayForward, RelayForwardResult, RelayPath, RelayPort } from "../Relay.ts"
 import { TimeZone } from "../User.ts"
 
 export const TurnState = Schema.Literals(["idle", "running"])
@@ -29,6 +30,22 @@ export class DaemonRpcs extends RpcGroup.make(
   Rpc.make("Deliver", {
     payload: { events: Schema.NonEmptyArray(AgentEvent), timeZone: Schema.optionalKey(TimeZone) },
     success: Schema.Struct({ accepted: Schema.Array(EventId) }),
+    error: DaemonRestarting
+  }),
+  /**
+   * POST a relay's events to the app at `http://localhost:<port><path>`, one at a time and in order, signed with the
+   * sandbox's relay key (`RelayHeaders`). Stops at the first the app doesn't take with a 2xx; the rest go again
+   * later. The request itself wakes the sandbox, and dreamd keeps it awake until the app has answered. Added after
+   * the first release: an older dreamd fails it as an unknown request, and the relay tries again later.
+   */
+  Rpc.make("ForwardRelay", {
+    payload: {
+      relayId: RelayId,
+      port: RelayPort,
+      path: RelayPath,
+      deliveries: Schema.NonEmptyArray(RelayForward)
+    },
+    success: RelayForwardResult,
     error: DaemonRestarting
   }),
   Rpc.make("Health", {

@@ -1,7 +1,7 @@
 /**
  * The services both the Worker and the ProjectDO run on, assembled from what
  * workerd hands them per invocation: the D1 binding, and a way to reach any
- * project's DO. Config is read from the environment when this is built.
+ * project's DO and any relay's. Config is read from the environment when this is built.
  */
 import { D1Client } from "@effect/sql-d1"
 import type { D1Database } from "@cloudflare/workers-types"
@@ -31,11 +31,13 @@ import { OAuth, OAuthProviders } from "./integrations/OAuth.ts"
 import { SandboxCredentials } from "./integrations/SandboxCredentials.ts"
 import { ProjectClients, ProjectDirectory, type ProjectFetch } from "./project/Client.ts"
 import { Apns } from "./push/Apns.ts"
+import { RelayClients, type RelayFetch } from "./relay/RelayClients.ts"
 import { UsageReport } from "./usage/ProjectUsage.ts"
 
 export interface PlatformBindings {
   readonly d1: D1Database
   readonly fetchProject: ProjectFetch
+  readonly fetchRelay: RelayFetch
 }
 
 /** D1 repositories over one D1 client. */
@@ -76,7 +78,8 @@ export const platformLayer = (bindings: PlatformBindings, overrides: PlatformOve
   const base = Layer.mergeAll(
     databaseLayer(bindings.d1),
     overrides.services ?? servicesLayer,
-    ProjectClients.layer(bindings.fetchProject)
+    ProjectClients.layer(bindings.fetchProject),
+    RelayClients.layer(bindings.fetchRelay)
   ).pipe(Layer.provideMerge(FetchHttpClient.layer))
   const credentials = CredentialStore.layer.pipe(
     Layer.provideMerge(ProjectDirectory.layer.pipe(Layer.provideMerge(base)))

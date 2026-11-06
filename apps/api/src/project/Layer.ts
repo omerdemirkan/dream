@@ -11,6 +11,7 @@ import { Core } from "./Core.ts"
 import { LiveFeed } from "./Live.ts"
 import { Machines } from "./Machines.ts"
 import { Notifier } from "./Notifier.ts"
+import { Relays } from "./Relays.ts"
 import { SandboxManager } from "./SandboxManager.ts"
 import { Scheduler } from "./Scheduler.ts"
 import { migrate, Store } from "./Store.ts"
@@ -25,5 +26,5 @@ export const projectLayer = (
   const core = Core.layer.pipe(Layer.provideMerge(Layer.mergeAll(LiveFeed.layer, alarm)))
   const sandbox = SandboxManager.layer.pipe(Layer.provide(SandboxRefresh.layer))
   const domain = Layer.mergeAll(Notifier.layer, sandbox, Machines.layer).pipe(Layer.provideMerge(core))
-  return Scheduler.layer.pipe(Layer.provideMerge(domain), Layer.provideMerge(store))
+  return Layer.mergeAll(Scheduler.layer, Relays.layer).pipe(Layer.provideMerge(domain), Layer.provideMerge(store))
 }
