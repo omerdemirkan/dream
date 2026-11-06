@@ -18,3 +18,18 @@ declare module "node:path" {
 declare module "node:url" {
   export function fileURLToPath(url: URL | string): string
 }
+
+declare module "node:http" {
+  export interface IncomingMessage extends AsyncIterable<Uint8Array> {
+    readonly method?: string
+    readonly url?: string
+    readonly headers: Record<string, string | ReadonlyArray<string> | undefined>
+  }
+  export interface ServerResponse {
+    writeHead(status: number, headers: Record<string, string>): void
+    end(body?: Uint8Array): void
+  }
+  export function createServer(handler: (request: IncomingMessage, response: ServerResponse) => void | Promise<void>): {
+    listen(port: number, host: string, callback?: () => void): void
+  }
+}

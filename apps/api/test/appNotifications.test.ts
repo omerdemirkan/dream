@@ -14,7 +14,7 @@ import {
   PushData
 } from "@dream/domain"
 import { DateTime, Effect, Redacted, Result } from "effect"
-import type { AlertPush } from "../src/push/Apns.ts"
+import { type AlertPush, alertPayload } from "../src/push/Apns.ts"
 import { decideOutcome, resolveAppUrl } from "../src/project/AppNotifications.ts"
 import { makeCloud } from "./support/Cloud.ts"
 
@@ -465,5 +465,28 @@ describe("resolveAppUrl", () => {
     ]) {
       assert.isTrue(Result.isFailure(resolveAppUrl(base, url)), url)
     }
+  })
+})
+
+describe("alertPayload", () => {
+  const push: AlertPush = {
+    id: "3a5a8caa-e32b-4754-9af8-c485d3b38983",
+    title: "Fare watch",
+    subtitle: "Lisbon dropped to $412",
+    body: "Round trip.",
+    category: "app",
+    threadId: "prj_x/fare-watch",
+    data: PushData.cases.Withdraw.make({ notificationIds: ["3a5a8caa-e32b-4754-9af8-c485d3b38983" as never] })
+  }
+  it("rings by default, and a quiet one goes to Notification Center without a sound", () => {
+    const loud: any = alertPayload(push)
+    assert.strictEqual(loud.aps.sound, "default")
+    assert.isUndefined(loud.aps["interruption-level"])
+    assert.strictEqual(loud.aps.alert.subtitle, "Lisbon dropped to $412")
+    const quiet: any = alertPayload({ ...push, passive: true })
+    assert.strictEqual(quiet.aps["interruption-level"], "passive")
+    assert.isUndefined(quiet.aps.sound)
+    const plain: any = alertPayload({ ...push, subtitle: undefined, category: "message" })
+    assert.isFalse("subtitle" in plain.aps.alert)
   })
 })

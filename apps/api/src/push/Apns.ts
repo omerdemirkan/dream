@@ -59,6 +59,22 @@ const encodeContent = Schema.encodeSync(Schema.toCodecJson(LiveActivityContent))
 const encodeAttributes = Schema.encodeSync(Schema.toCodecJson(LiveActivityAttributes))
 const encodePushData = Schema.encodeSync(Schema.toCodecJson(PushData))
 
+/** The JSON body APNs gets for an alert: `aps`, and Dream's data under `PushDataKey`. */
+export const alertPayload = (push: AlertPush): object => ({
+  aps: {
+    alert: {
+      title: push.title,
+      ...(push.subtitle === undefined ? {} : { subtitle: push.subtitle }),
+      body: push.body
+    },
+    ...(push.passive === true ? { "interruption-level": "passive" } : { sound: "default" }),
+    "thread-id": push.threadId,
+    category: push.category,
+    "mutable-content": 1
+  },
+  [PushDataKey]: encodePushData(push.data)
+})
+
 export class Apns extends Context.Service<
   Apns,
   {
@@ -141,29 +157,12 @@ export class Apns extends Context.Service<
       })
 
       const alert = (deviceToken: string, push: AlertPush) =>
-        send(
-          deviceToken,
-          {
-            aps: {
-              alert: {
-                title: push.title,
-                ...(push.subtitle === undefined ? {} : { subtitle: push.subtitle }),
-                body: push.body
-              },
-              ...(push.passive === true ? { "interruption-level": "passive" } : { sound: "default" }),
-              "thread-id": push.threadId,
-              category: push.category,
-              "mutable-content": 1
-            },
-            [PushDataKey]: encodePushData(push.data)
-          },
-          {
-            pushType: "alert",
-            priority: push.passive === true ? 5 : 10,
-            id: push.id,
-            collapseId: push.collapseId
-          }
-        )
+        send(deviceToken, alertPayload(push), {
+          pushType: "alert",
+          priority: push.passive === true ? 5 : 10,
+          id: push.id,
+          collapseId: push.collapseId
+        })
 
       const silent = (deviceToken: string, data: PushData) =>
         send(
