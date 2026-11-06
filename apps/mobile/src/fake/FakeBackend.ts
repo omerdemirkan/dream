@@ -43,7 +43,7 @@ import { Context, DateTime, Duration, Effect, Layer, Option, PubSub, Redacted, S
 import { Headers } from "effect/http"
 import type { Rpc, RpcGroup } from "effect/rpc"
 import { TolerantMessage } from "../data/Tolerant.ts"
-import { type FixtureWorld, makeWorld, newIntegrationId } from "./fixtures.ts"
+import { type FixtureWorld, longQuestion, makeWorld, newIntegrationId, vagueAccess } from "./fixtures.ts"
 
 /** A notification the fake would have sent through APNs. The app shows it as a local notification. */
 export interface FakePush {
@@ -65,6 +65,8 @@ export const Scenario = [
   "signed-out",
   "spotify-ask",
   "spotify-stopped",
+  "long-question",
+  "vague-access",
   "unsupported-message",
   "stall-next-write",
   "activity-sent",
@@ -841,6 +843,16 @@ export class FakeBackend extends Context.Service<
           yield* emit(lift, snapshotOf(lift))
         })
 
+      /** Adds `message` to Lift Log's Chat, unless a message with its id is already there. */
+      const addToLift = (message: (projectId: ProjectId, now: DateTime.Utc) => Message) =>
+        Effect.gen(function* () {
+          const lift = Array.from(records.values()).find((r) => r.project.slug === "lift-log")
+          const now = yield* DateTime.now
+          const added = lift ? message(lift.project.id, now) : undefined
+          if (!lift || !added || lift.messages.some((m) => m.id === added.id)) return
+          yield* setMessage(lift, added)
+        })
+
       const scenario = Effect.fn("FakeBackend.scenario")(function* (name: Scenario) {
         const now = yield* DateTime.now
         switch (name) {
@@ -924,6 +936,10 @@ export class FakeBackend extends Context.Service<
             })
             return
           }
+          case "long-question":
+            return yield* addToLift(longQuestion)
+          case "vague-access":
+            return yield* addToLift(vagueAccess)
           case "unsupported-message": {
             const cabin = Array.from(records.values()).find((r) => r.project.slug === "cabin")
             if (!cabin || cabin.messages.some((m) => m.id === "msg_unsupported")) return
