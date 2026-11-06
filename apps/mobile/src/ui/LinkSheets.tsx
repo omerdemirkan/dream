@@ -365,12 +365,9 @@ function NothingToAdd(props: { readonly allOnHome: boolean; readonly onDone: () 
       <Text style={{ fontSize: 24, fontWeight: "600", letterSpacing: -0.6, color: color.t1, textAlign: "center" }}>
         {props.allOnHome ? "Everything’s on Home" : "Nothing to add yet"}
       </Text>
-      <Text
-        lineBreakStrategyIOS="push-out"
-        style={{ fontSize: 15, lineHeight: 21, color: color.t2, marginTop: 8, textAlign: "center" }}
-      >
+      <Text style={{ fontSize: 15, lineHeight: 21, color: color.t2, marginTop: 8, textAlign: "center" }}>
         {props.allOnHome
-          ? "Every app your projects have made is already in the row. If you take one off, it waits here until you want it back."
+          ? "Every app your projects have made is in the row. If you take one off, it waits here until you want it back."
           : "When a project makes something you’ll open often, its agent puts it on Home. If you take one off, it waits here until you want it back."}
       </Text>
       <Button title="Done" variant="ghost" style={{ marginTop: 24 }} onPress={props.onDone} />
