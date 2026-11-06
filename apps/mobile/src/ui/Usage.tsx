@@ -4,7 +4,8 @@
  * `data/usage.ts`; sizes and colours follow mocks/screens/project-usage (screens.html, `.hr-u.ring`, `.sheet`).
  */
 import type { ProjectId } from "@dream/domain"
-import { useAtomValue } from "@effect/atom-react"
+import { useAtomRefresh, useAtomValue } from "@effect/atom-react"
+import { useEffect } from "react"
 import { DateTime, Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
 import { SymbolView, type SymbolViewProps } from "expo-symbols"
@@ -162,7 +163,11 @@ function SheetContent(props: {
   readonly bottom: number
 }) {
   const result = useAtomValue(projectUsageAtom(props.projectId))
-  const usage = Option.getOrUndefined(AsyncResult.value(result))
+  // The family keeps the last fetch, so opening the sheet fetches again, and shows the spinner rather than the
+  // figures from the last time it was open.
+  const refresh = useAtomRefresh(projectUsageAtom(props.projectId))
+  useEffect(() => refresh(), [refresh])
+  const usage = result.waiting ? undefined : Option.getOrUndefined(AsyncResult.value(result))
   const view = usage ? usageSheet(usage, props.title, props.projectId, DateTime.nowUnsafe()) : undefined
   return (
     <ScrollView
