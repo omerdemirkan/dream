@@ -11,6 +11,7 @@ import { StatusBar } from "expo-status-bar"
 import { useEffect } from "react"
 import { View } from "react-native"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
+import { KeyboardProvider } from "react-native-keyboard-controller"
 import { SafeAreaProvider } from "react-native-safe-area-context"
 import { sessionAtom } from "../state/atoms.ts"
 import { DeviceHost } from "../ui/DeviceHost.tsx"
@@ -28,8 +29,10 @@ export default function RootLayout() {
     <RegistryProvider>
       <GestureHandlerRootView style={{ flex: 1, backgroundColor: color.bg }}>
         <SafeAreaProvider>
-          <StatusBar style="light" />
-          <Shell />
+          <KeyboardProvider>
+            <StatusBar style="light" />
+            <Shell />
+          </KeyboardProvider>
         </SafeAreaProvider>
       </GestureHandlerRootView>
     </RegistryProvider>

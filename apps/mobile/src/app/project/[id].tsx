@@ -10,7 +10,8 @@ import { Option, Schema } from "effect"
 import { AsyncResult } from "effect/reactivity"
 import { useLocalSearchParams, useRouter } from "expo-router"
 import { useEffect } from "react"
-import { KeyboardAvoidingView, Pressable, ScrollView, Text, View } from "react-native"
+import { Pressable, ScrollView, Text, View } from "react-native"
+import { KeyboardStickyView } from "react-native-keyboard-controller"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { dotOf, headerLine, presenceOf } from "../../data/presence.ts"
 import type { ProjectState } from "../../data/projectState.ts"
@@ -85,6 +86,9 @@ function Project(props: {
 
   const needsYou = state?.messages.some(needsThem)
   const top = insets.top + 4
+  // The composer sits this far above the home indicator, and 10 pt above the keyboard, riding it as it moves.
+  const composerBottom = Math.max(insets.bottom, 12) + 2
+  const keyboardOffset = composerBottom - 10
 
   const summary = summaries?.find((s) => s.project.id === props.projectId)
 
@@ -92,9 +96,12 @@ function Project(props: {
     <View style={{ flex: 1, backgroundColor: color.bg }}>
       {state ? (
         props.tab === "chat" ? (
-          <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
-            <ChatTab state={state} topInset={top + header} bottomInset={24} />
-            <View style={{ paddingHorizontal: 16, paddingBottom: Math.max(insets.bottom, 12) + 2, paddingTop: 10 }}>
+          <View style={{ flex: 1 }}>
+            <ChatTab state={state} topInset={top + header} bottomInset={24} keyboardOffset={keyboardOffset} />
+            <KeyboardStickyView
+              offset={{ opened: keyboardOffset }}
+              style={{ paddingHorizontal: 16, paddingBottom: composerBottom, paddingTop: 10 }}
+            >
               <ChatComposer
                 busy={send.busy}
                 draft={draft?.text}
@@ -111,8 +118,8 @@ function Project(props: {
                   )
                 }
               />
-            </View>
-          </KeyboardAvoidingView>
+            </KeyboardStickyView>
+          </View>
         ) : (
           <ScrollView
             contentContainerStyle={{

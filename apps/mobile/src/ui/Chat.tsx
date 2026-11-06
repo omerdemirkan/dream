@@ -12,11 +12,11 @@ import {
   type HostInstance,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
-  ScrollView,
   type ScrollViewInstance,
   Text,
   View
 } from "react-native"
+import { KeyboardChatScrollView } from "react-native-keyboard-controller"
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withSequence, withTiming } from "react-native-reanimated"
 import { dayLabel, sameDay, timeLabel } from "../data/format.ts"
 import { chatRowOf, presenceOf, receiptOf } from "../data/presence.ts"
@@ -126,6 +126,8 @@ export function ChatTab(props: {
   readonly state: ProjectState
   readonly topInset: number
   readonly bottomInset: number
+  /** How much less than the keyboard's height the messages lift, as the composer does (`KeyboardStickyView`). */
+  readonly keyboardOffset: number
 }) {
   const { state } = props
   const projectId = state.project.id
@@ -221,8 +223,10 @@ export function ChatTab(props: {
   }
 
   return (
-    <ScrollView
+    // Lifts the messages with the keyboard, frame by frame, and follows an interactive dismiss.
+    <KeyboardChatScrollView
       ref={scroll}
+      offset={props.keyboardOffset}
       style={{ flex: 1 }}
       contentContainerStyle={{
         paddingTop: props.topInset,
@@ -244,6 +248,6 @@ export function ChatTab(props: {
       ) : null}
       {rows}
       <ChatActivity state={state} />
-    </ScrollView>
+    </KeyboardChatScrollView>
   )
 }
