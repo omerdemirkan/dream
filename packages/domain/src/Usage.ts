@@ -138,3 +138,32 @@ export const ProjectUsage = Schema.Struct({
   subagents: Schema.optionalKey(Schema.Literals(["included", "excluded"]))
 })
 export type ProjectUsage = typeof ProjectUsage.Type
+
+/** A usage window across all their projects: how full it is, and how much of it is (about) Dream's. */
+export const AccountWindow = Schema.Struct({
+  /** The whole window, as the provider reports it: exact. */
+  usedPercent: Percent,
+  /** Every project's part of `usedPercent` together: estimated. The rest is use outside Dream. */
+  dreamPercent: Percent,
+  resetsAt: Schema.optionalKey(Schema.DateTimeUtc)
+})
+export type AccountWindow = typeof AccountWindow.Type
+
+/**
+ * Settings' plan card (`AppRpcs.GetAccountUsage`): one subscription's windows, and every project's estimated share
+ * of its week. A window is absent when Dream doesn't know how full it is.
+ */
+export const AccountUsage = Schema.Struct({
+  provider: ModelProvider,
+  billing: UsageBilling,
+  /** Display name such as "Claude Max", when known. */
+  plan: Schema.optionalKey(Schema.String),
+  fiveHour: Schema.optionalKey(AccountWindow),
+  weekly: Schema.optionalKey(AccountWindow),
+  /** Every project of theirs that used this week, largest share first. Empty when the week isn't known. */
+  projects: Schema.Array(ProjectShare),
+  /** The rest of the week's use: claude.ai, the ChatGPT app, a CLI on their laptop. */
+  outsideDreamPercent: Schema.optionalKey(Percent),
+  observedAt: Schema.DateTimeUtc
+})
+export type AccountUsage = typeof AccountUsage.Type

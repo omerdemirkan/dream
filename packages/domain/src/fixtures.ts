@@ -12,7 +12,7 @@ import type { MediaRef } from "./Media.ts"
 import type { AccessMessage, Message, QuestionMessage, TextMessage } from "./Message.ts"
 import type { Project } from "./Project.ts"
 import type { StatusCard } from "./Status.ts"
-import type { ProjectUsage, UsageSnapshot } from "./Usage.ts"
+import type { AccountUsage, ProjectUsage, UsageSnapshot } from "./Usage.ts"
 import type { User } from "./User.ts"
 
 const at = (iso: string) => DateTime.makeUnsafe(iso)
@@ -245,6 +245,18 @@ export const liftLogUsage: ProjectUsage = {
   ],
   outsideDreamPercent: 10,
   subagents: "included",
+  observedAt: at("2026-11-04T22:10:00Z")
+}
+
+/** Settings' plan card for the same ChatGPT Pro week: every project's share, together 28%, and 10% outside Dream. */
+export const accountUsage: AccountUsage = {
+  provider: "chatgpt",
+  billing: "subscription",
+  plan: "ChatGPT Pro",
+  fiveHour: { usedPercent: 41, dreamPercent: 30, resetsAt: at("2026-11-04T23:40:00Z") },
+  weekly: { usedPercent: 38, dreamPercent: 28, resetsAt: at("2026-11-09T08:00:00Z") },
+  projects: liftLogUsage.projects,
+  outsideDreamPercent: 10,
   observedAt: at("2026-11-04T22:10:00Z")
 }
 

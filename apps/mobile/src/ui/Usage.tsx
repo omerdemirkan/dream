@@ -2,6 +2,8 @@
  * Project usage, Deck v3 option A: a small ring of the subscription's week on the right of the project header
  * (this project's share, everything else, what's left), and the usage sheet it opens. What they say comes from
  * `data/usage.ts`; sizes and colours follow mocks/screens/project-usage (screens.html, `.hr-u.ring`, `.sheet`).
+ * Its pieces (UsageRing, WindowBar, ShareRow, LimitCallout, Footnote, SectionHeading) also draw Settings' plan card
+ * (`PlanCard.tsx`), each taking the colour of what's in focus: white, or amber near the limit.
  */
 import type { ProjectId } from "@dream/domain"
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react"
@@ -13,7 +15,14 @@ import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View
 import Animated, { Easing, SlideInDown } from "react-native-reanimated"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import Svg, { Circle, G } from "react-native-svg"
-import { type RingArcs, type UsageSheet as SheetView, usageBadge, usageSheet } from "../data/usage.ts"
+import {
+  type RingArcs,
+  type ShareRowView,
+  type UsageSheet as SheetView,
+  usageBadge,
+  usageSheet,
+  type WindowBarView
+} from "../data/usage.ts"
 import { projectUsageAtom, usageGlanceAtom } from "../state/atoms.ts"
 import { IconButton } from "./kit.tsx"
 import { color, gutter, tracking } from "./theme.ts"
@@ -21,12 +30,15 @@ import { color, gutter, tracking } from "./theme.ts"
 const others = "rgba(255,255,255,0.34)"
 const track = "rgba(255,255,255,0.12)"
 
-/** A ring of arcs over a faint track, starting at twelve o'clock: this project's, then everything else's. */
-function Ring(props: {
+/**
+ * A ring of arcs over a faint track, starting at twelve o'clock: the part in focus (this project) in `focusColor`
+ * (white, or amber near the limit), then everything else's in grey.
+ */
+export function UsageRing(props: {
   readonly size: number
   readonly stroke: number
   readonly arcs: RingArcs
-  readonly warn: boolean
+  readonly focusColor: string
 }) {
   const { size, stroke, arcs } = props
   const r = (size - stroke) / 2
@@ -49,7 +61,7 @@ function Ring(props: {
     <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
       <G rotation={-90} origin={`${c}, ${c}`}>
         <Circle cx={c} cy={c} r={r} fill="none" stroke={track} strokeWidth={stroke} />
-        {arc(arcs.project, 0, props.warn ? color.need : color.t1)}
+        {arc(arcs.project, 0, props.focusColor)}
         {arc(arcs.others, arcs.project, others)}
       </G>
     </Svg>
@@ -78,7 +90,7 @@ export function UsageBadge(props: { readonly projectId: ProjectId; readonly onPr
         opacity: pressed ? 0.6 : 1
       })}
     >
-      <Ring size={26} stroke={4} arcs={badge.arcs} warn={badge.nearLimit} />
+      <UsageRing size={26} stroke={4} arcs={badge.arcs} focusColor={badge.nearLimit ? color.need : color.t1} />
       <View style={{ alignItems: "flex-end" }}>
         <Text
           style={{
@@ -201,59 +213,13 @@ function Body(props: { readonly view: SheetView; readonly title: string }) {
   return (
     <>
       {view.hero ? <Hero hero={view.hero} title={props.title} /> : null}
-      {view.callout ? (
-        <Text
-          style={{
-            marginTop: 16,
-            paddingVertical: 12,
-            paddingHorizontal: 14,
-            borderRadius: 16,
-            borderCurve: "continuous",
-            borderWidth: 1,
-            borderColor: color.needLine,
-            backgroundColor: color.needBg,
-            overflow: "hidden",
-            fontSize: 14,
-            lineHeight: 19.6,
-            color: color.t1
-          }}
-        >
-          <Text style={{ color: color.need, fontWeight: "600" }}>{view.callout.left}</Text>
-          {view.callout.rest}
-        </Text>
-      ) : null}
+      {view.callout ? <LimitCallout callout={view.callout} /> : null}
       <Periods periods={view.periods} />
       {view.windows.length > 0 ? (
         <>
           <SectionHeading>{view.windowsTitle}</SectionHeading>
           {view.windows.map((w) => (
-            <View key={w.label} style={{ paddingTop: 7, paddingBottom: 2 }}>
-              <View style={{ flexDirection: "row", alignItems: "baseline" }}>
-                <Text style={{ fontSize: 14.5, fontWeight: "600", color: color.t1, letterSpacing: -0.15 }}>
-                  {w.label}
-                </Text>
-                <Text style={{ fontSize: 13, color: color.t2, marginLeft: 8, fontVariant: ["tabular-nums"] }}>
-                  {w.used}
-                </Text>
-                {w.resets ? (
-                  <Text style={{ fontSize: 13, color: color.t3, marginLeft: "auto" }}>{w.resets}</Text>
-                ) : null}
-              </View>
-              <View
-                style={{
-                  flexDirection: "row",
-                  height: 6,
-                  borderRadius: 3,
-                  overflow: "hidden",
-                  backgroundColor: "rgba(255,255,255,0.09)",
-                  gap: 2,
-                  marginTop: 9
-                }}
-              >
-                <View style={{ width: `${w.project * 100}%`, backgroundColor: w.nearLimit ? color.need : color.t1 }} />
-                <View style={{ width: `${w.others * 100}%`, backgroundColor: "rgba(255,255,255,0.32)" }} />
-              </View>
-            </View>
+            <WindowBar key={w.label} bar={w} focusColor={w.nearLimit ? color.need : color.t1} />
           ))}
         </>
       ) : null}
@@ -261,14 +227,16 @@ function Body(props: { readonly view: SheetView; readonly title: string }) {
         <>
           <SectionHeading>This week, across your projects</SectionHeading>
           {view.projects.map((p) => (
-            <ProjectRow key={p.key} row={p} warn={p.current && view.hero?.nearLimit === true} />
+            <ShareRow
+              key={p.key}
+              row={p}
+              focusColor={p.current && view.hero?.nearLimit === true ? color.need : color.t1}
+            />
           ))}
         </>
       ) : null}
       {/* With nothing measured yet there are no shares to explain. */}
-      {view.hero || view.projects.length > 0 ? (
-        <Text style={{ fontSize: 12.5, lineHeight: 18, color: color.t3, marginTop: 10 }}>{view.footnote}</Text>
-      ) : null}
+      {view.hero || view.projects.length > 0 ? <Footnote>{view.footnote}</Footnote> : null}
     </>
   )
 }
@@ -297,7 +265,7 @@ function Hero(props: { readonly hero: NonNullable<SheetView["hero"]>; readonly t
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 20, marginTop: 16, marginBottom: 2 }}>
       <View style={{ width: 118, height: 118 }}>
-        <Ring size={118} stroke={14} arcs={hero.arcs} warn={hero.nearLimit} />
+        <UsageRing size={118} stroke={14} arcs={hero.arcs} focusColor={hero.nearLimit ? color.need : color.t1} />
         <View style={[StyleSheet.absoluteFill, { alignItems: "center", justifyContent: "center" }]}>
           <Text
             style={{
@@ -378,7 +346,69 @@ function Periods(props: { readonly periods: SheetView["periods"] }) {
   )
 }
 
-function SectionHeading(props: { readonly children: string }) {
+/**
+ * One window: its name, how full it is and when it resets, over a bar of the part in focus (this project, or all
+ * their projects) in `focusColor`, then everything else's in grey.
+ */
+export function WindowBar(props: { readonly bar: WindowBarView; readonly focusColor: string }) {
+  const w = props.bar
+  return (
+    <View style={{ paddingTop: 7, paddingBottom: 2 }}>
+      <View style={{ flexDirection: "row", alignItems: "baseline" }}>
+        <Text style={{ fontSize: 14.5, fontWeight: "600", color: color.t1, letterSpacing: -0.15 }}>{w.label}</Text>
+        <Text style={{ fontSize: 13, color: color.t2, marginLeft: 8, fontVariant: ["tabular-nums"] }}>{w.used}</Text>
+        {w.resets ? <Text style={{ fontSize: 13, color: color.t3, marginLeft: "auto" }}>{w.resets}</Text> : null}
+      </View>
+      <View
+        style={{
+          flexDirection: "row",
+          height: 6,
+          borderRadius: 3,
+          overflow: "hidden",
+          backgroundColor: "rgba(255,255,255,0.09)",
+          gap: 2,
+          marginTop: 9
+        }}
+      >
+        <View style={{ width: `${w.focus * 100}%`, backgroundColor: props.focusColor }} />
+        <View style={{ width: `${w.others * 100}%`, backgroundColor: "rgba(255,255,255,0.32)" }} />
+      </View>
+    </View>
+  )
+}
+
+/** Near the limit: "8% of your week is left" in amber, then until when and what happens. */
+export function LimitCallout(props: { readonly callout: { readonly left: string; readonly rest: string } }) {
+  return (
+    <Text
+      style={{
+        marginTop: 16,
+        paddingVertical: 12,
+        paddingHorizontal: 14,
+        borderRadius: 16,
+        borderCurve: "continuous",
+        borderWidth: 1,
+        borderColor: color.needLine,
+        backgroundColor: color.needBg,
+        overflow: "hidden",
+        fontSize: 14,
+        lineHeight: 19.6,
+        color: color.t1
+      }}
+    >
+      <Text style={{ color: color.need, fontWeight: "600" }}>{props.callout.left}</Text>
+      {props.callout.rest}
+    </Text>
+  )
+}
+
+/** What the figures rest on: exact tokens, estimated shares. */
+export function Footnote(props: { readonly children: string }) {
+  return <Text style={{ fontSize: 12.5, lineHeight: 18, color: color.t3, marginTop: 10 }}>{props.children}</Text>
+}
+
+/** A quiet heading over a group: "Your ChatGPT Pro", "This week, across your projects". */
+export function SectionHeading(props: { readonly children: string }) {
   return (
     <Text
       style={{
@@ -395,7 +425,11 @@ function SectionHeading(props: { readonly children: string }) {
   )
 }
 
-function ProjectRow(props: { readonly row: SheetView["projects"][number]; readonly warn: boolean }) {
+/**
+ * One project's share of the week (or Outside Dream's): its bar in grey, or in `focusColor` for the project whose
+ * sheet this is.
+ */
+export function ShareRow(props: { readonly row: ShareRowView; readonly focusColor: string }) {
   const { row } = props
   const tint = row.current ? color.t1 : color.t2
   return (
@@ -442,7 +476,7 @@ function ProjectRow(props: { readonly row: SheetView["projects"][number]; readon
             width: `${row.bar * 100}%`,
             height: "100%",
             borderRadius: 3,
-            backgroundColor: props.warn ? color.need : row.current ? color.t1 : "rgba(255,255,255,0.32)"
+            backgroundColor: row.current ? props.focusColor : "rgba(255,255,255,0.32)"
           }}
         />
       </View>
