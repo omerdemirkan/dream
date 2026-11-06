@@ -19,6 +19,8 @@ import type { ConfigContext, ExpoConfig } from "expo/config"
  * - DREAM_UPDATES_CERTIFICATE   the code signing certificate updates must verify against, default
  *                               certs/updates-certificate.pem (written by `scripts/updates.ts init`). Without
  *                               one the build has no over-the-air updates.
+ * - DREAM_UPDATES_ENABLED       "1" turns over-the-air updates on in a build that isn't for TestFlight (they're
+ *                               always on with DREAM_APS_ENVIRONMENT=production, and off otherwise)
  */
 const env = process.env
 const bundleId = env.DREAM_BUNDLE_ID ?? "build.omer.dream"
@@ -35,7 +37,10 @@ const updatesChannel =
   env.DREAM_UPDATES_CHANNEL ??
   (env.DREAM_APS_ENVIRONMENT === "production" ? "production" : backend === "fixtures" ? "fixtures" : "development")
 const updatesCertificate = env.DREAM_UPDATES_CERTIFICATE ?? "./certs/updates-certificate.pem"
-const updatesEnabled = existsSync(resolve(__dirname, updatesCertificate))
+// Only TestFlight builds take updates unless a build asks for them: a Debug build loads its JavaScript from Metro,
+// which doesn't sign it, and a Simulator build under test shouldn't have its JavaScript replaced by a published one.
+const updatesWanted = env.DREAM_APS_ENVIRONMENT === "production" || env.DREAM_UPDATES_ENABLED === "1"
+const updatesEnabled = updatesWanted && existsSync(resolve(__dirname, updatesCertificate))
 
 /** Google Sign-In returns to the reversed client id as a URL scheme. */
 const reversedClientId = (clientId: string) => clientId.split(".").reverse().join(".")
