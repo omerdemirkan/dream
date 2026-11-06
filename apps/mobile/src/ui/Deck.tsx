@@ -76,7 +76,7 @@ function Heading(props: {
       {props.tldr ? (
         <MarkdownText
           source={props.tldr}
-          numberOfLines={2}
+          numberOfLines={3}
           onClamp={track("tldr")}
           style={{ fontSize: 14.5, lineHeight: 20.6, color: color.t2, marginHorizontal: 2 }}
         />
