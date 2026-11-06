@@ -26,6 +26,8 @@ import {
   linkHost,
   linkLabel,
   linkMenuHeader,
+  needLine,
+  nowOnCard,
   sandboxKeyPath
 } from "@dream/domain"
 import { DateTime } from "effect"
@@ -109,27 +111,52 @@ export const integrations = (list: ReadonlyArray<Integration>): string => {
     .join("\n")
 }
 
-const media = (refs: ReadonlyArray<MediaRef>) => (refs.length === 0 ? "" : ` [${refs.map((ref) => ref.id).join(", ")}]`)
-
+/** The card, and what of it they see: what fits on its one line, the track, the amber needs, the opened view. */
 export const status = (card: StatusCard, now: DateTime.Utc): string => {
   const lines = [`Phase: ${card.phase} since ${time(card.phaseSince, now)}`]
   if (card.pausedUntil !== undefined) lines.push(`Paused for usage until ${time(card.pausedUntil, now)}`)
-  if (card.now !== undefined) lines.push(`Now: ${card.now}`)
-  if (card.justDid !== undefined) lines.push(`Just did: ${card.justDid}${media(card.media)}`)
-  if (card.next !== undefined) lines.push(`Next: ${card.next}`)
+  if (card.now === undefined) lines.push("Now: (none; the card shows the last thing you said in Chat instead)")
+  else {
+    const line = nowOnCard(card.now)
+    lines.push(
+      line.whole
+        ? `Now: "${card.now}" (fits the card's one line)`
+        : `Now: "${card.now}"\n  The card above their Chat cuts it to "${line.shown}"; it's whole only when they open the card.`
+    )
+  }
+  const current = card.milestones.findIndex((m) => m.state === "current")
+  if (current !== -1 && card.milestones.length > 1)
+    lines.push(`Track: ${current + 1} of ${card.milestones.length} (${card.milestones[current]?.title})`)
   if (card.milestones.length > 0) {
-    lines.push("Milestones:")
+    lines.push("Milestones, shown as title and date:")
     for (const milestone of card.milestones) {
       const mark = milestone.state === "done" ? "[x]" : milestone.state === "current" ? "[>]" : "[ ]"
-      const date = milestone.date === undefined ? "" : ` (${DateTime.formatIso(milestone.date).slice(0, 10)})`
-      lines.push(`  ${mark} ${milestone.title}${date}${milestone.detail === undefined ? "" : ` - ${milestone.detail}`}`)
+      const date =
+        milestone.state === "current"
+          ? " · Now"
+          : milestone.date === undefined
+            ? ""
+            : ` · ${DateTime.formatIso(milestone.date).slice(0, 10)}`
+      lines.push(`  ${mark} ${milestone.title}${date}`)
       for (const need of milestone.needs) {
         lines.push(
-          `      needs: ${need.what}${need.when === undefined ? "" : ` (${need.when})`}${need.messageId === undefined ? "" : ` -> ${need.messageId}`}`
+          need.messageId === undefined
+            ? `      need "${need.what}"${need.when === undefined ? "" : ` (${need.when})`}: not shown until you link it to a question or access request (messageId)`
+            : `      need: amber "${needLine(need.what)}" while ${need.messageId} is open`
         )
       }
     }
   }
+  if (card.media.length > 0)
+    lines.push(
+      `Media when they open the card: ${card.media.map((ref) => (ref.caption ? `"${ref.caption}"` : ref.id)).join(", ")}`
+    )
+  const unseen = [
+    card.justDid === undefined ? undefined : "just did",
+    card.next === undefined ? undefined : "next",
+    card.milestones.some((m) => m.detail !== undefined) ? "milestone details" : undefined
+  ].filter((x) => x !== undefined)
+  if (unseen.length > 0) lines.push(`Not shown in the app: ${unseen.join(", ")}.`)
   return lines.join("\n")
 }
 

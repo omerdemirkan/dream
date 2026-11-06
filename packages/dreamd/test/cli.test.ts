@@ -8,7 +8,7 @@ import { CliOutput, Command } from "effect/cli"
 import { FetchHttpClient } from "effect/http"
 import { dream } from "../src/Cli.ts"
 import { Dream } from "../src/cli/Client.ts"
-import { accessRequested, integrations, linkAdded, pageCheck } from "../src/cli/Format.ts"
+import { accessRequested, integrations, linkAdded, pageCheck, status } from "../src/cli/Format.ts"
 import * as Fx from "@dream/domain/fixtures"
 import { PageCheck, PageLoad } from "../src/cli/PageCheck.ts"
 import {
@@ -503,4 +503,17 @@ describe("dream link", () => {
       assert.notInclude(yield* add("--title", "Cabin", "--icon", "house", "--color", "green"), "--")
     })
   )
+})
+
+describe("dream status", () => {
+  it("echoes what the card shows: the now line as cut, the track, needs, and what's not shown", () => {
+    const now = DateTime.makeUnsafe("2026-11-04T22:12:00Z")
+    const out = status(Fx.liftLogStatus, now)
+    assert.include(out, "The card above their Chat cuts it to")
+    assert.include(out, "Track: 3 of 5 (Progress charts)")
+    assert.include(out, 'need: amber "Needs your Apple Developer account" while msg_apple is open')
+    assert.include(out, "Not shown in the app: just did, next.")
+    const short = status({ ...Fx.liftLogStatus, now: "Building the charts" }, now)
+    assert.include(short, `Now: "Building the charts" (fits the card's one line)`)
+  })
 })

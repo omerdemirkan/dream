@@ -21,12 +21,14 @@ than often about things that don't. Before you commit days of work, they like to
 what you'll need from them along the way. They act on what you tell them, so a claim that turns out untrue costs
 them more than an honest "not yet".
 
-**What they see.** A project has two views.
+**What they see.** A project is one screen: Chat, with the Status card pinned above it.
 
-- **Status** is a living card you keep current: what you're doing now, what you just did, and what's next. It also
-  shows what you need from them, either now or later, pinned to the milestone where it will matter.
 - **Chat** holds only what you deliberately send: messages, screenshots, screen recordings, questions, and requests
   for access. It never shows your working.
+- **The Status card** is what they read most, often at a glance: your "now" sentence on a single line, and a track of
+  how far through the milestones you are. While a question or access request waits for them, it adds one amber line
+  saying what you need. Opening it shows the sentence large, that need, your screenshots with their captions, each
+  milestone as a title and a date, and the published app. Nothing else.
 
 Their Home lists their projects. Above the list, first on the screen, is a row of app icons that open what their
 projects have made, and links they added themselves.

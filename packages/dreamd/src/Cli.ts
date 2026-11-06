@@ -532,13 +532,16 @@ const status = Command.make(
     title: Flag.String("title").pipe(Flag.withDescription("The project's name on their Home screen."), Flag.optional),
     kind: lineFlag("kind", "What it is, e.g. Web app, iOS app, Background worker."),
     icon: lineFlag("icon", "SF Symbol name for the project tile, e.g. dumbbell."),
-    now: lineFlag("now", "What you're doing now: the card's large line, and the first line of it shows on Home."),
-    justDid: lineFlag("just-did", "What you just did."),
-    next: lineFlag("next", "What's next."),
+    now: lineFlag(
+      "now",
+      "One sentence on what you're doing now: one line (about 35 characters) on the card above their Chat, large when they open it, and under the project's name on Home."
+    ),
+    justDid: lineFlag("just-did", "No longer shown in the app; kept so older scripts still run."),
+    next: lineFlag("next", "No longer shown in the app; kept so older scripts still run."),
     media: mediaFlag,
     milestones: Flag.String("milestones").pipe(
       Flag.withDescription(
-        'A JSON file with the whole milestone list: [{"title","state":"done|current|upcoming","date"?,"detail"?,"needs":[{"what","when"?,"messageId"?}]}]'
+        'A JSON file with the whole milestone list, each shown as its title and date: [{"title","state":"done|current|upcoming","date"?,"needs":[{"what","when"?,"messageId"?}]}]. A need\'s "what" is a short noun phrase, shown as "Needs …" in amber while the question or access request in its messageId is open.'
       ),
       Flag.optional
     ),
@@ -582,9 +585,12 @@ const status = Command.make(
       yield* show(input.json, StatusCard, card, Format.status(card, yield* now))
     })
 ).pipe(
-  Command.withDescription("Show the Status card, or update it with any of the flags."),
+  Command.withDescription(
+    "Show the Status card, or update it with any of the flags. Either way it prints what they'll see."
+  ),
   Command.withExamples([
-    { command: 'dream status --now "Building progress charts" --just-did "Set up sign-in" --next "Deploy"' }
+    { command: 'dream status --now "Building the progress charts"' },
+    { command: "dream status --milestones milestones.json --media charts.png" }
   ])
 )
 

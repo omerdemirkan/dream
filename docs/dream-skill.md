@@ -22,8 +22,8 @@ this sandbox, including the apps you build. `dream <command> --help` lists every
     options and what each costs them, `--context` adds it in markdown at body size: the card shows its first few
     lines, and all of it when they open the card. `--meanwhile` says what you'll keep doing.
   - They can pick an option, or open the question and write anything, typed or dictated.
-  - Their answer arrives as an event. Until they answer, the card stays open in the project, on its Status card as
-    well as in Chat, and their Home screen marks the project as waiting for them.
+  - Their answer arrives as an event. Until they answer, the card stays open in Chat, the Status card carries an
+    amber line for it, and their Home screen marks the project as waiting for them.
   - Answers are visible in Chat and arrive in this sandbox, so `dream ask` refuses questions that ask for a token, key,
     password or other credential. Ask for those with `dream access`. `--not-a-secret` sends a question that only
     mentions one.
@@ -85,9 +85,14 @@ this sandbox, including the apps you build. `dream <command> --help` lists every
 
 ## Status
 
-- `dream status` updates the Status card: now, just did, next, and milestones. Each milestone can carry needs, meaning
-  what you'll need from them and roughly when. "Now" is the card's large line, and their Home screen shows its first
-  line under the project's name.
+- `dream status` updates the Status card above their Chat, and prints what they'll see of it.
+  - `--now` is one sentence, and the card gives it one line: about 35 characters before it’s cut. It's large when they
+    open the card, and it's also the line under the project's name on Home.
+  - `--milestones` shows each milestone as its title and a date, so the titles carry the meaning ("Voice review
+    mode", not "Phase 2"). A need on a milestone, with the id of the question or access request that covers it, is
+    one short amber phrase on the card while that request is open, such as "Needs your OpenAI API key" from "Your
+    OpenAI API key".
+  - `--media` shows screenshots and recordings with their captions when they open the card.
   - `--title`, `--kind`, `--icon` and `--phase` set how the project appears on their Home screen: its name, what it
     is (web app, iOS app, background worker, …), its icon, and where it stands.
 - `dream live start|update|end` controls a Live Activity on their lock screen and Dynamic Island, for a stretch when
