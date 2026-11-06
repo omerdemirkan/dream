@@ -5,9 +5,10 @@
  *
  * Where they have an app link to the host, the gateway also makes Safari's Add to Home Screen come out right: it
  * serves a web app manifest and a touch icon from the link's title and tile (under `DreamAssets`), points the
- * app's HTML at them, and, when Dream opened the page for this, shows Safari's steps once.
+ * app's HTML at them, and, when Dream opened the page for this, shows Safari's steps once. The same title and tile
+ * become the page's link preview (Messages, WhatsApp) where the app sets no Open Graph title or image of its own.
  */
-import type { Element, HTMLRewriter as Rewriter } from "@cloudflare/workers-types"
+import type { Element, EndTag, HTMLRewriter as Rewriter } from "@cloudflare/workers-types"
 import type { LinkId, ProjectId, UserId } from "@dream/domain"
 import { linkPath } from "@dream/domain"
 import { Clock, Effect, Option } from "effect"
@@ -230,6 +231,21 @@ export const homeScreenHead = (
   return { first, last }
 }
 
+/** Open Graph tags from their link, for a preview of the page, where the page doesn't set its own. */
+export const previewTags = (
+  link: { readonly id: LinkId; readonly title: string },
+  options: {
+    readonly origin: string
+    readonly hasIcon: boolean
+    readonly ownTitle: boolean
+    readonly ownImage: boolean
+  }
+): string =>
+  (options.ownTitle ? "" : `<meta property="og:title" content="${escapeHtml(link.title)}">`) +
+  (options.ownImage || !options.hasIcon
+    ? ""
+    : `<meta property="og:image" content="${options.origin}${DreamAssets}icon/${link.id}.png">`)
+
 /**
  * Takes the marker out of the address bar before the app's scripts run (so the icon they add opens the plain URL),
  * then points at Safari's ••• until they tap the page, or for 20 seconds (a tap on Safari's own bar doesn't reach it).
@@ -260,7 +276,14 @@ const withHomeScreenHead = (host: string, ownerId: UserId, url: URL, response: R
     if (link === undefined) return response
     const head = homeScreenHead(link, { hasIcon: link.hasIcon, hint })
     const replaced = head.last.length > 0
+    const own = { title: false, image: false }
     return new HTMLRewriter()
+      .on('meta[property="og:title"], meta[property="og:image"]', {
+        element: (element: Element) => {
+          if (element.getAttribute("property") === "og:title") own.title = true
+          else own.image = true
+        }
+      })
       .on(
         'link[rel~="apple-touch-icon"], link[rel~="apple-touch-icon-precomposed"], link[rel~="manifest"], meta[name="apple-mobile-web-app-title"]',
         {
@@ -274,6 +297,16 @@ const withHomeScreenHead = (host: string, ownerId: UserId, url: URL, response: R
         element: (element: Element) => {
           if (head.first.length > 0) element.prepend(head.first, { html: true })
           element.append(head.last, { html: true })
+          // At </head>, once the page's own tags have gone by.
+          element.onEndTag((end: EndTag) => {
+            const tags = previewTags(link, {
+              origin: `https://${host}`,
+              hasIcon: link.hasIcon,
+              ownTitle: own.title,
+              ownImage: own.image
+            })
+            if (tags.length > 0) end.before(tags, { html: true })
+          })
         }
       })
       .transform(response as never) as unknown as Response

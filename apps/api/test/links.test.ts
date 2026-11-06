@@ -5,7 +5,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { type AgentEvent, DaemonEnvFile, type ProjectId, RequestId } from "@dream/domain"
 import { Effect, Redacted } from "effect"
-import { DreamAssets, gateway, homeScreenHead, linkForPath } from "../src/http/Gateway.ts"
+import { DreamAssets, gateway, homeScreenHead, linkForPath, previewTags } from "../src/http/Gateway.ts"
 import { makeCloud } from "./support/Cloud.ts"
 
 const claudeUrl =
@@ -234,6 +234,16 @@ describe("app links", () => {
     assert.notInclude(hinted.first.slice(8, -9), "</script>")
     // The script is valid JavaScript.
     assert.doesNotThrow(() => new Function(hinted.first.slice("<script>".length, -"</script>".length)))
+  })
+
+  it("gives the page a preview title and image where it has none of its own", () => {
+    const link = { id: "lnk_a" as never, title: `Tom's <Lifts>` }
+    const origin = "https://lift-ab12.example.com"
+    const both = previewTags(link, { origin, hasIcon: true, ownTitle: false, ownImage: false })
+    assert.include(both, '<meta property="og:title" content="Tom&#39;s &lt;Lifts&gt;">')
+    assert.include(both, `<meta property="og:image" content="${origin}${DreamAssets}icon/lnk_a.png">`)
+    assert.notInclude(previewTags(link, { origin, hasIcon: false, ownTitle: false, ownImage: false }), "og:image")
+    assert.strictEqual(previewTags(link, { origin, hasIcon: true, ownTitle: true, ownImage: true }), "")
   })
 
   it("matches a page to the link with the longest path", () => {

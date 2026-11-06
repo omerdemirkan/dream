@@ -106,10 +106,11 @@ App links (Deck v3 option A, "Dock"): the row of app icons under Home's header. 
 made by agents, Cabin's still new with its dot, and Train times added by the person). `links-empty` shows the empty
 state, `links-new` adds a sixth and seventh so the row scrolls. `/?sheet=add` opens the add sheet; with launch
 arguments, `-dreamRoute "/?sheet=icon&link=lnk_traintimes"` and `"/?sheet=home-screen&link=lnk_cabin"` open Change
-icon and Add to Home Screen. Holding an icon opens its context menu (Open, Add to Home Screen, Rename, Change icon,
-Copy link, Remove). There's no photo picker in this build, so the person's icons are an SF Symbol or an emoji on one
-of ten colours; Add to Home Screen draws the tile as a png (react-native-svg's `toDataURL`) for the gateway to serve
-as the touch icon.
+icon and Add to Home Screen. Holding an icon opens its context menu (Open, Share, Add to Home Screen, Rename, Change
+icon, Remove); Share is React Native's `Share`, iOS's share sheet with the link and its name. There's no photo
+picker in this build, so the person's icons are an SF Symbol or an emoji on one of ten colours; Add to Home Screen
+draws the tile as a png (react-native-svg's `toDataURL`) for the gateway to serve as the touch icon, and as the
+link preview's image when the page has none.
 
 Holding a project on Home opens iOS's context menu (expo-router's `Link.Menu`) with Archive and Delete. Archive
 takes it off Home at once with Undo in the toast; Settings lists archived projects with Restore and Delete. Delete

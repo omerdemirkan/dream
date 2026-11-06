@@ -192,7 +192,7 @@ project gets three at most. A tap opens the page full screen inside Dream.
     sits among icons like their real apps', where one clear glyph reads best.
   - Until they first open it, a small dot sits before the label, as on a newly installed app.
   - That's all the row shows. Holding a tile lifts it and opens a menu headed "Made by" and this project's name, over
-    the link's host, with Open, Add to Home Screen, Rename, Change icon, Copy link and Remove.
+    the link's host, with Open, Share, Add to Home Screen, Rename, Change icon and Remove.
   - Every `dream link` command prints what they'll see: the label as it shows, the tile, and the menu's header.
 - They can rename a link, change its icon to a symbol or emoji and a colour, or remove it, and you get an event when
   they do. What they changed stays theirs: `dream link update` can't change it back, and this project can't add a URL
@@ -200,6 +200,9 @@ project gets three at most. A tap opens the page full screen inside Dream.
 - Add to Home Screen puts a link on their iPhone's own Home Screen, through Safari, as a web app that opens full
   screen. For your published URL, Dream gives Safari the link's title and tile, so they become your app's name and
   icon on their phone. A link to another site gets that site's own name and icon.
+- Share sends the link through Messages, WhatsApp, Mail and the like, and the preview the recipient sees comes from
+  the page's Open Graph tags. Where your published page sets no `og:title` or `og:image`, Dream uses the link's title
+  and tile, so set your own only when you have better, such as a 1200×630 image of the app, with `og:description`.
 - An archived project's links leave their Home until it's restored, and a deleted project's links go with it.
 
 ## Beyond this sandbox
