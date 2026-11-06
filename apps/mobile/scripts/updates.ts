@@ -33,7 +33,7 @@
  */
 import { spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -194,6 +194,7 @@ const init = async () => {
   const result = await call(UpdatesCertificate, Routes.updatesSigningKey, { method: "POST", body: "{}" })
   if (existsSync(certificatePath) && readFileSync(certificatePath, "utf8") !== result.certificatePem)
     fail(`${certificatePath} isn't the Worker's certificate. Builds embed it, so it's never replaced here.`)
+  mkdirSync(dirname(certificatePath), { recursive: true })
   writeFileSync(certificatePath, result.certificatePem)
   log(result.created ? "Created the signing key on the Worker." : "The Worker already had its signing key.")
   log(`Certificate: ${certificatePath}. Commit it; the next build embeds it and is the baseline for updates.`)
