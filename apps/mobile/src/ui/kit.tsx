@@ -40,6 +40,7 @@ const glyphs = {
   up: "arrow.up",
   check: "checkmark",
   chev: "chevron.right",
+  chevDown: "chevron.down",
   lock: "lock",
   clock: "clock",
   key: "key",

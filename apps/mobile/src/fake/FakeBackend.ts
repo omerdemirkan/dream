@@ -50,6 +50,7 @@ import { TolerantMessage } from "../data/Tolerant.ts"
 import {
   type FixtureWorld,
   cabinHold,
+  longChat,
   longQuestion,
   makeWorld,
   newIntegrationId,
@@ -91,7 +92,8 @@ export const Scenario = [
   "archived",
   "ask-series",
   "links-empty",
-  "links-new"
+  "links-new",
+  "long-chat"
 ] as const
 export type Scenario = (typeof Scenario)[number]
 
@@ -1139,6 +1141,16 @@ export class FakeBackend extends Context.Service<
             const cabin = Array.from(records.values()).find((r) => r.project.slug === "cabin")
             if (!cabin || cabin.messages.some((m) => m.id === "msg_cabinhold")) return
             return yield* setMessage(cabin, cabinHold(cabin.project.id, now))
+          }
+          case "long-chat": {
+            // Lift Log: an afternoon of messages before the Health import, so Chat has history to read back through.
+            const lift = Array.from(records.values()).find((r) => r.project.slug === "lift-log")
+            const update = lift?.messages.find((m) => m.id === "msg_liftimport")
+            if (!lift || !update || lift.messages.some((m) => m.id === "msg_long1")) return
+            const added = longChat(lift.project.id, update.createdAt)
+            const at = lift.messages.indexOf(update)
+            lift.messages = [...lift.messages.slice(0, at), ...added, ...lift.messages.slice(at)]
+            return yield* emit(lift, snapshotOf(lift))
           }
           case "activity-sent":
             return yield* liftStage("sent", now)

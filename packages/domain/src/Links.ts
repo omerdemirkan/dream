@@ -151,12 +151,23 @@ const widthOf = (text: string) => [...text].reduce((sum, char) => sum + charWidt
  * What the label under the tile reads: the whole title when it fits on the one line, else as much as fits and
  * "…". An estimate (the phone measures the real text), close enough to tell an agent whether a name reads whole.
  */
-export const linkLabel = (title: string): { readonly shown: string; readonly whole: boolean } => {
-  if (widthOf(title) <= labelWidth) return { shown: title, whole: true }
-  const chars = [...title]
+export const linkLabel = (title: string): { readonly shown: string; readonly whole: boolean } =>
+  fitLine(title, labelWidth, 12)
+
+/**
+ * `text` on one line `width` points wide in the system font at `size` points: whole, or as much as fits and "…".
+ * An estimate, close enough to tell an agent whether its words read whole.
+ */
+export const fitLine = (
+  text: string,
+  width: number,
+  size: number
+): { readonly shown: string; readonly whole: boolean } => {
+  const room = (width * 12) / size
+  if (widthOf(text) <= room) return { shown: text, whole: true }
   let shown = ""
-  for (const char of chars) {
-    if (widthOf(`${shown}${char}…`) > labelWidth) break
+  for (const char of [...text]) {
+    if (widthOf(`${shown}${char}…`) > room) break
     shown += char
   }
   return { shown: `${shown.trimEnd()}…`, whole: false }

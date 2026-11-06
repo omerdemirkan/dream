@@ -1,5 +1,5 @@
 /**
- * The Chat tab: only what Dream chose to send, and what they send. Sparse by
+ * Chat: only what Dream chose to send, and what they send. Sparse by
  * design; long gaps are normal. One row at the bottom says whether the agent is
  * up (sent, starting, working, done for now), and a receipt under their latest
  * message says whether it has been seen.
@@ -133,6 +133,8 @@ export function ChatTab(props: {
   readonly bottomInset: number
   /** How much less than the keyboard's height the messages lift, as the composer does (`KeyboardStickyView`). */
   readonly keyboardOffset: number
+  /** Told when they scroll back through history (`true`) and when they're back near the latest (`false`). */
+  readonly onAway?: (away: boolean) => void
 }) {
   const { state } = props
   const projectId = state.project.id
@@ -144,6 +146,7 @@ export function ChatTab(props: {
   const positions = useRef(new Map<MessageId, { y: number; height: number }>())
   const viewport = useRef(0)
   const nearBottom = useRef(true)
+  const away = useRef(false)
   const loadingEarlier = useRef(false)
   const [highlights, setHighlights] = useState<ReadonlyMap<MessageId, number>>(new Map())
   const landed = useRef(false)
@@ -195,7 +198,14 @@ export function ChatTab(props: {
 
   const onScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent
-    nearBottom.current = contentOffset.y + layoutMeasurement.height > contentSize.height - 160
+    const fromBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height)
+    nearBottom.current = fromBottom < 160
+    // Some slack each way, so the Status card doesn't flicker between sizes around one point.
+    const isAway = away.current ? fromBottom > 90 : fromBottom > 300
+    if (isAway !== away.current) {
+      away.current = isAway
+      props.onAway?.(isAway)
+    }
     if (contentOffset.y < 200 && state.hasEarlierMessages && !loadingEarlier.current) {
       loadingEarlier.current = true
       loadEarlier(projectId)

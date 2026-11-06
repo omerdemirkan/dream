@@ -10,6 +10,8 @@ import {
   linkLabel,
   linkMenuHeader,
   linkPath,
+  needLine,
+  nowOnCard,
   LinkTitle,
   LinkUrl,
   linkUrlProblem,
@@ -114,5 +116,14 @@ describe("app links", () => {
       AgentEvent.cases.LinkEdited.make({ ...fields, title: "Lift Log", change: "icon", tile: "🏋️ on a red tile" })
     )
     assert.strictEqual(decoded._tag, "LinkEdited")
+  })
+})
+
+describe("the Status card's lines", () => {
+  it("cuts a long now sentence and phrases a need", () => {
+    assert.isTrue(nowOnCard("Building the charts").whole)
+    assert.isFalse(nowOnCard("Building progress charts for squat, bench and deadlift, then the rest timer").whole)
+    assert.strictEqual(needLine("Your OpenAI API key"), "Needs your OpenAI API key")
+    assert.strictEqual(needLine("Google Calendar"), "Needs Google Calendar")
   })
 })
