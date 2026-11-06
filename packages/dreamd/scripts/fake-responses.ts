@@ -5,7 +5,12 @@
  * MODE=limit, a 429 usage-limit error with the five-hour window full. A prompt
  * containing `SPAWN: <json>` first gets a `spawn_agent` call with that input
  * (say `{"task_name":"check","message":"say hi","model":"gpt-6-luna","reasoning_effort":"low"}`),
- * which needs a model with Codex's multi-agent tools (the gpt-6 family).
+ * which needs a model with Codex's multi-agent tools (the gpt-6 family), and
+ * then a `wait_agent` call, so the subagent works within the turn.
+ *
+ * Every response reports usage that says who asked, so a turn's reported tokens show what was counted: the
+ * agent's own requests 1,000 input (600 of it cached) and 10 output (4 reasoning); a subagent's (Codex told it
+ * it isn't the root agent) 50,000 input (40,000 cached) and 5,000 output (2,000 reasoning).
  *
  *   MODE=ok|limit node packages/dreamd/scripts/fake-responses.ts [port]     (default 18788)
  *
@@ -36,6 +41,7 @@ const sse = (events: ReadonlyArray<{ readonly type: string; readonly [key: strin
 type Tool = { readonly type?: string; readonly name?: string; readonly tools?: ReadonlyArray<Tool> }
 type Item = {
   readonly type: string
+  readonly name?: string
   readonly content?: ReadonlyArray<{ readonly text?: string }>
   readonly output?: unknown
   readonly tools?: ReadonlyArray<Tool>
@@ -49,7 +55,24 @@ const toolNames = (tools: ReadonlyArray<Tool>, prefix = ""): ReadonlyArray<strin
 
 let counter = 0
 
-const reply = (item: Record<string, unknown>) => {
+const usageOf = {
+  agent: {
+    input_tokens: 1_000,
+    input_tokens_details: { cached_tokens: 600 },
+    output_tokens: 10,
+    output_tokens_details: { reasoning_tokens: 4 },
+    total_tokens: 1_010
+  },
+  subagent: {
+    input_tokens: 50_000,
+    input_tokens_details: { cached_tokens: 40_000 },
+    output_tokens: 5_000,
+    output_tokens_details: { reasoning_tokens: 2_000 },
+    total_tokens: 55_000
+  }
+}
+
+const reply = (item: Record<string, unknown>, usage: (typeof usageOf)[keyof typeof usageOf]) => {
   const id = `resp_${++counter}`
   return sse([
     { type: "response.created", response: { id } },
@@ -58,13 +81,7 @@ const reply = (item: Record<string, unknown>) => {
       type: "response.completed",
       response: {
         id,
-        usage: {
-          input_tokens: 10,
-          input_tokens_details: { cached_tokens: 0 },
-          output_tokens: 2,
-          output_tokens_details: { reasoning_tokens: 0 },
-          total_tokens: 12
-        }
+        usage
       }
     }
   ])
@@ -88,7 +105,16 @@ createServer((request, response) => {
     const input = body.input ?? []
     const prompt = input.flatMap((item) => (item.type === "message" ? (item.content ?? []) : [])).map((c) => c.text)
     const outputs = input.filter((item) => item.type === "function_call_output").map((item) => String(item.output))
-    const spawn = outputs.length === 0 ? /SPAWN: (\{.+\})/.exec(prompt.join("\n")) : null
+    // A subagent is told it's a child (when it inherits its parent's conversation, which says it's `/root`), or
+    // that it's an agent in a team, not `/root`.
+    const said = (part: string) => prompt.some((text) => text?.includes(part))
+    const role =
+      said("newly spawned child agent") || (said("<multi_agent_role>") && !said("You are `/root`"))
+        ? "subagent"
+        : "agent"
+    const spawn = outputs.length === 0 && role === "agent" ? /SPAWN: (\{.+\})/.exec(prompt.join("\n")) : null
+    // Once its subagent started, the agent waits for it, so the subagent's requests fall inside the turn.
+    const wait = role === "agent" && input.findLast((item) => item.type === "function_call")?.name === "spawn_agent"
     console.log(
       JSON.stringify({
         method: request.method,
@@ -98,7 +124,8 @@ createServer((request, response) => {
         effort: body.reasoning?.effort,
         tools: toolNames([...(body.tools ?? []), ...input.flatMap((item) => item.tools ?? [])]).join(" "),
         outputs,
-        did: spawn !== null ? `spawn: ${spawn[1]}` : "reply"
+        role,
+        did: spawn !== null ? `spawn: ${spawn[1]}` : wait ? "wait" : "reply"
       })
     )
     if (request.url?.endsWith("/responses") !== true) {
@@ -128,12 +155,22 @@ createServer((request, response) => {
                 name: "spawn_agent",
                 arguments: spawn[1]
               }
-            : {
-                type: "message",
-                role: "assistant",
-                id: `msg_${counter + 1}`,
-                content: [{ type: "output_text", text: "hi there" }]
-              }
+            : wait
+              ? {
+                  type: "function_call",
+                  id: `fc_${counter + 1}`,
+                  call_id: `call_${counter + 1}`,
+                  namespace: "collaboration",
+                  name: "wait_agent",
+                  arguments: JSON.stringify({ timeout_ms: 30_000 })
+                }
+              : {
+                  type: "message",
+                  role: "assistant",
+                  id: `msg_${counter + 1}`,
+                  content: [{ type: "output_text", text: "hi there" }]
+                },
+          usageOf[role]
         )
       )
     }
