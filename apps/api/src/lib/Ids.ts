@@ -15,7 +15,8 @@ import {
   ProjectId,
   type RequestId,
   UserId,
-  WakeId
+  WakeId,
+  WorkstreamId
 } from "@dream/domain"
 import { Effect, Schema } from "effect"
 
@@ -47,6 +48,7 @@ export const newWakeId = make(WakeId, IdPrefix.wake)
 export const newIntegrationId = make(IntegrationId, IdPrefix.integration)
 export const newModelConnectionId = make(ModelConnectionId, IdPrefix.modelConnection)
 export const newLinkId = make(LinkId, IdPrefix.link)
+export const newWorkstreamId = make(WorkstreamId, IdPrefix.workstream)
 export const newBrowserSessionId = make(BrowserSessionId, IdPrefix.browserSession)
 export const newSecretId = (): Effect.Effect<string> => Effect.sync(() => `sec_${randomToken(22)}`)
 export const newNotificationId = (): Effect.Effect<NotificationId> =>

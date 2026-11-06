@@ -6,7 +6,16 @@
 import { DateTime } from "effect"
 import type { AgentEvent } from "./AgentEvent.ts"
 import type { Integration } from "./Connections.ts"
-import type { IntegrationId, LinkId, MediaId, MessageId, NotificationId, ProjectId, UserId } from "./Ids.ts"
+import type {
+  IntegrationId,
+  LinkId,
+  MediaId,
+  MessageId,
+  NotificationId,
+  ProjectId,
+  UserId,
+  WorkstreamId
+} from "./Ids.ts"
 import type { AppLink } from "./Links.ts"
 import type { MediaRef } from "./Media.ts"
 import type { AccessMessage, Message, QuestionMessage, TextMessage } from "./Message.ts"
@@ -14,6 +23,7 @@ import type { Project } from "./Project.ts"
 import type { StatusCard } from "./Status.ts"
 import type { ProjectUsage, UsageSnapshot } from "./Usage.ts"
 import type { User } from "./User.ts"
+import type { Workstream } from "./Workstream.ts"
 
 const at = (iso: string) => DateTime.makeUnsafe(iso)
 const ids = {
@@ -115,6 +125,46 @@ export const liftLogStatus: StatusCard = {
   ],
   updatedAt: at("2026-11-04T22:09:00Z")
 }
+
+/**
+ * Lift Log running three things at once (mocks/screens/workstreams, option A): the charts, the rest timer, and an
+ * Android question they asked in Chat; the Health import finished the day before.
+ */
+export const liftLogWorkstreams: ReadonlyArray<Workstream> = [
+  {
+    id: "ws_charts" as WorkstreamId,
+    title: "Progress charts",
+    now: "Charting estimated 1RM for each lift",
+    state: "active",
+    startedAt: at("2026-11-04T21:45:00Z"),
+    updatedAt: at("2026-11-04T22:09:00Z")
+  },
+  {
+    id: "ws_timer" as WorkstreamId,
+    title: "Rest timer",
+    now: "Wiring it into a Live Activity",
+    state: "active",
+    startedAt: at("2026-11-04T21:50:00Z"),
+    updatedAt: at("2026-11-04T22:05:00Z")
+  },
+  {
+    id: "ws_android" as WorkstreamId,
+    title: "Android?",
+    now: "Finding out what it would take",
+    state: "active",
+    startedAt: at("2026-11-04T22:06:00Z"),
+    updatedAt: at("2026-11-04T22:06:00Z")
+  },
+  {
+    id: "ws_health" as WorkstreamId,
+    title: "Health import",
+    state: "done",
+    result: "214 workouts from a sample export",
+    startedAt: at("2026-11-03T17:00:00Z"),
+    updatedAt: at("2026-11-04T21:40:00Z"),
+    endedAt: at("2026-11-04T21:40:00Z")
+  }
+]
 
 export const appleAccess: AccessMessage = {
   _tag: "Access",

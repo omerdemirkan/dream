@@ -5,7 +5,7 @@
  * for them. It folds to a single line while they read back through Chat or type, and opens over Chat into
  * `StatusRoadmap`.
  */
-import type { MilestoneState } from "@dream/domain"
+import type { MilestoneState, WorkstreamId } from "@dream/domain"
 import { useEffect, useRef, useState } from "react"
 import { type HostInstance, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native"
 import Animated, { Easing, interpolate, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated"
@@ -15,7 +15,7 @@ import type { ProjectState } from "../data/projectState.ts"
 import { useNow, useOpenMessage } from "./hooks.ts"
 import { Dot, Icon } from "./kit.tsx"
 import { NeedLine, StatusRoadmap } from "./Status.tsx"
-import { type CardView, cardOf, type Track } from "./statusView.ts"
+import { type CardView, cardOf, type RowsView, type RowView, type Track } from "./statusView.ts"
 import { bigTextScale, color, needGlow } from "./theme.ts"
 
 const easing = Easing.bezier(0.22, 0.8, 0.2, 1)
@@ -70,9 +70,172 @@ function TrackRow(props: { readonly track: Track; readonly paused: boolean }) {
   )
 }
 
-/** The card at its compact size: the sentence, the track, the need. */
-function Full(props: { readonly view: CardView }) {
+/** One workstream: its dot, its title, and where it stands, or in amber what it waits on them for. */
+function WorkstreamRow(props: {
+  readonly row: RowView
+  readonly first: boolean
+  readonly dimmed: boolean
+  readonly onScope: (id: WorkstreamId) => void
+}) {
+  const ref = useRef<HostInstance>(null)
+  const open = useOpenMessage()
+  const { row } = props
+  const waiting = row.waiting
+  const ink = waiting ? color.need : color.t1
+  return (
+    <Pressable
+      ref={ref}
+      accessibilityRole="button"
+      accessibilityLabel={`${row.title}${row.line ? `, ${row.line}` : ""}`}
+      accessibilityHint={waiting ? "Opens what it needs from you" : "Writes to this workstream"}
+      onPress={() =>
+        waiting
+          ? open({ projectId: waiting.projectId, messageId: waiting.id, message: waiting, from: ref })
+          : props.onScope(row.id)
+      }
+      style={({ pressed }) => ({
+        flexDirection: "row",
+        alignItems: "flex-start",
+        gap: 12,
+        paddingVertical: 10,
+        borderTopWidth: props.first ? 0 : 1,
+        borderColor: color.line,
+        opacity: pressed ? 0.6 : props.dimmed ? 0.45 : 1
+      })}
+    >
+      <View
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: 4,
+          marginTop: 7,
+          backgroundColor: ink,
+          boxShadow: `0 0 0 3px ${waiting ? color.needBg : "rgba(255,255,255,0.10)"}`
+        }}
+      />
+      <View style={{ flex: 1 }}>
+        <Text
+          numberOfLines={1}
+          maxFontSizeMultiplier={bigTextScale}
+          style={{ fontSize: 15.5, lineHeight: 21, fontWeight: "600", letterSpacing: -0.25, color: ink }}
+        >
+          {row.title}
+        </Text>
+        {row.line ? (
+          <Text
+            numberOfLines={1}
+            maxFontSizeMultiplier={bigTextScale}
+            style={{ fontSize: 14, lineHeight: 19, marginTop: 1, color: waiting ? color.need : color.t2 }}
+          >
+            {row.line}
+          </Text>
+        ) : null}
+      </View>
+    </Pressable>
+  )
+}
+
+/** The card while two or more workstreams are active: a row each, the rest summed up, what finished folded. */
+function Rows(props: {
+  readonly rows: RowsView
+  readonly need: CardView["looseNeed"]
+  readonly scope: WorkstreamId | undefined
+  readonly onScope: (id: WorkstreamId) => void
+}) {
+  const { rows } = props
+  return (
+    <View style={{ paddingLeft: 16, paddingRight: 16, paddingTop: 6, paddingBottom: 8 }}>
+      <View style={{ position: "absolute", top: 18, right: 16 }}>
+        <Chevron />
+      </View>
+      <View style={{ paddingRight: 22 }}>
+        {rows.rows.map((row, i) => (
+          <WorkstreamRow
+            key={row.id}
+            row={row}
+            first={i === 0}
+            dimmed={props.scope !== undefined && props.scope !== row.id}
+            onScope={props.onScope}
+          />
+        ))}
+      </View>
+      {rows.more ? (
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 12,
+            paddingVertical: 11,
+            borderTopWidth: 1,
+            borderColor: color.line
+          }}
+        >
+          <View style={{ width: 8, alignItems: "center" }}>
+            <View
+              style={{
+                width: 4,
+                height: 4,
+                borderRadius: 2,
+                backgroundColor: rows.more.waiting ? color.need : color.t3
+              }}
+            />
+          </View>
+          <Text numberOfLines={1} style={{ flex: 1, fontSize: 14, color: rows.more.waiting ? color.need : color.t2 }}>
+            {rows.more.text}
+          </Text>
+        </View>
+      ) : null}
+      {props.need ? (
+        <View style={{ paddingVertical: 11, borderTopWidth: 1, borderColor: color.line }}>
+          <NeedLine need={props.need} size="card" />
+        </View>
+      ) : null}
+      {rows.done ? (
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 10,
+            paddingTop: 10,
+            paddingBottom: 4,
+            borderTopWidth: 1,
+            borderColor: color.line
+          }}
+        >
+          <View
+            style={{
+              width: 16,
+              height: 16,
+              marginLeft: -4,
+              marginRight: -2,
+              borderRadius: 8,
+              backgroundColor: color.s3,
+              alignItems: "center",
+              justifyContent: "center"
+            }}
+          >
+            <Icon name="check" size={8} color={color.t2} weight="bold" />
+          </View>
+          <Text numberOfLines={1} style={{ flex: 1, fontSize: 13.5, color: color.t3 }}>
+            {rows.done.text}
+          </Text>
+          {rows.done.others > 0 ? (
+            <Text style={{ fontSize: 13, color: color.t3 }}>{`+${rows.done.others}`}</Text>
+          ) : null}
+        </View>
+      ) : null}
+    </View>
+  )
+}
+
+/** The card at its compact size: the sentence, the track, the need; or with workstreams, their rows. */
+function Full(props: {
+  readonly view: CardView
+  readonly scope: WorkstreamId | undefined
+  readonly onScope: (id: WorkstreamId) => void
+}) {
   const { view } = props
+  if (view.rows) return <Rows rows={view.rows} need={view.looseNeed} scope={props.scope} onScope={props.onScope} />
   const now = view.stand === "now"
   return (
     <View style={{ paddingHorizontal: 18, paddingTop: 16, paddingBottom: view.need ? 14 : 16 }}>
@@ -112,7 +275,7 @@ function Line(props: { readonly view: CardView; readonly working: boolean }) {
         numberOfLines={1}
         style={{ flex: 1, fontSize: 15, letterSpacing: -0.15, color: view.need ? color.need : color.t1 }}
       >
-        {view.need ? view.need.text : view.text}
+        {view.need ? view.need.text : view.rows ? view.rows.all.map((r) => r.title).join(", ") : view.text}
       </Text>
       {view.track ? (
         <Text style={{ fontSize: 13, color: color.t3 }}>{`${view.track.position} of ${view.track.states.length}`}</Text>
@@ -133,6 +296,10 @@ export function StatusCardPin(props: {
   readonly onRoadmap: () => void
   /** The unfolded card's height, which Chat keeps clear above its first message. */
   readonly onHeight: (height: number) => void
+  /** The workstream they're writing to, whose row stays bright. */
+  readonly scope?: WorkstreamId | undefined
+  /** Tapping a workstream's row writes to it. */
+  readonly onScope?: (id: WorkstreamId) => void
 }) {
   const now = useNow()
   const view = cardOf(props.state, now)
@@ -174,7 +341,7 @@ export function StatusCardPin(props: {
               props.onHeight(height)
             }}
           >
-            <Full view={view} />
+            <Full view={view} scope={props.scope} onScope={props.onScope ?? (() => {})} />
           </Animated.View>
           <Animated.View pointerEvents="none" style={[{ position: "absolute", left: 0, right: 0, top: 0 }, lineStyle]}>
             <Line view={view} working={props.state.working} />

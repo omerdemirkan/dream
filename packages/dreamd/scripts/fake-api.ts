@@ -28,7 +28,9 @@ import {
   type UsageSnapshot,
   type UserId,
   type Wake,
-  WakeId
+  WakeId,
+  type Workstream,
+  WorkstreamId
 } from "@dream/domain"
 import { NodeHttpServer, NodeRuntime } from "@effect/platform-node"
 import { DateTime, Effect, Layer, Option, Ref, Schema } from "effect"
@@ -57,6 +59,20 @@ const Handlers = SandboxRpcs.toLayer(
     const wakes = yield* Ref.make<ReadonlyArray<Wake>>([])
     const usage = yield* Ref.make<Option.Option<UsageSnapshot>>(Option.none())
     const links = yield* Ref.make<ReadonlyArray<AppLink>>([])
+    const workstreams = yield* Ref.make<ReadonlyArray<Workstream>>([])
+    const report = Effect.map(Ref.get(workstreams), (all) => ({ workstreams: all, waiting: [] }))
+    const changeWorkstream = (workstreamId: WorkstreamId, change: (w: Workstream, now: DateTime.Utc) => Workstream) =>
+      Effect.gen(function* () {
+        const now = yield* DateTime.now
+        const all = yield* Ref.get(workstreams)
+        if (!all.some((w) => w.id === workstreamId))
+          return yield* new NotFound({ entity: "workstream", id: workstreamId })
+        yield* Ref.set(
+          workstreams,
+          all.map((w) => (w.id === workstreamId ? change(w, now) : w))
+        )
+        return yield* report
+      })
     const about = { projectTitle: "Dev project", publicUrl: "https://dev-3000.dream.example" }
     const findLink = (linkId: LinkId) =>
       Effect.flatMap(Ref.get(links), (all) => {
@@ -77,7 +93,8 @@ const Handlers = SandboxRpcs.toLayer(
             id: MessageId.make(id("msg")),
             from: "agent" as const,
             text: payload.text,
-            media: []
+            media: [],
+            ...(payload.workstream === undefined ? {} : { workstream: payload.workstream })
           })
         ),
       AskQuestion: (payload) =>
@@ -105,6 +122,55 @@ const Handlers = SandboxRpcs.toLayer(
           })
         ),
       ListAccess: () => log("ListAccess", {}).pipe(Effect.as([])),
+      ListWorkstreams: () => log("ListWorkstreams", {}).pipe(Effect.andThen(report)),
+      StartWorkstream: (payload) =>
+        log("StartWorkstream", payload).pipe(
+          Effect.andThen(DateTime.now),
+          Effect.flatMap((now) =>
+            Ref.update(workstreams, (all) => [
+              ...all,
+              {
+                id: WorkstreamId.make(id("ws")),
+                title: payload.title,
+                ...(payload.now === undefined ? {} : { now: payload.now }),
+                state: "active" as const,
+                startedAt: now,
+                updatedAt: now
+              }
+            ])
+          ),
+          Effect.andThen(report)
+        ),
+      UpdateWorkstream: (payload) =>
+        log("UpdateWorkstream", payload).pipe(
+          Effect.andThen(
+            changeWorkstream(payload.workstreamId, ({ now: previous, ...w }, now) => {
+              const line = clear(payload.now, previous)
+              return {
+                ...w,
+                title: payload.title ?? w.title,
+                ...(line === undefined ? {} : { now: line }),
+                updatedAt: now
+              }
+            })
+          )
+        ),
+      EndWorkstream: (payload) =>
+        log("EndWorkstream", payload).pipe(
+          Effect.andThen(
+            changeWorkstream(payload.workstreamId, (w, now) => ({
+              ...w,
+              state: payload.state,
+              ...(payload.result === undefined ? {} : { result: payload.result }),
+              updatedAt: now,
+              endedAt: now
+            }))
+          )
+        ),
+      RouteMessage: (payload) =>
+        log("RouteMessage", payload).pipe(
+          Effect.andThen(Effect.fail(new NotFound({ entity: "message", id: payload.messageId })))
+        ),
       WithdrawNotification: (payload) => log("WithdrawNotification", payload),
       GetStatus: () => log("GetStatus", {}).pipe(Effect.andThen(Ref.get(status))),
       UpdateStatus: (payload) =>

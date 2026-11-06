@@ -5,7 +5,7 @@
  * Home while they are open.
  */
 import { Schema } from "effect"
-import { IntegrationId, MessageId, NotificationId, ProjectId } from "./Ids.ts"
+import { IntegrationId, MessageId, NotificationId, ProjectId, WorkstreamId } from "./Ids.ts"
 import { MediaRef } from "./Media.ts"
 
 const MessageFields = {
@@ -13,7 +13,12 @@ const MessageFields = {
   projectId: ProjectId,
   createdAt: Schema.DateTimeUtc,
   /** Set when this message was also sent as a push notification. */
-  notificationId: Schema.optionalKey(NotificationId)
+  notificationId: Schema.optionalKey(NotificationId),
+  /**
+   * The workstream it belongs to (`Workstream.ts`): the agent's `--work`, their reply into one, or the agent filing
+   * their message (`dream work route`). Added in November 2026; older apps ignore it.
+   */
+  workstream: Schema.optionalKey(WorkstreamId)
 }
 
 // ---------------------------------------------------------------------------

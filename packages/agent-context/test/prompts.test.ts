@@ -42,7 +42,7 @@ describe("renderTurnPrompt", () => {
 
 What woke you:
 
-[Wed, Nov 4, 2:02 PM] They wrote:
+[Wed, Nov 4, 2:02 PM] They wrote (msg_1rm):
 > Can the charts show estimated 1RM, not just the weight?
 
 [Wed, Nov 4, 2:05 PM] They answered your question msg_cabinrule, "When two relatives want the same weekend, who gets it?", "First to ask"
@@ -110,7 +110,7 @@ describe("renderSteerPrompt", () => {
 
 This arrived while you were working:
 
-[Wed, Nov 4, 2:02 PM] They wrote:
+[Wed, Nov 4, 2:02 PM] They wrote (msg_1rm):
 > Can the charts show estimated 1RM, not just the weight?
 `
     )

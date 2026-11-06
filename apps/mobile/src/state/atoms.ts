@@ -19,6 +19,7 @@ import {
   type ProjectId,
   type QuestionAnswer,
   type RequestId,
+  type WorkstreamId,
   type User
 } from "@dream/domain"
 import * as Application from "expo-application"
@@ -247,7 +248,13 @@ const received = (message: Message) =>
 
 /** `requestId` stays the same when they retry the same text, so a retry can't post it twice. */
 export const sendMessageFn = appRuntime.fn(
-  Effect.fn(function* (input: { readonly projectId: ProjectId; readonly text: string; readonly requestId: RequestId }) {
+  Effect.fn(function* (input: {
+    readonly projectId: ProjectId
+    readonly text: string
+    readonly requestId: RequestId
+    /** Written into one of the agent's workstreams. */
+    readonly workstream?: WorkstreamId
+  }) {
     const app = yield* AppClient
     const message = yield* app.SendMessage(input).pipe(withWriteTimeout)
     yield* received(message)

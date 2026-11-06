@@ -3,8 +3,17 @@
  * and an amber line while something waits for them. Before the agent writes any Status, the last thing it said
  * (or the early note) stands in for the sentence.
  */
-import type { AskMessage, Message, Milestone, MilestoneState, StatusCard, TextMessage } from "@dream/domain"
-import { needLine } from "@dream/domain"
+import type {
+  AskMessage,
+  Message,
+  Milestone,
+  MilestoneState,
+  StatusCard,
+  TextMessage,
+  Workstream,
+  WorkstreamId
+} from "@dream/domain"
+import { cardRows, doneLine, moreLine, needLine, workstreamWaits } from "@dream/domain"
 import { DateTime } from "effect"
 import type { ProjectState } from "../data/projectState.ts"
 import { unsupportedText } from "../data/Tolerant.ts"
@@ -25,6 +34,26 @@ export interface NeedView {
   readonly more: number
 }
 
+/** A workstream's row: its title, and where it stands, or what it waits on them for. */
+export interface RowView {
+  readonly id: WorkstreamId
+  readonly title: string
+  /** The workstream's line, or while it waits on them, what it asks (in amber). */
+  readonly line: string | undefined
+  readonly waiting: AskMessage | undefined
+}
+
+/** The card while two or more workstreams are active (`cardRows`): rows in place of the sentence and the track. */
+export interface RowsView {
+  readonly rows: ReadonlyArray<RowView>
+  /** The last row past the cap: "2 more: Android?, Onboarding". */
+  readonly more: { readonly text: string; readonly waiting: boolean } | undefined
+  /** The folded line for what finished lately. */
+  readonly done: { readonly text: string; readonly others: number } | undefined
+  /** Every active workstream, in the rows' order, for the opened card. */
+  readonly all: ReadonlyArray<RowView>
+}
+
 export interface CardView {
   /** The sentence: `now`, else what stands in for it. */
   readonly text: string
@@ -33,6 +62,47 @@ export interface CardView {
   readonly paused: boolean
   readonly track: Track | undefined
   readonly need: NeedView | undefined
+  /** Present while two or more workstreams are active; the card then shows these instead of the sentence. */
+  readonly rows: RowsView | undefined
+  /**
+   * With rows, the amber line under them: an open ask no waiting row stands for (one the agent sent outside any
+   * workstream).
+   */
+  readonly looseNeed: NeedView | undefined
+}
+
+/**
+ * What each workstream labels its messages with, while the card shows rows; with one active or none, nothing is
+ * labeled, as before workstreams.
+ */
+export const labelsOf = (status: StatusCard): ReadonlyMap<WorkstreamId, string> | undefined => {
+  const all = status.workstreams ?? []
+  if (all.filter((w) => w.state === "active").length < 2) return undefined
+  return new Map(all.map((w) => [w.id, w.title]))
+}
+
+const rowsOf = (status: StatusCard, messages: ReadonlyArray<Message>, now: DateTime.Utc): RowsView | undefined => {
+  const card = cardRows(status.workstreams, workstreamWaits(messages), now)
+  if (card === undefined) return undefined
+  const ask = (id: Message["id"] | undefined) =>
+    id === undefined ? undefined : messages.find((m): m is AskMessage => m.id === id && needsThem(m))
+  const row = (workstream: Workstream, waitingOn: Message["id"] | undefined): RowView => {
+    const waiting = ask(waitingOn)
+    return {
+      id: workstream.id,
+      title: workstream.title,
+      line: waiting ? askLine(waiting, status) : workstream.now,
+      waiting
+    }
+  }
+  const rows = card.rows.map((r) => row(r.workstream, r.waitingOn))
+  const more = card.more.map((r) => row(r.workstream, r.waitingOn))
+  return {
+    rows,
+    more: card.more.length === 0 ? undefined : { text: moreLine(card.more), waiting: more.some((r) => r.waiting) },
+    done: doneLine(card.done),
+    all: [...rows, ...more]
+  }
 }
 
 /** Before the agent writes a Status card: still looking into it, unless they've already answered something. */
@@ -72,12 +142,19 @@ export const cardOf = (state: ProjectState, now: DateTime.Utc): CardView => {
   const first = asks[0]
   const need = first ? { text: askLine(first, status), ask: first, more: asks.length - 1 } : undefined
   const paused = status.pausedUntil !== undefined && DateTime.isGreaterThan(status.pausedUntil, now)
+  const rows = rowsOf(status, messages, now)
+  const shownWaiting = new Set(rows?.all.flatMap((r) => (r.waiting ? [r.waiting.id] : [])) ?? [])
+  const loose = asks.filter((a) => !shownWaiting.has(a.id))
+  const looseNeed =
+    rows && loose[0] ? { text: askLine(loose[0], status), ask: loose[0], more: loose.length - 1 } : undefined
   const view = (text: string, stand: CardView["stand"]): CardView => ({
     text,
     stand,
     paused,
     track: trackOf(status.milestones),
-    need
+    need,
+    rows,
+    looseNeed
   })
   if (status.now) return view(status.now, "now")
   // Agents don't always write a Status card; then the last thing they said in Chat stands in for it.

@@ -17,7 +17,7 @@ import { useNow, useOpenMessage } from "./hooks.ts"
 import { Dot, Icon, Tile } from "./kit.tsx"
 import { LinkTile } from "./LinkTile.tsx"
 import { MediaStrip } from "./Media.tsx"
-import { cardOf, type NeedView } from "./statusView.ts"
+import { cardOf, type NeedView, type RowsView } from "./statusView.ts"
 import { bigTextScale, color } from "./theme.ts"
 
 /** The amber line, opening the ask it stands for. */
@@ -141,6 +141,69 @@ function PublishedApp(props: { readonly project: Project }) {
 
 const Rule = () => <View style={{ height: 1, backgroundColor: color.line, marginVertical: 18 }} />
 
+/** Every active workstream, whole, and what finished lately; only while the card shows rows. */
+function Workstreams(props: { readonly rows: RowsView }) {
+  return (
+    <View style={{ gap: 14 }}>
+      {props.rows.all.map((row) => (
+        <View key={row.id} style={{ flexDirection: "row", alignItems: "flex-start", gap: 13 }}>
+          <View
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: 4,
+              marginTop: 7,
+              marginHorizontal: 6.5,
+              backgroundColor: row.waiting ? color.need : color.t1
+            }}
+          />
+          <View style={{ flex: 1 }}>
+            <Text
+              style={{
+                fontSize: 16,
+                lineHeight: 21,
+                fontWeight: "600",
+                letterSpacing: -0.25,
+                color: row.waiting ? color.need : color.t1
+              }}
+            >
+              {row.title}
+            </Text>
+            {row.line ? (
+              <Text
+                numberOfLines={3}
+                style={{ fontSize: 14.5, lineHeight: 20, marginTop: 1, color: row.waiting ? color.need : color.t2 }}
+              >
+                {row.line}
+              </Text>
+            ) : null}
+          </View>
+        </View>
+      ))}
+      {props.rows.done ? (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 13 }}>
+          <View
+            style={{
+              width: 21,
+              height: 21,
+              borderRadius: 10.5,
+              backgroundColor: color.s3,
+              alignItems: "center",
+              justifyContent: "center"
+            }}
+          >
+            <Icon name="check" size={10} color={color.t2} weight="bold" />
+          </View>
+          <Text numberOfLines={2} style={{ flex: 1, fontSize: 14.5, color: color.t3 }}>
+            {props.rows.done.text}
+            {props.rows.done.others > 0 ? `  +${props.rows.done.others}` : ""}
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  )
+}
+
 /** Everything the Status card holds, shown when they open it over Chat. Tapping the sentence folds it. */
 export function StatusRoadmap(props: { readonly state: ProjectState; readonly onClose: () => void }) {
   const now = useNow()
@@ -185,6 +248,12 @@ export function StatusRoadmap(props: { readonly state: ProjectState; readonly on
         <View style={{ marginTop: 16 }}>
           <NeedLine need={view.need} size="open" chevron />
         </View>
+      ) : null}
+      {view.rows ? (
+        <>
+          <Rule />
+          <Workstreams rows={view.rows} />
+        </>
       ) : null}
       <MediaStrip media={status.media} inset={0} tile={{ width: 108, height: 190 }} />
       {status.milestones.length > 0 ? (

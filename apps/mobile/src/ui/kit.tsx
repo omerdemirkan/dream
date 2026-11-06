@@ -62,7 +62,8 @@ const glyphs = {
   link: "link",
   dots: "ellipsis",
   plusApp: "plus.app",
-  globe: "globe"
+  globe: "globe",
+  reply: "arrowshape.turn.up.left"
 } as const satisfies Record<string, SymbolViewProps["name"]>
 
 export type Glyph = keyof typeof glyphs

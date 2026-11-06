@@ -290,11 +290,15 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
           )
         }),
 
-      SendMessage: ({ projectId, text, requestId }) =>
+      SendMessage: ({ projectId, text, requestId, workstream }) =>
         Effect.gen(function* () {
           yield* owned(projectId)
           return yield* clients.use(projectId, (client) =>
-            client.SendUserMessage({ text, ...(requestId === undefined ? {} : { id: messageIdFor(requestId) }) })
+            client.SendUserMessage({
+              text,
+              ...(requestId === undefined ? {} : { id: messageIdFor(requestId) }),
+              ...(workstream === undefined ? {} : { workstream })
+            })
           )
         }),
 

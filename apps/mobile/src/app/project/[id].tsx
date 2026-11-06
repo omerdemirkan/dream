@@ -4,15 +4,23 @@
  *
  * `?tab=status` opens the roadmap and `?tab=chat` folds it; `?focus=<messageId>`
  * opens that question or access request expanded (deep links and notifications
- * use these). `?sheet=usage` opens the usage sheet, as tapping the ring in the header does.
+ * use these). `?sheet=usage` opens the usage sheet, as tapping the ring in the header does. `?work=<workstream id>`
+ * writes to that workstream, as tapping its row on the card does.
  */
-import { type Message, MessageId, type Project as ProjectRecord, ProjectId, type ProjectSummary } from "@dream/domain"
+import {
+  type Message,
+  MessageId,
+  type Project as ProjectRecord,
+  ProjectId,
+  type ProjectSummary,
+  type WorkstreamId
+} from "@dream/domain"
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
 import { Option, Schema } from "effect"
 import { AsyncResult } from "effect/reactivity"
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router"
-import { useCallback, useEffect, useState } from "react"
-import { Keyboard, Text, View } from "react-native"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { Keyboard, Text, type TextInputInstance, View } from "react-native"
 import { KeyboardStickyView, useKeyboardState } from "react-native-keyboard-controller"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { dotOf, headerLine, presenceOf } from "../../data/presence.ts"
@@ -28,6 +36,7 @@ import { useOpenMessage, useProject, useRequestId } from "../../ui/hooks.ts"
 import { IconButton } from "../../ui/kit.tsx"
 import { PresenceTile, StateLineText, useTickingNow } from "../../ui/Presence.tsx"
 import { RoadmapSheet, StatusCardPin } from "../../ui/StatusCard.tsx"
+import { labelsOf } from "../../ui/statusView.ts"
 import { UsageBadge, UsageSheet } from "../../ui/Usage.tsx"
 import { color, gutter } from "../../ui/theme.ts"
 
@@ -47,6 +56,7 @@ export default function ProjectScreen() {
     land?: string
     decline?: string
     sheet?: string
+    work?: string
   }>()
   const projectId = Option.getOrUndefined(decodeProjectId(params.id))
   if (!projectId) return null
@@ -58,6 +68,7 @@ export default function ProjectScreen() {
       land={params.land}
       decline={params.decline}
       sheet={params.sheet}
+      work={params.work}
     />
   )
 }
@@ -69,6 +80,7 @@ function Project(props: {
   readonly land: string | undefined
   readonly decline: string | undefined
   readonly sheet: string | undefined
+  readonly work: string | undefined
 }) {
   const router = useRouter()
   const insets = useSafeAreaInsets()
@@ -162,6 +174,24 @@ function Project(props: {
 
   const summary = summaries?.find((s) => s.project.id === props.projectId)
 
+  // Writing to one workstream: from its row on the card, a swipe on one of its messages, or `?work=`. Only while the
+  // card shows rows, and only to one that's still active.
+  const status = state?.status
+  const labels = useMemo(() => (status ? labelsOf(status) : undefined), [status])
+  const [scopeId, setScopeId] = useState<WorkstreamId | undefined>(undefined)
+  useEffect(() => {
+    if (props.work === undefined) return
+    setScopeId(props.work as WorkstreamId)
+    router.setParams({ work: undefined })
+  }, [props.work, router])
+  const scoped = scopeId === undefined ? undefined : status?.workstreams?.find((w) => w.id === scopeId)
+  const scope = labels !== undefined && scoped?.state === "active" ? scoped : undefined
+  const input = useRef<TextInputInstance>(null)
+  const writeTo = useCallback((id: WorkstreamId) => {
+    setScopeId(id)
+    input.current?.focus()
+  }, [])
+
   return (
     <View style={{ flex: 1, backgroundColor: color.bg }}>
       {state ? (
@@ -172,6 +202,9 @@ function Project(props: {
             bottomInset={24}
             keyboardOffset={keyboardOffset}
             onAway={setAway}
+            labels={labels}
+            scope={scope?.id}
+            onReply={writeTo}
           />
           <KeyboardStickyView
             offset={{ opened: keyboardOffset }}
@@ -180,13 +213,21 @@ function Project(props: {
             <ChatComposer
               busy={send.busy}
               draft={draft?.text}
+              inputRef={input}
+              scope={scope ? { title: scope.title, onClear: () => setScopeId(undefined) } : undefined}
               onSend={(text, sent) =>
                 send.run(
-                  { projectId: props.projectId, text, requestId: requestId.for(text) },
+                  {
+                    projectId: props.projectId,
+                    text,
+                    requestId: requestId.for(text),
+                    ...(scope ? { workstream: scope.id } : {})
+                  },
                   {
                     onSuccess: () => {
                       requestId.done()
                       if (draft) clearDraft(chat)
+                      setScopeId(undefined)
                       sent()
                     }
                   }
@@ -219,7 +260,14 @@ function Project(props: {
         </View>
         {state ? (
           <View style={{ marginTop: gap }}>
-            <StatusCardPin state={state} compact={away || typing} onRoadmap={openRoadmap} onHeight={onCardHeight} />
+            <StatusCardPin
+              state={state}
+              compact={away || typing}
+              onRoadmap={openRoadmap}
+              onHeight={onCardHeight}
+              scope={scope?.id}
+              onScope={writeTo}
+            />
           </View>
         ) : null}
         <View

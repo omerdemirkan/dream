@@ -4,7 +4,7 @@
  * up (sent, starting, working, done for now), and a receipt under their latest
  * message says whether it has been seen.
  */
-import type { AskMessage, Message, MessageId } from "@dream/domain"
+import type { AskMessage, Message, MessageId, WorkstreamId } from "@dream/domain"
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
 import { Option } from "effect"
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
@@ -16,8 +16,17 @@ import {
   Text,
   View
 } from "react-native"
+import { Gesture, GestureDetector } from "react-native-gesture-handler"
 import { KeyboardChatScrollView } from "react-native-keyboard-controller"
-import Animated, { Easing, useAnimatedStyle, useSharedValue, withSequence, withTiming } from "react-native-reanimated"
+import Animated, {
+  Easing,
+  interpolate,
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withTiming
+} from "react-native-reanimated"
+import { scheduleOnRN } from "react-native-worklets"
 import { dayLabel, sameDay, timeLabel } from "../data/format.ts"
 import { chatRowOf, presenceOf, receiptOf } from "../data/presence.ts"
 import type { ProjectState } from "../data/projectState.ts"
@@ -26,6 +35,7 @@ import { landingAtom, messageRects } from "../state/ui.ts"
 import { nextOpenAsk } from "./asks.ts"
 import { useNow, useOpenMessage } from "./hooks.ts"
 import { AccessCard, AgentText, QuestionCard, UserBubble } from "./Messages.tsx"
+import { Icon } from "./kit.tsx"
 import { ChatActivityRow } from "./Presence.tsx"
 import { color, gutter } from "./theme.ts"
 
@@ -113,6 +123,60 @@ function AskRow(props: {
   )
 }
 
+/** The workstream a message belongs to, small above it, while the card shows a row per workstream. */
+function WorkstreamLabel(props: { readonly title: string; readonly mine: boolean }) {
+  return (
+    <View
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 6,
+        marginBottom: 5,
+        alignSelf: props.mine ? "flex-end" : "flex-start"
+      }}
+    >
+      <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: color.t3 }} />
+      <Text numberOfLines={1} style={{ fontSize: 12.5, fontWeight: "600", letterSpacing: -0.06, color: color.t3 }}>
+        {props.title}
+      </Text>
+    </View>
+  )
+}
+
+/** How far a message slides before letting go of it writes to its workstream, as a reply does in Messages. */
+const replyAt = 56
+
+/** Swiping a labeled message to the right writes to its workstream. */
+function ReplySwipe(props: { readonly onReply: () => void; readonly children: ReactNode }) {
+  const x = useSharedValue(0)
+  const reply = props.onReply
+  const pan = Gesture.Pan()
+    .activeOffsetX(14)
+    .failOffsetY([-12, 12])
+    .onUpdate((e) => {
+      x.value = Math.max(0, Math.min(replyAt + 16, e.translationX * 0.7))
+    })
+    .onEnd(() => {
+      if (x.value >= replyAt) scheduleOnRN(reply)
+      x.value = withTiming(0, { duration: 220 })
+    })
+  const slide = useAnimatedStyle(() => ({ transform: [{ translateX: x.value }] }))
+  const hint = useAnimatedStyle(() => ({
+    opacity: interpolate(x.value, [12, replyAt], [0, 1], "clamp"),
+    transform: [{ scale: interpolate(x.value, [12, replyAt], [0.6, 1], "clamp") }]
+  }))
+  return (
+    <GestureDetector gesture={pan}>
+      <View>
+        <Animated.View style={[{ position: "absolute", left: -2, top: 0, bottom: 0, justifyContent: "center" }, hint]}>
+          <Icon name="reply" size={17} color={color.t2} weight="semibold" />
+        </Animated.View>
+        <Animated.View style={slide}>{props.children}</Animated.View>
+      </View>
+    </GestureDetector>
+  )
+}
+
 /** The row at the bottom (A). It ticks every few seconds, so the typing dots give way on time, without redrawing Chat. */
 function ChatActivity(props: { readonly state: ProjectState }) {
   const { state } = props
@@ -135,6 +199,12 @@ export function ChatTab(props: {
   readonly keyboardOffset: number
   /** Told when they scroll back through history (`true`) and when they're back near the latest (`false`). */
   readonly onAway?: (away: boolean) => void
+  /** Each workstream's title, while the card shows rows; then messages carry their workstream's label. */
+  readonly labels?: ReadonlyMap<WorkstreamId, string> | undefined
+  /** The workstream they're writing to: the other messages dim. */
+  readonly scope?: WorkstreamId | undefined
+  /** Swiping a labeled message writes to its workstream. */
+  readonly onReply?: (workstream: WorkstreamId) => void
 }) {
   const { state } = props
   const projectId = state.project.id
@@ -224,13 +294,12 @@ export function ChatTab(props: {
     previous = message
     const time = sameDay(message.createdAt, now) ? timeLabel(message.createdAt) : undefined
     const highlightAt = highlights.get(message.id) ?? 0
-    rows.push(
-      <View
-        key={message.id}
-        onLayout={(e) =>
-          positions.current.set(message.id, { y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })
-        }
-      >
+    const workstream = message.workstream
+    const label = workstream === undefined ? undefined : props.labels?.get(workstream)
+    const mine = message._tag === "Text" && message.from === "user"
+    const body = (
+      <>
+        {label === undefined ? null : <WorkstreamLabel title={label} mine={mine} />}
         {message._tag === "Text" ? (
           message.from === "user" ? (
             <UserBubble
@@ -243,6 +312,22 @@ export function ChatTab(props: {
           )
         ) : (
           <AskRow message={message} highlightAt={highlightAt} onAnswered={onAnswered} />
+        )}
+      </>
+    )
+    const onReply = props.onReply
+    rows.push(
+      <View
+        key={message.id}
+        onLayout={(e) =>
+          positions.current.set(message.id, { y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })
+        }
+        style={props.scope !== undefined && workstream !== props.scope ? { opacity: 0.32 } : undefined}
+      >
+        {label !== undefined && workstream !== undefined && onReply ? (
+          <ReplySwipe onReply={() => onReply(workstream)}>{body}</ReplySwipe>
+        ) : (
+          body
         )}
       </View>
     )

@@ -22,7 +22,8 @@ import {
   QuestionMessage,
   TextMessage,
   UpstreamFailure,
-  UsageWindowName
+  UsageWindowName,
+  WorkstreamId
 } from "@dream/domain"
 import { Schema } from "effect"
 import { Rpc, RpcGroup } from "effect/rpc"
@@ -45,9 +46,16 @@ export class ProjectRpcs extends RpcGroup.make(
     payload: { before: Schema.optionalKey(MessageId), limit: Schema.Int },
     success: Schema.Struct({ messages: Schema.Array(Message), hasEarlier: Schema.Boolean })
   }),
-  /** With an `id` (derived from the phone's request id), posting it again returns the message already posted. */
+  /**
+   * With an `id` (derived from the phone's request id), posting it again returns the message already posted. With a
+   * `workstream` the project has, they wrote it into that one.
+   */
   Rpc.make("SendUserMessage", {
-    payload: { text: Schema.NonEmptyString, id: Schema.optionalKey(MessageId) },
+    payload: {
+      text: Schema.NonEmptyString,
+      id: Schema.optionalKey(MessageId),
+      workstream: Schema.optionalKey(WorkstreamId)
+    },
     success: TextMessage
   }),
   Rpc.make("AnswerQuestion", {

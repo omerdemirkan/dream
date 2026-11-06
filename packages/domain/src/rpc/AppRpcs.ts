@@ -15,7 +15,8 @@ import {
   ModelConnectionId,
   NotificationId,
   ProjectId,
-  RequestId
+  RequestId,
+  WorkstreamId
 } from "../Ids.ts"
 import { AppLink, LinkColor, LinkIcon, LinkTitle, LinkUrl } from "../Links.ts"
 import {
@@ -246,9 +247,18 @@ export class AuthedAppRpcs extends RpcGroup.make(
     success: Schema.Struct({ messages: Schema.Array(Message), hasEarlier: Schema.Boolean }),
     error: NotFound
   }),
-  /** Post their message to Chat. With a `requestId`, a retry returns the message the first attempt posted. */
+  /**
+   * Post their message to Chat. With a `requestId`, a retry returns the message the first attempt posted. With a
+   * `workstream` (added in November 2026), they wrote it into that workstream; one the project doesn't have is
+   * ignored.
+   */
   Rpc.make("SendMessage", {
-    payload: { projectId: ProjectId, text: Schema.NonEmptyString, requestId: Schema.optionalKey(RequestId) },
+    payload: {
+      projectId: ProjectId,
+      text: Schema.NonEmptyString,
+      requestId: Schema.optionalKey(RequestId),
+      workstream: Schema.optionalKey(WorkstreamId)
+    },
     success: TextMessage,
     error: NotFound
   }),

@@ -17,16 +17,17 @@ import { Rpc, RpcGroup } from "effect/rpc"
 import { SandboxAuth } from "../Auth.ts"
 import { Integration } from "../Connections.ts"
 import { InvalidRequest, NotFound, UpstreamFailure } from "../Errors.ts"
-import { BrowserSessionId, EventId, LinkId, MediaId, MessageId, NotificationId, WakeId } from "../Ids.ts"
+import { BrowserSessionId, EventId, LinkId, MediaId, MessageId, NotificationId, WakeId, WorkstreamId } from "../Ids.ts"
 import { AppLink, LinkColor, LinkIcon, LinkTitle, LinkUrl } from "../Links.ts"
 import { LiveActivityContent } from "../LiveActivity.ts"
 import { BrowserSession, MacSshAccess, MacStatus } from "../Machines.ts"
 import { MediaContentType, MediaRef, MediaUploadTarget } from "../Media.ts"
-import { AccessMessage, AccessRequest, QuestionMessage, TextMessage } from "../Message.ts"
+import { AccessMessage, AccessRequest, Message, QuestionMessage, TextMessage } from "../Message.ts"
 import { ProjectPhase } from "../Project.ts"
 import { Milestone, StatusCard } from "../Status.ts"
 import { TurnUsage, UsageSnapshot } from "../Usage.ts"
 import { Wake, WakeWhen } from "../Wake.ts"
+import { Workstreams, WorkstreamTitle } from "../Workstream.ts"
 
 /** Absent leaves a field as it is; `null` clears it. */
 const Patch = <S extends Schema.Top>(schema: S) => Schema.optionalKey(Schema.NullOr(schema))
@@ -45,19 +46,32 @@ export const ProjectLinks = Schema.Struct({
 })
 export type ProjectLinks = typeof ProjectLinks.Type
 
+/**
+ * `--work <workstream-id>`: the message belongs to one of the agent's workstreams, and carries its label. Added in
+ * November 2026; an older API ignores it (the message is sent without a label, which `dream` says).
+ */
+const work = Schema.optionalKey(WorkstreamId)
+
 export class SandboxRpcs extends RpcGroup.make(
   // Talking to them ------------------------------------------------------------
-  /** `dream message [--notify] [--media file…] "text"`. The CLI uploads each file first (`CreateMediaUpload`). */
+  /**
+   * `dream message [--notify] [--media file…] [--work id] "text"`. The CLI uploads each file first
+   * (`CreateMediaUpload`). `InvalidRequest` for a workstream the project doesn't have.
+   */
   Rpc.make("SendMessage", {
     payload: {
       text: Schema.NonEmptyString,
       media: Schema.Array(MediaId),
-      notify: Schema.Boolean
+      notify: Schema.Boolean,
+      workstream: work
     },
     success: TextMessage,
     error: Schema.Union([NotFound, InvalidRequest])
   }),
-  /** `dream ask "question" --option "…" … [--why "…"] [--context "…"] [--meanwhile "…"]`. Always notifies. */
+  /**
+   * `dream ask "question" --option "…" … [--why "…"] [--context "…"] [--meanwhile "…"] [--work id]`. Always notifies.
+   * While it's open, its workstream waits on them.
+   */
   Rpc.make("AskQuestion", {
     payload: {
       question: Schema.NonEmptyString,
@@ -65,7 +79,8 @@ export class SandboxRpcs extends RpcGroup.make(
       why: Schema.optionalKey(Schema.String),
       /** Added after the first release; an older API ignores it. */
       context: Schema.optionalKey(Schema.String),
-      meanwhile: Schema.optionalKey(Schema.String)
+      meanwhile: Schema.optionalKey(Schema.String),
+      workstream: work
     },
     success: QuestionMessage,
     error: InvalidRequest
@@ -88,7 +103,8 @@ export class SandboxRpcs extends RpcGroup.make(
       why: Schema.NonEmptyString,
       /** Added after the first release; an older API ignores it. */
       context: Schema.optionalKey(Schema.String),
-      when: Schema.optionalKey(Schema.String)
+      when: Schema.optionalKey(Schema.String),
+      workstream: work
     },
     success: AccessMessage,
     error: InvalidRequest
@@ -125,6 +141,46 @@ export class SandboxRpcs extends RpcGroup.make(
     success: StatusCard,
     error: Schema.Union([NotFound, InvalidRequest])
   }),
+
+  // Workstreams (added in November 2026: an older API answers these with "Unknown request tag") ------------------
+  /** `dream work list`, and `dream work` with no subcommand. */
+  Rpc.make("ListWorkstreams", { success: Workstreams }),
+  /**
+   * `dream work start "title" [--now "…"] [--from <message-id>]`: a new active workstream. `from` files the message
+   * that started it under it, as `RouteMessage` does.
+   */
+  Rpc.make("StartWorkstream", {
+    payload: {
+      title: WorkstreamTitle,
+      now: Schema.optionalKey(Schema.String),
+      from: Schema.optionalKey(MessageId)
+    },
+    success: Workstreams,
+    error: Schema.Union([NotFound, InvalidRequest])
+  }),
+  /** `dream work update <id> [--title "…"] [--now "…"]`: changes only its row, with no message. `--now ""` clears it. */
+  Rpc.make("UpdateWorkstream", {
+    payload: { workstreamId: WorkstreamId, title: Schema.optionalKey(WorkstreamTitle), now: Patch(Schema.String) },
+    success: Workstreams,
+    error: Schema.Union([NotFound, InvalidRequest])
+  }),
+  /** `dream work done <id> [--result "…"]` and `dream work drop <id> [--why "…"]`. Ending one again changes nothing. */
+  Rpc.make("EndWorkstream", {
+    payload: {
+      workstreamId: WorkstreamId,
+      state: Schema.Literals(["done", "dropped"]),
+      result: Schema.optionalKey(Schema.String)
+    },
+    success: Workstreams,
+    error: Schema.Union([NotFound, InvalidRequest])
+  }),
+  /** `dream work route <message-id> <id>`: files a message (usually theirs) under a workstream, with its label. */
+  Rpc.make("RouteMessage", {
+    payload: { messageId: MessageId, workstreamId: WorkstreamId },
+    success: Message,
+    error: Schema.Union([NotFound, InvalidRequest])
+  }),
+
   /** `dream live start` (replaces any running activity), on their devices that support it. */
   Rpc.make("StartLiveActivity", {
     payload: { content: LiveActivityContent },

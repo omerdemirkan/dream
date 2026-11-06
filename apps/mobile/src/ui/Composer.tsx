@@ -5,10 +5,10 @@
  * - `ElseComposer`: "Something else…" in the expanded question (`.else`).
  * - `ReasonField`: why they decline an access request, in the decline sheet (no send button; the sheet sends).
  */
-import { useEffect, useRef, useState } from "react"
-import { StyleSheet, Text, TextInput, View } from "react-native"
+import { type Ref, useEffect, useRef, useState } from "react"
+import { Pressable, StyleSheet, Text, TextInput, type TextInputInstance, View } from "react-native"
 import { useDictation } from "../platform/dictation.ts"
-import { Bars, IconButton } from "./kit.tsx"
+import { Bars, Icon, IconButton } from "./kit.tsx"
 import { color } from "./theme.ts"
 
 const join = (current: string, heard: string) => (current.trim() ? `${current.trimEnd()} ${heard}` : heard)
@@ -76,63 +76,114 @@ const useDraft = (draft: string | undefined, setText: (update: (current: string)
     if (draft) setText((current) => (current.trim() ? current : draft))
   }, [draft, setText])
 
+/** The workstream they're writing to, on the composer: tap it to write to the whole project again. */
+function ScopeTag(props: { readonly title: string; readonly onClear: () => void }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Writing to ${props.title}`}
+      accessibilityHint="Writes to the whole project instead"
+      onPress={props.onClear}
+      hitSlop={6}
+      style={({ pressed }) => ({
+        alignSelf: "flex-start",
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 7,
+        height: 30,
+        maxWidth: "100%",
+        paddingLeft: 11,
+        paddingRight: 9,
+        borderRadius: 15,
+        backgroundColor: pressed ? color.line2 : color.s3
+      })}
+    >
+      <Icon name="reply" size={13} color={color.t2} weight="semibold" />
+      <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 13.5, fontWeight: "600", color: color.t1 }}>
+        {props.title}
+      </Text>
+      <Icon name="close" size={11} color={color.t3} weight="semibold" />
+    </Pressable>
+  )
+}
+
 export function ChatComposer(props: {
   readonly onSend: Send
   readonly sample?: string
   readonly busy?: boolean
   readonly draft?: string | undefined
+  /** Writing to one workstream: its tag sits above the field, and clearing it writes to the whole project. */
+  readonly scope?: { readonly title: string; readonly onClear: () => void } | undefined
+  readonly inputRef?: Ref<TextInputInstance>
 }) {
   const [text, setText] = useState("")
   useDraft(props.draft, setText)
   const dictation = useDictation((heard) => setText((current) => join(current, heard)), props.sample)
   const { has, send } = useSend(text, setText, props.onSend, props.busy === true)
+  const scope = props.scope
   return (
     <View
-      style={{
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 12,
-        height: 56,
-        paddingLeft: 20,
-        paddingRight: 8,
-        borderRadius: 28,
-        backgroundColor: color.s1,
-        borderWidth: 1,
-        borderColor: dictation.listening ? color.needLine : color.line,
-        boxShadow: "0 10px 34px rgba(0,0,0,0.55)"
-      }}
+      style={[
+        {
+          borderRadius: 28,
+          backgroundColor: color.s1,
+          borderWidth: 1,
+          borderColor: dictation.listening ? color.needLine : scope ? color.line2 : color.line,
+          boxShadow: "0 10px 34px rgba(0,0,0,0.55)"
+        },
+        scope ? { paddingTop: 9, paddingLeft: 9, borderRadius: 26 } : null
+      ]}
     >
-      <View style={{ flex: 1, height: "100%" }}>
-        {text ? null : <FieldPlaceholder text="Message Dream" color={color.t2} fontSize={16} />}
-        <TextInput
-          value={text}
-          onChangeText={setText}
-          style={{ flex: 1, color: color.t1, fontSize: 16 }}
-          returnKeyType="send"
-          onSubmitEditing={send}
-          submitBehavior="submit"
-          keyboardAppearance="dark"
-          accessibilityLabel="Message Dream"
-        />
+      {scope ? <ScopeTag title={scope.title} onClear={scope.onClear} /> : null}
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 12,
+          height: scope ? 50 : 54,
+          paddingLeft: scope ? 11 : 20,
+          paddingRight: 8
+        }}
+      >
+        <View style={{ flex: 1, height: "100%" }}>
+          {text ? null : (
+            <FieldPlaceholder
+              text={scope ? `Message about ${scope.title}` : "Message Dream"}
+              color={color.t2}
+              fontSize={16}
+            />
+          )}
+          <TextInput
+            ref={props.inputRef}
+            value={text}
+            onChangeText={setText}
+            style={{ flex: 1, color: color.t1, fontSize: 16 }}
+            returnKeyType="send"
+            onSubmitEditing={send}
+            submitBehavior="submit"
+            keyboardAppearance="dark"
+            accessibilityLabel="Message Dream"
+          />
+        </View>
+        {dictation.listening ? <Listening heard={dictation.heard} inset={20} radius={28} /> : null}
+        {has && !dictation.listening ? (
+          <IconButton
+            icon="up"
+            tone="white"
+            label={props.busy === true ? "Sending" : "Send"}
+            onPress={send}
+            disabled={props.busy === true}
+            busy={props.busy === true}
+          />
+        ) : dictation.available ? (
+          <IconButton
+            icon="mic"
+            tone={dictation.listening ? "need" : "quiet"}
+            label={dictation.listening ? "Stop dictating" : "Dictate"}
+            onPress={dictation.toggle}
+          />
+        ) : null}
       </View>
-      {dictation.listening ? <Listening heard={dictation.heard} inset={20} radius={28} /> : null}
-      {has && !dictation.listening ? (
-        <IconButton
-          icon="up"
-          tone="white"
-          label={props.busy === true ? "Sending" : "Send"}
-          onPress={send}
-          disabled={props.busy === true}
-          busy={props.busy === true}
-        />
-      ) : dictation.available ? (
-        <IconButton
-          icon="mic"
-          tone={dictation.listening ? "need" : "quiet"}
-          label={dictation.listening ? "Stop dictating" : "Dictate"}
-          onPress={dictation.toggle}
-        />
-      ) : null}
     </View>
   )
 }

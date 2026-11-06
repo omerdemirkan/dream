@@ -9,6 +9,7 @@ import { IntegrationAccess } from "./Connections.ts"
 import { EventId, LinkId, MessageId, WakeId } from "./Ids.ts"
 import { QuestionAnswer } from "./Message.ts"
 import { UsageWindowName } from "./Usage.ts"
+import { WorkstreamRef } from "./Workstream.ts"
 
 const EventFields = {
   id: EventId,
@@ -24,8 +25,16 @@ export const RunResult = Schema.Struct({
 export type RunResult = typeof RunResult.Type
 
 export const AgentEvent = Schema.TaggedUnion({
-  /** They wrote in Chat. A project's first event is the idea itself. */
-  UserMessage: { ...EventFields, messageId: MessageId, text: Schema.String },
+  /**
+   * They wrote in Chat. A project's first event is the idea itself. `workstream`: they wrote it into one of the
+   * agent's workstreams (a reply to it); added in November 2026, older dreamd builds ignore it.
+   */
+  UserMessage: {
+    ...EventFields,
+    messageId: MessageId,
+    text: Schema.String,
+    workstream: Schema.optionalKey(WorkstreamRef)
+  },
   QuestionAnswered: {
     ...EventFields,
     messageId: MessageId,
@@ -210,7 +219,10 @@ const renderRemoved = (label: string, access: IntegrationAccess, failure: string
 export const renderAgentEvent = (event: AgentEvent, options: RenderOptions = {}): string => {
   const time = formatEventTime(event.at, options)
   const body = AgentEvent.match(event, {
-    UserMessage: ({ text }) => `They wrote:\n${quote(text)}`,
+    UserMessage: ({ messageId, text, workstream }) =>
+      workstream === undefined
+        ? `They wrote (${messageId}):\n${quote(text)}`
+        : `They wrote (${messageId}) into your workstream "${workstream.title}" (${workstream.id}):\n${quote(text)}`,
     QuestionAnswered: ({ messageId, question, answer, previous }) =>
       `They answered your question ${messageId}, "${question}", ${renderAnswer(answer)}` +
       (previous === undefined ? "" : `\n(This replaces their earlier answer, ${renderAnswer(previous)}.)`),
