@@ -93,7 +93,6 @@ export const Scenario = [
   "archived",
   "ask-series",
   "links-empty",
-  "no-projects",
   "links-new",
   "long-chat",
   "now-two-lines",
@@ -1028,9 +1027,6 @@ export class FakeBackend extends Context.Service<
           case "links-empty":
             links = []
             return
-          case "no-projects":
-            // Someone new: a plan connected, and nothing else yet.
-            return yield* load({ ...makeWorld(now), projects: [], links: [], integrations: [] })
           case "links-new": {
             // Lift Log's agent just published a second page; its tile shows the dot until they open it.
             const lift = Array.from(records.values()).find((r) => r.project.slug === "lift-log")

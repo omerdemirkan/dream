@@ -4,6 +4,10 @@
  * starter and an editable draft. A draft marks its guesses (⟦Lisbon⟧, ⟦£120⟧):
  * the page tints them until they're edited and selects the first, so typing
  * replaces it. The list ships with the app, so over-the-air updates change it.
+ *
+ * The order of `ideas` is the founder's priority (set with mocks/ideas-editor,
+ * whose "Dream starters update" messages are applied here). What someone has
+ * connected only breaks ties within it (`rankIdeas`).
  */
 import type { Integration } from "@dream/domain"
 import type { Selection } from "./draft.ts"
@@ -373,10 +377,14 @@ export const nearProject = (idea: Idea, projectTitles: ReadonlyArray<string>): b
   })
 }
 
+/** How many ideas count as one step of priority, inside which what they've connected breaks the tie. */
+export const priorityBand = 4
+
 /**
- * The starters for this person: ideas too close to one of their projects
- * dropped, and those whose needs they've already connected first (all of them,
- * then some), keeping the curated order otherwise.
+ * The starters for this person: the list's order (the founder's priority),
+ * ideas too close to one of their projects dropped. Within each band of four,
+ * ideas whose needs they've connected come first (all of them, then some), as a
+ * tiebreak that never lifts an idea past a higher band.
  */
 export const rankIdeas = (
   list: ReadonlyArray<Idea>,
@@ -388,8 +396,8 @@ export const rankIdeas = (
   }
   return list
     .filter((idea) => !nearProject(idea, context.projectTitles))
-    .map((idea, i) => ({ idea, i, tier: tier(idea) }))
-    .sort((a, b) => a.tier - b.tier || a.i - b.i)
+    .map((idea, i) => ({ idea, i, band: Math.floor(i / priorityBand), tier: tier(idea) }))
+    .sort((a, b) => a.band - b.band || a.tier - b.tier || a.i - b.i)
     .map((x) => x.idea)
 }
 
@@ -404,34 +412,19 @@ const random = (seed: number) => {
   }
 }
 
-/** Whether an idea uses something they've already connected. */
-export const usesConnected = (idea: Idea, connected: ReadonlySet<IdeaNeed>) => idea.needs.some((n) => connected.has(n))
-
 /**
- * The four under the placeholder: up to two that use what they've connected,
- * then a different mix of the rest each time, from different groups where it can.
+ * The four under the placeholder, in ranked order: always the top two, and two
+ * more drawn from the next six, so the page shows a slightly different mix each
+ * time without leaving the founder's top eight.
  */
-export const pickStarters = (
-  ranked: ReadonlyArray<Idea>,
-  connected: ReadonlySet<IdeaNeed>,
-  seed: number,
-  count = 4
-): ReadonlyArray<Idea> => {
+export const pickStarters = (ranked: ReadonlyArray<Idea>, seed: number, count = 4): ReadonlyArray<Idea> => {
+  const fixed = Math.min(2, count)
   const next = random(seed)
-  const shuffled = (xs: ReadonlyArray<Idea>) =>
-    xs
-      .map((x) => ({ x, k: next() }))
-      .sort((a, b) => a.k - b.k)
-      .map((p) => p.x)
-  const picked: Array<Idea> = shuffled(ranked.filter((i) => usesConnected(i, connected))).slice(0, Math.min(2, count))
-  const rest = shuffled(ranked.filter((i) => !picked.includes(i)))
-  for (const pass of [true, false]) {
-    for (const idea of rest) {
-      if (picked.length >= count) break
-      if (picked.includes(idea)) continue
-      if (pass && picked.some((p) => p.group === idea.group)) continue
-      picked.push(idea)
-    }
-  }
-  return picked
+  const drawn = ranked
+    .slice(fixed, fixed + 6)
+    .map((idea) => ({ idea, k: next() }))
+    .sort((a, b) => a.k - b.k)
+    .slice(0, count - fixed)
+    .map((x) => x.idea)
+  return ranked.filter((idea, i) => i < fixed || drawn.includes(idea))
 }

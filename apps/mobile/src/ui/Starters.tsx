@@ -1,9 +1,8 @@
 /**
- * Starters (Deck v3 inspiration, option A): four one-line ideas, those using
- * what they've connected first, and More, which lists them all by group. New
- * idea shows them under the placeholder of a blank page; Home shows them under
- * "What should exist?" until they have a project. Picking one never starts
- * anything: it puts an editable draft on New idea.
+ * Starters (Deck v3 inspiration, option A): four one-line ideas, in the
+ * founder's priority, and More, which lists them all by group. New
+ * idea shows them under the placeholder of a blank page. Picking one never
+ * starts anything: it puts an editable draft on the page.
  */
 import { useAtomValue } from "@effect/atom-react"
 import { Option } from "effect"
@@ -39,7 +38,7 @@ export function Starters(props: {
     () => rankIdeas(ideas, { connected, projectTitles: projects.map((s) => s.project.title) }),
     [connected, projects]
   )
-  const four = useMemo(() => pickStarters(ranked, connected, seed), [ranked, connected, seed])
+  const four = useMemo(() => pickStarters(ranked, seed), [ranked, seed])
   if (!settled) return null
   const shown = browsing === undefined ? four : browsing === "all" ? ranked : ranked.filter((i) => i.group === browsing)
   return (

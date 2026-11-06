@@ -3,8 +3,6 @@
  * waiting for them (questions and access requests live in the project). The
  * composer at the bottom starts a new idea.
  *
- * With no projects yet, starters sit under "What should exist?"; one opens New idea with its draft.
- *
  * `/?sheet=add`, `/?sheet=icon&link=<id>` and `/?sheet=home-screen&link=<id>` open the app link sheets.
  */
 import type { LinkId, ModelConnection, ProjectSummary } from "@dream/domain"
@@ -25,7 +23,6 @@ import { Dot, Icon, IconButton, LinkButton, Orb } from "../ui/kit.tsx"
 import { plainText } from "../ui/markdownParse.ts"
 import { PresenceTile, StateLineText, useTickingNow } from "../ui/Presence.tsx"
 import { ProjectLink } from "../ui/ProjectMenu.tsx"
-import { Starters } from "../ui/Starters.tsx"
 import { color, gutter } from "../ui/theme.ts"
 
 const listOf = <A,>(result: AsyncResult.AsyncResult<ReadonlyArray<A>, unknown>) =>
@@ -107,11 +104,6 @@ export default function Home() {
           <Unreachable onRetry={refreshProjects} />
         ) : needs ? null : AsyncResult.isSuccess(projectsResult) || projects.length > 0 ? (
           <AllClear projects={projects} />
-        ) : null}
-        {AsyncResult.isSuccess(projectsResult) && projects.length === 0 ? (
-          <View style={{ marginTop: -8, marginBottom: 18 }}>
-            <Starters onPick={(idea) => router.push({ pathname: "/new", params: { starter: idea.id } })} />
-          </View>
         ) : null}
         <ConnectionBanner connections={connections} />
         {projects.length > 0 ? (

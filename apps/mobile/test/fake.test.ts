@@ -111,20 +111,6 @@ describe("fixtures backend through the app's services", () => {
     )
   )
 
-  it.effect("no-projects is someone new: a plan, and no projects, links or integrations", () =>
-    run(
-      Effect.gen(function* () {
-        yield* signIn
-        const app = yield* AppClient
-        yield* (yield* FakeBackend).scenario("no-projects")
-        assert.deepStrictEqual(yield* app.ListProjects(), [])
-        assert.deepStrictEqual(yield* app.ListIntegrations(), [])
-        assert.deepStrictEqual(yield* app.ListLinks(), [])
-        assert.isAtLeast((yield* app.ListModelConnections()).length, 1)
-      })
-    )
-  )
-
   it.effect("connects an OAuth request as if they'd approved it, and lists the integration", () =>
     run(
       Effect.gen(function* () {

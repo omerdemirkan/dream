@@ -9,6 +9,7 @@ import {
   nearProject,
   parseDraft,
   pickStarters,
+  priorityBand,
   rankIdeas,
   shiftGuesses
 } from "../src/data/ideas.ts"
@@ -132,33 +133,38 @@ describe("which starters", () => {
     )
   })
 
-  it("puts ideas using what's connected first: all of it, then some, then the rest in curated order", () => {
-    const ranked = rankIdeas(ideas, { connected: new Set(["gmail"]), projectTitles: [] })
-    const ids = ranked.map((i) => i.id)
-    assert.deepStrictEqual(ids.slice(0, 3), ["evening-inbox", "newsletter-digest", "parcels"])
-    assert.deepStrictEqual(ids.slice(3, 5), ["before-meetings", "receipts"])
-    assert.strictEqual(ids[5], "anki-walk")
-    assert.strictEqual(ranked.length, ideas.length)
-  })
-
-  it("picks four: up to two using what's connected, then a mix from other groups, the same for the same seed", () => {
-    const connected = new Set(["gmail"] as const)
-    const ranked = rankIdeas(ideas, { connected, projectTitles: sampleTitles })
-    const four = pickStarters(ranked, connected, 0.42)
-    assert.strictEqual(four.length, 4)
-    assert.strictEqual(new Set(four).size, 4)
-    assert.isTrue(four.slice(0, 2).every((i) => i.needs.includes("gmail")))
-    assert.isAtLeast(new Set(four.map((i) => i.group)).size, 3)
-    assert.deepStrictEqual(pickStarters(ranked, connected, 0.42), four)
-    const seen = new Set(
-      [0.1, 0.2, 0.3, 0.4, 0.5, 0.6].flatMap((s) => pickStarters(ranked, connected, s).map((i) => i.id))
+  it("keeps the founder's order, with what's connected breaking ties only within each band of four", () => {
+    const ids = ideas.map((i) => i.id)
+    assert.deepStrictEqual(
+      rankIdeas(ideas, { connected: new Set(), projectTitles: [] }).map((i) => i.id),
+      ids
     )
-    assert.isAtLeast(seen.size, 8)
+    const ranked = rankIdeas(ideas, { connected: new Set(["gmail"]), projectTitles: [] }).map((i) => i.id)
+    // Band one is evening-inbox, anki-walk, before-meetings, fare-watch: Gmail fully, then partly, then the rest.
+    assert.deepStrictEqual(ranked.slice(0, priorityBand), [
+      "evening-inbox",
+      "before-meetings",
+      "anki-walk",
+      "fare-watch"
+    ])
+    // Nothing leaves its band, however much it uses what's connected.
+    ranked.forEach((id, n) =>
+      assert.strictEqual(Math.floor(ids.indexOf(id) / priorityBand), Math.floor(n / priorityBand))
+    )
   })
 
-  it("picks from the rest when nothing is connected", () => {
-    const four = pickStarters(ideas, new Set(), 0.7)
+  it("picks four in ranked order: the top two, and two of the next six, the same for the same seed", () => {
+    const ranked = rankIdeas(ideas, { connected: new Set(["gmail"]), projectTitles: sampleTitles })
+    const four = pickStarters(ranked, 0.42)
     assert.strictEqual(four.length, 4)
-    assert.strictEqual(new Set(four.map((i) => i.group)).size, 4)
+    assert.deepStrictEqual(four.slice(0, 2), ranked.slice(0, 2))
+    assert.isTrue(four.slice(2).every((i) => ranked.slice(2, 8).includes(i)))
+    assert.deepStrictEqual(
+      four.map((i) => ranked.indexOf(i)),
+      four.map((i) => ranked.indexOf(i)).toSorted((a, b) => a - b)
+    )
+    assert.deepStrictEqual(pickStarters(ranked, 0.42), four)
+    const seen = new Set([0.1, 0.2, 0.3, 0.4, 0.5, 0.6].flatMap((s) => pickStarters(ranked, s).map((i) => i.id)))
+    assert.isAtLeast(seen.size, 6)
   })
 })
