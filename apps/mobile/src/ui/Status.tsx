@@ -18,7 +18,7 @@ import { Dot, Icon, Tile } from "./kit.tsx"
 import { LinkTile } from "./LinkTile.tsx"
 import { MediaStrip } from "./Media.tsx"
 import { cardOf, type NeedView } from "./statusView.ts"
-import { color } from "./theme.ts"
+import { bigTextScale, color } from "./theme.ts"
 
 /** The amber line, opening the ask it stands for. */
 export function NeedLine(props: {
@@ -157,6 +157,7 @@ export function StatusRoadmap(props: { readonly state: ProjectState; readonly on
         style={{ flexDirection: "row", alignItems: "flex-start", gap: 12 }}
       >
         <Text
+          maxFontSizeMultiplier={bigTextScale}
           style={
             view.stand === "now"
               ? {

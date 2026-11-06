@@ -48,3 +48,9 @@ export const linkTile = {
   graphite: { from: "#55555D", to: "#2B2B31", ink: "#F5F5F7" },
   light: { from: "#F6F4EE", to: "#E7E3D9", ink: "#1C1C1E" }
 } as const
+
+/**
+ * How far the Status card's large sentence grows with the system's text size (Dynamic Type): larger text still reads
+ * larger, but the headline doesn't become a poster. Chat text isn't limited.
+ */
+export const bigTextScale = 1.15
