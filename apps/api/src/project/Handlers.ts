@@ -80,6 +80,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
     const directory = yield* ProjectDirectory
     const alarm = yield* Alarm
     const projects = yield* Projects
+    const machines = yield* Machines
 
     const findMessage = (id: Message["id"]) =>
       Effect.flatMap(core.message(id), (found) =>
@@ -233,7 +234,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
 
       IntegrationGone: ({ integration, failure }) =>
         Effect.gen(function* () {
-          if (Option.isSome(yield* store.getSingleton(...Singletons.archived))) return
+          if (Option.isSome(yield* store.getSingleton(...Singletons.deleted))) return
           const now = yield* DateTime.now
           const cards = (yield* store.accessMessagesFor(integration.id)).filter(
             (message) => message.state._tag === "Connected"
@@ -270,7 +271,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
 
       IntegrationRestored: ({ integration, tell }) =>
         Effect.gen(function* () {
-          if (Option.isSome(yield* store.getSingleton(...Singletons.archived))) return
+          if (Option.isSome(yield* store.getSingleton(...Singletons.deleted))) return
           const now = yield* DateTime.now
           const cards = (yield* store.accessMessagesFor(integration.id)).filter(
             (message) => message.state._tag === "Disconnected" && message.state.reason === "failed"
@@ -299,7 +300,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
 
       KeyFileReplaced: ({ integration }) =>
         Effect.gen(function* () {
-          if (Option.isSome(yield* store.getSingleton(...Singletons.archived))) return
+          if (Option.isSome(yield* store.getSingleton(...Singletons.deleted))) return
           yield* sandbox.keyFilesChanged
           // The event names the request it was connected through, which every file key has.
           const card = (yield* store.accessMessagesFor(integration.id)).at(-1)
@@ -330,15 +331,23 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
 
       GatewayTarget: () => sandbox.gatewayTarget,
 
-      Archive: () =>
+      Delete: () =>
         Effect.gen(function* () {
           const now = yield* DateTime.now
-          yield* store.putSingleton(...Singletons.archived, { at: now })
+          // First, so everything after this (dreamd, the alarm, a delivery under way) finds it deleted.
+          yield* store.putSingleton(...Singletons.deleted, { at: now })
           yield* store.clearSchedule(DateTime.formatIso(now))
-          yield* sandbox.archive
           yield* alarm.reschedule
+          yield* sandbox.destroy
+          yield* machines.stopMac.pipe(
+            Effect.catch((error) => Effect.logWarning("couldn't stop the deleted project's Mac", error.message))
+          )
           const current = yield* core.projectOption
           if (Option.isSome(current)) {
+            yield* notifier.withdraw(yield* store.unwithdrawnNotifications)
+            yield* notifier
+              .endLive(undefined)
+              .pipe(Effect.catch((error) => Effect.logWarning("couldn't end the Live Activity", error.message)))
             // Its file keys were for this project alone, and the sandbox that held them is gone.
             for (const row of yield* connections.integrations(current.value.ownerId)) {
               if (row.access_json._tag !== "File" || row.access_json.projectId !== current.value.id) continue
@@ -347,6 +356,36 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
             }
             yield* projects.remove(current.value.id)
           }
+          yield* store.wipe
+        }),
+
+      Archive: () =>
+        Effect.gen(function* () {
+          const project = yield* core.project.pipe(Effect.orDie)
+          const existing = yield* store.getSingleton(...Singletons.archived)
+          if (Option.isSome(existing)) return existing.value.at
+          const at = yield* DateTime.now
+          yield* store.putSingleton(...Singletons.archived, { at })
+          yield* projects.setArchived(project.id, at)
+          yield* sandbox.pause
+          // Nothing will use a Mac it rented; don't leave it running until it idles out.
+          yield* machines.stopMac.pipe(
+            Effect.catch((error) => Effect.logWarning("couldn't stop the archived project's Mac", error.message))
+          )
+          // A lock screen saying the agent is at work would be wrong from now on.
+          yield* notifier
+            .endLive(undefined)
+            .pipe(Effect.catch((error) => Effect.logWarning("couldn't end the Live Activity", error.message)))
+          return at
+        }),
+
+      Restore: () =>
+        Effect.gen(function* () {
+          const project = yield* core.project.pipe(Effect.orDie)
+          if (Option.isNone(yield* store.getSingleton(...Singletons.archived))) return
+          yield* store.clearSingleton(Singletons.archived[0])
+          yield* projects.setArchived(project.id, undefined)
+          yield* sandbox.restored
         }),
 
       RefreshModelCredential: () =>

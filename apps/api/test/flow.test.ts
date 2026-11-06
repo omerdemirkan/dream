@@ -19,6 +19,7 @@ import { ProjectClients } from "../src/project/Client.ts"
 import { Core } from "../src/project/Core.ts"
 import { Store } from "../src/project/Store.ts"
 import { makeCloud } from "./support/Cloud.ts"
+import { makeR2 } from "./support/R2.ts"
 
 const claudeUrl =
   "https://claude.com/cai/oauth/authorize?code=true&client_id=9d1c250a-e61b-44d9-88ed-5944d1962f5e&response_type=code&scope=user%3Ainference&state=abc"
@@ -716,7 +717,7 @@ describe("a project, end to end", () => {
     })
   )
 
-  it.live("archiving a project deletes its file keys", () =>
+  it.live("retiring a project deletes its file keys", () =>
     Effect.gen(function* () {
       const cloud = yield* makeCloud()
       const { project } = yield* setup(cloud)
@@ -733,7 +734,7 @@ describe("a project, end to end", () => {
       })
       assert.strictEqual((yield* cloud.phone.ListIntegrations()).length, 1)
       const clients = Context.get(cloud.workerContext, ProjectClients)
-      yield* clients.use(project.id, (client) => client.Archive())
+      yield* clients.use(project.id, (client) => client.Delete())
       assert.deepStrictEqual(yield* cloud.phone.ListIntegrations(), [])
       yield* cloud.close
     })
@@ -1085,14 +1086,14 @@ describe("a project, end to end", () => {
     })
   )
 
-  it.live("archiving stops the project: no sandbox, no deliveries, gone from Home", () =>
+  it.live("retiring stops the project for good: no sandbox, no deliveries, gone from Home", () =>
     Effect.gen(function* () {
       const cloud = yield* makeCloud()
       const { project } = yield* setup(cloud)
       yield* cloud.alarm(project.id)
       const clients = Context.get(cloud.workerContext, ProjectClients)
       yield* cloud.phone.SendMessage({ projectId: project.id, text: "One more thing" })
-      yield* clients.use(project.id, (client) => client.Archive())
+      yield* clients.use(project.id, (client) => client.Delete())
       yield* cloud.alarm(project.id)
       assert.strictEqual(cloud.world.delivered.length, 1)
       assert.strictEqual(envFileOf(cloud, project.id).sandbox.state, "killed")
@@ -1317,6 +1318,270 @@ describe("sandbox refresh", () => {
       assert.lengthOf(donors(), 1)
       assert.isFalse(commands(before).some((c) => c.includes("refresh.sh")))
       assert.strictEqual((yield* core.sandbox).templateBuild, "b2")
+      yield* cloud.close
+    })
+  )
+})
+
+describe("archiving a project (theirs, reversible)", () => {
+  const bodyOf = (response: { readonly body: any }) =>
+    response.body._tag === "Uint8Array" ? new TextDecoder().decode(response.body.body) : ""
+
+  it.live(
+    "puts it away: off Home and the deck, nothing delivered, sandbox paused, link down; restore brings it all back",
+    () =>
+      Effect.gen(function* () {
+        const cloud = yield* makeCloud()
+        const { project } = yield* setup(cloud)
+        yield* cloud.alarm(project.id)
+        const { sandbox, env } = envFileOf(cloud, project.id)
+        const dreamd = yield* cloud.sandbox(env.DREAM_PROJECT_TOKEN)
+        yield* dreamd.AskQuestion({ question: "Kilograms or pounds?", options: ["kg", "lb"] })
+        yield* dreamd.Publish({ port: 3000 })
+        yield* dreamd.StartLiveActivity({ content: { title: "Building", step: { current: 1, total: 3 } } })
+        yield* cloud.phone.RegisterLiveActivity({
+          projectId: project.id,
+          deviceId: "8f14e45f-ceea-4e7b-9a0c-6a3f1b2c3d4e" as any,
+          activityId: "activity-1",
+          pushToken: "live-token-1"
+        })
+
+        const archived = yield* cloud.phone.ArchiveProject({ projectId: project.id })
+        assert.isDefined(cloud.world.pushes.find((p) => p.kind === "live:end"))
+        assert.strictEqual(archived.project.id, project.id)
+        assert.deepStrictEqual(yield* cloud.phone.ListProjects(), [])
+        assert.deepStrictEqual(yield* cloud.phone.ListOpenAsks(), [])
+        const listed = yield* cloud.phone.ListArchivedProjects()
+        assert.deepStrictEqual(
+          listed.map((row) => [row.project.id, row.archivedAt]),
+          [[project.id, archived.archivedAt]]
+        )
+        assert.strictEqual(sandbox.state, "paused")
+        // Archiving again changes nothing.
+        const again = yield* cloud.phone.ArchiveProject({ projectId: project.id })
+        assert.deepStrictEqual(again.archivedAt, archived.archivedAt)
+
+        // A message sent meanwhile waits; the published link says it's put away rather than waking the sandbox.
+        yield* cloud.phone.SendMessage({ projectId: project.id, text: "Pounds, actually" })
+        yield* cloud.alarm(project.id)
+        assert.strictEqual(cloud.world.delivered.length, 1)
+        assert.strictEqual(sandbox.state, "paused")
+        const host = new URL(project.publicUrl).host
+        const page = yield* gateway(host, new Request(project.publicUrl)).pipe(
+          Effect.provideContext(cloud.workerContext)
+        )
+        assert.strictEqual(page.status, 404)
+        assert.include(bodyOf(page), "archived it")
+
+        const restored = yield* cloud.phone.RestoreProject({ projectId: project.id })
+        assert.strictEqual(restored.project.id, project.id)
+        assert.strictEqual(restored.openAsks, 1)
+        assert.deepStrictEqual(
+          (yield* cloud.phone.ListProjects()).map((row) => row.project.id),
+          [project.id]
+        )
+        assert.strictEqual((yield* cloud.phone.ListOpenAsks()).length, 1)
+        assert.deepStrictEqual(yield* cloud.phone.ListArchivedProjects(), [])
+        yield* cloud.alarm(project.id)
+        assert.strictEqual(cloud.world.delivered.length, 2)
+        assert.deepStrictEqual(
+          cloud.world.delivered[1]?.events.map((e: any) => e.text),
+          ["Pounds, actually"]
+        )
+        // The same sandbox, with everything in it.
+        assert.strictEqual(envFileOf(cloud, project.id).sandbox, sandbox)
+        yield* cloud.close
+      })
+  )
+
+  it.live("pauses a running turn with the sandbox, and restarts it on restore", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project } = yield* setup(cloud)
+      yield* cloud.alarm(project.id)
+      const { sandbox, env } = envFileOf(cloud, project.id)
+      const dreamd = yield* cloud.sandbox(env.DREAM_PROJECT_TOKEN)
+      yield* dreamd.ReportTurn({ state: "started", eventIds: [] })
+      const core = Context.get((yield* Effect.promise(() => cloud.project(project.id))).context, Core)
+      const store = Context.get((yield* Effect.promise(() => cloud.project(project.id))).context, Store)
+
+      yield* cloud.phone.ArchiveProject({ projectId: project.id })
+      assert.strictEqual(sandbox.state, "paused")
+      const held = yield* core.sandbox
+      assert.isFalse(held.working)
+      assert.isTrue(held.interruptedTurn)
+      assert.strictEqual((yield* core.activity).state, "idle")
+      // No keepalive wakes it while it's archived.
+      assert.deepStrictEqual(yield* store.dueTimers(Number.MAX_SAFE_INTEGER), [])
+      yield* cloud.alarm(project.id)
+      assert.strictEqual(sandbox.state, "paused")
+
+      const written = sandbox.files.get(DaemonEnvFile)!
+      sandbox.files.set(DaemonEnvFile, "before the restore")
+      yield* cloud.phone.RestoreProject({ projectId: project.id })
+      yield* cloud.alarm(project.id)
+      // dreamd was restarted (its env file rewritten), so the paused turn's events go to a fresh turn.
+      assert.strictEqual(sandbox.state, "running")
+      assert.strictEqual(sandbox.files.get(DaemonEnvFile)?.split("\n")[0], written.split("\n")[0])
+      assert.isUndefined((yield* core.sandbox).interruptedTurn)
+      yield* cloud.close
+    })
+  )
+
+  it.live("holds its wakes while archived, and fires the ones that came due once it's restored", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project } = yield* setup(cloud)
+      yield* cloud.alarm(project.id)
+      const dreamd = yield* cloud.sandbox(envFileOf(cloud, project.id).env.DREAM_PROJECT_TOKEN)
+      yield* dreamd.ScheduleWake({
+        when: { _tag: "At", at: DateTime.add(yield* DateTime.now, { milliseconds: 200 }) },
+        why: "Check the digest"
+      })
+      yield* cloud.phone.ArchiveProject({ projectId: project.id })
+      yield* Effect.sleep("300 millis")
+      yield* cloud.alarm(project.id)
+      assert.strictEqual(cloud.world.delivered.length, 1)
+      assert.strictEqual((yield* dreamd.ListWakes()).length, 1)
+
+      yield* cloud.phone.RestoreProject({ projectId: project.id })
+      yield* cloud.alarm(project.id)
+      const [due] = cloud.world.delivered.at(-1)!.events as ReadonlyArray<AgentEvent>
+      assert.strictEqual(due?._tag, "WakeDue")
+      assert.strictEqual(cloud.world.delivered.length, 2)
+      yield* cloud.close
+    })
+  )
+
+  it.live("only their owner can archive, restore or list them", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project } = yield* setup(cloud)
+      yield* cloud.phone.ArchiveProject({ projectId: project.id })
+      const other = yield* cloud.phone.DevSignIn({ email: "someone@else.com", secret: Redacted.make("dev-secret") })
+      cloud.session.token = Redacted.value(other.sessionToken)
+      assert.strictEqual((yield* Effect.flip(cloud.phone.RestoreProject({ projectId: project.id })))._tag, "NotFound")
+      assert.strictEqual((yield* Effect.flip(cloud.phone.ArchiveProject({ projectId: project.id })))._tag, "NotFound")
+      assert.deepStrictEqual(yield* cloud.phone.ListArchivedProjects(), [])
+      yield* cloud.close
+    })
+  )
+})
+
+describe("deleting a project (theirs, for good)", () => {
+  const bodyOf = (response: { readonly body: any }) =>
+    response.body._tag === "Uint8Array" ? new TextDecoder().decode(response.body.body) : ""
+
+  it.live(
+    "deletes the sandbox, its rows, file keys and media, withdraws its notifications, and takes the link down",
+    () =>
+      Effect.gen(function* () {
+        const r2 = makeR2()
+        const cloud = yield* makeCloud({}, { media: r2.bucket })
+        const { project } = yield* setup(cloud)
+        yield* cloud.alarm(project.id)
+        const { sandbox, env } = envFileOf(cloud, project.id)
+        const dreamd = yield* cloud.sandbox(env.DREAM_PROJECT_TOKEN)
+        const question = yield* dreamd.AskQuestion({ question: "Kilograms or pounds?", options: ["kg", "lb"] })
+        const request = yield* dreamd.RequestAccess({
+          request: { _tag: "File", service: "SMTP", name: "smtp-password" },
+          why: "Send the digest by email."
+        })
+        yield* cloud.phone.SubmitKeyAccess({ projectId: project.id, messageId: request.id, key: Redacted.make("pass") })
+        const upload = yield* dreamd.CreateMediaUpload({ filename: "shot.png", contentType: "image/png", sizeBytes: 3 })
+        yield* Effect.promise(() =>
+          r2.bucket.put(`projects/${project.id}/media/${upload.media.id}`, new Uint8Array([1, 2, 3]))
+        )
+        yield* dreamd.StartLiveActivity({ content: { title: "Building", step: { current: 1, total: 3 } } })
+        yield* cloud.phone.RegisterLiveActivity({
+          projectId: project.id,
+          deviceId: "8f14e45f-ceea-4e7b-9a0c-6a3f1b2c3d4e" as any,
+          activityId: "activity-1",
+          pushToken: "live-token-1"
+        })
+        yield* dreamd.Publish({ port: 3000 })
+        yield* dreamd.ScheduleWake({ when: { _tag: "Cron", expression: "55 6 * * *" }, why: "Brief" })
+
+        yield* cloud.phone.DeleteProject({ projectId: project.id })
+
+        assert.strictEqual(sandbox.state, "killed")
+        assert.deepStrictEqual(yield* cloud.phone.ListProjects(), [])
+        assert.deepStrictEqual(yield* cloud.phone.ListOpenAsks(), [])
+        assert.deepStrictEqual(yield* cloud.phone.ListArchivedProjects(), [])
+        assert.deepStrictEqual(yield* cloud.phone.ListIntegrations(), [])
+        assert.strictEqual(r2.objects.size, 0)
+        assert.deepStrictEqual(cloud.db.prepare("SELECT * FROM media").all(), [])
+        // Its notifications stay, withdrawn, so the phone learns they're stale; the usage ledger keeps its minutes.
+        assert.deepStrictEqual(
+          (yield* cloud.phone.FilterStaleNotifications({ notificationIds: [question.notificationId!] })).stale,
+          [question.notificationId!]
+        )
+        const withdrawn = cloud.world.pushes
+          .filter((p) => p.kind === "silent" && (p.payload as any)._tag === "Withdraw")
+          .flatMap((p) => (p.payload as any).notificationIds)
+        assert.include(withdrawn, question.notificationId)
+        assert.isDefined(cloud.world.pushes.find((p) => p.kind === "live:end"))
+
+        // The DO keeps only its tombstone.
+        const storage = (yield* Effect.promise(() => cloud.project(project.id))).storage
+        for (const table of ["messages", "schedules", "events", "timers", "project", "status", "sandbox"]) {
+          assert.deepStrictEqual(storage.db.prepare(`SELECT * FROM ${table}`).all(), [], table)
+        }
+        assert.strictEqual(storage.db.prepare("SELECT * FROM archived").all().length, 1)
+
+        const host = new URL(project.publicUrl).host
+        const page = yield* gateway(host, new Request(project.publicUrl)).pipe(
+          Effect.provideContext(cloud.workerContext)
+        )
+        assert.strictEqual(page.status, 404)
+        assert.include(bodyOf(page), "Nothing here")
+        assert.strictEqual((yield* Effect.flip(cloud.phone.DeleteProject({ projectId: project.id })))._tag, "NotFound")
+        assert.strictEqual(
+          (yield* Effect.flip(cloud.phone.SendMessage({ projectId: project.id, text: "Still there?" })))._tag,
+          "NotFound"
+        )
+        yield* cloud.close
+      })
+  )
+
+  it.live("nothing late brings it back: no wake, delivery or agent message after a delete mid-turn", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project } = yield* setup(cloud)
+      yield* cloud.alarm(project.id)
+      const dreamd = yield* cloud.sandbox(envFileOf(cloud, project.id).env.DREAM_PROJECT_TOKEN)
+      yield* dreamd.ReportTurn({ state: "started", eventIds: [] })
+      yield* dreamd.ScheduleWake({
+        when: { _tag: "At", at: DateTime.add(yield* DateTime.now, { milliseconds: 200 }) },
+        why: "Check the digest"
+      })
+      yield* cloud.phone.SendMessage({ projectId: project.id, text: "One more thing" })
+      const instance = yield* Effect.promise(() => cloud.project(project.id))
+      const alarms = instance.storage.alarms.length
+
+      yield* cloud.phone.DeleteProject({ projectId: project.id })
+      yield* Effect.sleep("300 millis")
+      yield* cloud.alarm(project.id)
+      // A delivery that was due finds it deleted, even with an event put back in the inbox.
+      const store = Context.get(instance.context, Store)
+      const core = Context.get(instance.context, Core)
+      yield* core.enqueue({ _tag: "Alert", id: "evt_late" as any, at: yield* DateTime.now, reason: "late" })
+      yield* cloud.alarm(project.id)
+      assert.strictEqual(cloud.world.delivered.length, 1)
+      assert.strictEqual(
+        [...cloud.world.sandboxes.values()].filter((s) => s.metadata.projectId === project.id && s.state !== "killed")
+          .length,
+        0
+      )
+      assert.deepStrictEqual(yield* store.dueTimers(Number.MAX_SAFE_INTEGER), [])
+      // The last thing the native alarm was told is to clear.
+      assert.isAbove(instance.storage.alarms.length, alarms)
+      assert.isNull(instance.storage.alarms.at(-1))
+      // The agent's sandbox can't post anything more.
+      assert.isTrue(
+        Exit.isFailure(yield* dreamd.SendMessage({ text: "Done!", media: [], notify: true }).pipe(Effect.exit))
+      )
+      assert.deepStrictEqual(yield* cloud.phone.ListProjects(), [])
       yield* cloud.close
     })
   )

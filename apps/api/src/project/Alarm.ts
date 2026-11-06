@@ -3,7 +3,7 @@
  * SQLite; `reschedule` points the alarm at the earliest of them.
  */
 import { Context, Effect, Layer, Option } from "effect"
-import { Store } from "./Store.ts"
+import { Singletons, Store } from "./Store.ts"
 
 export class NativeAlarm extends Context.Service<
   NativeAlarm,
@@ -44,7 +44,9 @@ export class Alarm extends Context.Service<Alarm, { readonly reschedule: Effect.
       const native = yield* NativeAlarm
       const reschedule = Effect.gen(function* () {
         const timers = yield* store.nextTimerMs
-        const wakes = yield* store.nextWakeMs
+        // An archived project's wakes wait: the ones that come due fire once it's restored.
+        const archived = Option.isSome(yield* store.getSingleton(...Singletons.archived))
+        const wakes = archived ? Option.none<number>() : yield* store.nextWakeMs
         const next = [timers, wakes].flatMap((value) => (Option.isSome(value) ? [value.value] : []))
         if (next.length === 0) return yield* native.clear
         yield* native.set(Math.min(...next))

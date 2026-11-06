@@ -93,6 +93,18 @@ export class ProjectRpcs extends RpcGroup.make(
   Rpc.make("GatewayTarget", { success: GatewayTarget, error: Schema.Union([NotFound, UpstreamFailure]) }),
   /** Refresh their ChatGPT tokens now and push them to every sandbox of theirs. */
   Rpc.make("RefreshModelCredential", { error: UpstreamFailure }),
-  /** Stops the project for good: kills its sandbox and drops its wakes and undelivered events. */
-  Rpc.make("Archive", {})
+  /**
+   * Deletes the project for good (`DeleteProject`, and the operator's `/admin/projects/:id/archive`): kills its
+   * sandbox and any Mac, withdraws its notifications and ends its Live Activity, deletes its file keys and its Home
+   * row, and empties this DO but for a tombstone, so nothing late (an alarm, a delivery under way, dreamd) brings
+   * any of it back. Its media in R2 is the Worker's to remove.
+   */
+  Rpc.make("Delete", {}),
+  /**
+   * They archived the project (`ArchiveProject`): hold the agent and pause the sandbox, keeping everything. Returns
+   * when it was archived (the first time, for a repeat).
+   */
+  Rpc.make("Archive", { success: Schema.DateTimeUtc }),
+  /** They restored it (`RestoreProject`): the agent goes on with what was waiting. Nothing for one that isn't archived. */
+  Rpc.make("Restore", {})
 ) {}

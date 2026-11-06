@@ -16,6 +16,10 @@
  * template has a newer build, the sandbox is brought up to it between turns
  * (`e2b/Refresh.ts`), before the next delivery and shortly after each turn.
  * Projects that sleep for weeks catch up the next time something wakes them.
+ *
+ * An archived project is held: nothing is delivered or refreshed, no keepalive runs, the gateway doesn't serve
+ * it, and its sandbox is paused with everything in it (a running turn too). Restoring it lets delivery go on;
+ * a turn that was paused is restarted (`resume`).
  */
 import {
   type AgentEvent,
@@ -120,6 +124,9 @@ const withoutStarting = (record: SandboxRecord): SandboxRecord => {
   return rest
 }
 
+/** The `NotFound` entity `gatewayTarget` names for an archived project, so the gateway can say so. */
+export const ArchivedEntity = "archived project"
+
 export const backoffMs = (failures: number): number => Math.min(15 * 60_000, 5_000 * 3 ** Math.max(0, failures - 1))
 
 export class SandboxManager extends Context.Service<
@@ -141,8 +148,14 @@ export class SandboxManager extends Context.Service<
     readonly keepalive: Effect.Effect<void>
     /** Brings the sandbox up to the template's newest build, if it's behind and between turns. */
     readonly refresh: Effect.Effect<void>
-    /** Kills the sandbox for good (archiving the project). */
-    readonly archive: Effect.Effect<void>
+    /** Kills the sandbox for good (retiring the project). */
+    readonly destroy: Effect.Effect<void>
+    /** They archived the project: stop the keepalive, refresh and delivery timers, and pause the sandbox where it is. */
+    readonly pause: Effect.Effect<void>
+    /** They restored it: deliver what's waiting, and restart dreamd if a turn was paused under it. */
+    readonly restored: Effect.Effect<void>
+    /** The `sandbox-resume` timer: brings back a turn the archive paused (dreamd restarts, and its events go again). */
+    readonly resume: Effect.Effect<void>
   }
 >()("@dream/api/project/SandboxManager") {
   static readonly layer = Layer.effect(
@@ -165,6 +178,26 @@ export class SandboxManager extends Context.Service<
 
       const update = (f: (record: SandboxRecord) => SandboxRecord) =>
         Effect.flatMap(core.sandbox, (r) => core.saveSandbox(f(r)))
+
+      const deleted = Effect.map(store.getSingleton(...Singletons.deleted), Option.isSome)
+
+      /** Deleted, or archived until they restore it: either way, nothing runs. */
+      const held = Effect.gen(function* () {
+        if (yield* deleted) return true
+        return Option.isSome(yield* store.getSingleton(...Singletons.archived))
+      })
+
+      const pauseSandbox = (sandboxId: string) =>
+        e2b
+          .pause(sandboxId)
+          .pipe(
+            Effect.catch((error) =>
+              Effect.logWarning(
+                "couldn't pause the archived project's sandbox; it pauses on its timeout",
+                error.message
+              )
+            )
+          )
 
       /**
        * Waits until dreamd answers. With `envHash` (after writing the env file), it waits for the dreamd that read
@@ -508,7 +541,7 @@ export class SandboxManager extends Context.Service<
             yield* store.clearTimer("sandbox-refresh")
             const record = yield* core.sandbox
             if (record.status !== "ready" || record.access === undefined || record.daemonToken === undefined) return
-            if (Option.isSome(yield* store.getSingleton(...Singletons.archived))) return
+            if (yield* held) return
             yield* refreshIfDue(record.access, record.daemonToken)
           })
         )
@@ -516,13 +549,14 @@ export class SandboxManager extends Context.Service<
 
       const deliverOnce = Effect.gen(function* () {
         const now = yield* Clock.currentTimeMillis
+        // Restoring an archived project sets the timer again.
+        if (yield* held) return yield* store.clearTimer("deliver")
         const pause = yield* core.usagePause
         if (Option.isSome(pause) && DateTime.toEpochMillis(pause.value.until) > now) {
           yield* store.setTimer("deliver", DateTime.toEpochMillis(pause.value.until))
           return yield* alarm.reschedule
         }
         yield* store.clearTimer("deliver")
-        if (Option.isSome(yield* store.getSingleton(...Singletons.archived))) return
         const pending = yield* store.pendingEvents(BatchSize)
         if (pending.length === 0) return
         const project = yield* core.project.pipe(Effect.orDie)
@@ -552,6 +586,16 @@ export class SandboxManager extends Context.Service<
               }))
             )
           )
+        }
+        // Archived while the sandbox was being created or resumed: leave the events for after the restore.
+        if (yield* held) {
+          // Deleted meanwhile: the sandbox it just created or resumed goes too.
+          if (yield* deleted) {
+            yield* e2b.kill(access.sandboxId).pipe(Effect.ignore)
+            return yield* update((r) => ({ ...withoutStarting(r), status: "none" }))
+          }
+          yield* update(withoutStarting)
+          return yield* pauseSandbox(access.sandboxId)
         }
         yield* refreshIfDue(access, daemonToken)
         yield* refreshDaemonEnv(access, daemonToken)
@@ -594,6 +638,10 @@ export class SandboxManager extends Context.Service<
 
       const gatewayTarget = Effect.gen(function* () {
         const project = yield* core.project
+        // Serving it would wake the sandbox, and with it a turn the archive paused.
+        if (Option.isSome(yield* store.getSingleton(...Singletons.archived))) {
+          return yield* new NotFound({ entity: ArchivedEntity, id: project.id })
+        }
         if (project.publishedPort === undefined) {
           return yield* new NotFound({ entity: "published port", id: project.id })
         }
@@ -634,6 +682,12 @@ export class SandboxManager extends Context.Service<
 
       const keepalive = Effect.gen(function* () {
         const record = yield* core.sandbox
+        if (yield* held) {
+          // A turn that started anyway (the sandbox was woken while archived) is paused again.
+          yield* store.clearTimer("turn-keepalive")
+          if (record.working && record.access !== undefined) yield* pause
+          return
+        }
         if (!record.working || record.access === undefined) return yield* store.clearTimer("turn-keepalive")
         yield* store.setTimer("turn-keepalive", (yield* Clock.currentTimeMillis) + Duration.toMillis(KeepaliveEvery))
         yield* alarm.reschedule
@@ -687,9 +741,13 @@ export class SandboxManager extends Context.Service<
           yield* e2b.setTimeout(record.access.sandboxId, Duration.toSeconds(IdleTimeout)).pipe(Effect.ignore)
         }
         // Machine time for this turn, plus the idle tail before E2B pauses it.
-        if (record.turnStartedAt !== undefined) {
+        yield* recordTurnUsage(record, DateTime.addDuration(now, IdleTimeout))
+      })
+
+      const recordTurnUsage = (record: SandboxRecord, ended: DateTime.Utc) =>
+        Effect.gen(function* () {
+          if (record.turnStartedAt === undefined) return
           const project = yield* core.project.pipe(Effect.orDie)
-          const ended = DateTime.add(now, { minutes: Duration.toMinutes(IdleTimeout) })
           const minutes = (DateTime.toEpochMillis(ended) - DateTime.toEpochMillis(record.turnStartedAt)) / 60_000
           yield* projects.recordUsage({
             id: `use_${randomToken(22)}`,
@@ -701,10 +759,74 @@ export class SandboxManager extends Context.Service<
             endedAt: ended,
             minutes: Math.round(minutes * 100) / 100
           })
+        })
+
+      const pause = Effect.gen(function* () {
+        for (const timer of ["deliver", "turn-keepalive", "sandbox-refresh", "sandbox-resume"] as const) {
+          yield* store.clearTimer(timer)
         }
+        yield* alarm.reschedule
+        const record = yield* core.sandbox
+        const now = yield* DateTime.now
+        if (record.working) yield* recordTurnUsage(record, now)
+        // Paused, the sandbox is asleep: the phone shows no turn, and the paused one is noted for the restore.
+        yield* update((r) => {
+          const { turnStartedAt: _, awakeUntil: _a, ...rest } = withoutStarting(r)
+          return r.working ? { ...rest, working: false, turnEndedAt: now, interruptedTurn: true } : rest
+        })
+        if (record.access !== undefined) yield* pauseSandbox(record.access.sandboxId)
       })
 
-      const archive = Effect.gen(function* () {
+      const restored = Effect.gen(function* () {
+        const now = yield* Clock.currentTimeMillis
+        if ((yield* core.sandbox).interruptedTurn === true) yield* store.setTimer("sandbox-resume", now)
+        if ((yield* store.pendingEvents(1)).length > 0) yield* store.setTimer("deliver", now)
+        yield* alarm.reschedule
+      })
+
+      const resume = busy
+        .withPermits(1)(
+          Effect.gen(function* () {
+            yield* store.clearTimer("sandbox-resume")
+            if (yield* held) return
+            const record = yield* core.sandbox
+            if (record.interruptedTurn !== true) return
+            const clear = update(({ interruptedTurn: _, ...r }) => r)
+            if (record.status !== "ready" || record.access === undefined || record.daemonToken === undefined) {
+              return yield* clear
+            }
+            const daemonToken = record.daemonToken
+            yield* e2b.connect(record.access.sandboxId, Duration.toSeconds(IdleTimeout)).pipe(
+              Effect.tap(() => (record.rulesDirty ? pushRules(record, false) : Effect.void)),
+              // dreamd puts the paused turn's events back in its inbox and starts a fresh turn with them.
+              Effect.flatMap((access) => restartDaemon(access, daemonToken)),
+              Effect.andThen(update(({ interruptedTurn: _, ...r }) => ({ ...r, failures: 0 }))),
+              Effect.catch((error) =>
+                Effect.gen(function* () {
+                  if (error._tag === "SandboxGone") {
+                    // Its inbox went with it; the next delivery creates a new sandbox.
+                    yield* Effect.logError("the restored project's sandbox no longer exists", {
+                      sandboxId: error.sandboxId
+                    })
+                    return yield* update(({ interruptedTurn: _, ...r }) => ({
+                      ...r,
+                      status: "none",
+                      rulesDirty: false
+                    }))
+                  }
+                  const failures = record.failures + 1
+                  yield* Effect.logWarning("couldn't restart the turn the archive paused", { failures, error })
+                  yield* update((r) => ({ ...r, failures, lastError: error.message }))
+                  yield* store.setTimer("sandbox-resume", (yield* Clock.currentTimeMillis) + backoffMs(failures))
+                  yield* alarm.reschedule
+                })
+              )
+            )
+          })
+        )
+        .pipe(Effect.catchCause((cause) => Effect.logWarning("resuming the restored project failed", { cause })))
+
+      const destroy = Effect.gen(function* () {
         const record = yield* core.sandbox
         if (record.access !== undefined) yield* e2b.kill(record.access.sandboxId).pipe(Effect.ignore)
         yield* update((r) => {
@@ -725,7 +847,10 @@ export class SandboxManager extends Context.Service<
         turnFinished,
         keepalive: keepalive.pipe(Effect.catch(() => Effect.void)),
         refresh,
-        archive
+        destroy,
+        pause,
+        restored,
+        resume
       })
     })
   )

@@ -25,6 +25,7 @@ import { Atom } from "effect/reactivity"
 import { AppClient } from "../data/AppClient.ts"
 import { type AnswerInput, Answers, asksChanged } from "../data/Answers.ts"
 import { withWriteTimeout } from "../data/errors.ts"
+import { ProjectArchive } from "../data/ProjectArchive.ts"
 import { ProjectStates } from "../data/ProjectStates.ts"
 import { Replies, type Reply, type ReplyTarget } from "../data/Replies.ts"
 import { Session } from "../data/Session.ts"
@@ -90,6 +91,32 @@ export const modelConnectionsAtom = appRuntime
 export const integrationsAtom = appRuntime
   .atom(AppClient.use((app) => app.ListIntegrations()))
   .pipe(Atom.withReactivity(["integrations"]))
+
+/** Their archived projects, for Settings. */
+export const archivedProjectsAtom = appRuntime
+  .atom(AppClient.use((app) => app.ListArchivedProjects()))
+  .pipe(Atom.withReactivity(["archived"]))
+
+/** Projects archived or deleted from this phone: Home leaves them out at once. */
+export const hiddenProjectsAtom = appRuntime.subscriptionRef(ProjectArchive.useSync((archive) => archive.hidden))
+
+export const archiveProjectFn = appRuntime.fn(
+  Effect.fn(function* (projectId: ProjectId) {
+    return yield* ProjectArchive.use((archive) => archive.archive(projectId))
+  })
+)
+
+export const restoreProjectFn = appRuntime.fn(
+  Effect.fn(function* (projectId: ProjectId) {
+    return yield* ProjectArchive.use((archive) => archive.restore(projectId))
+  })
+)
+
+export const deleteProjectFn = appRuntime.fn(
+  Effect.fn(function* (projectId: ProjectId) {
+    yield* ProjectArchive.use((archive) => archive.remove(projectId))
+  })
+)
 
 /** Refreshes everything Home shows, e.g. when the app returns to the foreground or a push arrives. */
 export const refreshHomeFn = appRuntime.fn(

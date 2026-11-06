@@ -13,7 +13,7 @@ import { Core } from "./Core.ts"
 import { nextWakeAt } from "./Handlers.ts"
 import { Machines } from "./Machines.ts"
 import { SandboxManager } from "./SandboxManager.ts"
-import { Store } from "./Store.ts"
+import { Singletons, Store } from "./Store.ts"
 
 export class Scheduler extends Context.Service<Scheduler, { readonly run: Effect.Effect<void> }>()(
   "@dream/api/project/Scheduler"
@@ -30,6 +30,7 @@ export class Scheduler extends Context.Service<Scheduler, { readonly run: Effect
 
       const fireWakes = (nowMs: number) =>
         Effect.gen(function* () {
+          if (Option.isSome(yield* store.getSingleton(...Singletons.archived))) return
           const due = yield* store.dueWakes(nowMs)
           if (due.length === 0) return
           const project = yield* core.project.pipe(Effect.orDie)
@@ -88,6 +89,9 @@ export class Scheduler extends Context.Service<Scheduler, { readonly run: Effect
               break
             case "sandbox-refresh":
               yield* sandbox.refresh
+              break
+            case "sandbox-resume":
+              yield* sandbox.resume
               break
             case "mac-idle":
               yield* machines.macIdleCheck

@@ -94,7 +94,12 @@ Scenarios (`dream://fixtures/<name>?to=/path`, or `-dreamScenario a,b`): `signed
 Spotify), `spotify-stopped` (Lift Log's Spotify connection stopped working: its card says so and connects again),
 `long-question`, `vague-access`, `question-context` (see the message ids above),
 `unsupported-message`, `stall-next-write` (the next answer, message, new idea, key or decline hangs until the app
-gives up after 25 s; the retry goes through).
+gives up after 25 s; the retry goes through), `archived` (Recipe Scaler and Morning Brief are archived: off Home,
+listed under Archived in Settings).
+
+Holding a project on Home opens iOS's context menu (expo-router's `Link.Menu`) with Archive and Delete. Archive
+takes it off Home at once with Undo in the toast; Settings lists archived projects with Restore and Delete. Delete
+asks first and has no Undo.
 
 The agent's presence (Deck v3 "A+B+C": the row at the bottom of Chat, the dot and state line in the header and on
 Home, the receipt under their latest message) follows the mock's scenario, a new question in Lift

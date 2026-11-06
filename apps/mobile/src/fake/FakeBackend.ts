@@ -12,6 +12,7 @@ import {
   type AccessMessage,
   type AgentActivity,
   AppAuth,
+  type ArchivedProject,
   AppRpcs,
   CurrentUser,
   type Device,
@@ -82,7 +83,8 @@ export const Scenario = [
   "activity-working",
   "activity-done",
   "activity-home",
-  "activity-new-idea"
+  "activity-new-idea",
+  "archived"
 ] as const
 export type Scenario = (typeof Scenario)[number]
 
@@ -92,6 +94,8 @@ interface ProjectRecord {
   messages: Array<Message>
   working: boolean
   activity: AgentActivity
+  /** Set while it's archived: off Home and the deck, its agent held. */
+  archivedAt?: DateTime.Utc
   readonly events: PubSub.PubSub<ProjectEvent>
 }
 
@@ -341,6 +345,9 @@ export class FakeBackend extends Context.Service<
           return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20)}` as NotificationId
         })
 
+      /** Projects on Home: all but the archived ones. */
+      const active = () => Array.from(records.values()).filter((record) => record.archivedAt === undefined)
+
       const summaryOf = (record: ProjectRecord): ProjectSummary => {
         const milestones = record.status.milestones
         return {
@@ -439,15 +446,55 @@ export class FakeBackend extends Context.Service<
                   live.add(message.notificationId.toLowerCase())
             return { stale: notificationIds.filter((id) => !live.has(id.toLowerCase())) }
           }),
-        ListProjects: () => Effect.sync(() => Array.from(records.values(), summaryOf)),
+        ListProjects: () => Effect.sync(() => Array.from(active(), summaryOf)),
         ListOpenAsks: () =>
           Effect.sync(() => {
             const asks: Array<OpenAsk> = []
-            for (const record of records.values())
+            for (const record of active())
               for (const message of record.messages)
                 if (isOpenAsk(message)) asks.push({ project: record.project, message })
             return asks.sort((a, b) => DateTime.Order(a.message.createdAt, b.message.createdAt))
           }),
+        ListArchivedProjects: () =>
+          Effect.sync(() =>
+            Array.from(records.values())
+              .flatMap(
+                (record): Array<ArchivedProject> =>
+                  record.archivedAt ? [{ project: record.project, archivedAt: record.archivedAt }] : []
+              )
+              .sort((a, b) => DateTime.Order(b.archivedAt, a.archivedAt))
+          ),
+        ArchiveProject: ({ projectId }) =>
+          stallable(
+            Effect.gen(function* () {
+              const record = yield* find(projectId)
+              record.archivedAt ??= yield* DateTime.now
+              // Its agent is held, so nothing reads as working or starting while it's put away.
+              if (record.activity.state !== "idle") {
+                yield* setActivity(record, { state: "idle", since: yield* DateTime.now, ...nextWake(record) })
+              }
+              return { project: record.project, archivedAt: record.archivedAt }
+            })
+          ),
+        DeleteProject: ({ projectId }) =>
+          stallable(
+            Effect.gen(function* () {
+              const record = yield* find(projectId)
+              records.delete(projectId)
+              integrations = integrations.filter(
+                (integration) => !(integration.access._tag === "File" && integration.access.projectId === projectId)
+              )
+              yield* PubSub.shutdown(record.events)
+            })
+          ),
+        RestoreProject: ({ projectId }) =>
+          stallable(
+            Effect.gen(function* () {
+              const record = yield* find(projectId)
+              delete record.archivedAt
+              return summaryOf(record)
+            })
+          ),
         CreateProject: ({ idea, harness }) =>
           stallable(
             Effect.gen(function* () {
@@ -867,6 +914,16 @@ export class FakeBackend extends Context.Service<
           case "reset":
             stallNextWrite = false
             return yield* load(makeWorld(now))
+          case "archived": {
+            // Recipe Scaler was put away a few days ago, Morning Brief last month.
+            const at = (slug: string, days: number) => {
+              const record = Array.from(records.values()).find((r) => r.project.slug === slug)
+              if (record) record.archivedAt = DateTime.subtract(now, { days })
+            }
+            at("recipe-scaler", 3)
+            at("morning-brief", 26)
+            return
+          }
           case "paused": {
             const lift = Array.from(records.values()).find((r) => r.project.slug === "lift-log")
             if (lift) {

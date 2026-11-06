@@ -24,7 +24,7 @@ import { Context, Effect, Layer, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import * as Migrator from "effect/sql/Migrator"
 import { SandboxAccess } from "../e2b/E2B.ts"
-import { decodeFirst, decodeRows, encodeJson, exec, jsonCodec } from "../db/Sql.ts"
+import { decodeFirst, decodeJson, decodeRows, encodeJson, exec, jsonCodec } from "../db/Sql.ts"
 
 // ---------------------------------------------------------------------------
 // Internal state shapes
@@ -64,6 +64,11 @@ export const SandboxRecord = Schema.Struct({
   latestBuild: Schema.optionalKey(
     Schema.Struct({ build: Schema.String, release: Schema.optionalKey(Schema.String), checkedAt: Schema.DateTimeUtc })
   ),
+  /**
+   * A turn was running when they archived the project, and the sandbox was paused under it. On restore dreamd is
+   * restarted, so the turn's events go to a fresh turn in the same session.
+   */
+  interruptedTurn: Schema.optionalKey(Schema.Boolean),
   /** Refreshing to `build` failed `failures` times in a row; don't try that build again before `retryAt`. */
   refreshFailure: Schema.optionalKey(
     Schema.Struct({
@@ -184,6 +189,10 @@ export const migrations = Migrator.fromRecord({
   "0002_archived": Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     yield* sql`CREATE TABLE archived (id INTEGER PRIMARY KEY CHECK (id = 1), json TEXT NOT NULL)`
+  }),
+  "0003_owner_archived": Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    yield* sql`CREATE TABLE owner_archived (id INTEGER PRIMARY KEY CHECK (id = 1), json TEXT NOT NULL)`
   })
 })
 
@@ -204,6 +213,7 @@ export type TimerName =
   | "browser-sweep"
   | "sandbox-retry"
   | "sandbox-refresh"
+  | "sandbox-resume"
 
 export class Store extends Context.Service<
   Store,
@@ -247,8 +257,12 @@ export class Store extends Context.Service<
 
     readonly setTimer: (name: TimerName, dueMs: number) => Effect.Effect<void>
     readonly clearTimer: (name: TimerName) => Effect.Effect<void>
-    /** Archiving: drop every timer, wake and undelivered event. */
+    /** Deleting: drop every timer, wake and undelivered event. */
     readonly clearSchedule: (at: string) => Effect.Effect<void>
+    /** Deleting: empty every table but the `deleted` tombstone. */
+    readonly wipe: Effect.Effect<void>
+    /** Sent notifications not yet withdrawn. */
+    readonly unwithdrawnNotifications: Effect.Effect<ReadonlyArray<NotificationId>>
     readonly dueTimers: (nowMs: number) => Effect.Effect<ReadonlyArray<TimerName>>
     readonly nextTimerMs: Effect.Effect<Option.Option<number>>
   }
@@ -431,6 +445,36 @@ export class Store extends Context.Service<
           yield* exec(sql`UPDATE events SET delivered_at = ${at} WHERE delivered_at IS NULL`)
         })
 
+      const wipe = Effect.forEach(
+        [
+          "messages",
+          "schedules",
+          "notifications",
+          "events",
+          "browser_sessions",
+          "timers",
+          "project",
+          "status",
+          "sandbox",
+          "live_activity",
+          "mac",
+          "usage_pause",
+          "owner_archived"
+        ],
+        clearSingleton,
+        { discard: true }
+      )
+
+      const unwithdrawnNotifications = sql`SELECT json FROM notifications`.pipe(
+        decodeRows(JsonRow),
+        Effect.map((rows) =>
+          rows
+            .map((row) => decodeJson(NotificationRecord, row.json))
+            .filter((record) => record.withdrawnAt === undefined)
+            .map((record) => record.id)
+        )
+      )
+
       const dueTimers = (nowMs: number) =>
         sql`SELECT name FROM timers WHERE due_ms <= ${nowMs} ORDER BY due_ms`.pipe(
           decodeRows(Schema.Struct({ name: Schema.String })),
@@ -471,6 +515,8 @@ export class Store extends Context.Service<
         setTimer,
         clearTimer,
         clearSchedule,
+        wipe,
+        unwithdrawnNotifications,
         dueTimers,
         nextTimerMs
       })
@@ -488,5 +534,8 @@ export const Singletons = {
   liveActivity: ["live_activity", LiveActivityRecord] as const,
   mac: ["mac", MacRecord] as const,
   usagePause: ["usage_pause", UsagePause] as const,
-  archived: ["archived", Schema.Struct({ at: Schema.DateTimeUtc })] as const
+  /** Deleted (`ProjectRpcs.Delete`): the tombstone `wipe` keeps. The table is older than the name. */
+  deleted: ["archived", Schema.Struct({ at: Schema.DateTimeUtc })] as const,
+  /** Archived by its owner (`ProjectRpcs.Archive`), until they restore it: the agent is held, nothing is lost. */
+  archived: ["owner_archived", Schema.Struct({ at: Schema.DateTimeUtc })] as const
 }

@@ -2,24 +2,26 @@
  * Settings: the subscription Dream runs on, the services connected for every
  * project, and the account.
  */
-import type { Integration, ModelConnection, ProjectId, ProjectSummary } from "@dream/domain"
+import type { ArchivedProject, Integration, ModelConnection, ProjectId, ProjectSummary } from "@dream/domain"
 import { useAtomValue } from "@effect/atom-react"
 import * as Application from "expo-application"
-import { Effect, Option } from "effect"
+import { DateTime, Effect, Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
 import { useRouter } from "expo-router"
 import { useUpdates } from "expo-updates"
 import { type ReactNode, useState } from "react"
 import { Pressable, ScrollView, Text, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
-import { providerName, resetLabel, usageDetail } from "../data/format.ts"
+import { dayLabel, providerName, resetLabel, usageDetail } from "../data/format.ts"
 import {
+  archivedProjectsAtom,
   disconnectIntegrationFn,
   disconnectModelConnectionFn,
   integrationsAtom,
   modelConnectionsAtom,
   projectsAtom,
   replaceKeyFn,
+  restoreProjectFn,
   sessionAtom,
   signOutFn
 } from "../state/atoms.ts"
@@ -27,6 +29,7 @@ import { applyUpdate, runningUpdate } from "../platform/updates.ts"
 import { appConfig } from "../state/runtime.ts"
 import { useAction, useToast } from "../ui/actions.ts"
 import { integrationReach, integrationSummary } from "../ui/describe.ts"
+import { useProjectActions } from "../ui/ProjectMenu.tsx"
 import { SecretField } from "../ui/Expanded.tsx"
 import { Button, Icon, IconButton, Lab } from "../ui/kit.tsx"
 import { color, gutter } from "../ui/theme.ts"
@@ -49,7 +52,13 @@ export default function Settings() {
     AsyncResult.value(useAtomValue(projectsAtom)),
     (): ReadonlyArray<ProjectSummary> => []
   )
-  const projectTitle = (id: ProjectId) => projects.find((summary) => summary.project.id === id)?.project.title
+  const archived = Option.getOrElse(
+    AsyncResult.value(useAtomValue(archivedProjectsAtom)),
+    (): ReadonlyArray<ArchivedProject> => []
+  )
+  const projectTitle = (id: ProjectId) =>
+    (projects.find((summary) => summary.project.id === id) ?? archived.find((row) => row.project.id === id))?.project
+      .title
   const signOut = useAction(signOutFn)
   return (
     <ScrollView
@@ -90,6 +99,14 @@ export default function Settings() {
           ))
         )}
       </Section>
+
+      {archived.length > 0 ? (
+        <Section title="Archived">
+          {archived.map((row) => (
+            <ArchivedRow key={row.project.id} archived={row} />
+          ))}
+        </Section>
+      ) : null}
 
       <Section title="Account">
         <Row
@@ -189,6 +206,28 @@ function Row(props: {
         </Pressable>
       ) : null}
     </View>
+  )
+}
+
+/** An archived project: Restore puts it back on Home as it was; Delete asks first. */
+function ArchivedRow(props: { readonly archived: ArchivedProject }) {
+  const { project, archivedAt } = props.archived
+  const restore = useAction(restoreProjectFn)
+  const { confirmDelete, deleting } = useProjectActions(project)
+  const toast = useToast()
+  const day = dayLabel(archivedAt, DateTime.nowUnsafe())
+  return (
+    <Row
+      title={project.title}
+      subtitle={`Archived ${day === "Today" || day === "Yesterday" ? day.toLowerCase() : day}`}
+      action="Restore"
+      busy={restore.busy || deleting}
+      onAction={() =>
+        restore.run(project.id, { onSuccess: () => toast(`${project.title} is back on Home`, { done: true }) })
+      }
+      secondary="Delete"
+      onSecondary={confirmDelete}
+    />
   )
 }
 

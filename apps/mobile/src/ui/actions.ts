@@ -2,7 +2,7 @@
  * Running an action atom from a tap: a busy flag for the button, and a toast
  * when it fails. Opening Google's or another provider's consent screen for an access request.
  */
-import type { AccessMessage, MessageId } from "@dream/domain"
+import type { AccessMessage, MessageId, ProjectId } from "@dream/domain"
 import { useAtomSet } from "@effect/atom-react"
 import { Cause, Exit, Option } from "effect"
 import type { Atom } from "effect/reactivity"
@@ -16,8 +16,16 @@ import { toastAtom } from "../state/ui.ts"
 export function useToast() {
   const set = useAtomSet(toastAtom)
   return useCallback(
-    (message: string, options?: { readonly undo?: MessageId; readonly done?: boolean }) =>
-      set(Option.some({ message, undo: options?.undo, done: options?.done === true, at: Date.now() })),
+    (message: string, options?: { readonly undo?: MessageId; readonly restore?: ProjectId; readonly done?: boolean }) =>
+      set(
+        Option.some({
+          message,
+          undo: options?.undo,
+          restore: options?.restore,
+          done: options?.done === true,
+          at: Date.now()
+        })
+      ),
     [set]
   )
 }

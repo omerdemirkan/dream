@@ -11,7 +11,7 @@ import { RpcServer } from "effect/rpc"
 import { Tokens } from "../auth/Tokens.ts"
 import { ApiConfig } from "../Config.ts"
 import { Access } from "../integrations/Access.ts"
-import { ProjectClients } from "../project/Client.ts"
+import { deleteProject } from "../project/Deletion.ts"
 import { LivePath } from "../project/ProjectRpcs.ts"
 import { timingSafeEqual } from "../lib/Bytes.ts"
 import { AppAuthServer, AuthedHandlers, bearer, PublicHandlers } from "./AppHandlers.ts"
@@ -182,15 +182,14 @@ export const route = (raw: Request) =>
       )
     }
 
-    // Operator tool (e2e cleanup): archive a project.
-    const archive = /^\/admin\/projects\/([^/]+)\/archive$/.exec(path)
-    if (archive !== null && request.method === "POST") {
+    // Operator tool (e2e cleanup): delete a project for good. The path predates the name; scripts call it.
+    const remove = /^\/admin\/projects\/([^/]+)\/archive$/.exec(path)
+    if (remove !== null && request.method === "POST") {
       if (!operator()) return HttpServerResponse.text("Forbidden", { status: 403 })
-      const projectId = Schema.decodeUnknownOption(ProjectId)(archive[1])
+      const projectId = Schema.decodeUnknownOption(ProjectId)(remove[1])
       if (Option.isNone(projectId)) return HttpServerResponse.text("Bad project id", { status: 400 })
-      const clients = yield* ProjectClients
-      yield* clients.use(projectId.value, (client) => client.Archive())
-      return HttpServerResponse.text("archived")
+      yield* deleteProject(projectId.value)
+      return HttpServerResponse.text("deleted")
     }
 
     // The one-time token page from `CreateConnectLink`. Its body (the token) is never logged.

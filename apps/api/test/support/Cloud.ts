@@ -65,7 +65,11 @@ export interface ProjectInstance {
 
 export const makeCloud = (
   configOverrides: Partial<ApiConfigShape> = {},
-  options: { readonly updates?: R2Bucket | undefined; readonly databasePath?: string } = {}
+  options: {
+    readonly updates?: R2Bucket | undefined
+    readonly media?: R2Bucket | undefined
+    readonly databasePath?: string
+  } = {}
 ) =>
   Effect.gen(function* () {
     const world = new FakeWorld()
@@ -108,7 +112,13 @@ export const makeCloud = (
     }
 
     const worker = workerLayer(
-      { d1, r2: undefined, updates: options.updates, fetchProject, forwardLive: () => Effect.die("no live in tests") },
+      {
+        d1,
+        r2: options.media,
+        updates: options.updates,
+        fetchProject,
+        forwardLive: () => Effect.die("no live in tests")
+      },
       { services, config }
     )
     const workerContext = yield* Layer.buildWithScope(worker, scope)

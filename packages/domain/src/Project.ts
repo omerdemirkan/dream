@@ -92,3 +92,13 @@ export const ProjectSummary = Schema.Struct({
   activity: Schema.optionalKey(AgentActivity)
 })
 export type ProjectSummary = typeof ProjectSummary.Type
+
+/**
+ * A project they archived (`ArchiveProject`): off Home and out of the needs-you deck, its agent stopped and its
+ * sandbox paused with everything in it, until they restore it (`RestoreProject`) as it was.
+ */
+export const ArchivedProject = Schema.Struct({
+  project: Project,
+  archivedAt: Schema.DateTimeUtc
+})
+export type ArchivedProject = typeof ArchivedProject.Type

@@ -14,6 +14,7 @@ import { AppClient } from "../src/data/AppClient.ts"
 import { Answers } from "../src/data/Answers.ts"
 import { withWriteTimeout, writeTimeout } from "../src/data/errors.ts"
 import { makeAppLayer } from "../src/data/AppLayer.ts"
+import { ProjectArchive } from "../src/data/ProjectArchive.ts"
 import { ProjectStates } from "../src/data/ProjectStates.ts"
 import { chatRowOf, presenceOf, receiptOf } from "../src/data/presence.ts"
 import { SecureStorage } from "../src/data/SecureStorage.ts"
@@ -377,6 +378,78 @@ describe("the agent's presence in fixtures (A+B+C)", () => {
         yield* backend.scenario("activity-new-idea")
         const fresh = (yield* app.ListProjects()).find((s) => s.project.id === "prj_newidea")
         assert.strictEqual(fresh?.activity?.state, "starting")
+      })
+    )
+  )
+})
+
+describe("archiving and deleting projects", () => {
+  const recipe = "prj_recipescaler" as ProjectId
+
+  it.effect("archiving hides a project at once, lists it as archived, and Undo brings it back as it was", () =>
+    run(
+      Effect.gen(function* () {
+        yield* signIn
+        const app = yield* AppClient
+        const archive = yield* ProjectArchive
+        const titles = Effect.map(app.ListProjects(), (rows) => rows.map((row) => row.project.title))
+        const archived = yield* archive.archive(recipe)
+        assert.strictEqual(archived.project.title, "Recipe Scaler")
+        assert.isTrue((yield* SubscriptionRef.get(archive.hidden)).has(recipe))
+        assert.deepStrictEqual(yield* titles, ["Lift Log", "Morning Brief", "Cabin"])
+        assert.notInclude(
+          (yield* app.ListOpenAsks()).map((ask) => ask.message.id),
+          "msg_recipewho" as MessageId
+        )
+        assert.deepStrictEqual(
+          (yield* app.ListArchivedProjects()).map((row) => row.project.id),
+          [recipe]
+        )
+        const restored = yield* archive.restore(recipe)
+        assert.strictEqual(restored.openAsks, 1)
+        assert.isFalse((yield* SubscriptionRef.get(archive.hidden)).has(recipe))
+        assert.deepStrictEqual(yield* titles, ["Lift Log", "Morning Brief", "Cabin", "Recipe Scaler"])
+        assert.deepStrictEqual(yield* app.ListArchivedProjects(), [])
+      })
+    )
+  )
+
+  it.effect("a failed archive puts the project back on Home", () =>
+    run(
+      Effect.gen(function* () {
+        yield* signIn
+        const archive = yield* ProjectArchive
+        const error = yield* Effect.flip(archive.archive("prj_nope" as ProjectId))
+        assert.strictEqual(error._tag, "NotFound")
+        assert.isFalse((yield* SubscriptionRef.get(archive.hidden)).has("prj_nope" as ProjectId))
+      })
+    )
+  )
+
+  it.effect("deleting removes it everywhere, its file keys too, and deleting it again is fine", () =>
+    run(
+      Effect.gen(function* () {
+        yield* signIn
+        const app = yield* AppClient
+        const archive = yield* ProjectArchive
+        const brief = "prj_morningbrief" as ProjectId
+        yield* app.SubmitKeyAccess({
+          projectId: brief,
+          messageId: "msg_brieftelegram" as MessageId,
+          key: Redacted.make("123:abc")
+        })
+        yield* archive.remove(brief)
+        yield* archive.remove(brief)
+        assert.notInclude(
+          (yield* app.ListProjects()).map((row) => row.project.id),
+          brief
+        )
+        assert.isTrue(
+          (yield* app.ListIntegrations()).every(
+            (integration) => !(integration.access._tag === "File" && integration.access.projectId === brief)
+          )
+        )
+        assert.strictEqual((yield* Effect.flip(app.GetLiveUrl({ projectId: brief })))._tag, "NotFound")
       })
     )
   )

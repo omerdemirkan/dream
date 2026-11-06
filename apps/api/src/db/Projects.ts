@@ -6,6 +6,7 @@
  */
 import {
   AgentActivity,
+  type ArchivedProject,
   AskMessage,
   Harness,
   MediaId,
@@ -45,6 +46,8 @@ const ProjectRow = Schema.Struct({
   open_asks: Schema.Int,
   /** Missing until migration 0007 ran; null until the project's DO first projects it. */
   activity_json: Schema.optionalKey(Schema.NullOr(JsonColumn(AgentActivity))),
+  /** Missing until migration 0008 ran; null unless they archived it. */
+  archived_at: Schema.optionalKey(Schema.NullOr(IsoDate)),
   created_at: IsoDate,
   updated_at: IsoDate
 })
@@ -177,12 +180,22 @@ export class Projects extends Context.Service<
     readonly byHost: (
       host: string
     ) => Effect.Effect<Option.Option<{ readonly projectId: ProjectId; readonly ownerId: UserId }>>
+    /** Home's rows: their projects but the archived ones. */
     readonly summaries: (userId: UserId) => Effect.Effect<ReadonlyArray<ProjectSummary>>
+    readonly summary: (id: ProjectId) => Effect.Effect<Option.Option<ProjectSummary>>
+    /** Their archived projects, most recently archived first. */
+    readonly archived: (userId: UserId) => Effect.Effect<ReadonlyArray<ArchivedProject>>
+    /** Archives the project (`at`) or restores it (`undefined`). Only its DO calls this. */
+    readonly setArchived: (id: ProjectId, at: DateTime.Utc | undefined) => Effect.Effect<void>
     readonly projectIdsFor: (userId: UserId) => Effect.Effect<ReadonlyArray<ProjectId>>
     /** Replace the projection of one project (its row and its open asks). */
     readonly project: (projection: ProjectProjection) => Effect.Effect<void>
+    /** The deck: open asks of their projects but the archived ones. */
     readonly openAsks: (userId: UserId) => Effect.Effect<ReadonlyArray<OpenAsk>>
-    /** Removes an archived project from Home (its other rows stay for the record). */
+    /**
+     * Removes a deleted project's row and open asks. Its notifications stay, withdrawn, so a phone can still learn
+     * they're stale; its usage rows stay as the machine-time record (ids and minutes, nothing of its content).
+     */
     readonly remove: (id: ProjectId) => Effect.Effect<void>
 
     readonly recordNotification: (row: {
@@ -205,6 +218,9 @@ export class Projects extends Context.Service<
       readonly objectKey: string
     }) => Effect.Effect<void>
     readonly media: (id: MediaId) => Effect.Effect<Option.Option<MediaRow>>
+    /** The R2 keys of a project's media. */
+    readonly mediaKeys: (projectId: ProjectId) => Effect.Effect<ReadonlyArray<string>>
+    readonly removeMedia: (projectId: ProjectId) => Effect.Effect<void>
     readonly markUploaded: (id: MediaId, at: DateTime.Utc) => Effect.Effect<void>
 
     readonly recordUsage: (row: {
@@ -264,9 +280,31 @@ export class Projects extends Context.Service<
         )
 
       const summaries = (userId: UserId) =>
-        sql`SELECT * FROM projects WHERE owner_id = ${userId} ORDER BY updated_at DESC`.pipe(
+        sql`SELECT * FROM projects WHERE owner_id = ${userId} AND archived_at IS NULL ORDER BY updated_at DESC`.pipe(
           decodeRows(ProjectRow),
           Effect.map((rows) => rows.map(toSummary))
+        )
+
+      const summary = (id: ProjectId) =>
+        sql`SELECT * FROM projects WHERE id = ${id}`.pipe(
+          decodeFirst(ProjectRow),
+          Effect.map((row) => Option.map(Option.fromUndefinedOr(row), toSummary))
+        )
+
+      const archived = (userId: UserId) =>
+        sql`SELECT * FROM projects WHERE owner_id = ${userId} AND archived_at IS NOT NULL ORDER BY archived_at DESC`.pipe(
+          decodeRows(ProjectRow),
+          Effect.map((rows) =>
+            rows.flatMap(
+              (row): Array<ArchivedProject> =>
+                row.archived_at == null ? [] : [{ project: toProject(row), archivedAt: row.archived_at }]
+            )
+          )
+        )
+
+      const setArchived = (id: ProjectId, at: DateTime.Utc | undefined) =>
+        exec(
+          sql`UPDATE projects SET archived_at = ${at === undefined ? null : DateTime.formatIso(at)} WHERE id = ${id}`
         )
 
       const projectIdsFor = (userId: UserId) =>
@@ -306,7 +344,7 @@ export class Projects extends Context.Service<
 
       const openAsks = (userId: UserId) =>
         sql`SELECT p.*, a.message_json AS ask_json FROM open_asks a JOIN projects p ON p.id = a.project_id
-            WHERE a.user_id = ${userId} ORDER BY a.created_at`.pipe(
+            WHERE a.user_id = ${userId} AND p.archived_at IS NULL ORDER BY a.created_at`.pipe(
           decodeRows(Schema.Struct({ ...ProjectRow.fields, ask_json: JsonColumn(AskMessage) })),
           Effect.map((rows) => rows.map((row): OpenAsk => ({ project: toProject(row), message: row.ask_json })))
         )
@@ -360,6 +398,14 @@ export class Projects extends Context.Service<
       const media = (id: MediaId) =>
         sql`SELECT * FROM media WHERE id = ${id}`.pipe(decodeFirst(MediaRow), Effect.map(Option.fromUndefinedOr))
 
+      const mediaKeys = (projectId: ProjectId) =>
+        sql`SELECT object_key FROM media WHERE project_id = ${projectId}`.pipe(
+          decodeRows(Schema.Struct({ object_key: Schema.String })),
+          Effect.map((rows) => rows.map((row) => row.object_key))
+        )
+
+      const removeMedia = (projectId: ProjectId) => exec(sql`DELETE FROM media WHERE project_id = ${projectId}`)
+
       const markUploaded = (id: MediaId, at: DateTime.Utc) =>
         exec(sql`UPDATE media SET uploaded_at = ${DateTime.formatIso(at)} WHERE id = ${id}`)
 
@@ -389,6 +435,9 @@ export class Projects extends Context.Service<
         findOwned,
         byHost,
         summaries,
+        summary,
+        archived,
+        setArchived,
         projectIdsFor,
         project,
         openAsks,
@@ -398,6 +447,8 @@ export class Projects extends Context.Service<
         staleNotifications,
         insertMedia,
         media,
+        mediaKeys,
+        removeMedia,
         markUploaded,
         recordUsage
       })

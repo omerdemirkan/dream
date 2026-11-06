@@ -40,6 +40,8 @@ export interface Toast {
   readonly message: string
   /** Offers Undo for this held answer. */
   readonly undo: MessageId | undefined
+  /** Offers Undo for archiving this project: it's restored. */
+  readonly restore?: ProjectId | undefined
   /** Something they did went through ("Sent to Cabin"); otherwise it's a failure, shown with a warning. */
   readonly done?: boolean
   readonly at: number
