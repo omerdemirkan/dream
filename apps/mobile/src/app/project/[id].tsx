@@ -10,7 +10,7 @@ import { type Message, MessageId, type Project as ProjectRecord, ProjectId, type
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
 import { Option, Schema } from "effect"
 import { AsyncResult } from "effect/reactivity"
-import { useLocalSearchParams, useRouter } from "expo-router"
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router"
 import { useCallback, useEffect, useState } from "react"
 import { Keyboard, Text, View } from "react-native"
 import { KeyboardStickyView, useKeyboardState } from "react-native-keyboard-controller"
@@ -138,6 +138,9 @@ function Project(props: {
     setUsage(true)
     router.setParams({ sheet: undefined })
   }, [props.sheet, router])
+  // A modal sheet shows over whatever is in front, so it closes when this screen stops being it (a link or a
+  // notification opening another screen).
+  useFocusEffect(useCallback(() => () => setUsage(false), []))
 
   // The card folds to one line while they read back through Chat, or type.
   const [away, setAway] = useState(false)
