@@ -20,7 +20,7 @@
  */
 import { renderSteerPrompt, renderTurnPrompt } from "@dream/agent-context"
 import type { AgentEvent, EventId, ModelProvider, TurnState } from "@dream/domain"
-import { Context, DateTime, Duration, Effect, Exit, Layer, Option, Ref, Stream } from "effect"
+import { Clock, Context, DateTime, Duration, Effect, Exit, Layer, Option, Ref, Stream } from "effect"
 import { Api } from "./Api.ts"
 import { Harness, type TurnResult, TurnOutcome } from "./harness/Harness.ts"
 import { type QuestionOutcome, replyFromFinalText } from "./harness/PersonChannel.ts"
@@ -51,6 +51,8 @@ export class Agent extends Context.Service<
     /** Run turns as events arrive, forever. */
     readonly run: Effect.Effect<never>
     readonly status: Effect.Effect<{ readonly turn: TurnState; readonly queued: number }>
+    /** When the last turn ended (epoch ms), if one has since dreamd started. */
+    readonly lastTurnEnded: Effect.Effect<Option.Option<number>>
   }
 >()("@dream/dreamd/Agent") {
   static readonly layer = Layer.effect(
@@ -63,6 +65,7 @@ export class Agent extends Context.Service<
       const published = yield* Published
       const provider: ModelProvider = harness.name === "claude-code" ? "claude" : "chatgpt"
       const running = yield* Ref.make(false)
+      const lastTurnEndedMs = yield* Ref.make(Option.none<number>())
       const usage = yield* Ref.make<Usage.UsageReading>({})
 
       const waitFor = (predicate: (state: InboxState) => boolean) =>
@@ -181,6 +184,7 @@ export class Agent extends Context.Service<
         }
         yield* api.reportTurn("finished", ids, result?.turnUsage)
         yield* Ref.set(running, false)
+        yield* Ref.set(lastTurnEndedMs, Option.some(yield* Clock.currentTimeMillis))
 
         if (Exit.isFailure(exit)) {
           yield* Effect.logError("The turn couldn't run", exit.cause)
@@ -193,7 +197,15 @@ export class Agent extends Context.Service<
         if (completed && !limited && !hasQueued(yield* inbox.state)) yield* published.checkAfterTurn
         // A limit is waited out before the next turn; other failures back off.
         return requeue && !limited
-      }).pipe(Effect.ensuring(Ref.set(running, false)))
+      }).pipe(
+        Effect.ensuring(
+          Effect.gen(function* () {
+            if (yield* Ref.getAndSet(running, false)) {
+              yield* Ref.set(lastTurnEndedMs, Option.some(yield* Clock.currentTimeMillis))
+            }
+          })
+        )
+      )
 
       const run = Effect.gen(function* () {
         let failures = 0
@@ -213,7 +225,8 @@ export class Agent extends Context.Service<
         status: Effect.gen(function* () {
           const state = yield* inbox.state
           return { turn: (yield* Ref.get(running)) ? "running" : "idle", queued: queuedCount(state) }
-        })
+        }),
+        lastTurnEnded: Ref.get(lastTurnEndedMs)
       })
     })
   )

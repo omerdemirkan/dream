@@ -24,6 +24,8 @@ export interface DreamdConfigShape extends Config.Success<typeof DaemonConfig> {
   readonly envHash: Option.Option<string>
   /** For testing: where Codex sends model requests instead of the ChatGPT backend. */
   readonly codexBaseUrl: Option.Option<string>
+  /** The key relay deliveries are signed with (`RelayKeyPath` in a sandbox); dreamd makes it if it's missing. */
+  readonly relayKeyPath: string
 }
 
 const LocalConfig = Config.all({
@@ -73,6 +75,7 @@ const load = (provider: ConfigProvider.ConfigProvider, envFile: string) =>
       model: local.model,
       effort: local.effort,
       envHash: local.envHash,
-      codexBaseUrl: local.codexBaseUrl
+      codexBaseUrl: local.codexBaseUrl,
+      relayKeyPath: `${local.home}/.dream/relay.key`
     })
   })

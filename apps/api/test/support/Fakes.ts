@@ -79,6 +79,18 @@ export class FakeWorld {
   readonly runResults = new Map<string, { exitCode: number; output: string }>()
   /** A refreshed dreamd that never answers with its release. */
   newDaemonSilent = false
+  /** Relay deliveries dreamd was handed, by sandbox, with the port and path it posted them to. */
+  readonly relayForwards: Array<{
+    sandboxId: string
+    relayId: string
+    port: number
+    path: string
+    ids: ReadonlyArray<string>
+  }> = []
+  /** How the app answers relay deliveries: how many of each batch it takes, and why not the rest. */
+  relayApp: (count: number) => { delivered: number; failure?: { message: string; status?: number } } = (count) => ({
+    delivered: count
+  })
   /** Turn state dreamd reports, per sandbox (default idle). */
   readonly turns = new Map<string, "idle" | "running">()
   googleRefreshes = 0
@@ -320,6 +332,25 @@ export const fakeDaemon = (world: FakeWorld) =>
           const { envHash } = runningDaemon(world, sandbox)
           world.delivered.push({ sandboxId: sandbox.sandboxId, events, timeZone, envHash })
           return events.map((event) => event.id)
+        }),
+      forwardRelay: (sandbox, _token, request) =>
+        Effect.gen(function* () {
+          if (world.deliverFails) return yield* new UpstreamFailure({ service: "dreamd", message: "down" })
+          const fake = world.sandboxes.get(sandbox.sandboxId)
+          // The request wakes a paused sandbox, as E2B's auto-resume does.
+          if (fake !== undefined && fake.state === "paused") {
+            fake.state = "running"
+            fake.resumes++
+          }
+          const result = world.relayApp(request.deliveries.length)
+          world.relayForwards.push({
+            sandboxId: sandbox.sandboxId,
+            relayId: request.relayId,
+            port: request.port,
+            path: request.path,
+            ids: request.deliveries.slice(0, result.delivered).map((delivery) => delivery.id)
+          })
+          return result
         }),
       health: (sandbox) =>
         Effect.suspend(() => {

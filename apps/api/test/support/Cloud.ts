@@ -28,7 +28,15 @@ import { AgentHandlers, LiveHandlers, ProjectHandlers, SandboxAuthServer } from 
 import { projectLayer } from "../../src/project/Layer.ts"
 import { Scheduler } from "../../src/project/Scheduler.ts"
 import { workerLayer } from "../../src/WorkerLayer.ts"
+import { ProjectClients } from "../../src/project/Client.ts"
+import type { RelayFetch } from "../../src/relay/RelayClients.ts"
+import { DiscordEndpoints } from "../../src/relay/Discord.ts"
+import { RelayHandlers, relayLayer } from "../../src/relay/RelayLayer.ts"
+import { RelayHost } from "../../src/relay/RelayHost.ts"
+import { RelayRpcs } from "../../src/relay/RelayRpcs.ts"
+import { FakeDiscord } from "./FakeDiscord.ts"
 import { FakeWorld, fakeServices } from "./Fakes.ts"
+import { discordRest, discordServer, FakeFeed, fakeDialer } from "./Lines.ts"
 import { makeD1, makeDoStorage } from "./Sqlite.ts"
 
 type WebHandler = (request: Request) => Promise<Response>
@@ -78,16 +86,60 @@ export const makeCloud = (
     const config = ApiConfig.layerTest(configOverrides)
     const services = fakeServices(world)
     const instances = new Map<string, Promise<ProjectInstance>>()
+    const relayInstances = new Map<string, Promise<ProjectInstance>>()
+    /** Discord and a WebSocket feed, as relays reach them; the bot token Discord accepts is `discord-bot-token`. */
+    const discord = new FakeDiscord({ token: "discord-bot-token", gatewayUrl: "wss://gateway.discord.test" })
+    const feed = new FakeFeed()
 
+    const fetchInto =
+      (instance: (name: string) => Promise<ProjectInstance>) => (name: string, request: Parameters<ProjectFetch>[1]) =>
+        Effect.gen(function* () {
+          const found = yield* Effect.promise(() => instance(name))
+          const web = yield* HttpServerRequest.toWeb(HttpServerRequest.fromClientRequest(request)).pipe(Effect.orDie)
+          const response = yield* Effect.promise(() => found.handler(web))
+          return HttpClientResponse.fromWeb(request, response)
+        })
     const fetchProject: ProjectFetch = (projectId, request) =>
-      Effect.gen(function* () {
-        const instance = yield* Effect.promise(() => project(projectId))
-        const web = yield* HttpServerRequest.toWeb(HttpServerRequest.fromClientRequest(request)).pipe(Effect.orDie)
-        const response = yield* Effect.promise(() => instance.handler(web))
-        return HttpClientResponse.fromWeb(request, response)
-      })
+      fetchInto((id) => project(id as ProjectId))(projectId, request)
+    const fetchRelay: RelayFetch = (relayId, request) => fetchInto(relay)(relayId, request)
 
-    const platform = platformLayer({ d1, fetchProject }, { services, config })
+    const platform = platformLayer({ d1, fetchProject, fetchRelay }, { services, config })
+
+    /** A RelayDO per relay, on its own SQLite, reaching Discord and the feed through the fakes above. */
+    const relay = (relayId: string): Promise<ProjectInstance> => {
+      const existing = relayInstances.get(relayId)
+      if (existing !== undefined) return existing
+      const created = Effect.runPromise(
+        Effect.gen(function* () {
+          const storage = makeDoStorage()
+          const layer = RelayHandlers.pipe(
+            Layer.provideMerge(relayLayer(storage.storage, NativeAlarm.layerTest(storage.alarms))),
+            Layer.provideMerge(
+              Layer.mergeAll(
+                RelayHost.layer.pipe(Layer.provide(ProjectClients.layer(fetchProject))),
+                fakeDialer((url) =>
+                  url.includes("discord.test")
+                    ? discordServer(discord)
+                    : url.startsWith("wss://feed.")
+                      ? feed
+                      : undefined
+                ),
+                DiscordEndpoints.layerFrom("https://discord.test/api/v10", "discord.test"),
+                discordRest(discord)
+              )
+            )
+          )
+          const context = yield* Layer.buildWithScope(layer, scope)
+          const httpEffect = yield* RpcServer.toHttpEffect(RelayRpcs).pipe(
+            Effect.provide(Layer.mergeAll(Layer.succeedContext(context), HttpRpcSerialization)),
+            Scope.provide(scope)
+          )
+          return { handler: toWeb(httpEffect), context, storage }
+        })
+      )
+      relayInstances.set(relayId, created)
+      return created
+    }
 
     const project = (projectId: ProjectId): Promise<ProjectInstance> => {
       const existing = instances.get(projectId)
@@ -187,5 +239,5 @@ export const makeCloud = (
 
     const close = Scope.close(scope, Exit.void)
 
-    return { world, db, d1, phone, session, sandbox, live, alarm, project, workerContext, close }
+    return { world, db, d1, phone, session, sandbox, live, alarm, project, relay, discord, feed, workerContext, close }
   })

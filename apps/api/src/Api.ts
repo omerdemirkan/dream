@@ -20,6 +20,7 @@ import * as HttpServerResponse from "effect/http/HttpServerResponse"
 import { route } from "./http/Router.ts"
 import type { ProjectFetch } from "./project/Client.ts"
 import ProjectDO from "./ProjectDO.ts"
+import RelayDO from "./RelayDO.ts"
 import { maintenance, type WorkerBindings, workerLayer } from "./WorkerLayer.ts"
 import { Database, Media, Updates } from "./Resources.ts"
 
@@ -54,6 +55,8 @@ export default class Api extends Cloudflare.Worker<Api>()(
   Effect.gen(function* () {
     yield* DreamDomain
     const projects = yield* ProjectDO
+    // Bound so the Worker exports the class; ProjectDOs reach relays through the env, and the Worker never does.
+    yield* RelayDO
     const database = yield* Cloudflare.D1.QueryDatabase(Database)
     const r2Enabled = yield* R2Enabled
     const media = r2Enabled ? yield* Cloudflare.R2.ReadWriteBucket(Media) : undefined

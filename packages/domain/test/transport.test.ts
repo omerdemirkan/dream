@@ -29,6 +29,7 @@ describe("Deliver", () => {
             received.push(timeZone)
             return { accepted: events.map((event) => event.id) }
           }),
+        ForwardRelay: ({ deliveries }) => Effect.succeed({ delivered: deliveries.length }),
         Health: () => Effect.succeed({ version: "test", turn: "idle" as const, queued: 0 })
       })
       const auth = Layer.succeed(DaemonAuth, (effect) => effect)

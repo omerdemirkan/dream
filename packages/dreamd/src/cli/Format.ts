@@ -13,6 +13,7 @@ import type {
   MacStatus,
   MediaRef,
   QuestionMessage,
+  Relay,
   StatusCard,
   TextMessage,
   UsageSnapshot,
@@ -33,6 +34,7 @@ import {
   moreLine,
   needLine,
   nowOnCard,
+  RelayKeyPath,
   rowOnCard,
   RowsOnCard,
   sandboxKeyPath
@@ -358,3 +360,46 @@ export const links = ({ links: all }: ProjectLinks, now: DateTime.Utc): string =
   ]
   return lines.join("\n")
 }
+
+const relaySource = (relay: Relay): string => {
+  const source = relay.source
+  if (source._tag === "WebSocket")
+    return `WebSocket ${source.url}${source.match === undefined ? "" : ` (only messages with "${source.match}")`}`
+  const only = [
+    source.mentionsOnly ? "only mentions and DMs" : undefined,
+    source.channels === undefined || source.channels.length === 0 ? undefined : `channels ${source.channels.join(", ")}`
+  ].filter((part) => part !== undefined)
+  return `Discord ${source.events.join(", ")}${only.length === 0 ? "" : ` (${only.join("; ")})`}`
+}
+
+const relayTarget = (relay: Relay): string =>
+  `${relay.target.port === undefined ? "the published port" : `localhost:${relay.target.port}`} ${relay.target.path}`
+
+const span = (from: DateTime.Utc, now: DateTime.Utc): string => relative(from, now).replace(/ ago$/, "")
+
+/** One relay, as `dream relay list` shows it. */
+export const relay = (item: Relay, now: DateTime.Utc): string => {
+  const state =
+    item.state === "connected"
+      ? `connected${item.since === undefined ? "" : ` for ${span(item.since, now)}`}${item.account === undefined ? "" : ` as ${item.account}`}`
+      : item.state === "failed"
+        ? `failed${item.since === undefined ? "" : ` ${relative(item.since, now)}`}; \`dream relay restart ${item.id}\` once it's fixed`
+        : `${item.state}${item.since === undefined ? "" : ` (${relative(item.since, now)})`}`
+  const counts = `${item.delivered} delivered, ${item.waiting} waiting${item.dropped === 0 ? "" : `, ${item.dropped} dropped`}`
+  return [
+    `${item.id}${item.label === undefined ? "" : ` "${item.label}"`}: ${relaySource(item)} → ${relayTarget(item)}`,
+    `  ${state}; ${counts}${item.lastEventAt === undefined ? "" : `; last event ${relative(item.lastEventAt, now)}`}`,
+    ...item.problems.map((problem) => `  ${relative(problem.at, now)}: ${problem.message}`)
+  ].join("\n")
+}
+
+export const relays = (list: ReadonlyArray<Relay>, now: DateTime.Utc): string =>
+  list.length === 0
+    ? "No relays. `dream relay discord` or `dream relay websocket` adds one."
+    : list.map((item) => relay(item, now)).join("\n")
+
+export const relayAdded = (item: Relay, now: DateTime.Utc): string =>
+  [
+    `Added ${relay(item, now)}`,
+    `Each event is POSTed as JSON (id, relay, source, type, at, data) to ${relayTarget(item)}, signed with the key in ${RelayKeyPath}. Answer 2xx once it's handled; anything else is retried.`
+  ].join("\n")

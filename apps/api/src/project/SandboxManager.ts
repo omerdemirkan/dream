@@ -32,13 +32,29 @@ import {
   NotFound,
   type ProjectId,
   ProjectEvent,
+  type RelayForward,
+  type RelayForwardResult,
+  type RelayId,
   type ReasoningEffort,
   SandboxKeyDir,
   sandboxKeyPath,
   type TurnUsage,
   UpstreamFailure
 } from "@dream/domain"
-import { Cause, Clock, Context, DateTime, Duration, Effect, Layer, Option, Redacted, Schedule, Semaphore } from "effect"
+import {
+  Cause,
+  Clock,
+  Context,
+  DateTime,
+  Duration,
+  Effect,
+  Layer,
+  Option,
+  Redacted,
+  Ref,
+  Schedule,
+  Semaphore
+} from "effect"
 import { Tokens } from "../auth/Tokens.ts"
 import { ApiConfig } from "../Config.ts"
 import { Connections } from "../db/Connections.ts"
@@ -76,6 +92,11 @@ const LegacyRestartWait = Duration.seconds(12)
 const BatchSize = 50
 /** How long the template's newest build, once looked up, is trusted. */
 export const LatestBuildTtl = Duration.minutes(10)
+/**
+ * dreamd asks to sleep when it last looked and saw nothing to do, but anything Dream handed it after that look (events,
+ * or a relay's deliveries) it may not have seen. Within this margin of the look counts as after, for clock skew.
+ */
+export const SleepMargin = Duration.seconds(2)
 /** After a turn ends, the sandbox is refreshed (if it's behind) this much later: still awake, and likely idle. */
 export const RefreshAfterTurn = Duration.minutes(1)
 
@@ -156,6 +177,21 @@ export class SandboxManager extends Context.Service<
     readonly keepalive: Effect.Effect<void>
     /** dreamd is running a scheduled command or serving the published app: keep the sandbox up a while longer. */
     readonly stayAwake: Effect.Effect<void>
+    /**
+     * dreamd has nothing left to do (`SandboxRpcs.Sleep`): pause the sandbox now, unless a turn runs, events are on
+     * their way or were just handed over, a relay delivery is under way, or a turn ended in the last few minutes.
+     */
+    readonly sleep: (reason: "command" | "relay", checkedAt: DateTime.Utc) => Effect.Effect<void>
+    /**
+     * Hands a relay's events to dreamd, which posts them to the app on `port`, waking the sandbox (creating it, if
+     * there's none). Failures come back in the result, for the relay to retry.
+     */
+    readonly forwardRelay: (request: {
+      readonly relayId: RelayId
+      readonly port: number
+      readonly path: string
+      readonly deliveries: readonly [RelayForward, ...Array<RelayForward>]
+    }) => Effect.Effect<RelayForwardResult>
     /** Brings the sandbox up to the template's newest build, if it's behind and between turns. */
     readonly refresh: Effect.Effect<void>
     /** Kills the sandbox for good (retiring the project). */
@@ -194,6 +230,10 @@ export class SandboxManager extends Context.Service<
        * turn starting under a `stayAwake` can't have its longer timeout replaced by a shorter one.
        */
       const timeouts = yield* Semaphore.make(1)
+      /** Relay deliveries under way, and when dreamd was last handed anything. */
+      const relaysInFlight = yield* Ref.make(0)
+      const lastHandoffMs = yield* Ref.make<number | undefined>(undefined)
+      const handedOff = Effect.flatMap(Clock.currentTimeMillis, (now) => Ref.set(lastHandoffMs, now))
 
       const update = (f: (record: SandboxRecord) => SandboxRecord) =>
         Effect.flatMap(core.sandbox, (r) => core.saveSandbox(f(r)))
@@ -627,6 +667,7 @@ export class SandboxManager extends Context.Service<
           Effect.tapError((error) => (error._tag === "DaemonRestarting" ? Effect.void : diagnose(access, daemonToken)))
         )
         yield* store.markDelivered(accepted as ReadonlyArray<EventId>, DateTime.formatIso(yield* DateTime.now))
+        yield* handedOff
         // A scheduled command that succeeds never reaches the agent, so it starts no turn: stop saying "starting".
         const startsNoTurn = pending.every((event) => event._tag === "WakeDue" && event.run !== undefined)
         yield* update((r) => (startsNoTurn ? withoutStarting({ ...r, failures: 0 }) : { ...r, failures: 0 }))
@@ -737,6 +778,61 @@ export class SandboxManager extends Context.Service<
           })
         )
         .pipe(Effect.catch((error) => Effect.logWarning("couldn't keep the sandbox awake", String(error))))
+
+      const sleep = (reason: "command" | "relay", checkedAt: DateTime.Utc) =>
+        busy
+          .withPermitsIfAvailable(1)(
+            timeouts.withPermits(1)(
+              Effect.gen(function* () {
+                if (yield* held) return "held"
+                const record = yield* core.sandbox
+                if (record.status !== "ready" || record.access === undefined) return "no sandbox"
+                if (record.working || record.startingSince !== undefined) return "a turn is starting or running"
+                if ((yield* Ref.get(relaysInFlight)) > 0) return "a relay delivery is under way"
+                const nowMs = yield* Clock.currentTimeMillis
+                const last = yield* Ref.get(lastHandoffMs)
+                if (last !== undefined && last >= DateTime.toEpochMillis(checkedAt) - Duration.toMillis(SleepMargin)) {
+                  return "dreamd was handed something after it looked"
+                }
+                if (record.awakeUntil !== undefined && DateTime.toEpochMillis(record.awakeUntil) > nowMs) {
+                  return "a turn ended a few minutes ago"
+                }
+                if ((yield* store.pendingEvents(1)).length > 0) return "events are on their way"
+                const sandboxId = record.access.sandboxId
+                const info = yield* e2b.info(sandboxId)
+                if (Option.isNone(info) || info.value.state !== "running") return "it isn't running"
+                yield* e2b.pause(sandboxId)
+                return "paused"
+              })
+            )
+          )
+          .pipe(
+            Effect.map(Option.getOrElse(() => "a delivery or refresh is under way")),
+            Effect.tap((outcome) => Effect.logInfo("dreamd asked to sleep", { reason, outcome })),
+            Effect.catch((error) => Effect.logWarning("couldn't put the sandbox to sleep", String(error))),
+            Effect.asVoid
+          )
+
+      const forwardRelay: Context.Service.Shape<typeof SandboxManager>["forwardRelay"] = (request) =>
+        Effect.gen(function* () {
+          if (yield* held) return { delivered: 0, failure: { message: "The project is archived." } }
+          const { access, daemonToken } = yield* ensureReady
+          const record = yield* core.sandbox
+          if (record.rulesDirty) yield* pushRules(record, true)
+          return yield* daemon.forwardRelay(access, daemonToken, request)
+        }).pipe(
+          Effect.catchTags({
+            DaemonRestarting: () => Effect.succeed({ delivered: 0, failure: { message: "dreamd is restarting." } }),
+            UpstreamFailure: (error) => Effect.succeed({ delivered: 0, failure: { message: error.message } })
+          }),
+          Effect.ensuring(handedOff),
+          (effect) =>
+            Effect.acquireUseRelease(
+              Ref.update(relaysInFlight, (n) => n + 1),
+              () => effect,
+              () => Ref.update(relaysInFlight, (n) => n - 1)
+            )
+        )
 
       // The agent should set a phase itself, but if its first turn starts while
       // the project is still "new", Home shouldn't keep saying so. Later turns
@@ -933,6 +1029,8 @@ export class SandboxManager extends Context.Service<
         turnFinished,
         keepalive: keepalive.pipe(Effect.catch(() => Effect.void)),
         stayAwake,
+        sleep,
+        forwardRelay,
         refresh,
         destroy,
         pause,

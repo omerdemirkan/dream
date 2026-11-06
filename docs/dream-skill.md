@@ -1,6 +1,6 @@
 ---
 name: dream
-description: Reaching the person and Dream from this sandbox — messages, questions, access to services, the Status card, workstreams, wake-ups, publishing, app links on their Home, a browser, a Mac, and usage. Read it when you need any of these.
+description: Reaching the person and Dream from this sandbox — messages, questions, access to services, the Status card, workstreams, wake-ups, relays, publishing, app links on their Home, a browser, a Mac, and usage. Read it when you need any of these.
 ---
 
 # `dream`
@@ -58,12 +58,12 @@ this sandbox, including the apps you build. `dream <command> --help` lists every
   - When they connect, you get an event naming the placeholder to use. Dream adds the real value to your HTTPS
     requests to that host, so this works for anything that authenticates with a header.
   - Only a key sent in a header can be swapped in. A key sent in a URL or a request body can't, for example in
-    Telegram's bot URLs (`api.telegram.org/bot<token>/…`) or in Discord's gateway login. Discord's REST API takes
-    `Authorization: Bot …` (`--host discord.com --header Authorization --format "Bot {key}"`), so a bot that only
-    calls it needs no more than `key`.
-  - `file --service … --name …` is the last resort, for a key that can't go in a header: Telegram's bot token,
-    Discord's gateway login, an SMTP password, a secret an API wants in the request body. They type it into a
-    secure field, and Dream writes it to `~/.dream/keys/<name>` in this sandbox, outside your project.
+    Telegram's bot URLs (`api.telegram.org/bot<token>/…`). Discord's REST API takes `Authorization: Bot …`
+    (`--host discord.com --header Authorization --format "Bot {key}"`), and a relay logs in to Discord's Gateway with
+    that same key, so a Discord bot needs no more than `key`.
+  - `file --service … --name …` is the last resort, for a key that can't go in a header: Telegram's bot token, an
+    SMTP password, a secret an API wants in the request body. They type it into a secure field, and Dream writes it
+    to `~/.dream/keys/<name>` in this sandbox, outside your project.
     - Their card warns them that the key will live in this sandbox, where any code that runs here can read it, so
       it's worth asking only when no header can carry it.
     - It belongs to this project alone. Their other projects don't get it, and a new sandbox for this project gets
@@ -138,6 +138,7 @@ are active, the Status card shows a row for each in place of `--now`.
   - a connection completing
   - a wake-up you scheduled
   - a `dream wake` call from one of your apps
+  - a relay that stopped, or whose events your app hasn't taken for an hour
   - your usage resetting
 
   Each turn starts with the events that woke it.
@@ -150,8 +151,9 @@ are active, the Status card shows a row for each in place of `--now`.
     status, and you'd never hear about it.
   - For work that should carry on after your turn ends, such as a long import, `--at 1m --run "…"` keeps the sandbox
     awake until it's done.
-  - Each wake keeps the sandbox up for a few minutes, so a schedule every few minutes keeps a whole machine running
-    around the clock.
+  - Once the command is done, and nothing else needs the sandbox, it goes back to sleep within seconds. So a quick
+    check costs seconds of machine time, and checking every few minutes is fine. A wake-up without a command starts a
+    turn, which costs a turn.
 - `dream wake "why"` wakes you now. An app can call it, from an error handler say, whenever it's running, which is
   only while the sandbox is awake.
 - `dream wake list` and `dream wake cancel <id>` show and remove scheduled wake-ups.
@@ -168,12 +170,58 @@ are active, the Status card shows a row for each in place of `--now`.
   - Requests reach your server with `Host` set to the sandbox's internal name (`<port>-<sandbox id>.e2b.app`), so a
     server that checks hosts (Vite's dev server does) has to allow it.
   - The public URL works from inside this sandbox too, so you can load exactly what they'll see.
-- Services that can push to you instead of being polled, such as Telegram, Slack, Discord's interactions, GitHub and
-  Stripe, can send webhooks to the published URL, and each one wakes the sandbox. Only one port is published, so the
-  webhook routes go in the same server as the app. Some senders want an answer within three seconds, so answer first
-  and do the slow part after.
+- Services that can push to you instead of being polled, such as Telegram, Slack (every channel message, through its
+  Events API), a WhatsApp business number, Discord's interactions, GitHub and Stripe, can send webhooks to the
+  published URL, and each one wakes the sandbox. Only one port is published, so the webhook routes go in the same
+  server as the app. Some senders want an answer within three seconds, so answer first and do the slow part after.
+  A service that only talks down a connection you keep open needs a relay (below).
 - A server you start as a background task of your shell stops when your turn ends. To keep one running between
   turns, start it detached, e.g. `setsid nohup npm start > server.log 2>&1 &`.
+
+## Relays
+
+Some services only tell you what happened down a connection you keep open: Discord's Gateway (ordinary messages in a
+server; Discord sends no webhooks for those), exchange and market feeds, other WebSocket streams. A sleeping sandbox
+can't keep one open, so Dream holds it for you, outside the sandbox, and POSTs each event to your app, which wakes the
+sandbox like any request.
+
+- `dream relay discord --to /hooks/discord [--port 3000]` holds the bot's Gateway session, logging in with their
+  Discord key (the `key` for discord.com that the bot's REST calls use). It forwards `MESSAGE_CREATE` unless you name
+  others with `--events`. `--mentions` forwards only messages that mention the bot, reply to it, or are sent to it
+  directly, and `--channel <id>` only those in a channel. The bot's own messages never come back.
+  - Reading what people write needs Message Content Intent switched on for the bot, in the Developer Portal under
+    Bot. Without it the relay fails and says so.
+  - Slash commands and buttons can come over a relay too (`INTERACTION_CREATE`), but Discord wants an answer within
+    three seconds, so its interactions endpoint, a webhook to your published URL, is the surer way for those.
+- `dream relay websocket wss://… --to /hooks/feed` holds any WebSocket feed. `--send` subscribes after every connect.
+  `--key <id>` puts one of their keys' header on the connection, and only to that key's own host. `--ping` and
+  `--ping-every` keep a feed that drops quiet clients, `--silence <seconds>` reconnects one that goes quiet, and
+  `--match` forwards only messages containing that text.
+- Each event arrives as a POST to `http://localhost:<port><path>`: the published port, or the one you give with
+  `--port`, which needn't be published. The JSON body has `id`, `relay`, `source`, `type` (Discord's event name),
+  `at` and `data`, which is Discord's event as it sent it, or the feed's message, parsed if it's JSON. Answer 2xx once
+  you've handled it; the sandbox stays awake while you do, and goes back to sleep soon after. Anything else, or no
+  answer within two minutes, and it's tried again later, so a broken route holds back the events behind it. Events
+  wait up to a day.
+  - Delivery is at least once, so drop an `id` you've already handled.
+  - The route may also be reachable on your public URL, so check that a request came from Dream.
+    `Dream-Signature` is `v1=` and the hex HMAC-SHA256, keyed with the contents of `~/.dream/relay.key`, of
+    `Dream-Timestamp`, a dot, and the raw body:
+    ```js
+    const key = readFileSync(join(homedir(), ".dream/relay.key"), "utf8").trim()
+    const signed = `${req.headers["dream-timestamp"]}.${rawBody}`
+    const expected = `v1=${createHmac("sha256", key).update(signed).digest("hex")}`
+    // Compare with timingSafeEqual, and refuse a timestamp more than five minutes old.
+    ```
+- `dream relay list` shows each relay's state (connecting, connected, retrying or failed), what it has delivered,
+  what's waiting, and recent problems. One that fails for a reason retrying can't fix, such as a revoked token or an
+  intent that isn't switched on, wakes you once with why. `dream relay restart <id>` tries again once it's fixed, and
+  it restarts by itself when they connect a new key. You also hear when your app hasn't taken its events for an hour.
+  `dream relay remove <id>` closes it.
+- A project can have three. Each holds a connection open around the clock, so use one when no webhook or schedule
+  would do. A feed has no memory: what it sends during a reconnect (seconds) is missed, so a relay suits live updates
+  more than a record you can't lose. Discord's Gateway does replay what was missed, for a few minutes.
+- Relays stop while the project is archived and start again when it's restored.
 
 ## App links on their Home
 

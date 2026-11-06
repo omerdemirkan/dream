@@ -40,6 +40,7 @@ const inMemoryHttp = <R extends RpcGroup.Any>(group: R, serverLayer: Layer.Layer
 
 const DaemonHandlers = DaemonRpcs.toLayer({
   Deliver: ({ events }) => Effect.succeed({ accepted: events.map((event) => event.id) }),
+  ForwardRelay: ({ deliveries }) => Effect.succeed({ delivered: deliveries.length }),
   Health: () => Effect.succeed({ version: "test", turn: "idle" as const, queued: 0 })
 })
 

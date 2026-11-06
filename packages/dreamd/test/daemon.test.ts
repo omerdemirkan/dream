@@ -3,11 +3,14 @@
  * port, the CLI socket and the turn loop, with a scripted harness.
  */
 import { AppTraffic } from "../src/Awake.ts"
+import { createHmac } from "node:crypto"
+import { readFileSync, statSync } from "node:fs"
+import { createServer } from "node:http"
 import { join } from "node:path"
 import { assert, describe, it } from "@effect/vitest"
 import * as Fixtures from "@dream/domain/fixtures"
 import { NodeServices } from "@effect/platform-node"
-import { ConfigProvider, Context, Effect, Exit, Layer, Queue, Ref } from "effect"
+import { ConfigProvider, Context, DateTime, Effect, Exit, Layer, Queue, Ref } from "effect"
 import { Command } from "effect/cli"
 import { FetchHttpClient } from "effect/http"
 import { TestConsole } from "effect/testing"
@@ -18,8 +21,35 @@ import { PageCheck, PageCheckError, PageLoad } from "../src/cli/PageCheck.ts"
 import { DreamdConfig } from "../src/Config.ts"
 import { layerWith } from "../src/Daemon.ts"
 import { Harness, type HarnessError, type TurnResult, TurnOutcome } from "../src/harness/Harness.ts"
+import { RelayForwarder } from "../src/Relays.ts"
 import { Shutdown } from "../src/Shutdown.ts"
 import { configRecord, daemonClient, fakeApi, freePort, noPageChecks, tempDir, userMessage } from "./support.ts"
+
+/** A stand-in for the agent's app: records each request, and answers with the next status in `statuses` (then 200). */
+const fakeApp = (statuses: Array<number>) =>
+  Effect.gen(function* () {
+    const port = yield* Effect.promise(freePort)
+    const received: Array<{ path: string; headers: Record<string, string | undefined>; body: string }> = []
+    const server = createServer((request, response) => {
+      let body = ""
+      request.on("data", (chunk) => (body += chunk))
+      request.on("end", () => {
+        const headers: Record<string, string | undefined> = {}
+        for (const name of ["dream-relay", "dream-delivery", "dream-timestamp", "dream-signature", "content-type"]) {
+          const value = request.headers[name]
+          headers[name] = Array.isArray(value) ? value[0] : value
+        }
+        received.push({ path: request.url ?? "", headers, body })
+        response.writeHead(statuses.shift() ?? 200, { "content-type": "text/plain" })
+        response.end("nope")
+      })
+    })
+    yield* Effect.acquireRelease(
+      Effect.promise(() => new Promise<void>((resolve) => server.listen(port, "127.0.0.1", () => resolve()))),
+      () => Effect.promise(() => new Promise<void>((resolve) => server.close(() => resolve())))
+    )
+    return { port, received }
+  })
 
 const setup = Effect.gen(function* () {
   const dir = tempDir()
@@ -36,7 +66,13 @@ const setup = Effect.gen(function* () {
   yield* Layer.build(fakeApi(calls, apiPort))
   const context = yield* Layer.build(
     layerWith(
-      Layer.mergeAll(Harness.layerTest({ turns, log }), Shutdown.layerTest(), noPageChecks, AppTraffic.layerNone)
+      Layer.mergeAll(
+        Harness.layerTest({ turns, log }),
+        Shutdown.layerTest(),
+        noPageChecks,
+        AppTraffic.layerNone,
+        RelayForwarder.layer.pipe(Layer.provide(FetchHttpClient.layer))
+      )
     ).pipe(Layer.provideMerge(DreamdConfig.layerFromRecord(env)), Layer.provideMerge(NodeServices.layer))
   )
   const agent = Context.get(context, Agent)
@@ -56,7 +92,7 @@ const setup = Effect.gen(function* () {
       return yield* Ref.get(calls)
     }).pipe(Effect.timeout("5 seconds"))
   const cli = cliWith(noPageChecks)
-  return { daemonPort, socket: env.DREAM_SOCKET!, calls, turns, log, cli, cliWith, waitFor, shutdown }
+  return { dir, daemonPort, socket: env.DREAM_SOCKET!, calls, turns, log, cli, cliWith, waitFor, shutdown }
 })
 
 describe("dreamd", () => {
@@ -162,8 +198,18 @@ describe("dreamd", () => {
       assert.isTrue(Exit.isFailure(yield* asOtherProcess((client) => client.ReportUsage({ usage: Fixtures.usage }))))
       // An app in the sandbox can't hold its own sandbox up either.
       assert.isTrue(Exit.isFailure(yield* asOtherProcess((client) => client.StayAwake({ reason: "app" }))))
+      // Or put it to sleep.
+      assert.isTrue(
+        Exit.isFailure(
+          yield* asOtherProcess((client) =>
+            client.Sleep({ reason: "command", checkedAt: DateTime.makeUnsafe(Date.now()) })
+          )
+        )
+      )
       const made = yield* Ref.get(calls)
-      assert.isFalse(made.some((call) => call.startsWith("ReportUsage") || call.startsWith("StayAwake")))
+      assert.isFalse(
+        made.some((call) => call.startsWith("ReportUsage") || call.startsWith("StayAwake") || call.startsWith("Sleep"))
+      )
     }).pipe(Effect.scoped)
   )
 
@@ -191,6 +237,136 @@ describe("dreamd", () => {
           'SendMessage {"text":"The tour page is up","media":[],"notify":false}',
           'SendMessage {"text":"Which colour should the header be?","media":[],"notify":false}'
         ]
+      )
+    }).pipe(Effect.scoped)
+  )
+})
+
+describe("relay deliveries", () => {
+  const deliveries = [1, 2, 3, 4].map((n) => ({
+    id: `discord:MESSAGE_CREATE:${n}`,
+    body: JSON.stringify({ id: `discord:MESSAGE_CREATE:${n}`, relay: "rly_1", data: { content: `message ${n}` } })
+  })) as unknown as readonly [{ id: string; body: string }, ...Array<{ id: string; body: string }>]
+
+  it.live("posts them to the app in order, signed with the relay key, and stops at the first it doesn't take", () =>
+    Effect.gen(function* () {
+      const { dir, daemonPort } = yield* setup
+      const app = yield* fakeApp([200, 204, 404])
+      const client = yield* daemonClient(daemonPort, "daemon-token")
+      const result = yield* client.ForwardRelay({
+        relayId: "rly_1" as never,
+        port: app.port,
+        path: "/hooks/discord",
+        deliveries
+      })
+      assert.deepStrictEqual(result, { delivered: 2, failure: { status: 404, message: "The app answered 404: nope." } })
+      assert.deepStrictEqual(
+        app.received.map((request) => [request.path, request.headers["dream-delivery"]]),
+        [
+          ["/hooks/discord", "discord:MESSAGE_CREATE:1"],
+          ["/hooks/discord", "discord:MESSAGE_CREATE:2"],
+          ["/hooks/discord", "discord:MESSAGE_CREATE:3"]
+        ]
+      )
+      // The key is made at start, readable only by the sandbox's user, and signs the timestamp and exact body.
+      const keyPath = join(dir, ".dream", "relay.key")
+      const key = readFileSync(keyPath, "utf8").trim()
+      assert.match(key, /^[0-9a-f]{64}$/)
+      assert.strictEqual(statSync(keyPath).mode & 0o777, 0o600)
+      for (const [i, request] of app.received.entries()) {
+        const timestamp = request.headers["dream-timestamp"]!
+        assert.strictEqual(request.headers["dream-relay"], "rly_1")
+        assert.strictEqual(request.headers["content-type"], "application/json")
+        assert.strictEqual(request.body, deliveries[i]!.body)
+        assert.isAtMost(Math.abs(Number(timestamp) - Date.now() / 1000), 5)
+        assert.strictEqual(
+          request.headers["dream-signature"],
+          `v1=${createHmac("sha256", key).update(`${timestamp}.${request.body}`).digest("hex")}`
+        )
+      }
+      // The same key next time; the rest go again.
+      const again = yield* client.ForwardRelay({
+        relayId: "rly_1" as never,
+        port: app.port,
+        path: "/hooks/discord",
+        deliveries: [deliveries[2]!, deliveries[3]!]
+      })
+      assert.deepStrictEqual(again, { delivered: 2 })
+      assert.strictEqual(readFileSync(keyPath, "utf8").trim(), key)
+    }).pipe(Effect.scoped)
+  )
+
+  it.live("says so when nothing listens on the port", () =>
+    Effect.gen(function* () {
+      const { daemonPort } = yield* setup
+      const client = yield* daemonClient(daemonPort, "daemon-token")
+      const closed = yield* Effect.promise(freePort)
+      const result = yield* client.ForwardRelay({
+        relayId: "rly_1" as never,
+        port: closed,
+        path: "/hooks/discord",
+        deliveries
+      })
+      assert.strictEqual(result.delivered, 0)
+      assert.include(result.failure?.message, `Couldn't reach the app on port ${closed}`)
+      assert.isUndefined(result.failure?.status)
+    }).pipe(Effect.scoped)
+  )
+
+  it.live("refuses them once a restart is pending, so they go again after it", () =>
+    Effect.gen(function* () {
+      const { daemonPort, shutdown } = yield* setup
+      const app = yield* fakeApp([])
+      const client = yield* daemonClient(daemonPort, "daemon-token")
+      yield* shutdown.begin("test")
+      const error = yield* Effect.flip(
+        client.ForwardRelay({ relayId: "rly_1" as never, port: app.port, path: "/hooks", deliveries })
+      )
+      assert.strictEqual(error._tag, "DaemonRestarting")
+      assert.lengthOf(app.received, 0)
+    }).pipe(Effect.scoped)
+  )
+
+  it.live("`dream relay discord` asks for the Gateway session with the defaults filled in", () =>
+    Effect.gen(function* () {
+      const { cli, waitFor } = yield* setup
+      const printed = yield* cli("relay", "discord", "--to", "/hooks/discord", "--port", "3000", "--mentions").pipe(
+        Effect.andThen(TestConsole.logLines),
+        Effect.provide(TestConsole.layer)
+      )
+      const calls = yield* waitFor((calls) => calls.some((call) => call.startsWith("AddRelay")))
+      assert.strictEqual(
+        calls.find((call) => call.startsWith("AddRelay")),
+        'AddRelay {"source":{"_tag":"Discord","intents":37377,"events":["MESSAGE_CREATE"],"mentionsOnly":true},"target":{"path":"/hooks/discord","port":3000}}'
+      )
+      assert.include(printed.join("\n"), "Added rly_test: Discord MESSAGE_CREATE (only mentions and DMs)")
+    }).pipe(Effect.scoped)
+  )
+
+  it.live("`dream relay websocket` sends the feed, its subscribe messages, ping and filter", () =>
+    Effect.gen(function* () {
+      const { cli, waitFor } = yield* setup
+      yield* cli(
+        "relay",
+        "websocket",
+        "wss://ws-feed.exchange.coinbase.com",
+        "--send",
+        '{"type":"subscribe"}',
+        "--ping",
+        "ping",
+        "--silence",
+        "60",
+        "--match",
+        "BTC",
+        "--to",
+        "/hooks/prices",
+        "--label",
+        "prices"
+      ).pipe(Effect.provide(TestConsole.layer))
+      const calls = yield* waitFor((calls) => calls.some((call) => call.startsWith("AddRelay")))
+      assert.strictEqual(
+        calls.find((call) => call.startsWith("AddRelay")),
+        'AddRelay {"source":{"_tag":"WebSocket","url":"wss://ws-feed.exchange.coinbase.com","send":["{\\"type\\":\\"subscribe\\"}"],"ping":{"message":"ping","everySeconds":30},"silenceSeconds":60,"match":"BTC"},"target":{"path":"/hooks/prices"},"label":"prices"}'
       )
     }).pipe(Effect.scoped)
   )

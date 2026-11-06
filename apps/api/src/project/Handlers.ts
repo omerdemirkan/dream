@@ -45,6 +45,7 @@ import { LiveFeed } from "./Live.ts"
 import { Machines } from "./Machines.ts"
 import { Notifier } from "./Notifier.ts"
 import { ProjectRpcs } from "./ProjectRpcs.ts"
+import { Relays } from "./Relays.ts"
 import { SandboxManager } from "./SandboxManager.ts"
 import { type SandboxRecord, Singletons, Store } from "./Store.ts"
 
@@ -105,6 +106,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
     const alarm = yield* Alarm
     const projects = yield* Projects
     const machines = yield* Machines
+    const relays = yield* Relays
 
     const findMessage = (id: Message["id"]) =>
       Effect.flatMap(core.message(id), (found) =>
@@ -232,6 +234,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
           })
           yield* core.changeMessage(connected)
           if (integration.access._tag === "File") yield* sandbox.keyFilesChanged
+          yield* relays.integrationChanged(integration)
           yield* core.enqueue(
             yield* event((fields) =>
               AgentEvent.cases.AccessConnected.make({
@@ -297,6 +300,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
               })
             )
           }
+          yield* relays.integrationChanged(integration)
           const removed = AgentEvent.cases.AccessRemoved.make({
             id: yield* newEventId(),
             at: now,
@@ -330,6 +334,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
               })
             )
           }
+          yield* relays.integrationChanged(integration)
           const last = cards.at(-1)
           if (!tell || last === undefined) return
           yield* core.enqueue(
@@ -370,7 +375,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
           )
         }),
 
-      CredentialsChanged: () => sandbox.refreshRules,
+      CredentialsChanged: () => Effect.andThen(sandbox.refreshRules, relays.keysChanged),
 
       UsageLimited: ({ window, until }) =>
         Effect.gen(function* () {
@@ -383,6 +388,11 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
 
       GatewayTarget: () => sandbox.gatewayTarget,
 
+      RelayDeliver: ({ relayId, deliveries }) => relays.deliver(relayId, deliveries),
+      RelayCredential: ({ relayId }) => relays.credential(relayId),
+      RelayAlert: ({ relayId, reason }) => relays.alert(relayId, reason),
+      RelayActive: ({ relayId }) => relays.active(relayId),
+
       Delete: () =>
         Effect.gen(function* () {
           const now = yield* DateTime.now
@@ -390,6 +400,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
           yield* store.putSingleton(...Singletons.deleted, { at: now })
           yield* store.clearSchedule(DateTime.formatIso(now))
           yield* alarm.reschedule
+          yield* relays.stopAll
           yield* sandbox.destroy
           yield* machines.stopMac.pipe(
             Effect.catch((error) => Effect.logWarning("couldn't stop the deleted project's Mac", error.message))
@@ -419,6 +430,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
           const at = yield* DateTime.now
           yield* store.putSingleton(...Singletons.archived, { at })
           yield* projects.setArchived(project.id, at)
+          yield* relays.stopAll
           yield* sandbox.pause
           // Nothing will use a Mac it rented; don't leave it running until it idles out.
           yield* machines.stopMac.pipe(
@@ -438,6 +450,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
           yield* store.clearSingleton(Singletons.archived[0])
           yield* projects.setArchived(project.id, undefined)
           yield* sandbox.restored
+          yield* relays.startAll
         }),
 
       RefreshModelCredential: () =>
@@ -478,6 +491,7 @@ export const AgentHandlers = SandboxRpcs.toLayer(
     const connections = yield* Connections
     const directory = yield* ProjectDirectory
     const alarm = yield* Alarm
+    const relays = yield* Relays
 
     const project = core.project.pipe(Effect.orDie)
 
@@ -860,8 +874,14 @@ export const AgentHandlers = SandboxRpcs.toLayer(
           yield* directory.usageLimited(current.ownerId, window, until, current.id).pipe(Effect.forkDetach)
         }),
 
+      AddRelay: ({ source, target, label }) => relays.add({ source, target, label }),
+      ListRelays: () => relays.list,
+      RemoveRelay: ({ relayId }) => relays.remove(relayId),
+      RestartRelay: ({ relayId }) => relays.restart(relayId),
+
       ReportTurn: ({ state, usage }) => (state === "started" ? sandbox.turnStarted : sandbox.turnFinished(usage)),
-      StayAwake: () => sandbox.stayAwake
+      StayAwake: () => sandbox.stayAwake,
+      Sleep: ({ reason, checkedAt }) => sandbox.sleep(reason, checkedAt)
     }
   })
 )

@@ -92,6 +92,7 @@ types at its edge.
 | `Connections.ts`, `Usage.ts` | Model connections and connect flows, integrations, usage windows |
 | `LiveActivity.ts`, `Push.ts` | ActivityKit attributes and content state; APNs custom data |
 | `Wake.ts`, `Machines.ts`, `Media.ts` | Scheduled wakes; Browserbase and Mac sessions; media refs and uploads |
+| `Relay.ts` | Relays (lines Dream holds open for a sleeping sandbox): sources, targets, state, the delivery body and its signature headers, limits |
 | `Auth.ts`, `Errors.ts` | Caller identity, auth middlewares, boundary errors |
 | `Transport.ts` | Routes, serialization per transport, dreamd's env (`DaemonEnv`, `DaemonConfig`) |
 | `rpc/*.ts` | The four RPC groups (below) |
@@ -150,8 +151,11 @@ the other workstreams to agree first.
 ## Workstream notes
 
 - **Control plane.** `apps/api/src/Api.ts` is the Worker: `api.<domain>` as a custom domain, `*.<domain>/*` as a zone
-  route (the gateway for published apps), both from `DREAM_DOMAIN`. It binds `ProjectDO`, D1 (`Database`, migrations
-  in `apps/api/migrations`) and R2 (`Media`) from `Resources.ts`. User credentials (Claude and ChatGPT tokens,
+  route (the gateway for published apps), both from `DREAM_DOMAIN`. It binds `ProjectDO`, `RelayDO`, D1 (`Database`,
+  migrations in `apps/api/migrations`) and R2 (`Media`) from `Resources.ts`. A `RelayDO` (one per relay, `src/relay/`)
+  holds a line open for a project while its sandbox sleeps (Discord's Gateway, a WebSocket feed) and hands each
+  event to the ProjectDO, which gives it to dreamd (`DaemonRpcs.ForwardRelay`); the two DO classes call each other
+  through the Worker's env (`lib/StubFetch.ts`), over `RelayRpcs` and the `Relay*` calls in `ProjectRpcs`. User credentials (Claude and ChatGPT tokens,
   Google OAuth tokens, pasted keys, App Store Connect keys) are stored AES-GCM encrypted in a D1 `secrets` table and
   decrypted only inside the Worker. The key and the operator keys (E2B, Browserbase, Namespace, APNs, Google client
   secret) are Worker secrets. Rows reference a secret id, and domain records never carry one. It is deployed at
@@ -166,8 +170,11 @@ the other workstreams to agree first.
   the agent picks each subagent's model and effort itself), unless the operator overrides them for a QA run
   (`DREAM_AGENT_MODEL`, `DREAM_CODEX_AGENT_MODEL`, `DREAM_AGENT_EFFORT` Worker secrets).
   E2B pauses a sandbox five minutes after it woke whatever runs in it, so between turns dreamd asks the ProjectDO
-  to keep it up (`StayAwake`, about once a minute) while a scheduled `--run` command runs or the published app is in
-  use (`src/Awake.ts`); a turn's keepalive covers turns.
+  to keep it up (`StayAwake`, about once a minute) while a scheduled `--run` command runs, a relay delivery is under
+  way, or the published app is in use (`src/Awake.ts`); a turn's keepalive covers turns. The other way round, once
+  the command or delivery it woke for is done and nothing else needs the sandbox, dreamd asks for it to sleep now
+  (`Sleep`), so a scheduled check costs seconds rather than five minutes. dreamd posts relay deliveries to the app on
+  localhost, signed with `~/.dream/relay.key` (`src/Relays.ts`).
   The `dream-sandbox` template's start command keeps dreamd running, and the snapshot carries it into every new
   sandbox, so the ProjectDO starts dreamd by writing `DaemonEnvFile` (rewriting it restarts dreamd). Both harness
   CLIs are pre-installed. `packages/sandbox-template/scripts/smoke.ts` checks a fresh sandbox, and with

@@ -9,8 +9,8 @@
  *   It forwards `SandboxRpcs` requests to the API unchanged, adding the
  *   project token, so the CLI never holds a credential and the API decides
  *   everything. The calls only dreamd makes (`ReportTurn`, `ReportUsage`,
- *   `StayAwake`) are refused there, so an app can't fake the agent's state
- *   or hold its own sandbox up. Calls that reach
+ *   `StayAwake`, `Sleep`) are refused there, so an app can't fake the agent's
+ *   state, hold its own sandbox up, or put it to sleep. Calls that reach
  *   the person are counted (`Outreach`), and published ports noted (`Published`).
  */
 import { timingSafeEqual } from "node:crypto"
@@ -34,6 +34,7 @@ import { DreamdConfig } from "./Config.ts"
 import { Inbox } from "./Inbox.ts"
 import { Outreach } from "./Outreach.ts"
 import { Published } from "./Published.ts"
+import { RelayForwarder } from "./Relays.ts"
 import { Shutdown } from "./Shutdown.ts"
 import { readRelease, version } from "./version.ts"
 
@@ -47,6 +48,7 @@ const DaemonHandlers = DaemonRpcs.toLayer(
     const agent = yield* Agent
     const shutdown = yield* Shutdown
     const config = yield* DreamdConfig
+    const relays = yield* RelayForwarder
     const envHash = Option.match(config.envHash, { onNone: () => ({}), onSome: (envHash) => ({ envHash }) })
     const release = Option.match(yield* readRelease(), { onNone: () => ({}), onSome: (release) => ({ release }) })
     return {
@@ -59,6 +61,13 @@ const DaemonHandlers = DaemonRpcs.toLayer(
           const accepted = yield* inbox.deliver(events, timeZone).pipe(Effect.orDie)
           yield* Effect.logInfo("Delivered", { events: accepted })
           return { accepted }
+        }),
+      ForwardRelay: (request) =>
+        Effect.gen(function* () {
+          if (yield* shutdown.pending) {
+            return yield* new DaemonRestarting({ message: "dreamd is restarting; forward again once it's back" })
+          }
+          return yield* relays.forward(request)
         }),
       Health: () => agent.status.pipe(Effect.map((status) => ({ version, ...status, ...envHash, ...release })))
     }
@@ -103,7 +112,7 @@ export const DaemonServer = Layer.unwrap(
 // ---------------------------------------------------------------------------
 
 /** Calls only dreamd makes. */
-export const dreamdOnly: ReadonlySet<string> = new Set(["ReportTurn", "ReportUsage", "StayAwake"])
+export const dreamdOnly: ReadonlySet<string> = new Set(["ReportTurn", "ReportUsage", "StayAwake", "Sleep"])
 
 const RequestLine = Schema.fromJsonString(Schema.Struct({ _tag: Schema.Literal("Request"), tag: Schema.String }))
 const decodeRequestLine = Schema.decodeUnknownOption(RequestLine)

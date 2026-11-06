@@ -14,6 +14,7 @@ import { CredentialStore } from "./integrations/CredentialStore.ts"
 import { AppLinks } from "./links/AppLinks.ts"
 import { type PlatformOverrides, platformLayer } from "./Platform.ts"
 import { type ProjectFetch, ProjectDirectory } from "./project/Client.ts"
+import { noRelays } from "./relay/RelayClients.ts"
 
 export interface WorkerBindings {
   readonly d1: D1Database
@@ -27,7 +28,9 @@ export interface WorkerBindings {
 export const workerLayer = (bindings: WorkerBindings, overrides: PlatformOverrides = {}) =>
   ConnectLinks.layer.pipe(
     Layer.provideMerge(Layer.mergeAll(ModelConnect.layer, Access.layer, AppLinks.layer)),
-    Layer.provideMerge(platformLayer({ d1: bindings.d1, fetchProject: bindings.fetchProject }, overrides)),
+    Layer.provideMerge(
+      platformLayer({ d1: bindings.d1, fetchProject: bindings.fetchProject, fetchRelay: noRelays }, overrides)
+    ),
     Layer.provideMerge(MediaStore.layer(bindings.r2)),
     Layer.provideMerge(UpdateAssets.layer(bindings.updates)),
     Layer.provideMerge(Layer.succeed(LiveForwarder, LiveForwarder.of({ forward: bindings.forwardLive })))
