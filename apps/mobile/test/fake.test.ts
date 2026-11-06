@@ -16,6 +16,8 @@ import { withWriteTimeout, writeTimeout } from "../src/data/errors.ts"
 import { makeAppLayer } from "../src/data/AppLayer.ts"
 import { ProjectArchive } from "../src/data/ProjectArchive.ts"
 import { ProjectStates } from "../src/data/ProjectStates.ts"
+import { ProjectUsages } from "../src/data/ProjectUsages.ts"
+import { usageBadge } from "../src/data/usage.ts"
 import { chatRowOf, presenceOf, receiptOf } from "../src/data/presence.ts"
 import { SecureStorage } from "../src/data/SecureStorage.ts"
 import { randomUuid, Session } from "../src/data/Session.ts"
@@ -335,6 +337,53 @@ describe("the agent's presence in fixtures (A+B+C)", () => {
         ])
         const [home] = (yield* app.ListProjects()).filter((s) => s.project.id === recipe)
         assert.strictEqual(home?.activity?.state, "idle")
+      })
+    )
+  )
+
+  it.effect("the header's usage starts from the fetch, then follows each turn's Usage event and the scenarios", () =>
+    run(
+      Effect.gen(function* () {
+        yield* signIn
+        const app = yield* AppClient
+        const usages = yield* ProjectUsages
+        const backend = yield* FakeBackend
+        const lift = Fx.liftLog.id
+        const seen: Array<string> = []
+        const fiber = yield* usages.glance(lift).pipe(
+          Stream.tap((glance) => Effect.sync(() => seen.push(usageBadge(glance)?.value ?? "-"))),
+          Stream.runDrain,
+          Effect.forkChild
+        )
+        yield* TestClock.adjust("10 millis")
+        assert.deepStrictEqual(seen, ["-", "4%"])
+        const sheet = yield* usages.sheet(lift)
+        assert.strictEqual(sheet.weekly?.projectPercent, 4)
+        assert.deepStrictEqual(
+          sheet.projects.map((p) => [p.title, p.sharePercent]),
+          [
+            ["Recipe Scaler", 19],
+            ["Lift Log", 4],
+            ["Cabin", 3],
+            ["Morning Brief", 2]
+          ]
+        )
+
+        yield* app.SendMessage({ projectId: lift, text: "Add a rest timer", requestId: RequestId.make(randomUuid()) })
+        yield* TestClock.adjust("10 seconds")
+        const after = yield* usages.sheet(lift)
+        assert.isAbove(after.weekly?.projectPercent ?? 0, 4)
+        assert.isAbove(after.week.tokens ?? 0, sheet.week.tokens ?? 0)
+
+        yield* backend.scenario("usage-near-limit")
+        yield* TestClock.adjust("10 millis")
+        yield* backend.scenario("usage-none")
+        yield* TestClock.adjust("10 millis")
+        yield* Fiber.interrupt(fiber)
+        assert.deepStrictEqual(seen.slice(-2), ["8% left", "-"])
+        const none = yield* usages.sheet(lift)
+        assert.isUndefined(none.weekly)
+        assert.isUndefined(none.week.tokens)
       })
     )
   )

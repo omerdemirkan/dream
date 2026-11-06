@@ -94,7 +94,8 @@ const KnownProjectEvent = Schema.TaggedUnion({
   MessageAdded: { message: TolerantMessage },
   MessageChanged: { message: TolerantMessage },
   WorkingChanged: ProjectEvent.cases.WorkingChanged.fields,
-  ActivityChanged: ProjectEvent.cases.ActivityChanged.fields
+  ActivityChanged: ProjectEvent.cases.ActivityChanged.fields,
+  Usage: ProjectEvent.cases.Usage.fields
 })
 
 /** A project event, or `null` for one the app doesn't know, which `LiveProjects` skips. */

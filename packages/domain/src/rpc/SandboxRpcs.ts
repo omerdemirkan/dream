@@ -25,7 +25,7 @@ import { MediaContentType, MediaRef, MediaUploadTarget } from "../Media.ts"
 import { AccessMessage, AccessRequest, QuestionMessage, TextMessage } from "../Message.ts"
 import { ProjectPhase } from "../Project.ts"
 import { Milestone, StatusCard } from "../Status.ts"
-import { UsageSnapshot } from "../Usage.ts"
+import { TurnUsage, UsageSnapshot } from "../Usage.ts"
 import { Wake, WakeWhen } from "../Wake.ts"
 
 /** Absent leaves a field as it is; `null` clears it. */
@@ -237,8 +237,15 @@ export class SandboxRpcs extends RpcGroup.make(
   // Reported by dreamd, not the CLI ----------------------------------------------------
   /** After each turn and whenever the harness reports rate limits. With `limitedUntil`, Dream pauses the project and wakes the agent at reset. */
   Rpc.make("ReportUsage", { payload: { usage: UsageSnapshot } }),
-  /** A turn started or finished, with the events it consumed. Drives the "working" state on the phone. */
+  /**
+   * A turn started or finished, with the events it consumed. Drives the "working" state on the phone. A finished
+   * turn carries the tokens it used; dreamd builds before that send none.
+   */
   Rpc.make("ReportTurn", {
-    payload: { state: Schema.Literals(["started", "finished"]), eventIds: Schema.Array(EventId) }
+    payload: {
+      state: Schema.Literals(["started", "finished"]),
+      eventIds: Schema.Array(EventId),
+      usage: Schema.optionalKey(TurnUsage)
+    }
   })
 ).middleware(SandboxAuth) {}

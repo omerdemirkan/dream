@@ -13,7 +13,7 @@ import type { HarnessAgentSession } from "@ai-sdk/harness/agent"
 import { createClaudeCode } from "@ai-sdk/harness-claude-code"
 import { createCodex } from "@ai-sdk/harness-codex"
 import { systemPrompt } from "@dream/agent-context"
-import { Harness as HarnessName } from "@dream/domain"
+import { Harness as HarnessName, type TurnUsage } from "@dream/domain"
 import {
   Cause,
   Context,
@@ -41,6 +41,7 @@ import { killAllNow, makeLocalSandboxSession, makeSpawned, stopAll } from "./Loc
 import { claudeSettings } from "./PersonChannel.ts"
 import * as Skill from "./Skill.ts"
 import { drive, type Part, type TurnHandlers } from "./Turn.ts"
+import * as Tokens from "./TurnUsage.ts"
 
 /** How a turn ended. Limits show up in `usage.limit`, whatever the outcome. */
 export type TurnOutcome = Data.TaggedEnum<{
@@ -56,6 +57,8 @@ export interface TurnResult {
   readonly progressed: boolean
   /** The text of the turn's last step: what the model said last, which only the session saw. */
   readonly finalText?: string
+  /** What the turn used of the model, for `ReportTurn`, when the harness said anything about it. */
+  readonly turnUsage?: TurnUsage
 }
 
 /** The harness couldn't run a turn at all (it didn't start, or crashed outside a turn). */
@@ -272,14 +275,19 @@ const make = Effect.gen(function* () {
       Effect.catch((error) => Effect.logError("Couldn't save the harness session", { error: String(error) }))
     )
 
+  /** A string the adapter keeps in its resume state: Codex's `threadId`, Claude Code's `claudeSessionId`. */
+  const savedString = (key: string) =>
+    Ref.get(state).pipe(
+      Effect.map(({ resumeFrom }) => {
+        const data = resumeFrom?.data
+        const value = typeof data === "object" && data !== null && !Array.isArray(data) ? data[key] : undefined
+        return typeof value === "string" ? Option.some(value) : Option.none<string>()
+      })
+    )
+
   const codexUsage = (since: DateTime.Utc) =>
     Effect.gen(function* () {
-      const saved = yield* Ref.get(state)
-      const data = saved.resumeFrom?.data
-      const threadId =
-        typeof data === "object" && data !== null && !Array.isArray(data) && typeof data.threadId === "string"
-          ? data.threadId
-          : undefined
+      const threadId = Option.getOrUndefined(yield* savedString("threadId"))
       if (threadId === undefined) return {}
       const file = yield* Usage.findCodexRollout(path.join(config.home, ".codex"), threadId)
       if (Option.isNone(file)) return {}
@@ -294,8 +302,10 @@ const make = Effect.gen(function* () {
 
   const turn = Effect.fn("Harness.turn")(function* (prompt: string, handlers: TurnHandlers) {
     const startedAt = yield* DateTime.now
+    const resumed = (yield* Ref.get(state)).resumeFrom !== undefined
     const session = yield* open()
     const usage = yield* Ref.make<Usage.UsageReading>({})
+    const tally = yield* Ref.make(Tokens.emptyTally)
     const lastError = yield* Ref.make<Option.Option<string>>(Option.none())
     const progressed = yield* Ref.make(false)
     const controller = new AbortController()
@@ -308,9 +318,10 @@ const make = Effect.gen(function* () {
           Effect.tap(() => Ref.set(active, Option.some(session))),
           Effect.map((result) => Stream.fromAsyncIterable(result.fullStream, (cause) => cause))
         )
-      )
+      ).pipe(Stream.ensuring(Ref.update(tally, Tokens.endStream)))
     const onPart = (part: Part) =>
       Effect.gen(function* () {
+        yield* Ref.update(tally, (previous) => Tokens.observe(previous, part))
         switch (part.type) {
           case "raw": {
             const reading = Usage.fromClaudeRaw(part.rawValue, yield* DateTime.now)
@@ -370,6 +381,22 @@ const make = Effect.gen(function* () {
       const reading = yield* codexUsage(startedAt)
       yield* Ref.update(usage, (previous) => Usage.merge(previous, reading))
     }
+    // Claude Code's session as the turn reported it, or as the adapter keeps it; Codex's root thread.
+    const counted = yield* Ref.get(tally)
+    const reported = name === "claude-code" ? Option.fromUndefinedOr(counted.claudeSessionId) : Option.none()
+    const turnUsage = yield* provide(
+      Tokens.settle({
+        harness: name,
+        home: config.home,
+        stateDir: config.stateDir,
+        tally: counted,
+        sessionId: Option.isSome(reported)
+          ? reported
+          : yield* savedString(name === "claude-code" ? "claudeSessionId" : "threadId"),
+        resumed,
+        startedAt
+      })
+    )
     const errorMessage = Exit.isFailure(exit)
       ? Option.some(String(Cause.squash(exit.cause)))
       : yield* Ref.get(lastError)
@@ -385,7 +412,8 @@ const make = Effect.gen(function* () {
         ? Usage.merge(reading, { limit: Usage.fallbackLimit("fiveHour", yield* DateTime.now) })
         : reading,
       progressed: yield* Ref.get(progressed),
-      finalText: yield* Ref.get(finalText)
+      finalText: yield* Ref.get(finalText),
+      ...Option.match(turnUsage, { onNone: () => ({}), onSome: (turnUsage) => ({ turnUsage }) })
     } satisfies TurnResult
   })
 

@@ -3,7 +3,15 @@
  * `ProjectLiveRpcs.Subscribe` stream (snapshot, then changes) plus any earlier
  * Chat history loaded with `ListMessages`.
  */
-import type { AgentActivity, Message, MessageId, Project, ProjectEvent, StatusCard } from "@dream/domain"
+import type {
+  AgentActivity,
+  Message,
+  MessageId,
+  Project,
+  ProjectEvent,
+  ProjectUsageGlance,
+  StatusCard
+} from "@dream/domain"
 import { DateTime, Order } from "effect"
 
 export interface ProjectState {
@@ -15,6 +23,8 @@ export interface ProjectState {
   readonly working: boolean
   /** Starting, working or idle, and the next wake; absent from APIs that predate it (then only `working` is known). */
   readonly activity?: AgentActivity | undefined
+  /** The header's usage, from the last `Usage` event; snapshots don't carry it, so it outlives them. */
+  readonly usage?: ProjectUsageGlance | undefined
 }
 
 const byCreatedAt = Order.mapInput(DateTime.Order, (message: Message) => message.createdAt)
@@ -49,7 +59,8 @@ export const applyEvent = (state: ProjectState | undefined, event: ProjectEvent)
       messages: sortMessages(keepsEarlier ? [...earlier, ...event.messages] : event.messages),
       hasEarlierMessages: keepsEarlier ? (state?.hasEarlierMessages ?? true) : event.hasEarlierMessages,
       working: event.working,
-      activity: event.activity
+      activity: event.activity,
+      usage: state?.usage
     }
   }
   if (state === undefined) return undefined
@@ -65,6 +76,8 @@ export const applyEvent = (state: ProjectState | undefined, event: ProjectEvent)
       return { ...state, working: event.working }
     case "ActivityChanged":
       return { ...state, activity: event.activity, working: event.activity.state === "working" }
+    case "Usage":
+      return { ...state, usage: event.usage }
   }
 }
 

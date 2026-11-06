@@ -720,7 +720,7 @@ export const AgentHandlers = SandboxRpcs.toLayer(
           yield* directory.usageLimited(current.ownerId, window, until, current.id).pipe(Effect.forkDetach)
         }),
 
-      ReportTurn: ({ state }) => (state === "started" ? sandbox.turnStarted : sandbox.turnFinished)
+      ReportTurn: ({ state, usage }) => (state === "started" ? sandbox.turnStarted : sandbox.turnFinished(usage))
     }
   })
 )

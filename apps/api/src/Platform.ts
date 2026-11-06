@@ -18,6 +18,7 @@ import { Projects } from "./db/Projects.ts"
 import { Secrets } from "./db/Secrets.ts"
 import { TestflightGrants } from "./db/TestflightGrants.ts"
 import { TestflightIdentity } from "./db/TestflightIdentity.ts"
+import { TurnUsageLog } from "./db/TurnUsage.ts"
 import { UpdateStore } from "./db/Updates.ts"
 import { Users } from "./db/Users.ts"
 import { Daemon } from "./e2b/Daemon.ts"
@@ -30,6 +31,7 @@ import { OAuth, OAuthProviders } from "./integrations/OAuth.ts"
 import { SandboxCredentials } from "./integrations/SandboxCredentials.ts"
 import { ProjectClients, ProjectDirectory, type ProjectFetch } from "./project/Client.ts"
 import { Apns } from "./push/Apns.ts"
+import { UsageReport } from "./usage/ProjectUsage.ts"
 
 export interface PlatformBindings {
   readonly d1: D1Database
@@ -46,7 +48,8 @@ export const databaseLayer = (d1: D1Database) =>
     Secrets.layer,
     TestflightGrants.layer,
     TestflightIdentity.layer,
-    UpdateStore.layer
+    UpdateStore.layer,
+    TurnUsageLog.layer
   ).pipe(Layer.provide(D1Client.layer({ db: d1 }).pipe(Layer.orDie)))
 
 /** Everything above the database: providers, credentials, and the project clients. */
@@ -78,7 +81,7 @@ export const platformLayer = (bindings: PlatformBindings, overrides: PlatformOve
   const credentials = CredentialStore.layer.pipe(
     Layer.provideMerge(ProjectDirectory.layer.pipe(Layer.provideMerge(base)))
   )
-  return Layer.mergeAll(SandboxCredentials.layer, KeyFiles.layer).pipe(
+  return Layer.mergeAll(SandboxCredentials.layer, KeyFiles.layer, UsageReport.layer).pipe(
     Layer.provideMerge(credentials),
     Layer.provideMerge(overrides.config ?? ApiConfig.layer)
   )

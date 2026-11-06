@@ -891,6 +891,103 @@ describe("a project, end to end", () => {
     })
   )
 
+  it.live("records each turn's tokens and the windows around it, and tells the phone its share of the week", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project } = yield* setup(cloud)
+      yield* cloud.alarm(project.id)
+      const dreamd = yield* cloud.sandbox(envFileOf(cloud, project.id).env.DREAM_PROJECT_TOKEN)
+      const now = yield* DateTime.now
+      const fiveResets = DateTime.add(now, { hours: 3 })
+      const weekResets = DateTime.add(now, { days: 4 })
+      const report = (five: number, week: number) =>
+        Effect.flatMap(DateTime.now, (observedAt) =>
+          dreamd.ReportUsage({
+            usage: {
+              provider: "claude",
+              plan: "Claude Max",
+              fiveHour: { usedPercent: five, resetsAt: fiveResets },
+              weekly: { usedPercent: week, resetsAt: weekResets },
+              observedAt
+            }
+          })
+        )
+      yield* report(10, 20)
+
+      const live = yield* cloud.live(project.id)
+      const pushed = yield* live.Subscribe().pipe(
+        Stream.filter((event) => event._tag === "Usage"),
+        Stream.take(1),
+        Stream.runCollect,
+        Effect.forkChild
+      )
+      yield* Effect.sleep("50 millis")
+      yield* dreamd.ReportTurn({ state: "started", eventIds: [] })
+      yield* report(14, 22)
+      yield* dreamd.ReportTurn({
+        state: "finished",
+        eventIds: [],
+        usage: {
+          tokens: { input: 1_200, cacheRead: 40_000, cacheWrite: 3_000, output: 2_500 },
+          costUsd: 0.42,
+          subagents: "included"
+        }
+      })
+
+      const rows = cloud.db.prepare("SELECT * FROM turn_usage ORDER BY started_at").all() as Array<any>
+      assert.strictEqual(rows.length, 1)
+      assert.strictEqual(rows[0].project_id, project.id)
+      assert.strictEqual(rows[0].provider, "claude")
+      assert.strictEqual(rows[0].output_tokens, 2_500)
+      assert.strictEqual(rows[0].cost_usd, 0.42)
+      assert.strictEqual(rows[0].subagents, "included")
+      assert.deepStrictEqual([rows[0].five_hour_before_percent, rows[0].weekly_before_percent], [10, 20])
+      assert.deepStrictEqual([rows[0].five_hour_after_percent, rows[0].weekly_after_percent], [14, 22])
+      assert.strictEqual(rows[0].weekly_after_resets_at, DateTime.formatIso(weekResets))
+
+      const [event] = yield* Fiber.join(pushed)
+      assert.strictEqual(event?._tag, "Usage")
+      const glance = event?._tag === "Usage" ? event.usage : assert.fail("expected Usage")
+      assert.strictEqual(glance.billing, "subscription")
+      assert.deepStrictEqual(glance.weekly, { usedPercent: 22, projectPercent: 2, resetsAt: weekResets })
+
+      const sheet = yield* cloud.phone.GetProjectUsage({ projectId: project.id })
+      assert.strictEqual(sheet.plan, "Claude Max")
+      assert.strictEqual(sheet.week.tokens, 6_700)
+      assert.strictEqual(sheet.week.cacheReadTokens, 40_000)
+      assert.strictEqual(sheet.today.tokens, 6_700)
+      assert.strictEqual(sheet.fiveHour.sharePercent, 4)
+      assert.deepStrictEqual(sheet.fiveHourWindow, { usedPercent: 14, projectPercent: 4, resetsAt: fiveResets })
+      assert.deepStrictEqual(
+        sheet.projects.map((p) => [p.projectId, p.title, p.sharePercent]),
+        [[project.id, project.title, 2]]
+      )
+      assert.strictEqual(sheet.outsideDreamPercent, 20)
+      assert.strictEqual(sheet.subagents, "included")
+
+      // An older dreamd reports no tokens: the turn is still recorded, and still credited with the rise.
+      yield* dreamd.ReportTurn({ state: "started", eventIds: [] })
+      yield* report(16, 23)
+      yield* dreamd.ReportTurn({ state: "finished", eventIds: [] })
+      const old = cloud.db.prepare("SELECT * FROM turn_usage ORDER BY started_at").all() as Array<any>
+      assert.strictEqual(old.length, 2)
+      assert.isNull(old[1].output_tokens)
+      assert.strictEqual(old[1].weekly_before_percent, 22)
+      const after = yield* cloud.phone.GetProjectUsage({ projectId: project.id })
+      assert.strictEqual(after.week.tokens, 6_700)
+      assert.strictEqual(after.week.sharePercent, 3)
+      // The tokens shown are still only the first turn's, which counted its subagents.
+      assert.strictEqual(after.subagents, "included")
+
+      // Someone else's project is not found.
+      const other = yield* cloud.phone.DevSignIn({ email: "other@example.com", secret: Redacted.make("dev-secret") })
+      cloud.session.token = Redacted.value(other.sessionToken)
+      const denied = yield* Effect.flip(cloud.phone.GetProjectUsage({ projectId: project.id }))
+      assert.strictEqual(denied._tag, "NotFound")
+      yield* cloud.close
+    })
+  )
+
   it.live("redelivers after dreamd fails", () =>
     Effect.gen(function* () {
       const cloud = yield* makeCloud()

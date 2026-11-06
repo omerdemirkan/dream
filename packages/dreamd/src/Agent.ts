@@ -179,7 +179,7 @@ export class Agent extends Context.Service<
         if (Object.keys(reading).length > 0) {
           yield* api.reportUsage(Usage.toSnapshot(provider, reading, yield* DateTime.now))
         }
-        yield* api.reportTurn("finished", ids)
+        yield* api.reportTurn("finished", ids, result?.turnUsage)
         yield* Ref.set(running, false)
 
         if (Exit.isFailure(exit)) {

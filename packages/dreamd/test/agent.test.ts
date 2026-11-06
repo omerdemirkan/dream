@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { AgentEvent, type EventId, type WakeId } from "@dream/domain"
+import { AgentEvent, type EventId, type TurnUsage, type WakeId } from "@dream/domain"
 import { Clock, Context, DateTime, Deferred, Duration, Effect, Layer, Queue, Ref } from "effect"
 import { TestClock } from "effect/testing"
 import { Agent, backoff } from "../src/Agent.ts"
@@ -84,6 +84,26 @@ describe("Agent", () => {
         ["started evt_1", "finished evt_1"]
       )
       assert.strictEqual((yield* inbox.state).entries.length, 0)
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect("reports what a turn used when it finishes, failed or not", () =>
+    Effect.gen(function* () {
+      const { turns, inbox, reports, idle } = yield* setup()
+      const used: TurnUsage = {
+        tokens: { input: 203, cacheRead: 320_000, cacheWrite: 32_000, output: 3_020 },
+        costUsd: 0.5,
+        subagents: "included"
+      }
+      yield* Queue.offer(turns, () =>
+        Effect.succeed({ ...completed(), outcome: TurnOutcome.Failed({ message: "crashed" }), turnUsage: used })
+      )
+      yield* inbox.deliver([userMessage(1)])
+      yield* idle
+      while ((yield* Ref.get(reports)).filter((report) => report._tag === "Turn").length < 2) yield* Effect.yieldNow
+      const [started, finished] = (yield* Ref.get(reports)).filter((report) => report._tag === "Turn")
+      assert.isUndefined(started?._tag === "Turn" ? started.usage : "missing")
+      assert.deepStrictEqual(finished?._tag === "Turn" ? finished.usage : undefined, used)
     }).pipe(Effect.scoped)
   )
 

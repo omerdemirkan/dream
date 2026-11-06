@@ -28,7 +28,7 @@ import {
   TextMessage
 } from "../Message.ts"
 import { ArchivedProject, Harness, Project, ProjectSummary } from "../Project.ts"
-import { ModelProvider } from "../Usage.ts"
+import { ModelProvider, ProjectUsage } from "../Usage.ts"
 import { Device, TimeZone, User } from "../User.ts"
 
 /** An open question or access request for the Home deck, with the project it belongs to. */
@@ -225,6 +225,15 @@ export class AuthedAppRpcs extends RpcGroup.make(
   Rpc.make("GetLiveUrl", {
     payload: { projectId: ProjectId },
     success: Schema.Struct({ url: Schema.String }),
+    error: NotFound
+  }),
+  /**
+   * The usage sheet: this project's tokens today, in the five-hour window and this week, its estimated share of
+   * each window, and every project's share of the week. The header's figures come live as `ProjectEvent.Usage`.
+   */
+  Rpc.make("GetProjectUsage", {
+    payload: { projectId: ProjectId },
+    success: ProjectUsage,
     error: NotFound
   }),
   /** Older Chat history, newest first, before `before`. The live snapshot carries the recent messages. */

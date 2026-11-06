@@ -31,15 +31,19 @@ import {
   type Harness,
   NotFound,
   type ProjectId,
+  ProjectEvent,
   type ReasoningEffort,
   SandboxKeyDir,
   sandboxKeyPath,
+  type TurnUsage,
   UpstreamFailure
 } from "@dream/domain"
 import { Cause, Clock, Context, DateTime, Duration, Effect, Layer, Option, Redacted, Schedule, Semaphore } from "effect"
 import { Tokens } from "../auth/Tokens.ts"
 import { ApiConfig } from "../Config.ts"
+import { Connections } from "../db/Connections.ts"
 import { Projects } from "../db/Projects.ts"
+import { TurnUsageLog } from "../db/TurnUsage.ts"
 import { Users } from "../db/Users.ts"
 import { Daemon } from "../e2b/Daemon.ts"
 import { E2B, type SandboxAccess, type TemplateBuild } from "../e2b/E2B.ts"
@@ -49,8 +53,10 @@ import { KeyFiles } from "../integrations/KeyFiles.ts"
 import { SandboxCredentials } from "../integrations/SandboxCredentials.ts"
 import { toHex, utf8 } from "../lib/Bytes.ts"
 import { randomToken } from "../lib/Ids.ts"
+import { providerFor, UsageReport } from "../usage/ProjectUsage.ts"
 import { Alarm } from "./Alarm.ts"
 import { Core } from "./Core.ts"
+import { LiveFeed } from "./Live.ts"
 import type { GatewayTarget } from "./ProjectRpcs.ts"
 import { type SandboxRecord, Singletons, Store } from "./Store.ts"
 
@@ -143,8 +149,10 @@ export class SandboxManager extends Context.Service<
     /** The project's file keys changed: they're rewritten before the next delivery, so before the agent hears. */
     readonly keyFilesChanged: Effect.Effect<void>
     readonly gatewayTarget: Effect.Effect<GatewayTarget, NotFound | UpstreamFailure>
+    /** A turn started: the phone hears it's working, and the subscription's usage now is noted as its "before". */
     readonly turnStarted: Effect.Effect<void>
-    readonly turnFinished: Effect.Effect<void>
+    /** A turn finished, with the tokens it used (none from older dreamd builds): recorded, and the header updated. */
+    readonly turnFinished: (usage?: TurnUsage | undefined) => Effect.Effect<void>
     readonly keepalive: Effect.Effect<void>
     /** Brings the sandbox up to the template's newest build, if it's behind and between turns. */
     readonly refresh: Effect.Effect<void>
@@ -174,6 +182,10 @@ export class SandboxManager extends Context.Service<
       const projects = yield* Projects
       const users = yield* Users
       const refresher = yield* SandboxRefresh
+      const connections = yield* Connections
+      const turnLog = yield* TurnUsageLog
+      const usageReport = yield* UsageReport
+      const live = yield* LiveFeed
       const busy = yield* Semaphore.make(1)
 
       const update = (f: (record: SandboxRecord) => SandboxRecord) =>
@@ -710,39 +722,79 @@ export class SandboxManager extends Context.Service<
           yield* core.saveProject({ ...project, phase: "exploring", updatedAt: now })
         })
 
+      /** The subscription's latest usage report, from any of their sandboxes. */
+      const latestUsage = Effect.gen(function* () {
+        const project = yield* core.project.pipe(Effect.orDie)
+        const connection = yield* connections.connectedModel(project.ownerId, providerFor(project))
+        return Option.match(connection, { onNone: () => undefined, onSome: (row) => row.usage_json ?? undefined })
+      })
+
       const turnStarted = Effect.gen(function* () {
         const now = yield* DateTime.now
         if ((yield* core.sandbox).startedWork !== true) yield* advancePhase(now)
-        yield* update((r) => ({
-          ...withoutStarting(r),
-          working: true,
-          startedWork: true,
-          turnStartedAt: r.working && r.turnStartedAt ? r.turnStartedAt : now
-        }))
+        const before = yield* latestUsage
+        yield* update((r) => {
+          // A repeated "started" for the running turn keeps the turn's start and its "before".
+          const continuing = r.working && r.turnStartedAt !== undefined
+          const { turnUsageBefore: _, ...rest } = withoutStarting(r)
+          const kept = continuing ? r.turnUsageBefore : before
+          return {
+            ...rest,
+            working: true,
+            startedWork: true,
+            turnStartedAt: continuing && r.turnStartedAt ? r.turnStartedAt : now,
+            ...(kept === undefined ? {} : { turnUsageBefore: kept })
+          }
+        })
         yield* keepalive
       })
 
-      const turnFinished = Effect.gen(function* () {
-        const record = yield* core.sandbox
-        const now = yield* DateTime.now
-        yield* update((r) => {
-          const { turnStartedAt: _, ...rest } = withoutStarting(r)
-          return { ...rest, working: false, turnEndedAt: now, awakeUntil: DateTime.addDuration(now, IdleTimeout) }
+      /**
+       * Records the turn's model usage in the ledger, with the subscription's usage before (when it started) and
+       * after (now: dreamd reports usage just before it reports the turn finished), then sends the phone the
+       * header's new figures. Never fails the report: a ledger problem is logged.
+       */
+      const recordModelTurn = (record: SandboxRecord, ended: DateTime.Utc, usage: TurnUsage | undefined) =>
+        Effect.gen(function* () {
+          if (record.turnStartedAt === undefined) return
+          const project = yield* core.project.pipe(Effect.orDie)
+          yield* turnLog.record({
+            id: `trn_${randomToken(22)}`,
+            userId: project.ownerId,
+            projectId: project.id,
+            provider: providerFor(project),
+            startedAt: record.turnStartedAt,
+            endedAt: ended,
+            usage,
+            before: record.turnUsageBefore,
+            after: yield* latestUsage
+          })
+          yield* live.publish(ProjectEvent.cases.Usage.make({ usage: yield* usageReport.glance(project) }))
+        }).pipe(Effect.catchCause((cause) => Effect.logWarning("couldn't record the turn's usage", { cause })))
+
+      const turnFinished = (usage?: TurnUsage | undefined) =>
+        Effect.gen(function* () {
+          const record = yield* core.sandbox
+          const now = yield* DateTime.now
+          yield* update((r) => {
+            const { turnStartedAt: _, turnUsageBefore: _b, ...rest } = withoutStarting(r)
+            return { ...rest, working: false, turnEndedAt: now, awakeUntil: DateTime.addDuration(now, IdleTimeout) }
+          })
+          yield* store.clearTimer("turn-keepalive")
+          if (config.sandboxRefresh) {
+            yield* store.setTimer(
+              "sandbox-refresh",
+              (yield* Clock.currentTimeMillis) + Duration.toMillis(RefreshAfterTurn)
+            )
+          }
+          yield* alarm.reschedule
+          if (record.access !== undefined) {
+            yield* e2b.setTimeout(record.access.sandboxId, Duration.toSeconds(IdleTimeout)).pipe(Effect.ignore)
+          }
+          // Machine time for this turn, plus the idle tail before E2B pauses it.
+          yield* recordTurnUsage(record, DateTime.addDuration(now, IdleTimeout))
+          yield* recordModelTurn(record, now, usage)
         })
-        yield* store.clearTimer("turn-keepalive")
-        if (config.sandboxRefresh) {
-          yield* store.setTimer(
-            "sandbox-refresh",
-            (yield* Clock.currentTimeMillis) + Duration.toMillis(RefreshAfterTurn)
-          )
-        }
-        yield* alarm.reschedule
-        if (record.access !== undefined) {
-          yield* e2b.setTimeout(record.access.sandboxId, Duration.toSeconds(IdleTimeout)).pipe(Effect.ignore)
-        }
-        // Machine time for this turn, plus the idle tail before E2B pauses it.
-        yield* recordTurnUsage(record, DateTime.addDuration(now, IdleTimeout))
-      })
 
       const recordTurnUsage = (record: SandboxRecord, ended: DateTime.Utc) =>
         Effect.gen(function* () {
@@ -768,10 +820,14 @@ export class SandboxManager extends Context.Service<
         yield* alarm.reschedule
         const record = yield* core.sandbox
         const now = yield* DateTime.now
-        if (record.working) yield* recordTurnUsage(record, now)
+        if (record.working) {
+          yield* recordTurnUsage(record, now)
+          // The turn stops here: its tokens are never reported, but the window moved while it ran.
+          yield* recordModelTurn(record, now, undefined)
+        }
         // Paused, the sandbox is asleep: the phone shows no turn, and the paused one is noted for the restore.
         yield* update((r) => {
-          const { turnStartedAt: _, awakeUntil: _a, ...rest } = withoutStarting(r)
+          const { turnStartedAt: _, turnUsageBefore: _b, awakeUntil: _a, ...rest } = withoutStarting(r)
           return r.working ? { ...rest, working: false, turnEndedAt: now, interruptedTurn: true } : rest
         })
         if (record.access !== undefined) yield* pauseSandbox(record.access.sandboxId)

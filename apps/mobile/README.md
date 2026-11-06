@@ -79,6 +79,7 @@ xcrun simctl launch --terminate-running-process booted build.omer.dream \
 | `…?tab=status` | The Status card opened over Chat (the whole roadmap); `?tab=chat` folds it |
 | `…?focus=<messageId>` · `…?land=<messageId>` | Expand a message; land on it in Chat, highlighted |
 | `/new` · `/new?sample=long` · add `dictate=1` | New idea (the page), with a long brain dump, dictating at the cursor (simulated in the Simulator) |
+| `/project/<id>?sheet=usage` | The usage sheet over the project (the ring in its header opens it) |
 | `/connect` · `/settings` | Subscription connect flow; settings |
 
 Message ids: `msg_cabinrule`, `msg_cabinpick`, `msg_gcal` (Cabin), `msg_apple` (Lift Log), `msg_gmail` and
@@ -134,6 +135,19 @@ request; `declined-reason` shows that request declined with a reason.
 ```sh
 xcrun simctl launch --terminate-running-process booted build.omer.dream \
   -dreamScenario signed-in,activity-working -dreamRoute "/project/prj_liftlog?tab=chat"
+```
+
+Project usage (Deck v3 option A, the ring): the right of the project header has a ring of the subscription's week,
+this project's share in white over everything else in grey, with "4%" over "of week"; tapping it opens the usage
+sheet (`…?sheet=usage`). By default the sample world's ChatGPT Pro week is 38% used, Lift Log about 4% of it, and
+each of the simulated agent's turns adds a little (the header follows `ProjectEvent.Usage`). `usage-near-limit`
+is the heavy week: 92% used, the ring's arc and "8% left" in amber, and a line in the sheet saying what's left and
+until when. `usage-none` is a world where no usage is known: the header shows nothing, and the sheet's tokens read
+"—". `usage-normal` goes back to the default.
+
+```sh
+xcrun simctl launch --terminate-running-process booted build.omer.dream \
+  -dreamScenario signed-in,usage-near-limit -dreamRoute "/project/prj_liftlog?sheet=usage"
 ```
 
 ## Checking against a deployed API

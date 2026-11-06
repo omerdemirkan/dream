@@ -8,6 +8,13 @@
  *   - any other prompt gets a reply listing every `REMEMBER: <word>` the conversation holds, and how many user
  *     messages it has, so a resumed session shows its history.
  *
+ * Every response reports usage that says who asked, so a turn's reported tokens show what was counted:
+ *
+ *   the agent's own requests        input 100, cache write 1,000, cache read 10,000, output 10
+ *   a subagent's (its conversation  input 3, cache write 30,000, cache read 300,000, output 3,000
+ *     mentions SUBAGENT, no AGENT:)
+ *   side requests (no tools)        input 7, output 70
+ *
  *   node packages/dreamd/scripts/fake-anthropic.ts [port]     (default 18789)
  *
  * Point Claude Code at it with ANTHROPIC_BASE_URL=http://127.0.0.1:<port> (in dreamd's sandbox, through the `env`
@@ -34,10 +41,26 @@ let counter = 0
 
 type Reply = { readonly block: Record<string, unknown>; readonly stop: string }
 
-const usage = { input_tokens: 10, output_tokens: 12, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
+type Usage = {
+  readonly input_tokens: number
+  readonly output_tokens: number
+  readonly cache_creation_input_tokens: number
+  readonly cache_read_input_tokens: number
+}
+
+const usageOf = {
+  agent: { input_tokens: 100, cache_creation_input_tokens: 1_000, cache_read_input_tokens: 10_000, output_tokens: 10 },
+  subagent: {
+    input_tokens: 3,
+    cache_creation_input_tokens: 30_000,
+    cache_read_input_tokens: 300_000,
+    output_tokens: 3_000
+  },
+  side: { input_tokens: 7, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 70 }
+} satisfies Record<string, Usage>
 
 /** The reply as a Messages API stream, or as one JSON message for a request that didn't ask to stream. */
-const render = (model: string, { block, stop }: Reply, stream: boolean) => {
+const render = (model: string, { block, stop }: Reply, stream: boolean, usage: Usage) => {
   const id = `msg_fake_${++counter}`
   const message = { id, type: "message", role: "assistant", model, stop_sequence: null }
   if (!stream) return JSON.stringify({ ...message, content: [block], stop_reason: stop, usage })
@@ -58,7 +81,7 @@ const render = (model: string, { block, stop }: Reply, stream: boolean) => {
     },
     { type: "content_block_delta", index: 0, delta },
     { type: "content_block_stop", index: 0 },
-    { type: "message_delta", delta: { stop_reason: stop, stop_sequence: null }, usage: { output_tokens: 12 } },
+    { type: "message_delta", delta: { stop_reason: stop, stop_sequence: null }, usage },
     { type: "message_stop" }
   ])
 }
@@ -120,6 +143,11 @@ createServer((request, response) => {
     const withTools = (body.tools?.length ?? 0) > 0
     const run = withTools ? /RUN(_BG)?: (.+)$/m.exec(lastText) : null
     const spawn = withTools ? /AGENT: (\{.+\})$/m.exec(lastText) : null
+    const role = !withTools
+      ? "side"
+      : userTexts.some((t) => t.includes("SUBAGENT")) && !userTexts.some((t) => /AGENT: \{/.test(t))
+        ? "subagent"
+        : "agent"
     const remembered = userTexts.flatMap((t) => [...t.matchAll(/REMEMBER: (\w+)/g)].map((m) => m[1]))
     const answer = toolResult
       ? text("The command ran.")
@@ -139,6 +167,8 @@ createServer((request, response) => {
         roles: messages.map((m) => m.role[0]).join(""),
         tools: body.tools?.length ?? 0,
         stream: body.stream === true,
+        role,
+        usage: usageOf[role],
         userMessages: userTexts.length,
         remembered,
         did: toolResult
@@ -155,6 +185,6 @@ createServer((request, response) => {
       "content-type": stream ? "text/event-stream" : "application/json",
       "request-id": `req_fake_${counter}`
     })
-    response.end(render(model, answer, stream))
+    response.end(render(model, answer, stream, usageOf[role]))
   })
 }).listen(port, "127.0.0.1", () => console.log(`fake Messages API on http://127.0.0.1:${port}`))
