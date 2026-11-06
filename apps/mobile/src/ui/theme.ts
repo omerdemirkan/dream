@@ -17,6 +17,9 @@ export const color = {
   needBg: "rgba(255,179,92,0.12)",
   needLine: "rgba(255,179,92,0.34)",
   cool: "#8FB8FF",
+  /** Hand-drawn ink on an empty Home: off-white, warmed; the line a touch lighter than the words. */
+  ink: "rgba(237,230,218,0.88)",
+  inkLine: "rgba(237,230,218,0.78)",
   toast: "#2C2C31",
   sheet: "#1B1B1F",
   black: "#000000",
