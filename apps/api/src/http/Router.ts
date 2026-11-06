@@ -17,7 +17,7 @@ import { timingSafeEqual } from "../lib/Bytes.ts"
 import { AppAuthServer, AuthedHandlers, bearer, PublicHandlers } from "./AppHandlers.ts"
 import { connectProvider, showConnectPage, submitConnectPage } from "./ConnectPage.ts"
 import { gateway } from "./Gateway.ts"
-import { downloadMedia, uploadMedia } from "./Media.ts"
+import { downloadAttachmentForSandbox, downloadMedia, uploadAttachment, uploadMedia } from "./Media.ts"
 import { homePage, privacyPage } from "./PublicPages.ts"
 import { SandboxAuthServer, WorkerSandboxHandlers } from "./SandboxHandlers.ts"
 import { grantAscKey, releaseAscKey, storeSigningIdentity } from "./Testflight.ts"
@@ -102,6 +102,22 @@ export const route = (raw: Request) =>
 
     const upload = /^\/media\/([^/]+)\/upload$/.exec(path)
     if (upload !== null && request.method === "PUT") return yield* uploadMedia(request, upload[1]!, raw)
+
+    const attachmentUpload = /^\/attachments\/([^/]+)\/upload$/.exec(path)
+    if (attachmentUpload !== null && request.method === "PUT") {
+      return yield* uploadAttachment(request, attachmentUpload[1]!, raw)
+    }
+
+    const sandboxAttachment = /^\/sandbox\/attachments\/([^/]+)$/.exec(path)
+    if (sandboxAttachment !== null && request.method === "GET") {
+      const tokens = yield* Tokens
+      const token = bearer(request.headers)
+      const project = Option.isNone(token)
+        ? Option.none()
+        : yield* tokens.verifyProject(token.value).pipe(Effect.option)
+      if (Option.isNone(project)) return HttpServerResponse.text("Invalid project token", { status: 401 })
+      return yield* downloadAttachmentForSandbox(sandboxAttachment[1]!, project.value.projectId)
+    }
 
     const media = /^\/media\/([^/]+)$/.exec(path)
     if (media !== null && (request.method === "GET" || request.method === "HEAD")) {

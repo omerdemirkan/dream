@@ -7,7 +7,8 @@
 import { DateTime, Schema } from "effect"
 import { AppNotificationLimits } from "./AppNotifications.ts"
 import { IntegrationAccess } from "./Connections.ts"
-import { AppId, EventId, LinkId, MessageId, WakeId } from "./Ids.ts"
+import { AppId, EventId, LinkId, type MediaId, MessageId, WakeId } from "./Ids.ts"
+import { Attachment, attachmentPath, formatBytes, isImageAttachment } from "./Media.ts"
 import { QuestionAnswer } from "./Message.ts"
 import { UsageWindowName } from "./Usage.ts"
 import { WorkstreamRef } from "./Workstream.ts"
@@ -28,13 +29,16 @@ export type RunResult = typeof RunResult.Type
 export const AgentEvent = Schema.TaggedUnion({
   /**
    * They wrote in Chat. A project's first event is the idea itself. `workstream`: they wrote it into one of the
-   * agent's workstreams (a reply to it); added in November 2026, older dreamd builds ignore it.
+   * agent's workstreams (a reply to it); added in November 2026, older dreamd builds ignore it. `attachments`: photos
+   * and files they attached, which dreamd copies to `attachmentPath` before the turn; also November 2026, and
+   * older dreamd builds ignore them.
    */
   UserMessage: {
     ...EventFields,
     messageId: MessageId,
     text: Schema.String,
-    workstream: Schema.optionalKey(WorkstreamRef)
+    workstream: Schema.optionalKey(WorkstreamRef),
+    attachments: Schema.optionalKey(Schema.Array(Attachment))
   },
   QuestionAnswered: {
     ...EventFields,
@@ -144,6 +148,8 @@ export type AgentEvent = typeof AgentEvent.Type
 export interface RenderOptions {
   /** Their IANA time zone; times are shown in it. Defaults to UTC. */
   readonly timeZone?: string | undefined
+  /** Attachments dreamd couldn't copy into the sandbox; the prompt says so instead of giving a path. */
+  readonly missingAttachments?: ReadonlySet<MediaId> | undefined
 }
 
 /** e.g. "Wed, Nov 4, 2:02 PM", in their time zone. */
@@ -238,14 +244,37 @@ const renderRemoved = (label: string, access: IntegrationAccess, failure: string
   )
 }
 
+const describeAttachment = (attachment: Attachment): string => {
+  const pixels =
+    attachment.width !== undefined && attachment.height !== undefined
+      ? `${attachment.width}×${attachment.height}, `
+      : ""
+  return `${isImageAttachment(attachment) ? "photo" : attachment.contentType}, ${pixels}${formatBytes(attachment.sizeBytes)}`
+}
+
+/** "a photo, now at …" or "3 files, now in the sandbox:" and a list. Empty without attachments. */
+const renderAttachments = (messageId: string, attachments: ReadonlyArray<Attachment>, options: RenderOptions) => {
+  if (attachments.length === 0) return ""
+  const line = (attachment: Attachment) =>
+    options.missingAttachments?.has(attachment.id) === true
+      ? `${attachment.name} (${describeAttachment(attachment)}), which Dream couldn't copy into the sandbox; ask them to send it again if you need it`
+      : `${attachmentPath(messageId, attachment)} (${describeAttachment(attachment)})`
+  const only = attachments.length === 1 ? attachments[0] : undefined
+  if (only !== undefined) return `${isImageAttachment(only) ? "a photo" : "a file"}: ${line(only)}`
+  const kind = attachments.every(isImageAttachment) ? "photos" : "files"
+  return `${attachments.length} ${kind}:\n${attachments.map((a) => `- ${line(a)}`).join("\n")}`
+}
+
 /** One event as a paragraph of the turn prompt. Message and wake ids are included so the agent can refer to them. */
 export const renderAgentEvent = (event: AgentEvent, options: RenderOptions = {}): string => {
   const time = formatEventTime(event.at, options)
   const body = AgentEvent.match(event, {
-    UserMessage: ({ messageId, text, workstream }) =>
-      workstream === undefined
-        ? `They wrote (${messageId}):\n${quote(text)}`
-        : `They wrote (${messageId}) into your workstream "${workstream.title}" (${workstream.id}):\n${quote(text)}`,
+    UserMessage: ({ messageId, text, workstream, attachments = [] }) => {
+      const into = workstream === undefined ? "" : ` into your workstream "${workstream.title}" (${workstream.id})`
+      const files = renderAttachments(messageId, attachments, options)
+      if (text.trim().length === 0 && files !== "") return `They sent (${messageId})${into} ${files}`
+      return `They wrote (${messageId})${into}:\n${quote(text)}${files === "" ? "" : `\nThey attached ${files}`}`
+    },
     QuestionAnswered: ({ messageId, question, answer, previous }) =>
       `They answered your question ${messageId}, "${question}", ${renderAnswer(answer)}` +
       (previous === undefined ? "" : `\n(This replaces their earlier answer, ${renderAnswer(previous)}.)`),

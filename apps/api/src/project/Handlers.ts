@@ -126,7 +126,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
       })
 
     return {
-      Init: ({ project }) =>
+      Init: ({ project, attachments }) =>
         Effect.gen(function* () {
           const existing = yield* core.projectOption
           if (Option.isSome(existing)) return existing.value
@@ -139,12 +139,18 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
             createdAt: now,
             from: "user",
             text: project.idea,
-            media: []
+            media: [],
+            ...(attachments === undefined || attachments.length === 0 ? {} : { attachments })
           })
           yield* core.addMessage(first)
           yield* core.enqueue(
             yield* event((fields) =>
-              AgentEvent.cases.UserMessage.make({ ...fields, messageId: first.id, text: project.idea })
+              AgentEvent.cases.UserMessage.make({
+                ...fields,
+                messageId: first.id,
+                text: project.idea,
+                ...(first.attachments === undefined ? {} : { attachments: first.attachments })
+              })
             )
           )
           return project
@@ -154,7 +160,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
 
       ListMessages: ({ before, limit }) => store.messagesBefore(before, limit),
 
-      SendUserMessage: ({ text, id, workstream }) =>
+      SendUserMessage: ({ text, id, workstream, attachments }) =>
         Effect.gen(function* () {
           if (id !== undefined) {
             const posted = yield* core.message(id)
@@ -171,6 +177,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
             from: "user",
             text,
             media: [],
+            ...(attachments === undefined || attachments.length === 0 ? {} : { attachments }),
             ...(into === undefined ? {} : { workstream: into.id })
           })
           yield* core.addMessage(message)
@@ -180,7 +187,8 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
                 ...fields,
                 messageId: message.id,
                 text,
-                ...(into === undefined ? {} : { workstream: { id: into.id, title: into.title } })
+                ...(into === undefined ? {} : { workstream: { id: into.id, title: into.title } }),
+                ...(message.attachments === undefined ? {} : { attachments: message.attachments })
               })
             )
           )

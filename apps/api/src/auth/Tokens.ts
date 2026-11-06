@@ -4,6 +4,7 @@
  * - project: dreamd's project-scoped token (SandboxAuth), in DREAM_PROJECT_TOKEN
  * - live: the short-lived WebSocket ticket from GetLiveUrl
  * - upload: a one-media-file PUT to the Worker
+ * - attachment: the PUT of one photo or file they attach
  * - connect: a `CreateConnectLink` page (single use, recorded in D1 by `jti`)
  */
 import { ConnectLinkProvider, MediaContentType, MediaId, ProjectId, UserId } from "@dream/domain"
@@ -52,6 +53,17 @@ const UploadClaims = Schema.Struct({
 })
 export type UploadClaims = typeof UploadClaims.Type
 
+const AttachmentUploadClaims = Schema.Struct({
+  iss: Schema.Literal(issuer),
+  typ: Schema.Literal("attachment"),
+  sub: UserId,
+  aid: MediaId,
+  ct: Schema.String,
+  size: Schema.Int,
+  exp: Schema.Number
+})
+export type AttachmentUploadClaims = typeof AttachmentUploadClaims.Type
+
 const ConnectClaims = Schema.Struct({
   iss: Schema.Literal(issuer),
   typ: Schema.Literal("connect"),
@@ -96,6 +108,10 @@ export class Tokens extends Context.Service<
       claims: Omit<UploadClaims, "iss" | "typ" | "exp">
     ) => Effect.Effect<{ readonly token: string; readonly expiresAtMs: number }>
     readonly verifyUpload: (token: string) => Effect.Effect<UploadClaims, InvalidToken>
+    readonly attachmentUpload: (
+      claims: Omit<AttachmentUploadClaims, "iss" | "typ" | "exp">
+    ) => Effect.Effect<{ readonly token: string; readonly expiresAtMs: number }>
+    readonly verifyAttachmentUpload: (token: string) => Effect.Effect<AttachmentUploadClaims, InvalidToken>
     readonly connectTicket: (
       claims: Omit<ConnectTicket, "expiresAtMs">
     ) => Effect.Effect<{ readonly token: string; readonly expiresAtMs: number }>
@@ -156,6 +172,13 @@ export class Tokens extends Context.Service<
             return { token, expiresAtMs: exp * 1000 }
           }),
         verifyUpload: (token) => verify(token, UploadClaims).pipe(Effect.flatMap(notExpired)),
+        attachmentUpload: (claims) =>
+          Effect.gen(function* () {
+            const exp = (yield* nowSeconds) + Duration.toSeconds(UploadLifetime)
+            const token = yield* signHs256(key, { iss: issuer, typ: "attachment", ...claims, exp })
+            return { token, expiresAtMs: exp * 1000 }
+          }),
+        verifyAttachmentUpload: (token) => verify(token, AttachmentUploadClaims).pipe(Effect.flatMap(notExpired)),
         connectTicket: ({ userId, provider, ticketId }) =>
           Effect.gen(function* () {
             const exp = (yield* nowSeconds) + Duration.toSeconds(ConnectTicketLifetime)

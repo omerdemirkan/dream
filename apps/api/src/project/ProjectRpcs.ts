@@ -13,6 +13,7 @@ import {
   AppId,
   AppNotifications,
   AppSender,
+  Attachment,
   DeclineReason,
   DeviceId,
   NotificationId,
@@ -63,7 +64,10 @@ export const credentialHeader = (credential: RelayCredential): readonly [string,
 
 export class ProjectRpcs extends RpcGroup.make(
   /** Called once by CreateProject: stores the project, adds the idea as the first message and wakes the agent. */
-  Rpc.make("Init", { payload: { project: Project }, success: Project }),
+  Rpc.make("Init", {
+    payload: { project: Project, attachments: Schema.optionalKey(Schema.Array(Attachment)) },
+    success: Project
+  }),
   Rpc.make("GetProject", { success: Project, error: NotFound }),
   Rpc.make("ListMessages", {
     payload: { before: Schema.optionalKey(MessageId), limit: Schema.Int },
@@ -75,7 +79,9 @@ export class ProjectRpcs extends RpcGroup.make(
    */
   Rpc.make("SendUserMessage", {
     payload: {
-      text: Schema.NonEmptyString,
+      /** Empty only with attachments (the Worker checks). */
+      text: Schema.String,
+      attachments: Schema.optionalKey(Schema.Array(Attachment)),
       id: Schema.optionalKey(MessageId),
       workstream: Schema.optionalKey(WorkstreamId)
     },

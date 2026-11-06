@@ -5,7 +5,7 @@
  * The prompt and skill text is canonical in docs/agent-context.md and
  * docs/dream-skill.md; `bun run sync` regenerates ./generated/prompts.ts.
  */
-import { renderAgentEvent, type AgentEvent } from "@dream/domain"
+import { renderAgentEvent, type AgentEvent, type MediaId } from "@dream/domain"
 import { DateTime, Order } from "effect"
 
 export { dreamSkill, systemPrompt } from "./generated/prompts.ts"
@@ -19,11 +19,13 @@ export interface TurnPromptInput {
   readonly now: DateTime.Utc
   /** Their IANA time zone. Times are shown in it, so "7:00" means 7:00 where they are. */
   readonly timeZone?: string | undefined
+  /** Attachments dreamd couldn't copy into the sandbox, so the prompt doesn't point at a missing file. */
+  readonly missingAttachments?: ReadonlySet<MediaId> | undefined
 }
 
 const byTime = Order.mapInput(DateTime.Order, (event: AgentEvent) => event.at)
 
-const render = (heading: string, { events, now, timeZone }: TurnPromptInput): string => {
+const render = (heading: string, { events, now, timeZone, missingAttachments }: TurnPromptInput): string => {
   const zone = timeZone ?? "UTC"
   const clock = DateTime.format(now, {
     locale: "en-US",
@@ -35,7 +37,7 @@ const render = (heading: string, { events, now, timeZone }: TurnPromptInput): st
   const body =
     sorted.length === 0
       ? "Nothing new has arrived."
-      : sorted.map((event) => renderAgentEvent(event, { timeZone: zone })).join("\n\n")
+      : sorted.map((event) => renderAgentEvent(event, { timeZone: zone, missingAttachments })).join("\n\n")
   return `It's ${clock} where they are (${zone}).\n\n${heading}:\n\n${body}\n`
 }
 

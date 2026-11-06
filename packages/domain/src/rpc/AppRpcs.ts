@@ -13,6 +13,7 @@ import {
   DeviceId,
   IntegrationId,
   LinkId,
+  MediaId,
   MessageId,
   ModelConnectionId,
   NotificationId,
@@ -30,6 +31,7 @@ import {
   QuestionMessage,
   TextMessage
 } from "../Message.ts"
+import { Attachment, AttachmentContentType, AttachmentLimits, MediaUploadTarget } from "../Media.ts"
 import { ArchivedProject, Harness, Project, ProjectSummary } from "../Project.ts"
 import { AccountUsage, ModelProvider, ProjectUsage } from "../Usage.ts"
 import { Device, TimeZone, User } from "../User.ts"
@@ -42,6 +44,9 @@ export const OpenAsk = Schema.Struct({
 export type OpenAsk = typeof OpenAsk.Type
 
 const ProjectMessage = { projectId: ProjectId, messageId: MessageId }
+
+/** Ids of uploaded attachments, as `SendMessage` and `CreateProject` take them. */
+const Attachments = Schema.Array(MediaId).check(Schema.isMaxLength(AttachmentLimits.perMessage))
 
 // ---------------------------------------------------------------------------
 // Unauthenticated
@@ -122,13 +127,15 @@ export class AuthedAppRpcs extends RpcGroup.make(
    * Start a project from an idea. The idea becomes its first message and the
    * agent's first event. `harness` defaults to the one their connected
    * subscription runs. With a `requestId`, a retry returns the project the
-   * first attempt created (`InvalidRequest` if that id belongs to someone else).
+   * first attempt created (`InvalidRequest` if that id belongs to someone else). `attachments` (November 2026):
+   * uploads from `CreateAttachmentUpload` that go with the idea.
    */
   Rpc.make("CreateProject", {
     payload: {
       idea: Schema.NonEmptyString,
       harness: Schema.optionalKey(Harness),
-      requestId: Schema.optionalKey(RequestId)
+      requestId: Schema.optionalKey(RequestId),
+      attachments: Schema.optionalKey(Attachments)
     },
     success: Project,
     error: Schema.Union([NoModelConnection, UpstreamFailure, InvalidRequest])
@@ -272,17 +279,37 @@ export class AuthedAppRpcs extends RpcGroup.make(
   /**
    * Post their message to Chat. With a `requestId`, a retry returns the message the first attempt posted. With a
    * `workstream` (added in November 2026), they wrote it into that workstream; one the project doesn't have is
-   * ignored.
+   * ignored. `attachments` (November 2026): uploads from `CreateAttachmentUpload` that go with it, in order; with
+   * some, `text` may be empty. `InvalidRequest` for an empty message, or an attachment that isn't theirs, wasn't
+   * uploaded, or went with another message.
    */
   Rpc.make("SendMessage", {
     payload: {
       projectId: ProjectId,
-      text: Schema.NonEmptyString,
+      text: Schema.String,
       requestId: Schema.optionalKey(RequestId),
-      workstream: Schema.optionalKey(WorkstreamId)
+      workstream: Schema.optionalKey(WorkstreamId),
+      attachments: Schema.optionalKey(Attachments)
     },
     success: TextMessage,
-    error: NotFound
+    error: Schema.Union([NotFound, InvalidRequest])
+  }),
+  /**
+   * Start uploading a photo or file they're attaching (added in November 2026): send the bytes as `upload` says, then
+   * pass the attachment's id to `SendMessage` or `CreateProject`. The name is made safe for a path (the returned
+   * attachment has the one Dream uses). `InvalidRequest` when it's larger than `AttachmentLimits.maxBytes` or
+   * storage isn't on.
+   */
+  Rpc.make("CreateAttachmentUpload", {
+    payload: {
+      name: Schema.NonEmptyString,
+      contentType: AttachmentContentType,
+      sizeBytes: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+      width: Schema.optionalKey(Schema.Int),
+      height: Schema.optionalKey(Schema.Int)
+    },
+    success: Schema.Struct({ attachment: Attachment, upload: MediaUploadTarget }),
+    error: InvalidRequest
   }),
   /**
    * Answer, or change an answer. Sending the answer it already has changes nothing (so a retry is safe).

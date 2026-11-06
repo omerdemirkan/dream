@@ -13,6 +13,7 @@ import { Namespace } from "./brokers/Namespace.ts"
 import { ApiConfig } from "./Config.ts"
 import { ChatGpt } from "./connect/ChatGpt.ts"
 import { Connections } from "./db/Connections.ts"
+import { Attachments } from "./db/Attachments.ts"
 import { Links } from "./db/Links.ts"
 import { Projects } from "./db/Projects.ts"
 import { Secrets } from "./db/Secrets.ts"
@@ -46,6 +47,7 @@ export const databaseLayer = (d1: D1Database) =>
     Users.layer,
     Projects.layer,
     Links.layer,
+    Attachments.layer,
     Connections.layer,
     Secrets.layer,
     TestflightGrants.layer,
