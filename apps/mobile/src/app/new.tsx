@@ -15,6 +15,7 @@ import {
   KeyboardAvoidingView,
   Pressable,
   ScrollView,
+  StyleSheet,
   type ScrollViewInstance,
   Text,
   TextInput,
@@ -43,6 +44,8 @@ const page: TextStyle = {
   color: color.t1
 }
 const pad = { paddingHorizontal: gutter, paddingTop: 18, paddingBottom: 28 } as const
+/** The field draws each line 3 pt lower than Text does with the same line height (measured in the Simulator). */
+const livePad = { ...pad, paddingTop: pad.paddingTop + 3 } as const
 
 function useKeyboardShown() {
   const [shown, setShown] = useState(false)
@@ -88,6 +91,8 @@ export default function NewIdea() {
   /** After a take ends: where the cursor goes, and whether to put it there (not when the take was sent). */
   const caretAfter = useRef<number | null>(null)
   const refocus = useRef(true)
+  /** How far the field is scrolled, so the live text opens at the same place. */
+  const scrolled = useRef(0)
   const create = useAction(createProjectFn)
   const requestId = useRequestId()
   const toast = useToast()
@@ -179,27 +184,39 @@ export default function NewIdea() {
         <Text style={{ fontSize: 15, fontWeight: "600", color: color.t2 }}>New idea</Text>
         <View style={{ width: 40 }} />
       </View>
-      {listening ? (
-        <LiveText {...placeTake(text, anchor, dictation.transcript)} onPress={dictation.stop} />
-      ) : (
+      {/* The field stays put under the live text, so it comes back scrolled where it was. */}
+      <View style={{ flex: 1 }}>
         <TextInput
           ref={input}
           value={text}
           onChangeText={setText}
+          onScroll={(e) => {
+            scrolled.current = e.nativeEvent.contentOffset.y
+          }}
           onSelectionChange={(e) => {
             selection.current = e.nativeEvent.selection
           }}
           multiline
           submitBehavior="newline"
-          placeholder="Start anywhere. Say everything on your mind, in any order — messy is fine."
+          placeholder={"What do you want to exist?\nThink out loud. Messy is fine."}
           placeholderTextColor={color.t3}
           keyboardAppearance="dark"
           selectionColor={color.need}
           textAlignVertical="top"
           style={[page, pad, { flex: 1 }]}
           accessibilityLabel="Your idea"
+          accessibilityElementsHidden={listening}
         />
-      )}
+        {listening ? (
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: color.bg }]}>
+            <LiveText
+              {...placeTake(text, anchor, dictation.transcript)}
+              startY={scrolled.current}
+              onPress={dictation.stop}
+            />
+          </View>
+        ) : null}
+      </View>
       <View
         style={{
           flexDirection: "row",
@@ -279,16 +296,18 @@ function LiveText(props: {
   readonly settled: string
   readonly interim: string
   readonly after: string
+  readonly startY: number
   readonly onPress: () => void
 }) {
   const scroll = useRef<ScrollViewInstance>(null)
-  const view = useRef({ height: 0, y: 0 })
+  const view = useRef({ height: 0, y: props.startY })
+  const placed = useRef(false)
   const [caretY, setCaretY] = useState(0)
 
   useEffect(() => {
     const { height, y } = view.current
     if (!height) return
-    const bottom = pad.paddingTop + caretY
+    const bottom = livePad.paddingTop + caretY
     if (bottom > y + height - 24) scroll.current?.scrollTo({ y: bottom - height + 24, animated: true })
     else if (bottom - lineHeight < y) scroll.current?.scrollTo({ y: Math.max(0, bottom - 2 * lineHeight) })
   }, [caretY])
@@ -297,7 +316,12 @@ function LiveText(props: {
     <ScrollView
       ref={scroll}
       style={{ flex: 1 }}
-      contentContainerStyle={[pad, { flexGrow: 1 }]}
+      onContentSizeChange={() => {
+        if (placed.current) return
+        placed.current = true
+        scroll.current?.scrollTo({ y: props.startY, animated: false })
+      }}
+      contentContainerStyle={[livePad, { flexGrow: 1 }]}
       scrollEventThrottle={32}
       onLayout={(e) => {
         view.current.height = e.nativeEvent.layout.height

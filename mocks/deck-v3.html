@@ -1327,7 +1327,7 @@ const countOf = t => { const n=words(t); return n>40?`${n} words`:''; };
 /* A · THE PAGE — one quiet page; typing and speech land in the same body text */
 VIEWS.ideaA = (ph,p) => { const dz=dzOf(ph,p);
   return `<div class="${optCls(ph,p,'opt-a')}"><div class="scroll nodock" style="padding-bottom:150px">${ideaNav()}
-    ${dumpField(ph,p,'Start anywhere. Say everything on your mind, in any order — messy is fine.')}</div>
+    ${dumpField(ph,p,'What do you want to exist?&#10;Think out loud. Messy is fine.')}</div>
   ${dock(`<div class="dbar"><button class="mic" data-act="dmic" aria-label="${dz?'Stop dictating':'Dictate'}">${ico('mic',22)}</button><span class="mid">${dz?listenLbl(dz):`<span class="dz-c">${countOf(p.text||'')}</span>`}</span>${sendBtn}</div>`)}</div>`; };
 
 /* B · TALK IT OUT — voice first; the transcript fills the screen and becomes editable when you stop */
