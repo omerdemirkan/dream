@@ -103,8 +103,11 @@ gives up after 25 s; the retry goes through), `archived` (Recipe Scaler and Morn
 listed under Archived in Settings). `no-projects` is a new person's Home: no projects and no app links, so the words and the drawn arrow lead to the input.
 
 App links (Deck v3 option A, "Dock"): the row of app icons under Home's header. The sample world has four (three
-made by agents, Cabin's still new with its dot, and Train times added by the person). `links-empty` shows the empty
-state, `links-new` adds a sixth and seventh so the row scrolls. `/?sheet=add` opens the add sheet; with launch
+made by agents, Cabin's still new with its dot, and Train times, which the person added back when the app let them).
+`links-empty` shows the empty state, `links-new` adds a sixth and seventh so the row scrolls. Only agents make links,
+so the add sheet offers the agents' links they took off Home: `links-removed` gives it two (Brief and Lift Log's
+Rest timer), and `links-nothing-published` leaves only Train times, so it explains that nothing's been made yet
+(with the sample world as is, it says everything is on Home already). `/?sheet=add` opens the add sheet; with launch
 arguments, `-dreamRoute "/?sheet=icon&link=lnk_traintimes"` and `"/?sheet=home-screen&link=lnk_cabin"` open Change
 icon and Add to Home Screen. Holding an icon opens its context menu (Open, Share, Add to Home Screen, Rename, Change
 icon, Remove); Share is React Native's `Share`, iOS's share sheet with the link and its name. There's no photo

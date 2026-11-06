@@ -8,9 +8,10 @@
  * label until they first open a link an agent added, and on long-press "Made by <project>" or "Added by you" with
  * the host. Nothing else is shown anywhere, so nothing else is stored.
  *
- * A project's agent makes them with `dream link`; they add their own from the add sheet (any https URL, or a
- * project's published URL). Links live per person in D1, with the project they belong to, if any. An archived
- * project's links leave Home until it's restored; a deleted project's links are deleted with it.
+ * A project's agent makes them with `dream link`. They can rename, re-icon or remove one, and the add sheet puts
+ * back one they removed. Links they added themselves, when the app still let them, stay until they remove them
+ * (`addedBy: "person"`); no new ones are made. Links live per person in D1, with the project they belong to, if
+ * any. An archived project's links leave Home until it's restored; a deleted project's links are deleted with it.
  */
 import { Schema } from "effect"
 import { LinkId, ProjectId } from "./Ids.ts"
@@ -242,7 +243,10 @@ export const AppLink = Schema.Struct({
   color: LinkColor,
   /** The project it belongs to: the one whose agent made it, or whose published URL they added. */
   projectId: Schema.optionalKey(ProjectId),
-  /** Long-press says "Made by <project>" for `agent`, "Added by you" for `person`. */
+  /**
+   * Long-press says "Made by <project>" for `agent`, "Added by you" for `person`: a link they added themselves,
+   * back when the app let them.
+   */
   addedBy: LinkAuthor,
   /** An agent's link only: what they changed on it themselves, which stays theirs. */
   theirs: Schema.optionalKey(Schema.Array(LinkPart)),
@@ -250,7 +254,10 @@ export const AppLink = Schema.Struct({
   updatedAt: Schema.DateTimeUtc,
   /** When they first opened it from Home. An agent's link shows a dot before its label until then. */
   openedAt: Schema.optionalKey(Schema.DateTimeUtc),
-  /** In `dream link list` only: they removed this agent's link, and it stays off Home. */
+  /**
+   * They removed this agent's link, and it stays off Home unless they put it back. In `dream link list` and
+   * `ListRemovedLinks` only.
+   */
   removedAt: Schema.optionalKey(Schema.DateTimeUtc)
 })
 export type AppLink = typeof AppLink.Type

@@ -40,7 +40,7 @@ them more than an honest "not yet".
   versions of the app always show the sentence, so it stays worth keeping true.
 
 Their Home lists their projects. Above the list, first on the screen, is a row of app icons that open what their
-projects have made, and links they added themselves.
+projects have made, each one put there by a project's agent.
 
 They never see this session itself. Anything you write here rather than send through `dream`, a question included,
 simply never reaches them.

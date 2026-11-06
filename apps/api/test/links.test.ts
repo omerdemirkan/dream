@@ -3,8 +3,9 @@
  * that stick, what the agent hears, archive and delete, and what the gateway serves for Add to Home Screen.
  */
 import { assert, describe, it } from "@effect/vitest"
-import { type AgentEvent, DaemonEnvFile, type ProjectId, RequestId } from "@dream/domain"
-import { Effect, Redacted } from "effect"
+import { type AgentEvent, type AppLink, DaemonEnvFile, type LinkId, type ProjectId, RequestId } from "@dream/domain"
+import { DateTime, Effect, Redacted } from "effect"
+import { Links } from "../src/db/Links.ts"
 import { DreamAssets, gateway, homeScreenHead, linkForPath, previewTags } from "../src/http/Gateway.ts"
 import { makeCloud } from "./support/Cloud.ts"
 
@@ -48,6 +49,29 @@ const tokenOf = (cloud: Cloud, projectId: ProjectId): string => {
 
 const linkEvents = (cloud: Cloud) =>
   cloud.world.delivered.flatMap((d) => d.events as ReadonlyArray<AgentEvent>).filter((e) => e._tag === "LinkEdited")
+
+/** A link they added themselves, as the app let them before only agents made links. */
+const handAdded = (
+  cloud: Cloud,
+  input: { readonly url: string; readonly title: string; readonly projectId?: ProjectId }
+) =>
+  Effect.gen(function* () {
+    const user = yield* cloud.phone.GetMe()
+    const now = yield* DateTime.now
+    const link: AppLink = {
+      id: `lnk_hand${Math.random().toString(36).slice(2, 10)}` as LinkId,
+      url: input.url,
+      title: input.title,
+      color: "light",
+      ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
+      addedBy: "person",
+      createdAt: now,
+      updatedAt: now,
+      openedAt: now
+    }
+    yield* Links.use((links) => links.insert(link, user.id)).pipe(Effect.provideContext(cloud.workerContext))
+    return link
+  })
 
 const bodyText = (response: { readonly body: unknown }) => {
   const body = response.body as { readonly _tag: string; readonly body?: Uint8Array }
@@ -126,30 +150,65 @@ describe("app links", () => {
     })
   )
 
-  it.live("they add any link; one to a project's address belongs to it, and the agent can't touch it", () =>
+  it.live("they put back an agent's link they removed, and its agent can change it again", () =>
     Effect.gen(function* () {
       const cloud = yield* makeCloud()
       const { project, dreamd } = yield* setup(cloud)
-      const requestId = RequestId.make("0b3f8a5e-2f4c-4f1e-9b8e-1f2a3b4c5d6e")
-      const train = yield* cloud.phone.AddLink({
-        url: "https://trains.example.com/eus",
-        title: "Train times",
-        color: "light",
-        requestId
-      })
-      const retried = yield* cloud.phone.AddLink({
-        url: "https://trains.example.com/eus",
-        title: "Train times",
-        color: "light",
-        requestId
-      })
-      assert.strictEqual(retried.id, train.id)
-      assert.isUndefined(train.projectId)
-      assert.isDefined(train.openedAt)
+      const { link } = yield* dreamd.AddLink({ url: project.publicUrl, title: "Lift Log", color: "purple" })
+      yield* cloud.phone.UpdateLink({ linkId: link.id, title: "Lifts" })
+      assert.lengthOf(yield* cloud.phone.ListRemovedLinks(), 0)
+      yield* cloud.phone.RemoveLink({ linkId: link.id })
+      const removed = yield* cloud.phone.ListRemovedLinks()
+      assert.deepStrictEqual(
+        removed.map((l) => l.id),
+        [link.id]
+      )
+      assert.isDefined(removed[0]?.removedAt)
 
-      const mine = yield* cloud.phone.AddLink({ url: `${project.publicUrl}/admin`, title: "Admin", color: "green" })
-      assert.strictEqual(mine.projectId, project.id)
-      assert.strictEqual(mine.addedBy, "person")
+      const back = yield* cloud.phone.RestoreLink({ linkId: link.id })
+      assert.isUndefined(back.removedAt)
+      assert.strictEqual(back.title, "Lifts")
+      assert.deepStrictEqual(back.theirs, ["title"])
+      assert.deepStrictEqual(
+        (yield* cloud.phone.ListLinks()).map((l) => l.id),
+        [link.id]
+      )
+      assert.lengthOf(yield* cloud.phone.ListRemovedLinks(), 0)
+      // Again is harmless; the agent can point it elsewhere, but the name stays theirs.
+      assert.strictEqual((yield* cloud.phone.RestoreLink({ linkId: link.id })).id, link.id)
+      const moved = yield* dreamd.UpdateLink({ linkId: link.id, url: `${project.publicUrl}/today` })
+      assert.strictEqual(moved.link.url, `${project.publicUrl}/today`)
+
+      // An archived project's removed links aren't offered or restored until it's back.
+      yield* cloud.phone.RemoveLink({ linkId: link.id })
+      yield* cloud.phone.ArchiveProject({ projectId: project.id })
+      assert.lengthOf(yield* cloud.phone.ListRemovedLinks(), 0)
+      assert.strictEqual((yield* Effect.flip(cloud.phone.RestoreLink({ linkId: link.id })))._tag, "NotFound")
+      yield* cloud.phone.RestoreProject({ projectId: project.id })
+      assert.lengthOf(yield* cloud.phone.ListRemovedLinks(), 1)
+      yield* cloud.close
+    })
+  )
+
+  it.live("they can't add links themselves any more; the ones they added before keep working", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project, dreamd } = yield* setup(cloud)
+      const refused = yield* Effect.flip(
+        cloud.phone.AddLink({
+          url: "https://trains.example.com/eus",
+          title: "Train times",
+          color: "light",
+          requestId: RequestId.make("0b3f8a5e-2f4c-4f1e-9b8e-1f2a3b4c5d6e")
+        })
+      )
+      assert.strictEqual(refused._tag, "InvalidRequest")
+      assert.include(refused.message, "Update Dream")
+      assert.lengthOf(yield* cloud.phone.ListLinks(), 0)
+
+      const mine = yield* handAdded(cloud, { url: `${project.publicUrl}/admin`, title: "Admin", projectId: project.id })
+      const renamed = yield* cloud.phone.UpdateLink({ linkId: mine.id, title: "Admin page" })
+      assert.isUndefined(renamed.theirs)
       const image = yield* Effect.flip(
         cloud.phone.UpdateLink({
           linkId: mine.id,
@@ -162,7 +221,10 @@ describe("app links", () => {
       assert.strictEqual(image._tag, "InvalidRequest")
       const theirs = yield* Effect.flip(dreamd.UpdateLink({ linkId: mine.id, title: "Mine" }))
       assert.include(theirs.message, "added")
-      assert.lengthOf((yield* dreamd.ListLinks()).links, 1)
+      // Removing one deletes it: it isn't offered back.
+      yield* cloud.phone.RemoveLink({ linkId: mine.id })
+      assert.lengthOf(yield* cloud.phone.ListLinks(), 0)
+      assert.lengthOf(yield* cloud.phone.ListRemovedLinks(), 0)
       yield* cloud.close
     })
   )
@@ -172,7 +234,7 @@ describe("app links", () => {
       const cloud = yield* makeCloud()
       const { project, dreamd } = yield* setup(cloud)
       yield* dreamd.AddLink({ url: project.publicUrl, title: "Lift Log", color: "purple" })
-      yield* cloud.phone.AddLink({ url: "https://trains.example.com", title: "Trains", color: "light" })
+      yield* handAdded(cloud, { url: "https://trains.example.com", title: "Trains" })
       yield* cloud.phone.ArchiveProject({ projectId: project.id })
       assert.deepStrictEqual(
         (yield* cloud.phone.ListLinks()).map((l) => l.title),
@@ -199,11 +261,7 @@ describe("app links", () => {
       assert.strictEqual(bad._tag, "InvalidRequest")
       const { url } = yield* cloud.phone.PrepareHomeScreen({ linkId: link.id, iconPng: png })
       assert.strictEqual(url, `${project.publicUrl}?dream_home_screen=1`)
-      const other = yield* cloud.phone.AddLink({
-        url: "https://trains.example.com/#/eus",
-        title: "Trains",
-        color: "light"
-      })
+      const other = yield* handAdded(cloud, { url: "https://trains.example.com/#/eus", title: "Trains" })
       assert.strictEqual((yield* cloud.phone.PrepareHomeScreen({ linkId: other.id })).url, other.url)
 
       const host = new URL(project.publicUrl).host

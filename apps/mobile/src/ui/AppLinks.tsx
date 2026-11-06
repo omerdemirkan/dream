@@ -7,7 +7,6 @@ import { type AppLink, linkHost, linkMenuHeader, type Project, type ProjectSumma
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
 import { Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
-import * as Haptics from "expo-haptics"
 import { Link } from "expo-router"
 import { useEffect, useRef, useState } from "react"
 import * as WebBrowser from "expo-web-browser"
@@ -145,18 +144,12 @@ function LinkIcon(props: {
       link.title
     )
 
-  const confirmRemove = () => {
-    if (!agents) {
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
-      remove.run(link.id, {
-        onSuccess: () => toast(`Removed ${link.title}`, { done: true }),
-        onFailure: (message) => toast(`Couldn’t remove it. ${message}`)
-      })
-      return
-    }
+  const confirmRemove = () =>
     Alert.alert(
       `Remove ${link.title}?`,
-      `${project.title} won’t put it back. You can add it again yourself with Add.`,
+      link.addedBy === "agent"
+        ? `${project?.title ?? "Its project"} won’t put it back, but you can, from Add.`
+        : "You added this one yourself, so once it’s gone it can’t come back.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -170,7 +163,6 @@ function LinkIcon(props: {
         }
       ]
     )
-  }
 
   return (
     <Link

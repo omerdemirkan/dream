@@ -1,6 +1,6 @@
 /**
- * The sheets over Home for app links: adding one (A3: paste a link or pick a project's published URL, then a name
- * and an icon), changing one's icon, and putting one on the iPhone's Home Screen through Safari (H1).
+ * The sheets over Home for app links: adding one (A3: putting back an app a project made that they took off Home),
+ * changing one's icon, and putting one on the iPhone's Home Screen through Safari (H1).
  *
  * The phone has no photo picker in this build, so the person's icons are an SF Symbol or an emoji on a colour; an
  * agent's own image stays until they pick something else.
@@ -11,25 +11,23 @@ import {
   type LinkColor,
   type LinkIcon,
   linkHost,
-  linkUrlProblem,
   type Project,
-  type ProjectSummary,
-  RequestId
+  type ProjectSummary
 } from "@dream/domain"
 import { useAtom, useAtomValue } from "@effect/atom-react"
 import { Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
-import * as Crypto from "expo-crypto"
 import { type ReactNode, useEffect, useRef, useState } from "react"
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
 import { KeyboardAvoidingView } from "react-native-keyboard-controller"
 import Animated, { Easing, SlideInDown } from "react-native-reanimated"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
-import type Svg from "react-native-svg"
-import { addLinkFn, linksAtom, prepareHomeScreenFn, updateLinkFn } from "../state/atoms.ts"
+import Svg, { Rect } from "react-native-svg"
+import { linkChoices } from "../data/linkChoices.ts"
+import { linksAtom, prepareHomeScreenFn, removedLinksAtom, restoreLinkFn, updateLinkFn } from "../state/atoms.ts"
 import { linkSheetAtom } from "../state/ui.ts"
 import { useAction, useToast } from "./actions.ts"
-import { Button, Icon, Tile } from "./kit.tsx"
+import { Button, Icon } from "./kit.tsx"
 import { capture, LinkTile, LinkTileSvg, type TileLook } from "./LinkTile.tsx"
 import { color, gutter, linkTile } from "./theme.ts"
 
@@ -53,33 +51,6 @@ const symbols = [
   "gamecontroller",
   "list.bullet"
 ] as const
-
-const isSymbol = (name: string) => /^[a-z0-9]+(\.[a-z0-9]+)*$/.test(name)
-
-/** A project's own icon (`dream status --icon`) as a tile glyph. */
-const iconOfProject = (project: Project): LinkIcon | undefined =>
-  project.icon === undefined
-    ? undefined
-    : isSymbol(project.icon)
-      ? { _tag: "Symbol", name: project.icon }
-      : isSingleEmoji(project.icon)
-        ? { _tag: "Emoji", emoji: project.icon }
-        : undefined
-
-/** A colour for a project's tile, the same every time. */
-const colorOfProject = (project: Project): LinkColor => {
-  const palette: ReadonlyArray<LinkColor> = ["purple", "orange", "green", "blue", "teal", "pink", "red"]
-  let hash = 0
-  for (const char of project.id) hash = (hash * 31 + char.charCodeAt(0)) >>> 0
-  return palette[hash % palette.length] ?? "blue"
-}
-
-/** "www.realtimetrains.co.uk" → "Realtimetrains": a starting name they'll usually change. */
-const nameFromUrl = (url: string) => {
-  const host = linkHost(url).replace(/^www\./, "")
-  const first = host.split(".")[0] ?? host
-  return (first.charAt(0).toUpperCase() + first.slice(1)).slice(0, 24)
-}
 
 const sameHost = (url: string, project: Project) => linkHost(url) === linkHost(project.publicUrl)
 
@@ -164,23 +135,6 @@ function Heading(props: { readonly title: string; readonly sub?: string | undefi
         <Text style={{ fontSize: 15, lineHeight: 21, color: color.t2, marginTop: 6 }}>{props.sub}</Text>
       ) : null}
     </View>
-  )
-}
-
-function SectionLabel(props: { readonly children: string }) {
-  return (
-    <Text
-      style={{
-        fontSize: 13,
-        color: color.t3,
-        paddingBottom: 8,
-        borderBottomWidth: 1,
-        borderColor: color.line,
-        marginTop: 20
-      }}
-    >
-      {props.children}
-    </Text>
   )
 }
 
@@ -305,209 +259,119 @@ function Preview(props: { readonly look: TileLook }) {
 }
 
 // ---------------------------------------------------------------------------
-// Add an app (A3)
+// Add an app (A3): only what agents made, so the apps they took off Home
 // ---------------------------------------------------------------------------
-
-interface Draft extends TileLook {
-  readonly url: string
-}
 
 function AddLink(props: {
   readonly links: ReadonlyArray<AppLink>
   readonly projects: ReadonlyArray<Project>
   readonly onDone: () => void
 }) {
-  const [draft, setDraft] = useState<Draft | undefined>(undefined)
-  return draft === undefined ? (
-    <PickLink links={props.links} projects={props.projects} onPick={setDraft} />
-  ) : (
-    <NameLink draft={draft} onChange={setDraft} onDone={props.onDone} />
-  )
-}
-
-function PickLink(props: {
-  readonly links: ReadonlyArray<AppLink>
-  readonly projects: ReadonlyArray<Project>
-  readonly onPick: (draft: Draft) => void
-}) {
-  const [text, setText] = useState("")
-  const typed = text.trim()
-  const url = /^https?:\/\//i.test(typed) ? typed : typed.includes(".") ? `https://${typed}` : typed
-  const problem = typed.length === 0 ? undefined : linkUrlProblem(url)
-  const next = () => {
-    if (typed.length === 0 || problem !== undefined) return
-    const project = props.projects.find((p) => sameHost(url, p))
-    props.onPick(
-      project
-        ? { url, title: project.title.slice(0, 24), color: colorOfProject(project), ...iconFor(project) }
-        : { url, title: nameFromUrl(url), color: "light" }
-    )
-  }
-  const linked = (project: Project) => props.links.some((l) => l.url.replace(/\/$/, "") === project.publicUrl)
-  const rows = props.projects.filter((p) => !linked(p))
+  const removed = useAtomValue(removedLinksAtom)
+  if (!AsyncResult.isSuccess(removed)) return <View style={{ height: 220 }} />
+  const choices = linkChoices(props.links, removed.value)
+  if (choices._tag !== "Choices") return <NothingToAdd allOnHome={choices._tag === "AllOnHome"} onDone={props.onDone} />
   return (
-    <ScrollView keyboardShouldPersistTaps="handled" bounces={false}>
-      <Heading title="Add an app" sub="Anything your projects publish, or any link. It opens full screen from here." />
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 12,
-          height: 54,
-          paddingLeft: 18,
-          paddingRight: 6,
-          borderRadius: 27,
-          borderWidth: 1,
-          borderColor: problem ? color.needLine : color.line2,
-          backgroundColor: color.bg
-        }}
-      >
-        <Icon name="link" size={18} color={color.t2} />
-        <TextInput
-          value={text}
-          onChangeText={setText}
-          onSubmitEditing={next}
-          placeholder="Paste a link"
-          placeholderTextColor={color.t3}
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="url"
-          returnKeyType="next"
-          style={{ flex: 1, fontSize: 17, color: color.t1, height: 52 }}
+    <ScrollView bounces={false}>
+      <Heading title="Add an app" sub="Apps your projects made that you took off Home." />
+      {choices.links.map((link, i) => (
+        <RemovedLink
+          key={link.id}
+          link={link}
+          project={props.projects.find((p) => p.id === link.projectId)}
+          first={i === 0}
+          onDone={props.onDone}
         />
-        {typed.length > 0 && problem === undefined ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Next"
-            onPress={next}
-            style={{
-              width: 42,
-              height: 42,
-              borderRadius: 21,
-              backgroundColor: color.t1,
-              alignItems: "center",
-              justifyContent: "center"
-            }}
-          >
-            <Icon name="arrowOut" size={17} color={color.black} weight="semibold" />
-          </Pressable>
-        ) : null}
-      </View>
-      {problem ? (
-        <Text style={{ fontSize: 13, color: color.need, marginTop: 8, marginLeft: 18 }}>That link {problem}.</Text>
-      ) : null}
-      {rows.length > 0 ? <SectionLabel>From your projects</SectionLabel> : null}
-      {rows.map((project, i) => (
-        <View
-          key={project.id}
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 14,
-            paddingVertical: 12,
-            borderTopWidth: i === 0 ? 0 : 1,
-            borderColor: color.line
-          }}
-        >
-          <Tile icon={project.icon} />
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text numberOfLines={1} style={{ fontSize: 17, color: color.t1 }}>
-              {project.title}
-            </Text>
-            <Text numberOfLines={1} style={{ fontSize: 14, color: color.t3, marginTop: 2 }}>
-              {project.publishedPort === undefined ? "Not published yet" : linkHost(project.publicUrl)}
-            </Text>
-          </View>
-          {project.publishedPort === undefined ? null : (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`Add ${project.title}`}
-              onPress={() =>
-                props.onPick({
-                  url: project.publicUrl,
-                  title: project.title.slice(0, 24),
-                  color: colorOfProject(project),
-                  ...iconFor(project)
-                })
-              }
-              style={({ pressed }) => ({
-                paddingHorizontal: 18,
-                height: 36,
-                borderRadius: 18,
-                backgroundColor: pressed ? "#3A3A40" : color.s3,
-                justifyContent: "center"
-              })}
-            >
-              <Text style={{ fontSize: 15, fontWeight: "500", color: color.t1 }}>Add</Text>
-            </Pressable>
-          )}
-        </View>
       ))}
     </ScrollView>
   )
 }
 
-const iconFor = (project: Project): { readonly icon?: LinkIcon } => {
-  const icon = iconOfProject(project)
-  return icon === undefined ? {} : { icon }
-}
-
-function NameLink(props: {
-  readonly draft: Draft
-  readonly onChange: (draft: Draft) => void
+function RemovedLink(props: {
+  readonly link: AppLink
+  readonly project: Project | undefined
+  readonly first: boolean
   readonly onDone: () => void
 }) {
-  const { draft } = props
-  const add = useAction(addLinkFn)
+  const { link, project } = props
+  const restore = useAction(restoreLinkFn)
   const toast = useToast()
-  const requestId = useRef(RequestId.make(Crypto.randomUUID()))
-  const title = draft.title.trim().replace(/\s+/g, " ")
   return (
-    <ScrollView keyboardShouldPersistTaps="handled" bounces={false}>
-      <Heading title="Name it" sub={linkHost(draft.url)} />
-      <Preview look={{ ...draft, title }} />
-      <TextInput
-        value={draft.title}
-        onChangeText={(text) => props.onChange({ ...draft, title: text })}
-        maxLength={24}
-        placeholder="Name"
-        placeholderTextColor={color.t3}
-        returnKeyType="done"
-        style={{
-          height: 50,
-          marginTop: 14,
-          paddingHorizontal: 18,
-          borderRadius: 25,
-          borderWidth: 1,
-          borderColor: color.line2,
-          backgroundColor: color.bg,
-          fontSize: 17,
-          color: color.t1,
-          textAlign: "center"
-        }}
-      />
-      <Text style={{ fontSize: 13, color: color.t3, textAlign: "center", marginTop: 8 }}>
-        About ten letters fit under the icon.
-      </Text>
-      <TilePicker look={{ ...draft, title }} onChange={(change) => props.onChange(applyTile(draft, change))} />
-      <Button
-        title="Add to Home"
-        style={{ marginTop: 22 }}
-        busy={add.busy}
-        disabled={title.length === 0}
+    <View
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 14,
+        paddingVertical: 12,
+        borderTopWidth: props.first ? 0 : 1,
+        borderColor: color.line
+      }}
+    >
+      <LinkTile look={link} size={48} />
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text numberOfLines={1} style={{ fontSize: 17, color: color.t1 }}>
+          {link.title}
+        </Text>
+        <Text numberOfLines={1} style={{ fontSize: 14, color: color.t3, marginTop: 2 }}>
+          {project ? `Made by ${project.title}` : linkHost(link.url)}
+        </Text>
+      </View>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Add ${link.title}`}
+        disabled={restore.busy}
         onPress={() =>
-          add.run(
-            { url: draft.url, title, icon: draft.icon, color: draft.color, requestId: requestId.current },
-            {
-              onSuccess: (link) => {
-                props.onDone()
-                toast(`Added ${link.title}`, { done: true })
-              }
+          restore.run(link.id, {
+            onSuccess: (back) => {
+              props.onDone()
+              toast(`Added ${back.title}`, { done: true })
             }
-          )
+          })
         }
-      />
-    </ScrollView>
+        style={({ pressed }) => ({
+          paddingHorizontal: 18,
+          height: 36,
+          borderRadius: 18,
+          backgroundColor: pressed ? "#3A3A40" : color.s3,
+          justifyContent: "center",
+          opacity: restore.busy ? 0.6 : 1
+        })}
+      >
+        <Text style={{ fontSize: 15, fontWeight: "500", color: color.t1 }}>Add</Text>
+      </Pressable>
+    </View>
+  )
+}
+
+/** Nothing to offer: why, and how apps get to Home. An empty slot of the row's shape stands for what's to come. */
+function NothingToAdd(props: { readonly allOnHome: boolean; readonly onDone: () => void }) {
+  return (
+    <View>
+      <View style={{ alignItems: "center", marginTop: 6, marginBottom: 22 }}>
+        <Svg width={60} height={60}>
+          <Rect
+            x={0.75}
+            y={0.75}
+            width={58.5}
+            height={58.5}
+            rx={13.5}
+            fill="none"
+            stroke="rgba(255,255,255,0.22)"
+            strokeWidth={1.5}
+            strokeDasharray="4 4"
+          />
+        </Svg>
+      </View>
+      <Text style={{ fontSize: 24, fontWeight: "600", letterSpacing: -0.6, color: color.t1, textAlign: "center" }}>
+        {props.allOnHome ? "Everything’s on Home" : "Nothing to add yet"}
+      </Text>
+      <Text style={{ fontSize: 15, lineHeight: 21, color: color.t2, marginTop: 8, textAlign: "center" }}>
+        {props.allOnHome
+          ? "Every app your projects have made is in the row. If you take one off, it waits here until you want it back."
+          : "When a project makes something you’ll open often, its agent puts it on Home. If you take one off, it waits here until you want it back."}
+      </Text>
+      <Button title="Done" variant="ghost" style={{ marginTop: 24 }} onPress={props.onDone} />
+    </View>
   )
 }
 
