@@ -10,9 +10,9 @@ describe("starters", () => {
     )
   })
 
-  it("each fit on one line of the list, and draft something sendable as it is", () => {
+  it("are short enough for a card, and draft something sendable as it is", () => {
     for (const i of ideas) {
-      // About 40 characters fit at 16 pt on a 375 pt screen (see ideas.ts); measured widths are the real check.
+      // At most three lines on a card (see ideas.ts); the Simulator is the real check.
       assert.isAtMost(i.line.length, 40, i.id)
       assert.notInclude(i.line, "\n", i.id)
       // No placeholders to fill in, and no currency or place they didn't choose.

@@ -7,7 +7,7 @@
  * after it. Return is a new line; only Send sends, and it lands in the new
  * project's Chat with the idea as its first message.
  *
- * While the page is blank, starters sit under the placeholder. Tapping one
+ * While the page is blank, a row of starters sits above the buttons. Tapping one
  * fills the page with its draft, ready to send as it is, with the cursor after
  * it to keep writing. `/new?starter=<idea id>` opens with a draft.
  */
@@ -26,7 +26,6 @@ import {
   View
 } from "react-native"
 import { KeyboardAvoidingView } from "react-native-keyboard-controller"
-import Animated, { FadeIn } from "react-native-reanimated"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { caretAt, ideaToSend, insertAt, placeTake, type Selection, wordCountLabel } from "../data/draft.ts"
 import { draftOf, type Idea, ideas } from "../data/ideas.ts"
@@ -239,27 +238,6 @@ export default function NewIdea() {
           accessibilityLabel="Your idea"
           accessibilityElementsHidden={listening}
         />
-        {text || listening ? null : (
-          <Animated.View
-            entering={FadeIn.duration(220)}
-            style={{
-              position: "absolute",
-              left: 0,
-              right: 0,
-              bottom: 0,
-              top: livePad.paddingTop + 2 * lineHeight + 26
-            }}
-          >
-            <ScrollView
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode="on-drag"
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: gutter, paddingTop: 8, paddingBottom: 24 }}
-            >
-              <Starters onPick={startFrom} />
-            </ScrollView>
-          </Animated.View>
-        )}
         {listening ? (
           <View style={[StyleSheet.absoluteFill, { backgroundColor: color.bg }]}>
             <LiveText
@@ -270,6 +248,8 @@ export default function NewIdea() {
           </View>
         ) : null}
       </View>
+      {/* Just above the buttons, so it rides the keyboard with them. */}
+      {text || listening ? null : <Starters onPick={startFrom} />}
       <View
         style={{
           flexDirection: "row",

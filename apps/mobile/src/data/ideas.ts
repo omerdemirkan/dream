@@ -1,14 +1,12 @@
 /**
  * Starters for a blank New idea page: a few things an agent can build and keep
- * running, each one line in the list and a draft that fills the page. A draft
+ * running, each a short line on a card and a draft that fills the page. A draft
  * reads as something they could send as it is; it leaves out specifics only
  * they can choose, which the agent asks about when it looks into the idea.
  *
- * Each line fits on one line of the list on the narrowest current iPhone: at
- * 375 pt, less the 20 pt gutters and the icon with its gap (29 pt), the text
- * has 306 pt. At 16 pt that's about 40 characters; keep lines under 290 pt
- * (measured in Inter, about as wide as SF Pro), so the list's
- * `numberOfLines={1}` is only a guard.
+ * Each line is short (about 40 characters) so it reads in a glance on a card in
+ * the row above the buttons: 132 pt of text at 14 pt, two lines for most, three
+ * at most.
  *
  * The order is the founder's (set with mocks/ideas-editor, whose "Dream
  * starters update" messages are applied here), and every one shows. The list
