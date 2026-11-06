@@ -31,7 +31,12 @@ import { useOpenMessage } from "./hooks.ts"
 
 Notifications.setNotificationHandler({
   handleNotification: async (notification) => {
-    const show = showsWhileOpen(Push.pushDataOf(notification), viewingProject())
+    const data = Push.pushDataOf(notification)
+    // A withdrawal that arrives while Dream is open (answered on another device, connected in Safari) clears now.
+    if (Option.isSome(data) && data.value._tag === "Withdraw") {
+      void Effect.runPromise(Push.removeDelivered(data.value.notificationIds).pipe(Effect.ignore))
+    }
+    const show = showsWhileOpen(data, viewingProject())
     return { shouldShowBanner: show, shouldShowList: show, shouldPlaySound: show, shouldSetBadge: false }
   }
 })

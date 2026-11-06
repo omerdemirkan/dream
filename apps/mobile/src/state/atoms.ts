@@ -221,7 +221,18 @@ export const reconnectProjectsFn = appRuntime.fn(
   })
 )
 
-const received = (message: Message) => ProjectStates.use((states) => states.receive(message))
+/**
+ * A message they acted on here. Once a question or access request is settled, its notification has nothing left to
+ * ask, so it leaves the lock screen now rather than when the API's withdrawal reaches the phone.
+ */
+const received = (message: Message) =>
+  ProjectStates.use((states) => states.receive(message)).pipe(
+    Effect.tap(() =>
+      (message._tag === "Question" || message._tag === "Access") && message.state._tag !== "Open"
+        ? Push.removeDeliveredFor([message.id]).pipe(Effect.ignore)
+        : Effect.void
+    )
+  )
 
 /** `requestId` stays the same when they retry the same text, so a retry can't post it twice. */
 export const sendMessageFn = appRuntime.fn(
