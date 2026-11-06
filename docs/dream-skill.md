@@ -153,7 +153,7 @@ are active, the Status card shows a row for each in place of `--now`.
     awake until it's done.
   - Once the command is done, and nothing else needs the sandbox, it goes back to sleep within seconds. So a quick
     check costs seconds of machine time, and checking every few minutes is fine. A wake-up without a command starts a
-    turn, which costs a turn.
+    turn, which sends the model your whole session before it does anything, so on a schedule it adds up.
 - `dream wake "why"` wakes you now. An app can call it, from an error handler say, whenever it's running, which is
   only while the sandbox is awake.
 - `dream wake list` and `dream wake cancel <id>` show and remove scheduled wake-ups.
