@@ -3,7 +3,7 @@
  * and access requests live in the project). The composer at the bottom starts
  * a new idea.
  */
-import type { MessageId, ModelConnection, ProjectSummary } from "@dream/domain"
+import type { ModelConnection, ProjectSummary } from "@dream/domain"
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react"
 import { Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
@@ -13,9 +13,7 @@ import { Pressable, ScrollView, Text, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { phaseLabel, providerName, usageLeft, usageLine } from "../data/format.ts"
 import { dotOf, homeLine, presenceOf } from "../data/presence.ts"
-import type { AnswerInput } from "../data/Answers.ts"
 import { hiddenProjectsAtom, modelConnectionsAtom, projectsAtom } from "../state/atoms.ts"
-import { usePendingAnswers } from "../ui/hooks.ts"
 import { Dot, Icon, IconButton, LinkButton, Orb } from "../ui/kit.tsx"
 import { plainText } from "../ui/markdownParse.ts"
 import { PresenceTile, StateLineText, useTickingNow } from "../ui/Presence.tsx"
@@ -35,11 +33,10 @@ export default function Home() {
     (): ReadonlySet<string> => new Set()
   )
   const projects = listOf(projectsResult).filter((summary) => !hidden.has(summary.project.id))
-  const pending = usePendingAnswers()
   const refreshProjects = useAtomRefresh(projectsAtom)
   const connectionsResult = useAtomValue(modelConnectionsAtom)
   const connections = listOf(connectionsResult)
-  const needs = projects.some((s) => waitingOn(s, pending) > 0)
+  const needs = projects.some((s) => s.openAsks > 0)
   // Nothing to show and the last try failed (offline, the API down): say so rather than "All clear".
   const unreachable = projects.length === 0 && AsyncResult.isFailure(projectsResult) && !projectsResult.waiting
 
@@ -97,7 +94,7 @@ export default function Home() {
           <Text style={{ fontSize: 13, fontWeight: "600", color: color.t3, marginBottom: 2 }}>Projects</Text>
         ) : null}
         {projects.map((summary, i) => (
-          <ProjectRow key={summary.project.id} summary={summary} first={i === 0} open={waitingOn(summary, pending)} />
+          <ProjectRow key={summary.project.id} summary={summary} first={i === 0} open={summary.openAsks} />
         ))}
         <Usage connections={connections} />
       </ScrollView>
@@ -141,13 +138,6 @@ function Unreachable(props: { readonly onRetry: () => void }) {
       <LinkButton title="Try again" onPress={props.onRetry} />
     </View>
   )
-}
-
-/** Open questions and access requests in a project, less the answers held for Undo. */
-const waitingOn = (summary: ProjectSummary, pending: ReadonlyMap<MessageId, AnswerInput>) => {
-  let held = 0
-  for (const answer of pending.values()) if (answer.projectId === summary.project.id) held++
-  return Math.max(0, summary.openAsks - held)
 }
 
 function AllClear(props: { readonly projects: ReadonlyArray<ProjectSummary> }) {

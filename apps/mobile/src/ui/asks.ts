@@ -1,5 +1,5 @@
 /**
- * Which ask comes next once they've answered one: in a project's Chat, or across Home's deck.
+ * Which ask comes next once they've answered one, in a project's Chat order.
  */
 import type { AskMessage, Message, MessageId } from "@dream/domain"
 

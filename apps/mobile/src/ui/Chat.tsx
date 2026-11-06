@@ -24,7 +24,7 @@ import type { ProjectState } from "../data/projectState.ts"
 import { loadEarlierFn } from "../state/atoms.ts"
 import { landingAtom, messageRects } from "../state/ui.ts"
 import { nextOpenAsk } from "./asks.ts"
-import { useNow, useOpenMessage, usePendingAnswers, withPending } from "./hooks.ts"
+import { useNow, useOpenMessage } from "./hooks.ts"
 import { AccessCard, AgentText, QuestionCard, UserBubble } from "./Messages.tsx"
 import { ChatActivityRow } from "./Presence.tsx"
 import { color, gutter } from "./theme.ts"
@@ -137,7 +137,6 @@ export function ChatTab(props: {
   const { state } = props
   const projectId = state.project.id
   const now = useNow()
-  const pending = usePendingAnswers()
   const landing = useAtomValue(landingAtom)
   const setLanding = useAtomSet(landingAtom)
   const loadEarlier = useAtomSet(loadEarlierFn)
@@ -174,13 +173,12 @@ export function ChatTab(props: {
   })
 
   // Answering a card inline moves on to the next open one below it, once the answered card has settled.
-  const latest = useRef({ state, pending })
-  latest.current = { state, pending }
+  const latest = useRef(state)
+  latest.current = state
   const onAnswered = useCallback(
     (messageId: MessageId) => {
       setTimeout(() => {
-        const messages = latest.current.state.messages.map((m) => withPending(m, latest.current.pending))
-        const next = nextOpenAsk(messages, messageId, { wrap: false })
+        const next = nextOpenAsk(latest.current.messages, messageId, { wrap: false })
         if (next && scrollTo(next.id, true)) setHighlights((map) => new Map(map).set(next.id, Date.now()))
       }, 450)
     },
@@ -209,8 +207,7 @@ export function ChatTab(props: {
 
   const rows: Array<ReactNode> = []
   let previous: Message | undefined
-  for (const raw of state.messages) {
-    const message = withPending(raw, pending)
+  for (const message of state.messages) {
     if (!previous || !sameDay(previous.createdAt, message.createdAt)) {
       rows.push(<Divider key={`d-${message.id}`} label={dayLabel(message.createdAt, now)} first={!previous} />)
     }

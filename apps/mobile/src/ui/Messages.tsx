@@ -21,6 +21,7 @@ import {
   whenTag
 } from "./describe.ts"
 import { useAction, useSignInAccess, useToast } from "./actions.ts"
+import { useAskPush } from "./hooks.ts"
 import { GoogleButton, Choices, Icon, SignInButton } from "./kit.tsx"
 import { Markdown, MarkdownText } from "./Markdown.tsx"
 import { MediaTile } from "./Media.tsx"
@@ -356,6 +357,7 @@ export const QuestionCard = forwardRef<
 >(function QuestionCard(props, ref) {
   const m = props.message
   const answer = useAction(answerNowFn)
+  const askPush = useAskPush()
   const toast = useToast()
   const [picked, setPicked] = useState<string | undefined>(undefined)
   const clamps = useClamps()
@@ -416,7 +418,10 @@ export const QuestionCard = forwardRef<
           answer.run(
             { projectId: m.projectId, messageId: m.id, answer: { _tag: "Choice", option } },
             {
-              onSuccess: () => props.onAnswered?.(),
+              onSuccess: () => {
+                askPush()
+                props.onAnswered?.()
+              },
               onFailure: (message) => {
                 setPicked(undefined)
                 toast(message)

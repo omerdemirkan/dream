@@ -26,7 +26,7 @@ import { projectsAtom } from "../state/atoms.ts"
 import { type Focus, focusAtom, landingAtom, messageRects, type Rect } from "../state/ui.ts"
 import { ExpandedAccess, ExpandedQuestion } from "./Expanded.tsx"
 import { nextOpenAsk } from "./asks.ts"
-import { useMessage, usePendingAnswers, useProject, withPending } from "./hooks.ts"
+import { useMessage, useProject } from "./hooks.ts"
 import { color } from "./theme.ts"
 
 const easing = Easing.bezier(0.22, 0.8, 0.2, 1)
@@ -112,14 +112,9 @@ function FocusLayer(props: { readonly focus: Focus }) {
   // Answering moves on to the project's next open ask in Chat order (wrapping to an earlier one). The
   // confirmation stays up for a beat first; with nothing left, it stays as it is. A failed answer leaves the
   // ask open, so nothing moves.
-  const pending = usePendingAnswers()
   const passed = [...(focus.passed ?? []), focus.messageId]
   const nextAsk = (): Focus | undefined => {
-    const ask = nextOpenAsk(
-      (live?.messages ?? []).map((m) => withPending(m, pending)),
-      focus.messageId,
-      { passed, wrap: true }
-    )
+    const ask = nextOpenAsk(live?.messages ?? [], focus.messageId, { passed, wrap: true })
     return ask
       ? {
           projectId: ask.projectId,

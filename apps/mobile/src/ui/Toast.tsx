@@ -1,14 +1,14 @@
 /**
- * The toast above the dock: "Sent to Cabin · Undo", or a one-line failure.
+ * The toast above the dock: something that went through ("Archived Cabin ·
+ * Undo"), or a one-line failure.
  */
-import { useAtom, useAtomSet, useAtomValue } from "@effect/atom-react"
+import { useAtom } from "@effect/atom-react"
 import { Option } from "effect"
-import { AsyncResult } from "effect/reactivity"
 import { useEffect, useRef } from "react"
 import { Pressable, Text } from "react-native"
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
-import { answerFailuresAtom, restoreProjectFn, undoAnswerFn } from "../state/atoms.ts"
+import { restoreProjectFn } from "../state/atoms.ts"
 import { useAction } from "./actions.ts"
 import { toastAtom } from "../state/ui.ts"
 import { Icon } from "./kit.tsx"
@@ -18,7 +18,6 @@ const lifetime = 4200
 
 export function Toast() {
   const [toast, setToast] = useAtom(toastAtom)
-  const undo = useAtomSet(undoAnswerFn)
   const restore = useAction(restoreProjectFn)
   const insets = useSafeAreaInsets()
   const shown = useSharedValue(0)
@@ -26,15 +25,6 @@ export function Toast() {
   const last = useRef(current)
   if (current) last.current = current
   const visible = last.current
-
-  // Answers that failed after their undo window closed.
-  const failure = Option.getOrUndefined(AsyncResult.value(useAtomValue(answerFailuresAtom)))
-  useEffect(() => {
-    if (failure)
-      setToast(
-        Option.some({ message: `Couldn’t send your answer: ${failure.message}`, undo: undefined, at: Date.now() })
-      )
-  }, [failure, setToast])
 
   useEffect(() => {
     if (!current) {
@@ -78,12 +68,11 @@ export function Toast() {
     >
       {visible.done ? <Icon name="check" size={16} /> : <Icon name="warn" size={16} color={color.need} />}
       <Text style={{ flex: 1, fontSize: 14.5, color: color.t1 }}>{visible.message}</Text>
-      {visible.undo || visible.restore ? (
+      {visible.restore ? (
         <Pressable
           accessibilityRole="button"
           hitSlop={8}
           onPress={() => {
-            if (visible.undo) undo(visible.undo)
             if (visible.restore) restore.run(visible.restore)
             setToast(Option.none())
           }}

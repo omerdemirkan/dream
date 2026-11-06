@@ -195,9 +195,6 @@ export const clearDraftFn = appRuntime.fn(
 // Answers
 // ---------------------------------------------------------------------------
 
-/** Answers held for Undo, by question; the UI shows them as answered. */
-export const pendingAnswersAtom = appRuntime.subscriptionRef(Answers.useSync((answers) => answers.pending))
-
 export const answerNowFn = appRuntime.fn(
   Effect.fn(function* (input: AnswerInput) {
     const answers = yield* Answers
@@ -206,30 +203,6 @@ export const answerNowFn = appRuntime.fn(
     return message
   })
 )
-
-export const answerUndoableFn = appRuntime.fn(
-  Effect.fn(function* (input: AnswerInput) {
-    const answers = yield* Answers
-    yield* answers.answerUndoable(input)
-  })
-)
-
-export const undoAnswerFn = appRuntime.fn(
-  Effect.fn(function* (messageId: MessageId) {
-    const answers = yield* Answers
-    return yield* answers.undo(messageId)
-  })
-)
-
-export const flushAnswersFn = appRuntime.fn(
-  Effect.fn(function* () {
-    const answers = yield* Answers
-    yield* answers.flush
-  })
-)
-
-/** Failures of answers sent after their undo window, for the toast. */
-export const answerFailuresAtom = appRuntime.atom(Stream.unwrap(Answers.useSync((answers) => answers.failures)))
 
 export type { QuestionAnswer }
 

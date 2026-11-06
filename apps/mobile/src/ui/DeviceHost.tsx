@@ -19,7 +19,6 @@ import { viewingProject } from "../platform/viewing.ts"
 import {
   cleanUpNotificationsFn,
   fixturePushesAtom,
-  flushAnswersFn,
   reconnectProjectsFn,
   refreshHomeFn,
   registerDeviceFn,
@@ -46,7 +45,6 @@ export function DeviceHost() {
   const cleanUp = useAtomSet(cleanUpNotificationsFn)
   const refreshHome = useAtomSet(refreshHomeFn)
   const reconnect = useAtomSet(reconnectProjectsFn)
-  const flush = useAtomSet(flushAnswersFn)
   // Replies typed into a notification: retried, and if they still fail, kept as a draft where they belong.
   const reply = useAction(replyFn).run
   const toast = useToast()
@@ -162,7 +160,7 @@ export function DeviceHost() {
     return () => received.remove()
   }, [refreshHome])
 
-  // Foreground: catch up. Background: send answers still held for Undo.
+  // Foreground: catch up.
   useEffect(() => {
     cleanUp()
     const subscription = AppState.addEventListener("change", (state) => {
@@ -170,12 +168,10 @@ export function DeviceHost() {
         cleanUp()
         refreshHome()
         reconnect()
-      } else if (state === "background") {
-        flush()
       }
     })
     return () => subscription.remove()
-  }, [cleanUp, refreshHome, reconnect, flush])
+  }, [cleanUp, refreshHome, reconnect])
 
   return null
 }

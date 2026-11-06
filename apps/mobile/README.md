@@ -10,7 +10,7 @@ card, notifications); Home's project rows say which projects are waiting for the
 | Path | What |
 | --- | --- |
 | `src/app` | Routes: Home (`index`), `project/[id]` (Status / Chat), `new`, `sign-in`, `connect`, `settings`, `oauth/google`, `oauth/[provider]`, `fixtures/[scenario]` |
-| `src/data` | Services (no React Native): `AppClient` (AppRpcs over HTTP), `LiveProjects` (ProjectLiveRpcs over WebSocket, re-subscribing with a fresh ticket), `ProjectStates`, `Answers` (Undo), `Session`, formatting |
+| `src/data` | Services (no React Native): `AppClient` (AppRpcs over HTTP), `LiveProjects` (ProjectLiveRpcs over WebSocket, re-subscribing with a fresh ticket), `ProjectStates`, `Answers`, `Session`, formatting |
 | `src/fake` | The fixtures backend: `AppRpcs` handlers and live events over the Deck v3 sample world, with a small simulated agent |
 | `src/state` | The atom runtime and the atoms screens use |
 | `src/platform` | Expo/iOS pieces: keychain, streaming fetch, push, dictation, Google Sign-In |
@@ -174,8 +174,7 @@ implements the [Expo Updates protocol v1](https://docs.expo.dev/technical-specs/
 **When an update takes over.** expo-updates checks on every launch without holding the launch up
 (`fallbackToCacheTimeout: 0`) and downloads in the background; the update runs from the next launch. The app also
 looks again when it comes back after a minute or more in the background, and restarts on a downloaded update when
-it comes back after 15 minutes or more (held answers were sent when it left, and the screen it returns to is stale
-by then). Nothing interrupts someone using the app. Settings shows which update is running under the version, and
+it comes back after 15 minutes or more (the screen it returns to is stale by then). Nothing interrupts someone using the app. Settings shows which update is running under the version, and
 "Restart to update Dream" once one is downloaded. So to see a fix right away: open Dream, wait a few seconds, open
 Settings and tap Restart (or close Dream and open it again).
 
