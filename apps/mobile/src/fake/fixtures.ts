@@ -280,6 +280,7 @@ const recipeMessages: ReadonlyArray<Message> = [
 
 const liftStatus: StatusCard = {
   ...Fx.liftLogStatus,
+  now: "Charting your estimated 1RM",
   media: [media.healthImport, media.squatChart, media.today]
 }
 

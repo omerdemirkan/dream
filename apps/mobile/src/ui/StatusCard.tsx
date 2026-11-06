@@ -1,21 +1,21 @@
 /**
- * The Status card pinned under the project's header, over Chat (Deck v3, option A).
+ * The Status card pinned under the project's header, over Chat.
  *
- * Compact, it says what the agent is doing now, where it is in the milestones and what it will need next; when
- * something waits for them it turns amber and leads with that ask. It folds to one line while they read back
- * through Chat or type, and opens over Chat into the whole roadmap (`StatusRoadmap`).
+ * Compact, it is the "now" sentence on one line and the milestone track, and an amber line while something waits
+ * for them. It folds to a single line while they read back through Chat or type, and opens over Chat into
+ * `StatusRoadmap`.
  */
 import type { MilestoneState } from "@dream/domain"
-import { type ReactNode, useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { type HostInstance, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native"
 import Animated, { Easing, interpolate, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { scheduleOnRN } from "react-native-worklets"
 import type { ProjectState } from "../data/projectState.ts"
 import { useNow, useOpenMessage } from "./hooks.ts"
-import { Dot, Icon, Lab } from "./kit.tsx"
-import { StatusRoadmap } from "./Status.tsx"
-import { askTitle, type CardView, cardOf, neededLabel, type Track } from "./statusView.ts"
+import { Dot, Icon } from "./kit.tsx"
+import { NeedLine, StatusRoadmap } from "./Status.tsx"
+import { type CardView, cardOf, type Track } from "./statusView.ts"
 import { color, needGlow } from "./theme.ts"
 
 const easing = Easing.bezier(0.22, 0.8, 0.2, 1)
@@ -31,160 +31,92 @@ const cardFrame = (need: boolean) => ({
   ...(need ? { experimental_backgroundImage: needGlow } : {})
 })
 
-// ---------------------------------------------------------------------------
-// Pieces
-// ---------------------------------------------------------------------------
-
-function TrackLabel(props: { readonly track: Track | undefined; readonly short?: boolean; readonly up?: boolean }) {
-  const { track } = props
+function Chevron(props: { readonly up?: boolean }) {
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 7, flexShrink: 1 }}>
-      {track ? (
-        <Text numberOfLines={1} style={{ fontSize: 13, color: color.t3, flexShrink: 1 }}>
-          {props.short
-            ? `${track.position} of ${track.states.length}`
-            : `${track.title} · ${track.position} of ${track.states.length}`}
-        </Text>
-      ) : null}
-      <Icon
-        name="chevDown"
-        size={12}
-        color={color.t3}
-        weight="semibold"
-        style={props.up ? { transform: [{ rotate: "180deg" }] } : undefined}
-      />
+    <Icon
+      name="chevDown"
+      size={13}
+      color={color.t3}
+      weight="semibold"
+      style={props.up ? { transform: [{ rotate: "180deg" }] } : undefined}
+    />
+  )
+}
+
+/** The segmented bar, the current milestone half lit, and "2 of 3". */
+function TrackRow(props: { readonly track: Track; readonly paused: boolean }) {
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 14, marginTop: 14 }}>
+      <View style={{ flex: 1, flexDirection: "row", gap: 5 }}>
+        {props.track.states.map((state: MilestoneState, i) => (
+          <View
+            key={i}
+            style={{
+              flex: 1,
+              height: 4,
+              borderRadius: 2,
+              overflow: "hidden",
+              backgroundColor: state === "done" ? color.t1 : "rgba(255,255,255,0.14)"
+            }}
+          >
+            {state === "current" ? (
+              <View style={{ width: "50%", height: 4, backgroundColor: props.paused ? color.t2 : color.t1 }} />
+            ) : null}
+          </View>
+        ))}
+      </View>
+      <Text style={{ fontSize: 14, color: color.t3 }}>{`${props.track.position} of ${props.track.states.length}`}</Text>
     </View>
   )
 }
 
-/** The segmented bar: a segment per milestone, the current one half lit. */
-function TrackBar(props: { readonly states: ReadonlyArray<MilestoneState>; readonly paused: boolean }) {
-  return (
-    <View style={{ flexDirection: "row", gap: 5, marginTop: 14 }}>
-      {props.states.map((state, i) => (
-        <View
-          key={i}
-          style={{
-            flex: 1,
-            height: 4,
-            borderRadius: 2,
-            overflow: "hidden",
-            backgroundColor: state === "done" ? color.t1 : "rgba(255,255,255,0.14)"
-          }}
-        >
-          {state === "current" ? (
-            <View style={{ width: "50%", height: 4, backgroundColor: props.paused ? color.t2 : color.t1 }} />
-          ) : null}
-        </View>
-      ))}
-    </View>
-  )
-}
-
-function Foot(props: { readonly icon: "clock" | "spark"; readonly children: ReactNode }) {
-  return (
-    <View
-      style={{
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 9,
-        marginTop: 14,
-        paddingTop: 12,
-        borderTopWidth: 1,
-        borderColor: color.line
-      }}
-    >
-      <Icon name={props.icon} size={15} color={color.t3} />
-      <Text numberOfLines={1} style={{ flex: 1, fontSize: 14, color: color.t2 }}>
-        {props.children}
-      </Text>
-    </View>
-  )
-}
-
-const lead = { fontSize: 17, lineHeight: 23, letterSpacing: -0.2, color: color.t1, marginTop: 7 } as const
-
-/** The card unfolded to its compact size: label and track, the line, the bar, the next need. */
-function Full(props: { readonly view: CardView; readonly onRoadmap: () => void }) {
+/** The card at its compact size: the sentence, the track, the need. */
+function Full(props: { readonly view: CardView }) {
   const { view } = props
-  if (view._tag === "Early") {
-    return (
-      <View style={{ paddingHorizontal: 18, paddingVertical: 16 }}>
-        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-          <Lab>Looking into this</Lab>
-          <TrackLabel track={undefined} />
-        </View>
-        <Text numberOfLines={4} style={{ fontSize: 15, lineHeight: 21, color: color.t2, marginTop: 7 }}>
+  const now = view.stand === "now"
+  return (
+    <View style={{ paddingHorizontal: 18, paddingTop: 16, paddingBottom: view.need ? 14 : 16 }}>
+      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
+        <Text
+          numberOfLines={now ? 1 : 3}
+          style={
+            now
+              ? { flex: 1, fontSize: 17, lineHeight: 23, letterSpacing: -0.2, color: view.paused ? color.t2 : color.t1 }
+              : { flex: 1, fontSize: 15, lineHeight: 21, color: color.t2 }
+          }
+        >
           {view.text}
         </Text>
+        <View style={{ marginTop: 5 }}>
+          <Chevron />
+        </View>
       </View>
-    )
-  }
-  const needs = view._tag === "Needs"
-  return (
-    <View style={{ paddingHorizontal: 18, paddingVertical: 16 }}>
-      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-        <Lab style={needs ? { color: color.need } : undefined}>
-          {needs ? (view.count > 1 ? `Needs you · ${view.count}` : "Needs you") : view.label}
-        </Lab>
-        {/* With an ask leading, the card opens the ask; the track still opens the roadmap. */}
-        {needs ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Open the roadmap"
-            onPress={props.onRoadmap}
-            hitSlop={{ top: 14, bottom: 10, left: 12, right: 14 }}
-            style={{ flexShrink: 1 }}
-          >
-            <TrackLabel track={view.track} />
-          </Pressable>
-        ) : (
-          <TrackLabel track={view.track} />
-        )}
-      </View>
-      {needs ? (
-        <>
-          <Text numberOfLines={3} style={lead}>
-            {askTitle(view.ask)}
-          </Text>
-          {view.also.length > 0 ? (
-            <Foot icon="spark">
-              {"Also: "}
-              <Text style={{ color: color.t1 }}>{view.also.join(" · ")}</Text>
-            </Foot>
-          ) : null}
-        </>
-      ) : (
-        <>
-          {view.text ? (
-            <Text numberOfLines={3} style={[lead, view.paused ? { color: color.t2 } : null]}>
-              {view.text}
-            </Text>
-          ) : null}
-          {view.track ? <TrackBar states={view.track.states} paused={view.paused} /> : null}
-          {view.need ? (
-            <Foot icon="clock">
-              <Text style={{ color: color.t1 }}>{view.need.what}</Text>
-              {view.need.when ? ` · ${neededLabel(view.need.when)}` : ""}
-            </Foot>
-          ) : null}
-        </>
-      )}
+      {view.track ? <TrackRow track={view.track} paused={view.paused} /> : null}
+      {view.need ? (
+        <View style={{ marginTop: 14, paddingTop: 13, borderTopWidth: 1, borderColor: color.line }}>
+          <NeedLine need={view.need} size="card" />
+        </View>
+      ) : null}
     </View>
   )
 }
 
-/** The card folded to one line. */
+/** The card folded to one line: the need when there is one, else the sentence. */
 function Line(props: { readonly view: CardView; readonly working: boolean }) {
   const { view } = props
-  const text = view._tag === "Needs" ? askTitle(view.ask) : view.text
   return (
     <View style={{ height: lineHeight, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16 }}>
-      <Dot kind={view._tag === "Needs" ? "need" : props.working ? "live" : "quiet"} />
-      <Text numberOfLines={1} style={{ flex: 1, fontSize: 15, letterSpacing: -0.15, color: color.t1 }}>
-        {text}
+      <Dot kind={view.need ? "need" : props.working ? "live" : "quiet"} />
+      <Text
+        numberOfLines={1}
+        style={{ flex: 1, fontSize: 15, letterSpacing: -0.15, color: view.need ? color.need : color.t1 }}
+      >
+        {view.need ? view.need.text : view.text}
       </Text>
-      <TrackLabel track={view._tag === "Early" ? undefined : view.track} short />
+      {view.track ? (
+        <Text style={{ fontSize: 13, color: color.t3 }}>{`${view.track.position} of ${view.track.states.length}`}</Text>
+      ) : null}
+      <Chevron />
     </View>
   )
 }
@@ -216,17 +148,18 @@ export function StatusCardPin(props: {
   const fullStyle = useAnimatedStyle(() => ({ opacity: interpolate(fold.value, [0, 0.5], [1, 0], "clamp") }))
   const lineStyle = useAnimatedStyle(() => ({ opacity: interpolate(fold.value, [0.4, 1], [0, 1], "clamp") }))
 
+  // Folded to the need's line, a tap opens the ask; otherwise the card opens (the need's own line opens the ask).
   const onPress = () => {
-    if (view._tag === "Needs")
-      open({ projectId: view.ask.projectId, messageId: view.ask.id, message: view.ask, from: ref })
+    if (props.compact && view.need)
+      open({ projectId: view.need.ask.projectId, messageId: view.need.ask.id, message: view.need.ask, from: ref })
     else props.onRoadmap()
   }
-  const need = view._tag === "Needs"
+  const need = view.need !== undefined
   return (
     <Pressable
       ref={ref}
       accessibilityRole="button"
-      accessibilityHint={need ? "Opens the question" : "Opens the roadmap"}
+      accessibilityHint={props.compact && need ? "Opens what it needs from you" : "Opens the roadmap"}
       onPress={onPress}
     >
       {({ pressed }) => (
@@ -240,7 +173,7 @@ export function StatusCardPin(props: {
               props.onHeight(height)
             }}
           >
-            <Full view={view} onRoadmap={props.onRoadmap} />
+            <Full view={view} />
           </Animated.View>
           <Animated.View pointerEvents="none" style={[{ position: "absolute", left: 0, right: 0, top: 0 }, lineStyle]}>
             <Line view={view} working={props.state.working} />
@@ -256,7 +189,7 @@ export function StatusCardPin(props: {
 // ---------------------------------------------------------------------------
 
 /**
- * The card grown into the whole roadmap, over dimmed Chat. Tapping its top, the grabber or Chat folds it back.
+ * The card grown into the whole roadmap, over dimmed Chat. Tapping the sentence, the grabber or Chat folds it back.
  * What it holds is `StatusRoadmap`'s, so the contents can change without touching this.
  */
 export function RoadmapSheet(props: {
@@ -269,14 +202,12 @@ export function RoadmapSheet(props: {
 }) {
   const { height: H } = useWindowDimensions()
   const insets = useSafeAreaInsets()
-  const now = useNow()
   const [mounted, setMounted] = useState(props.open)
   const [content, setContent] = useState(0)
   const progress = useSharedValue(0)
   const max = H - props.top - Math.max(insets.bottom, 12) - 8
-  const head = 52
-  const grabber = 26
-  const target = content > 0 ? Math.min(head + content + grabber, max) : 0
+  const grabber = 30
+  const target = content > 0 ? Math.min(content + grabber, max) : 0
   const from = useSharedValue(props.from)
   const to = useSharedValue(target)
   useEffect(() => {
@@ -304,9 +235,6 @@ export function RoadmapSheet(props: {
   const inside = useAnimatedStyle(() => ({ opacity: interpolate(progress.value, [0.15, 0.7], [0, 1], "clamp") }))
 
   if (!mounted) return null
-  const view = cardOf(props.state, now)
-  const need = view._tag === "Needs"
-  const label = need ? (view.count > 1 ? `Needs you · ${view.count}` : "Needs you") : "Status"
   return (
     <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }} pointerEvents="box-none">
       <Animated.View style={[{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }, scrim]}>
@@ -334,29 +262,12 @@ export function RoadmapSheet(props: {
         ]}
       >
         <Animated.View style={[{ flex: 1 }, inside]}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Close the roadmap"
-            onPress={props.onClose}
-            style={{
-              height: head,
-              paddingHorizontal: 18,
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 12
-            }}
-          >
-            <Lab style={need ? { color: color.need } : undefined}>{label}</Lab>
-            <TrackLabel track={view._tag === "Early" ? undefined : view.track} up />
-          </Pressable>
-          <ScrollView
-            style={{ flex: 1 }}
-            contentContainerStyle={{ paddingHorizontal: 18 }}
-            showsVerticalScrollIndicator={false}
-          >
-            <View onLayout={(e) => setContent(Math.ceil(e.nativeEvent.layout.height))} style={{ paddingBottom: 8 }}>
-              <StatusRoadmap state={props.state} />
+          <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+            <View
+              onLayout={(e) => setContent(Math.ceil(e.nativeEvent.layout.height))}
+              style={{ paddingHorizontal: 18, paddingTop: 18, paddingBottom: 4 }}
+            >
+              <StatusRoadmap state={props.state} onClose={props.onClose} />
             </View>
           </ScrollView>
           <Pressable
