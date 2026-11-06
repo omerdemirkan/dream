@@ -6,6 +6,7 @@ import type { D1Database, R2Bucket } from "@cloudflare/workers-types"
 import { Effect, Layer } from "effect"
 import { ConnectLinks } from "./connect/ConnectLinks.ts"
 import { ModelConnect } from "./connect/ModelConnect.ts"
+import { SandboxReaper } from "./e2b/Reaper.ts"
 import { MediaStore } from "./http/Media.ts"
 import { LiveForwarder } from "./http/Router.ts"
 import { UpdateAssets } from "./http/Updates.ts"
@@ -38,15 +39,17 @@ export const workerLayer = (bindings: WorkerBindings, overrides: PlatformOverrid
 
 /**
  * Every five minutes: refresh credentials that expire soon, push them to sandboxes, tell projects about OAuth
- * connections whose provider stopped renewing them, end abandoned sign-ins.
+ * connections whose provider stopped renewing them, end abandoned sign-ins, kill forgotten throwaway sandboxes.
  */
 export const maintenance = Effect.gen(function* () {
   const store = yield* CredentialStore
   const directory = yield* ProjectDirectory
   const modelConnect = yield* ModelConnect
+  const reaper = yield* SandboxReaper
   const { changed, lapsed } = yield* store.sweep
   for (const userId of changed) yield* directory.credentialsChanged(userId)
   // Every sandbox of theirs drops it; the projects that asked for it hear why.
   for (const { userId, integration, failure } of lapsed) yield* directory.integrationGone(userId, integration, failure)
   yield* modelConnect.cleanup
+  yield* reaper.sweep
 }).pipe(Effect.withSpan("maintenance"))

@@ -24,6 +24,7 @@ import { UpdateStore } from "./db/Updates.ts"
 import { Users } from "./db/Users.ts"
 import { Daemon } from "./e2b/Daemon.ts"
 import { E2B } from "./e2b/E2B.ts"
+import { SandboxReaper } from "./e2b/Reaper.ts"
 import { Envd } from "./e2b/Envd.ts"
 import { CredentialStore } from "./integrations/CredentialStore.ts"
 import { Google } from "./integrations/Google.ts"
@@ -86,7 +87,7 @@ export const platformLayer = (bindings: PlatformBindings, overrides: PlatformOve
   const credentials = CredentialStore.layer.pipe(
     Layer.provideMerge(ProjectDirectory.layer.pipe(Layer.provideMerge(base)))
   )
-  return Layer.mergeAll(SandboxCredentials.layer, KeyFiles.layer, UsageReport.layer).pipe(
+  return Layer.mergeAll(SandboxCredentials.layer, KeyFiles.layer, UsageReport.layer, SandboxReaper.layer).pipe(
     Layer.provideMerge(credentials),
     Layer.provideMerge(overrides.config ?? ApiConfig.layer)
   )

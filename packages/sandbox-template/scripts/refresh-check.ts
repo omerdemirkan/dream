@@ -21,7 +21,7 @@
 import { randomBytes } from "node:crypto"
 import { readFileSync, writeFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
-import { DaemonEnvFile, DefaultDaemonPort } from "@dream/domain"
+import { DaemonEnvFile, DefaultDaemonPort, devSandboxMetadata } from "@dream/domain"
 import { Sandbox } from "e2b"
 import { templateName } from "../src/index.ts"
 
@@ -59,7 +59,11 @@ http.createServer((_, res) => res.end("strength log v1 on " + port + "\\n")).lis
 const harness = process.env.HARNESS === "codex" ? "codex" : "claude-code"
 
 const setup = async () => {
-  const sandbox = await Sandbox.create(templateName, { ...connection, timeoutMs: 60 * 60_000 })
+  const sandbox = await Sandbox.create(templateName, {
+    ...connection,
+    timeoutMs: 60 * 60_000,
+    metadata: devSandboxMetadata("refresh-check")
+  })
   const daemonToken = randomBytes(20).toString("hex")
   writeFileSync(stateFile, JSON.stringify({ sandboxId: sandbox.sandboxId, daemonToken, template: templateName }))
   console.log(`sandbox ${sandbox.sandboxId} from ${templateName}, ${harness}`)

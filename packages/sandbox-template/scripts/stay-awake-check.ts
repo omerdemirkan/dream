@@ -25,6 +25,7 @@ import {
   CurrentProject,
   DaemonEnvFile,
   DefaultDaemonPort,
+  devSandboxMetadata,
   HttpRpcSerialization,
   type ProjectId,
   Routes,
@@ -134,6 +135,7 @@ const setup = async (apiUrl: string, options: { readonly published: boolean }) =
   const sandbox = await Sandbox.create(templateName, {
     ...connection,
     timeoutMs: IdleMs,
+    metadata: devSandboxMetadata("stay-awake-check"),
     lifecycle: { onTimeout: "pause", autoResume: true },
     network: { allowPublicTraffic: false }
   })

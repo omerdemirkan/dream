@@ -224,6 +224,11 @@ export const fakeE2B = (world: FakeWorld) =>
             sandbox.pauses++
           }
         }),
+      list: Effect.sync(() =>
+        [...world.sandboxes.entries()]
+          .filter(([, sandbox]) => sandbox.state !== "killed")
+          .map(([sandboxId, sandbox]) => ({ sandboxId, startedAt: sandbox.startedAt, metadata: sandbox.metadata }))
+      ),
       kill: (sandboxId) =>
         Effect.sync(() => {
           const sandbox = world.sandboxes.get(sandboxId)

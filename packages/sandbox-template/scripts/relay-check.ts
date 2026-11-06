@@ -27,6 +27,7 @@ import {
   CurrentProject,
   DaemonEnvFile,
   DefaultDaemonPort,
+  devSandboxMetadata,
   DiscordDefaultIntents,
   HttpRpcSerialization,
   type ProjectId,
@@ -155,9 +156,9 @@ const setup = async (apiUrl: string) => {
   const sandbox = await Sandbox.create(templateName, {
     ...connection,
     timeoutMs: IdleMs,
+    metadata: devSandboxMetadata("relay-check"),
     lifecycle: { onTimeout: "pause", autoResume: true },
-    network: { allowPublicTraffic: false },
-    metadata: { purpose: "relay-check" }
+    network: { allowPublicTraffic: false }
   })
   const daemonToken = randomBytes(20).toString("hex")
   say(`sandbox ${sandbox.sandboxId} from ${templateName}`)
