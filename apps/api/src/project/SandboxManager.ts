@@ -115,6 +115,11 @@ const latestRecord = (current: TemplateBuild, checkedAt: DateTime.Utc) => ({
   checkedAt
 })
 
+const withoutStarting = (record: SandboxRecord): SandboxRecord => {
+  const { startingSince: _, ...rest } = record
+  return rest
+}
+
 export const backoffMs = (failures: number): number => Math.min(15 * 60_000, 5_000 * 3 ** Math.max(0, failures - 1))
 
 export class SandboxManager extends Context.Service<
@@ -521,6 +526,12 @@ export class SandboxManager extends Context.Service<
         const pending = yield* store.pendingEvents(BatchSize)
         if (pending.length === 0) return
         const project = yield* core.project.pipe(Effect.orDie)
+        // Between turns, the phone says the agent is starting until a turn takes these (or delivery fails).
+        const before = yield* core.sandbox
+        if (!before.working && before.startingSince === undefined) {
+          const since = yield* DateTime.now
+          yield* update((r) => (r.working ? r : { ...r, startingSince: since }))
+        }
         const { access, daemonToken } = yield* ensureReady
         const record = yield* core.sandbox
         if (record.rulesDirty) yield* pushRules(record, true)
@@ -551,7 +562,9 @@ export class SandboxManager extends Context.Service<
           Effect.tapError((error) => (error._tag === "DaemonRestarting" ? Effect.void : diagnose(access, daemonToken)))
         )
         yield* store.markDelivered(accepted as ReadonlyArray<EventId>, DateTime.formatIso(yield* DateTime.now))
-        yield* update((r) => ({ ...r, failures: 0 }))
+        // A scheduled command that succeeds never reaches the agent, so it starts no turn: stop saying "starting".
+        const startsNoTurn = pending.every((event) => event._tag === "WakeDue" && event.run !== undefined)
+        yield* update((r) => (startsNoTurn ? withoutStarting({ ...r, failures: 0 }) : { ...r, failures: 0 }))
         const rest = yield* store.pendingEvents(1)
         if (rest.length > 0) {
           // More than a batch, or dreamd didn't take everything: go again soon.
@@ -569,7 +582,7 @@ export class SandboxManager extends Context.Service<
               const record = yield* core.sandbox
               const failures = record.failures + 1
               const message = Cause.pretty(cause).split("\n")[0] ?? "delivery failed"
-              yield* update((r) => ({ ...r, failures, lastError: message }))
+              yield* update((r) => withoutStarting({ ...r, failures, lastError: message }))
               yield* Effect.logWarning("delivery failed", { failures, cause })
               yield* scheduleRetry(failures)
             })
@@ -645,7 +658,7 @@ export class SandboxManager extends Context.Service<
         const now = yield* DateTime.now
         if ((yield* core.sandbox).startedWork !== true) yield* advancePhase(now)
         yield* update((r) => ({
-          ...r,
+          ...withoutStarting(r),
           working: true,
           startedWork: true,
           turnStartedAt: r.working && r.turnStartedAt ? r.turnStartedAt : now
@@ -655,9 +668,10 @@ export class SandboxManager extends Context.Service<
 
       const turnFinished = Effect.gen(function* () {
         const record = yield* core.sandbox
+        const now = yield* DateTime.now
         yield* update((r) => {
-          const { turnStartedAt: _, ...rest } = r
-          return { ...rest, working: false }
+          const { turnStartedAt: _, ...rest } = withoutStarting(r)
+          return { ...rest, working: false, turnEndedAt: now, awakeUntil: DateTime.addDuration(now, IdleTimeout) }
         })
         yield* store.clearTimer("turn-keepalive")
         if (config.sandboxRefresh) {
@@ -673,7 +687,7 @@ export class SandboxManager extends Context.Service<
         // Machine time for this turn, plus the idle tail before E2B pauses it.
         if (record.turnStartedAt !== undefined) {
           const project = yield* core.project.pipe(Effect.orDie)
-          const ended = DateTime.add(yield* DateTime.now, { minutes: Duration.toMinutes(IdleTimeout) })
+          const ended = DateTime.add(now, { minutes: Duration.toMinutes(IdleTimeout) })
           const minutes = (DateTime.toEpochMillis(ended) - DateTime.toEpochMillis(record.turnStartedAt)) / 60_000
           yield* projects.recordUsage({
             id: `use_${randomToken(22)}`,
@@ -692,7 +706,7 @@ export class SandboxManager extends Context.Service<
         const record = yield* core.sandbox
         if (record.access !== undefined) yield* e2b.kill(record.access.sandboxId).pipe(Effect.ignore)
         yield* update((r) => {
-          const { access: _, daemonToken: _t, ...rest } = r
+          const { access: _, daemonToken: _t, awakeUntil: _a, ...rest } = withoutStarting(r)
           return { ...rest, status: "none", working: false }
         })
       })

@@ -24,13 +24,19 @@ import { useAction, useSignInAccess, useToast } from "./actions.ts"
 import { GoogleButton, Choices, Icon, SignInButton } from "./kit.tsx"
 import { Markdown } from "./Markdown.tsx"
 import { MediaTile } from "./Media.tsx"
+import { Receipt } from "./Presence.tsx"
 import { color, gutter, needGlow } from "./theme.ts"
 
 // ---------------------------------------------------------------------------
 // Text
 // ---------------------------------------------------------------------------
 
-export function UserBubble(props: { readonly message: TextMessage; readonly time: string | undefined }) {
+export function UserBubble(props: {
+  readonly message: TextMessage
+  readonly time: string | undefined
+  /** On their latest message: "Sent", then "Seen" once the agent's turn took it. */
+  readonly receipt?: { readonly seen: boolean } | undefined
+}) {
   return (
     <View style={{ alignSelf: "flex-end", alignItems: "flex-end", maxWidth: "82%" }}>
       <View
@@ -50,7 +56,11 @@ export function UserBubble(props: { readonly message: TextMessage; readonly time
           {props.message.text}
         </Text>
       </View>
-      {props.time ? <Time text={props.time} /> : null}
+      {props.receipt ? (
+        <Receipt seen={props.receipt.seen} sentAt={props.message.createdAt} showTime={props.time !== undefined} />
+      ) : props.time ? (
+        <Time text={props.time} />
+      ) : null}
     </View>
   )
 }

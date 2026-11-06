@@ -3,7 +3,7 @@
  * `ProjectLiveRpcs.Subscribe` stream (snapshot, then changes) plus any earlier
  * Chat history loaded with `ListMessages`.
  */
-import type { Message, MessageId, Project, ProjectEvent, StatusCard } from "@dream/domain"
+import type { AgentActivity, Message, MessageId, Project, ProjectEvent, StatusCard } from "@dream/domain"
 import { DateTime, Order } from "effect"
 
 export interface ProjectState {
@@ -13,6 +13,8 @@ export interface ProjectState {
   readonly messages: ReadonlyArray<Message>
   readonly hasEarlierMessages: boolean
   readonly working: boolean
+  /** Starting, working or idle, and the next wake; absent from APIs that predate it (then only `working` is known). */
+  readonly activity?: AgentActivity | undefined
 }
 
 const byCreatedAt = Order.mapInput(DateTime.Order, (message: Message) => message.createdAt)
@@ -46,7 +48,8 @@ export const applyEvent = (state: ProjectState | undefined, event: ProjectEvent)
       status: event.status,
       messages: sortMessages(keepsEarlier ? [...earlier, ...event.messages] : event.messages),
       hasEarlierMessages: keepsEarlier ? (state?.hasEarlierMessages ?? true) : event.hasEarlierMessages,
-      working: event.working
+      working: event.working,
+      activity: event.activity
     }
   }
   if (state === undefined) return undefined
@@ -60,6 +63,8 @@ export const applyEvent = (state: ProjectState | undefined, event: ProjectEvent)
       return { ...state, messages: upsert(state.messages, event.message) }
     case "WorkingChanged":
       return { ...state, working: event.working }
+    case "ActivityChanged":
+      return { ...state, activity: event.activity, working: event.activity.state === "working" }
   }
 }
 

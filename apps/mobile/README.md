@@ -87,6 +87,21 @@ Spotify), `spotify-stopped` (Lift Log's Spotify connection stopped working: its 
 `unsupported-message`, `stall-next-write` (the next answer, message, new idea, key or decline hangs until the app
 gives up after 25 s; the retry goes through).
 
+The agent's presence (Deck v3 "A+B+C": the row at the bottom of Chat, the dot and state line in the header and on
+Home, the receipt under their latest message) follows the mock's scenario, a question about estimated 1RM in Lift
+Log (`msg_ask1rm`, reply `msg_reply1rm`): `activity-sent` (Sent, typing dots, "Asleep · waking up"),
+`activity-starting` ("Starting its computer…"), `activity-working` ("Working · 2m", Seen), `activity-done` (the
+reply, "Done for now", a green dot), `activity-home` (Home with every state: done, asleep until 6:55 AM, waiting
+for you, paused until 4 PM), and `activity-new-idea` (a new idea's first half-minute, at
+`/project/prj_newidea?tab=chat`). Without a scenario, Lift Log is working, Cabin is awake and Morning Brief sleeps
+until 6:55 AM; a message to any project goes through Sent, starting (if it was asleep), working and Seen, then the
+reply and "Done for now".
+
+```sh
+xcrun simctl launch --terminate-running-process booted build.omer.dream \
+  -dreamScenario signed-in,activity-working -dreamRoute "/project/prj_liftlog?tab=chat"
+```
+
 ## Checking against a deployed API
 
 `scripts/check-live.ts` runs the app's data layer (the services the screens use) from Node against the API: it

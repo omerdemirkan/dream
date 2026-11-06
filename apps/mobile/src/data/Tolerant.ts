@@ -7,6 +7,8 @@
  * - A message the app can't decode becomes a neutral row in Chat (`unsupportedMessage`), in its place.
  * - A project event the app can't decode is skipped (`null`, filtered out by `LiveProjects`).
  * - An open ask, project or integration the app can't decode is left out of its list.
+ * - An agent activity the app can't decode (a state it doesn't know) is left off its snapshot or Home row, which
+ *   then reads as from an API that sends none.
  *
  * `PhoneAppRpcs` and `PhoneProjectLiveRpcs` are the domain's groups with these success schemas; the app's real
  * clients use them. What they decode has the domain's types, so nothing else in the app changes.
@@ -72,24 +74,41 @@ export const TolerantMessage = lenient(Message, (raw) =>
 
 const messages = lenientArray(TolerantMessage)
 
+/** `raw` without its `activity`, for a second try when that's the part that didn't decode. */
+const withoutActivity = (raw: unknown): Option.Option<unknown> => {
+  if (typeof raw !== "object" || raw === null || !("activity" in raw)) return Option.none()
+  const { activity: _, ...rest } = raw
+  return Option.some(rest)
+}
+
+/** Decodes `raw`, else `raw` without its activity. */
+const droppingActivity =
+  <A>(schema: JsonCodec<A>) =>
+  (raw: unknown): Option.Option<A> =>
+    Option.orElse(decodeJson(schema)(raw), () => Option.flatMap(withoutActivity(raw), decodeJson(schema)))
+
 const KnownProjectEvent = Schema.TaggedUnion({
   Snapshot: { ...ProjectEvent.cases.Snapshot.fields, messages },
   ProjectChanged: ProjectEvent.cases.ProjectChanged.fields,
   StatusChanged: ProjectEvent.cases.StatusChanged.fields,
   MessageAdded: { message: TolerantMessage },
   MessageChanged: { message: TolerantMessage },
-  WorkingChanged: ProjectEvent.cases.WorkingChanged.fields
+  WorkingChanged: ProjectEvent.cases.WorkingChanged.fields,
+  ActivityChanged: ProjectEvent.cases.ActivityChanged.fields
 })
 
 /** A project event, or `null` for one the app doesn't know, which `LiveProjects` skips. */
 export const TolerantProjectEvent = lenient(Schema.NullOr(KnownProjectEvent), (raw) =>
-  Option.orElse(decodeJson(KnownProjectEvent)(raw), () => Option.some(null))
+  Option.orElse(droppingActivity(KnownProjectEvent)(raw), () => Option.some(null))
 )
+
+/** A Home row, without its activity if that's what this build can't read. */
+const TolerantSummary = lenient(ProjectSummary, droppingActivity(ProjectSummary))
 
 const tolerantSuccess: Partial<Record<RpcGroup.Rpcs<typeof AppRpcs>["_tag"], Schema.Top>> = {
   ListMessages: Schema.Struct({ messages, hasEarlier: Schema.Boolean }),
   ListOpenAsks: lenientArray(OpenAsk),
-  ListProjects: lenientArray(ProjectSummary),
+  ListProjects: lenientArray(TolerantSummary),
   ListIntegrations: lenientArray(Integration)
 }
 

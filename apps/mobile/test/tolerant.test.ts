@@ -5,7 +5,7 @@
 import { AppAuth, AppRpcs, Message, ProjectEvent } from "@dream/domain"
 import * as Fx from "@dream/domain/fixtures"
 import { assert, describe, it } from "@effect/vitest"
-import { Schema } from "effect"
+import { DateTime, Schema } from "effect"
 import { PhoneAppRpcs, TolerantMessage, TolerantProjectEvent, unsupportedText } from "../src/data/Tolerant.ts"
 
 type AnyCodec = Schema.Codec<unknown, unknown, never, never>
@@ -41,6 +41,16 @@ describe("PhoneAppRpcs", () => {
       ["ListMessages", { messages: [...Fx.messages, Fx.telegramKey], hasEarlier: true }],
       ["ListOpenAsks", [{ project: Fx.liftLog, message: Fx.appleAccess }]],
       ["ListProjects", [{ project: Fx.recipeScaler, openAsks: 1 }]],
+      [
+        "ListProjects",
+        [
+          {
+            project: Fx.liftLog,
+            openAsks: 0,
+            activity: { state: "working", since: DateTime.makeUnsafe("2026-11-04T22:02:30Z") }
+          }
+        ]
+      ],
       ["ListIntegrations", [Fx.google, Fx.telegramKeyFile]]
     ]
     for (const [tag, value] of cases) {
@@ -99,6 +109,38 @@ describe("TolerantMessage and TolerantProjectEvent", () => {
       decode({ _tag: "WorkingChanged", working: true }),
       ProjectEvent.cases.WorkingChanged.make({ working: true })
     )
+  })
+
+  it("decode the activity, and drop one with a state this build doesn't know rather than the snapshot", () => {
+    const decode = Schema.decodeUnknownSync(Schema.toCodecJson(TolerantProjectEvent))
+    assert.deepStrictEqual(
+      decode({ _tag: "ActivityChanged", activity: { state: "starting", since: "2026-11-04T22:02:01.000Z" } }),
+      ProjectEvent.cases.ActivityChanged.make({
+        activity: { state: "starting", since: DateTime.makeUnsafe("2026-11-04T22:02:01Z") }
+      })
+    )
+    assert.isNull(decode({ _tag: "ActivityChanged", activity: { state: "dreaming" } }))
+    const snapshot = ProjectEvent.cases.Snapshot.make({
+      project: Fx.liftLog,
+      status: Fx.liftLogStatus,
+      messages: [Fx.liftLogUpdate],
+      hasEarlierMessages: false,
+      working: false
+    })
+    const wire = JSON.parse(JSON.stringify(Schema.encodeSync(Schema.toCodecJson(ProjectEvent))(snapshot)))
+    assert.deepStrictEqual(decode({ ...wire, activity: { state: "dreaming" } }), snapshot)
+    const withActivity = decode({ ...wire, activity: { state: "idle", awakeUntil: "2026-11-04T22:14:00.000Z" } })
+    assert.deepStrictEqual(withActivity?._tag === "Snapshot" && withActivity.activity, {
+      state: "idle",
+      awakeUntil: DateTime.makeUnsafe("2026-11-04T22:14:00Z")
+    })
+
+    const [summary] = JSON.parse(
+      JSON.stringify(encodeWith(AppRpcs, "ListProjects")([{ project: Fx.recipeScaler, openAsks: 1 }]))
+    )
+    const rows = decodeWith(PhoneAppRpcs, "ListProjects")([{ ...summary, activity: { state: "dreaming" } }])
+    assert.lengthOf(rows, 1)
+    assert.isFalse("activity" in rows[0])
   })
 
   it("refuse a message with no id, so a list leaves it out", () => {

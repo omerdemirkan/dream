@@ -7,6 +7,7 @@ import { DateTime, Exit, Redacted, Schema } from "effect"
 import {
   AccessRequest,
   AccessState,
+  type AgentActivity,
   accessHostProblem,
   AgentEvent,
   keyFileNameFor,
@@ -64,6 +65,81 @@ describe("JSON codecs", () => {
       working: true
     })
     assert.deepStrictEqual(roundTrip(ProjectEvent, snapshot).decoded, snapshot)
+  })
+
+  describe("agent activity (additive)", () => {
+    const at = (iso: string) => DateTime.makeUnsafe(iso)
+    const activity: AgentActivity = {
+      state: "idle",
+      since: at("2026-11-04T22:09:00Z"),
+      awakeUntil: at("2026-11-04T22:14:00Z"),
+      nextWakeAt: at("2026-11-05T14:55:00Z")
+    }
+
+    it("round-trips the activity on a snapshot, its event, and a Home row", () => {
+      const snapshot = ProjectEvent.cases.Snapshot.make({
+        project: Fixtures.liftLog,
+        status: Fixtures.liftLogStatus,
+        messages: [],
+        hasEarlierMessages: false,
+        working: false,
+        activity
+      })
+      const { wire, decoded } = roundTrip(ProjectEvent, snapshot)
+      assert.deepStrictEqual(decoded, snapshot)
+      assert.deepStrictEqual(wire.activity, {
+        state: "idle",
+        since: "2026-11-04T22:09:00.000Z",
+        awakeUntil: "2026-11-04T22:14:00.000Z",
+        nextWakeAt: "2026-11-05T14:55:00.000Z"
+      })
+      const working = ProjectEvent.cases.ActivityChanged.make({
+        activity: { state: "working", since: at("2026-11-04T22:02:30Z") }
+      })
+      assert.deepStrictEqual(roundTrip(ProjectEvent, working).decoded, working)
+      const summary = { project: Fixtures.liftLog, openAsks: 0, activity }
+      assert.deepStrictEqual(roundTrip(ProjectSummary, summary).decoded, summary)
+    })
+
+    it("still decodes a snapshot, a Home row and a message from an API that sends none of it", () => {
+      const snapshot = ProjectEvent.cases.Snapshot.make({
+        project: Fixtures.liftLog,
+        status: Fixtures.liftLogStatus,
+        messages: [Fixtures.liftLogUpdate],
+        hasEarlierMessages: false,
+        working: true
+      })
+      const { wire, decoded } = roundTrip(ProjectEvent, snapshot)
+      assert.isFalse("activity" in wire)
+      assert.deepStrictEqual(decoded, snapshot)
+    })
+
+    it("carries when the agent saw one of their messages, and leaves it out until then", () => {
+      const sent: Message = {
+        _tag: "Text",
+        id: "msg_ask1rm" as Message["id"],
+        projectId: Fixtures.liftLog.id,
+        createdAt: at("2026-11-04T22:02:00Z"),
+        from: "user",
+        text: "Can the charts show estimated 1RM, not just the weight?",
+        media: []
+      }
+      assert.isFalse("seenAt" in roundTrip(Message, sent).wire)
+      const seen = { ...sent, seenAt: at("2026-11-04T22:02:31Z") }
+      const { wire, decoded } = roundTrip(Message, seen)
+      assert.strictEqual(wire.seenAt, "2026-11-04T22:02:31.000Z")
+      assert.deepStrictEqual(decoded, seen)
+    })
+
+    it("is ignored by a decoder that predates it (excess keys are dropped)", () => {
+      const OldSnapshot = Schema.Struct({ working: Schema.Boolean, hasEarlierMessages: Schema.Boolean })
+      const decoded = Schema.decodeUnknownSync(OldSnapshot)({
+        working: false,
+        hasEarlierMessages: false,
+        activity: { state: "starting", since: "2026-11-04T22:02:01.000Z" }
+      })
+      assert.deepStrictEqual(decoded, { working: false, hasEarlierMessages: false })
+    })
   })
 
   it("round-trips agent events, usage and integrations", () => {

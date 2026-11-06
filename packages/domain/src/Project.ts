@@ -50,6 +50,35 @@ export const Project = Schema.Struct({
 })
 export type Project = typeof Project.Type
 
+/**
+ * Whether the agent is up, as the ProjectDO sees it.
+ * - `starting`: events are waiting and the ProjectDO is creating or resuming the sandbox to deliver them.
+ * - `working`: a turn is running.
+ * - `idle`: neither. The sandbox stays awake until `awakeUntil`, then sleeps until something wakes it.
+ *
+ * New states may be added; the phone treats one it doesn't know as if `activity` were absent.
+ */
+export const AgentState = Schema.Literals(["idle", "starting", "working"])
+export type AgentState = typeof AgentState.Type
+
+/**
+ * What the presence dot and state line (Home, a project's header) and the row at the bottom of Chat show. Being
+ * paused for usage is `pausedUntil`, and waiting for them is an open ask; neither is a state here.
+ */
+export const AgentActivity = Schema.Struct({
+  state: AgentState,
+  /**
+   * When `state` began: when the ProjectDO started bringing the sandbox up (`starting`), when the turn started
+   * (`working`), when the last turn ended (`idle`; absent before the first turn).
+   */
+  since: Schema.optionalKey(Schema.DateTimeUtc),
+  /** `idle` only: when the sandbox goes to sleep, a few minutes after the last turn. Past or absent: asleep. */
+  awakeUntil: Schema.optionalKey(Schema.DateTimeUtc),
+  /** The next scheduled wake (`dream wake`), if there is one. */
+  nextWakeAt: Schema.optionalKey(Schema.DateTimeUtc)
+})
+export type AgentActivity = typeof AgentActivity.Type
+
 /** A row on Home. Derived from D1; cheap to list. */
 export const ProjectSummary = Schema.Struct({
   project: Project,
@@ -58,6 +87,8 @@ export const ProjectSummary = Schema.Struct({
   /** Milestone progress for the row's progress bar, when the agent has milestones. */
   progress: Schema.optionalKey(Schema.Struct({ done: Schema.Int, total: Schema.Int })),
   /** Set while the project waits for a usage window to reset. */
-  pausedUntil: Schema.optionalKey(Schema.DateTimeUtc)
+  pausedUntil: Schema.optionalKey(Schema.DateTimeUtc),
+  /** Whether the agent is up, and its next wake. Absent from older APIs. */
+  activity: Schema.optionalKey(AgentActivity)
 })
 export type ProjectSummary = typeof ProjectSummary.Type

@@ -28,7 +28,9 @@ export const TextMessage = Schema.TaggedStruct("Text", {
   from: MessageAuthor,
   /** Markdown from the agent; plain text from them. */
   text: Schema.String,
-  media: Schema.Array(MediaRef)
+  media: Schema.Array(MediaRef),
+  /** Their messages only: when the agent's turn took it (the receipt under it reads "Seen"). */
+  seenAt: Schema.optionalKey(Schema.DateTimeUtc)
 })
 export type TextMessage = typeof TextMessage.Type
 

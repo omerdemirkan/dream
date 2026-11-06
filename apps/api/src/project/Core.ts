@@ -4,8 +4,10 @@
  * to subscribed phones, and (when it affects Home) projected into D1.
  */
 import {
+  type AgentActivity,
   type AgentEvent,
   AskMessage,
+  type EventId,
   isOpenAsk,
   type Message,
   NotFound,
@@ -30,6 +32,29 @@ export const initialStatus = (now: DateTime.Utc): StatusCard => ({
   updatedAt: now
 })
 
+/** What the phone shows of the agent: starting, working or idle (with when it sleeps), and its next wake. */
+export const activityOf = (record: SandboxRecord, nextWakeMs: Option.Option<number>): AgentActivity => {
+  const wake = Option.match(nextWakeMs, {
+    onNone: () => ({}),
+    onSome: (ms) => ({ nextWakeAt: DateTime.makeUnsafe(ms) })
+  })
+  if (record.working) {
+    return { state: "working", ...(record.turnStartedAt ? { since: record.turnStartedAt } : {}), ...wake }
+  }
+  if (record.startingSince) return { state: "starting", since: record.startingSince, ...wake }
+  return {
+    state: "idle",
+    ...(record.turnEndedAt ? { since: record.turnEndedAt } : {}),
+    ...(record.awakeUntil ? { awakeUntil: record.awakeUntil } : {}),
+    ...wake
+  }
+}
+
+const activityKey = (record: SandboxRecord) =>
+  [record.working, record.turnStartedAt, record.startingSince, record.turnEndedAt, record.awakeUntil]
+    .map((value) => (value === undefined ? "" : typeof value === "boolean" ? String(value) : DateTime.formatIso(value)))
+    .join("|")
+
 export class Core extends Context.Service<
   Core,
   {
@@ -38,11 +63,16 @@ export class Core extends Context.Service<
     readonly status: Effect.Effect<StatusCard>
     readonly sandbox: Effect.Effect<SandboxRecord>
     readonly usagePause: Effect.Effect<Option.Option<UsagePause>>
+    readonly activity: Effect.Effect<AgentActivity>
 
     readonly saveProject: (project: Project) => Effect.Effect<void>
     readonly saveStatus: (status: StatusCard) => Effect.Effect<void>
     readonly saveSandbox: (record: SandboxRecord) => Effect.Effect<void>
     readonly saveUsagePause: (pause: Option.Option<UsagePause>) => Effect.Effect<void>
+    /** The scheduled wakes changed: tells phones and Home about the next one. */
+    readonly wakesChanged: Effect.Effect<void>
+    /** A turn took these events: their messages that the events carry read "Seen" from now on. */
+    readonly markSeen: (eventIds: ReadonlyArray<EventId>) => Effect.Effect<void>
 
     readonly message: (id: Message["id"]) => Effect.Effect<Option.Option<Message>>
     readonly addMessage: (message: Message) => Effect.Effect<void>
@@ -83,6 +113,10 @@ export class Core extends Context.Service<
 
       const openAsks = Effect.map(store.openAsks, (messages) => messages.filter(isOpenAsk))
 
+      const activity = Effect.gen(function* () {
+        return activityOf(yield* sandbox, yield* store.nextWakeMs)
+      })
+
       const reproject = projectionLock.withPermits(1)(
         Effect.gen(function* () {
           const current = yield* projectOption
@@ -96,6 +130,7 @@ export class Core extends Context.Service<
             sandboxId: record.access?.sandboxId,
             progress: card.milestones.length === 0 ? undefined : { done, total: card.milestones.length },
             pausedUntil: Option.isSome(pause) ? pause.value.until : undefined,
+            activity: activityOf(record, yield* store.nextWakeMs),
             openAsks: yield* openAsks
           })
         })
@@ -122,7 +157,29 @@ export class Core extends Context.Service<
           if (previous.working !== next.working) {
             yield* live.publish(ProjectEvent.cases.WorkingChanged.make({ working: next.working }))
           }
-          if (previous.access?.sandboxId !== next.access?.sandboxId) yield* reproject
+          const activityMoved = activityKey(previous) !== activityKey(next)
+          if (activityMoved) {
+            yield* live.publish(ProjectEvent.cases.ActivityChanged.make({ activity: yield* activity }))
+          }
+          if (activityMoved || previous.access?.sandboxId !== next.access?.sandboxId) yield* reproject
+        })
+
+      const wakesChanged = Effect.gen(function* () {
+        yield* live.publish(ProjectEvent.cases.ActivityChanged.make({ activity: yield* activity }))
+        yield* reproject
+      })
+
+      const markSeen = (eventIds: ReadonlyArray<EventId>) =>
+        Effect.gen(function* () {
+          const now = yield* DateTime.now
+          for (const event of yield* store.events(eventIds)) {
+            if (event._tag !== "UserMessage") continue
+            const found = yield* store.message(event.messageId)
+            if (Option.isNone(found)) continue
+            const message = found.value
+            if (message._tag !== "Text" || message.from !== "user" || message.seenAt !== undefined) continue
+            yield* changeMessage({ ...message, seenAt: now })
+          }
         })
 
       const saveUsagePause = (pause: Option.Option<UsagePause>) =>
@@ -166,7 +223,8 @@ export class Core extends Context.Service<
           status: yield* status,
           messages: [...recent.messages].reverse(),
           hasEarlierMessages: recent.hasEarlier,
-          working: (yield* sandbox).working
+          working: (yield* sandbox).working,
+          activity: yield* activity
         })
       })
 
@@ -176,10 +234,13 @@ export class Core extends Context.Service<
         status,
         sandbox,
         usagePause,
+        activity,
         saveProject,
         saveStatus,
         saveSandbox,
         saveUsagePause,
+        wakesChanged,
+        markSeen,
         message: store.message,
         addMessage,
         changeMessage,

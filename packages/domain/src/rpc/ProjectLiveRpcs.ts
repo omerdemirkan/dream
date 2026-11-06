@@ -8,7 +8,7 @@
 import { Schema } from "effect"
 import { Rpc, RpcGroup } from "effect/rpc"
 import { Message } from "../Message.ts"
-import { Project } from "../Project.ts"
+import { AgentActivity, Project } from "../Project.ts"
 import { StatusCard } from "../Status.ts"
 
 /**
@@ -24,14 +24,19 @@ export const ProjectEvent = Schema.TaggedUnion({
     messages: Schema.Array(Message),
     hasEarlierMessages: Schema.Boolean,
     /** Whether the agent is in a turn right now. */
-    working: Schema.Boolean
+    working: Schema.Boolean,
+    /** Whether the agent is starting, working or idle, and its next wake. Absent from older APIs. */
+    activity: Schema.optionalKey(AgentActivity)
   },
   ProjectChanged: { project: Project },
   StatusChanged: { status: StatusCard },
   MessageAdded: { message: Message },
   /** A message's state changed (answered, connected, declined, withdrawn) or its notification was withdrawn. */
   MessageChanged: { message: Message },
-  WorkingChanged: { working: Schema.Boolean }
+  /** Sent alongside `ActivityChanged`, for app builds that predate it. */
+  WorkingChanged: { working: Schema.Boolean },
+  /** The agent started bringing its sandbox up, started or finished a turn, or its next wake changed. */
+  ActivityChanged: { activity: AgentActivity }
 })
 export type ProjectEvent = typeof ProjectEvent.Type
 

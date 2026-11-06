@@ -601,6 +601,7 @@ export const AgentHandlers = SandboxRpcs.toLayer(
           }
           yield* store.putWake(wake, next.value)
           yield* alarm.reschedule
+          yield* core.wakesChanged
           return wake
         }),
 
@@ -612,6 +613,7 @@ export const AgentHandlers = SandboxRpcs.toLayer(
           if (Option.isNone(wake)) return yield* notFound("wake", wakeId)
           yield* store.deleteWake(wakeId)
           yield* alarm.reschedule
+          yield* core.wakesChanged
         }),
 
       WakeNow: ({ why }) =>
@@ -656,7 +658,9 @@ export const AgentHandlers = SandboxRpcs.toLayer(
           yield* directory.usageLimited(current.ownerId, window, until, current.id).pipe(Effect.forkDetach)
         }),
 
-      ReportTurn: ({ state }) => (state === "started" ? sandbox.turnStarted : sandbox.turnFinished)
+      // dreamd reports "started" again with events it hands to a running turn, so those read "Seen" right away.
+      ReportTurn: ({ state, eventIds }) =>
+        core.markSeen(eventIds).pipe(Effect.andThen(state === "started" ? sandbox.turnStarted : sandbox.turnFinished))
     }
   })
 )

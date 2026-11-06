@@ -183,14 +183,14 @@ describe("LiveProjects over a WebSocket", () => {
 
         yield* backend.scenario("paused")
         yield* settle("10 millis")
-        assert.deepStrictEqual(events, ["Snapshot", "StatusChanged", "WorkingChanged"])
+        assert.deepStrictEqual(events, ["Snapshot", "StatusChanged", "WorkingChanged", "ActivityChanged"])
 
         // The DO is evicted: it closes the socket.
         servers[0]?.close(1012, "evicted")
         yield* settle("1 second")
         assert.strictEqual(urls.length, 2)
         assert.notStrictEqual(urls[0], urls[1])
-        assert.deepStrictEqual(events, ["Snapshot", "StatusChanged", "WorkingChanged", "Snapshot"])
+        assert.deepStrictEqual(events, ["Snapshot", "StatusChanged", "WorkingChanged", "ActivityChanged", "Snapshot"])
         yield* Fiber.interrupt(fiber)
       }).pipe(Effect.provide(layer))
     })

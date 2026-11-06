@@ -874,6 +874,98 @@ describe("a project, end to end", () => {
     })
   )
 
+  it.live("tells the phone and Home when the agent starts, works and is done, and when it saw their message", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project } = yield* setup(cloud)
+      const live = yield* cloud.live(project.id)
+      const snapshot = Effect.map(live.Subscribe().pipe(Stream.take(1), Stream.runCollect), ([first]) =>
+        first?._tag === "Snapshot" ? first : assert.fail("expected a Snapshot")
+      )
+      const home = Effect.map(cloud.phone.ListProjects(), ([row]) => row ?? assert.fail("expected a project"))
+      const idea = (yield* snapshot).messages[0]
+      assert.strictEqual(idea?._tag === "Text" && idea.from, "user")
+      assert.deepStrictEqual((yield* snapshot).activity, { state: "idle" })
+
+      // Delivering the idea brings the sandbox up: "starting" until a turn takes it.
+      yield* cloud.alarm(project.id)
+      const delivered = cloud.world.delivered.at(-1)!.events as ReadonlyArray<AgentEvent>
+      const starting = yield* snapshot
+      assert.strictEqual(starting.activity?.state, "starting")
+      assert.isDefined(starting.activity?.since)
+      assert.strictEqual((yield* home).activity?.state, "starting")
+      const seenBefore = starting.messages[0]
+      assert.isTrue(seenBefore?._tag === "Text" && seenBefore.seenAt === undefined)
+
+      const dreamd = yield* cloud.sandbox(envFileOf(cloud, project.id).env.DREAM_PROJECT_TOKEN)
+      const changes = yield* live.Subscribe().pipe(
+        Stream.filter((event) => event._tag === "ActivityChanged" || event._tag === "MessageChanged"),
+        Stream.take(2),
+        Stream.runCollect,
+        Effect.forkChild
+      )
+      yield* Effect.sleep("50 millis")
+      yield* dreamd.ReportTurn({ state: "started", eventIds: delivered.map((event) => event.id) })
+      const pushed = yield* Fiber.join(changes)
+      assert.deepStrictEqual(pushed.map((event) => event._tag).sort(), ["ActivityChanged", "MessageChanged"])
+      const working = yield* snapshot
+      assert.strictEqual(working.activity?.state, "working")
+      assert.isDefined(working.activity?.since)
+      assert.isTrue(working.working)
+      const seen = working.messages[0]
+      assert.isTrue(seen?._tag === "Text" && seen.seenAt !== undefined)
+      assert.strictEqual((yield* home).activity?.state, "working")
+      // Chat history from ListMessages carries it too.
+      const history = yield* cloud.phone.ListMessages({ projectId: project.id })
+      assert.isTrue(history.messages.some((m) => m._tag === "Text" && m.from === "user" && m.seenAt !== undefined))
+
+      yield* dreamd.ReportTurn({ state: "finished", eventIds: delivered.map((event) => event.id) })
+      const done = (yield* snapshot).activity
+      assert.strictEqual(done?.state, "idle")
+      assert.isDefined(done?.since)
+      assert.isTrue(done?.since !== undefined && done.awakeUntil !== undefined && done.awakeUntil > done.since)
+      assert.strictEqual((yield* home).activity?.state, "idle")
+
+      // A scheduled wake is the next thing Home can say about a sleeping project.
+      const wake = yield* dreamd.ScheduleWake({ when: { _tag: "Cron", expression: "55 6 * * *" }, why: "Brief" })
+      assert.deepStrictEqual((yield* snapshot).activity?.nextWakeAt, wake.nextAt)
+      assert.deepStrictEqual((yield* home).activity?.nextWakeAt, wake.nextAt)
+      yield* dreamd.CancelWake({ wakeId: wake.id })
+      assert.isUndefined((yield* home).activity?.nextWakeAt)
+      yield* cloud.close
+    })
+  )
+
+  it.live("stops saying starting when delivery fails, or when only a scheduled command was delivered", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project } = yield* setup(cloud)
+      const home = Effect.map(cloud.phone.ListProjects(), ([row]) => row ?? assert.fail("expected a project"))
+      cloud.world.deliverFails = true
+      yield* cloud.alarm(project.id)
+      assert.strictEqual((yield* home).activity?.state, "idle")
+      cloud.world.deliverFails = false
+      const storage = (yield* Effect.promise(() => cloud.project(project.id))).storage
+      storage.db.exec("UPDATE timers SET due_ms = 0 WHERE name IN ('deliver', 'sandbox-retry')")
+      yield* cloud.alarm(project.id)
+      assert.strictEqual((yield* home).activity?.state, "starting")
+      const dreamd = yield* cloud.sandbox(envFileOf(cloud, project.id).env.DREAM_PROJECT_TOKEN)
+      yield* dreamd.ReportTurn({ state: "started", eventIds: [] })
+      yield* dreamd.ReportTurn({ state: "finished", eventIds: [] })
+
+      yield* dreamd.ScheduleWake({
+        when: { _tag: "At", at: DateTime.add(yield* DateTime.now, { milliseconds: 200 }) },
+        why: "Check the digest",
+        run: "node check.js"
+      })
+      yield* Effect.sleep("300 millis")
+      yield* cloud.alarm(project.id)
+      assert.strictEqual((cloud.world.delivered.at(-1)!.events[0] as AgentEvent)._tag, "WakeDue")
+      assert.strictEqual((yield* home).activity?.state, "idle")
+      yield* cloud.close
+    })
+  )
+
   it.live("the gateway says plainly when nothing is published yet", () =>
     Effect.gen(function* () {
       const cloud = yield* makeCloud()

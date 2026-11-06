@@ -10,6 +10,7 @@
  */
 import {
   type AccessMessage,
+  type AgentActivity,
   AppAuth,
   AppRpcs,
   CurrentUser,
@@ -65,7 +66,13 @@ export const Scenario = [
   "spotify-ask",
   "spotify-stopped",
   "unsupported-message",
-  "stall-next-write"
+  "stall-next-write",
+  "activity-sent",
+  "activity-starting",
+  "activity-working",
+  "activity-done",
+  "activity-home",
+  "activity-new-idea"
 ] as const
 export type Scenario = (typeof Scenario)[number]
 
@@ -74,8 +81,43 @@ interface ProjectRecord {
   status: StatusCard
   messages: Array<Message>
   working: boolean
+  activity: AgentActivity
   readonly events: PubSub.PubSub<ProjectEvent>
 }
+
+/** How long a sandbox stays up after a turn (the ProjectDO's IdleTimeout). */
+const awakeFor = Duration.minutes(5)
+
+/** The next time the phone's clock reads `hours:minutes`. */
+const nextLocal = (now: DateTime.Utc, hours: number, minutes: number) => {
+  const local = new Date(DateTime.toEpochMillis(now))
+  local.setHours(hours, minutes, 0, 0)
+  if (local.getTime() <= DateTime.toEpochMillis(now)) local.setDate(local.getDate() + 1)
+  return DateTime.makeUnsafe(local.getTime())
+}
+
+/** What each sample project's agent is up to when the world loads (Deck v3, A+B+C Home). */
+const initialActivity = (slug: string, working: boolean, now: DateTime.Utc): AgentActivity => {
+  if (working) return { state: "working", since: DateTime.subtract(now, { minutes: 2 }) }
+  switch (slug) {
+    case "morning-brief":
+      return { state: "idle", since: DateTime.subtract(now, { hours: 7 }), nextWakeAt: nextLocal(now, 6, 55) }
+    case "cabin": {
+      const since = DateTime.subtract(now, { minutes: 1 })
+      return { state: "idle", since, awakeUntil: DateTime.addDuration(since, awakeFor) }
+    }
+    default:
+      return { state: "idle", since: DateTime.subtract(now, { hours: 3 }) }
+  }
+}
+
+/** The mock's one scenario: at 2:02 PM, with Lift Log asleep, they ask about estimated 1RM; it replies at 2:09. */
+const liftAsk = { id: "msg_ask1rm" as MessageId, text: "Can the charts show estimated 1RM, not just the weight?" }
+const liftReply = {
+  id: "msg_reply1rm" as MessageId,
+  text: "Yes. I’ll plot estimated 1RM and mark the sessions where I’d have told you to add weight."
+}
+type ActivityStage = "sent" | "starting" | "working" | "done"
 
 type AppHandlers = Rpc.ToHandler<RpcGroup.Rpcs<typeof AppRpcs>>
 
@@ -124,9 +166,11 @@ export class FakeBackend extends Context.Service<
         connections = [...world.modelConnections]
         devices = new Map()
         records = new Map()
+        const now = yield* DateTime.now
         for (const fixture of world.projects) {
           const events = previous.get(fixture.project.id)?.events ?? (yield* PubSub.unbounded<ProjectEvent>())
-          records.set(fixture.project.id, { ...fixture, messages: [...fixture.messages], events })
+          const activity = initialActivity(fixture.project.slug, fixture.working, now)
+          records.set(fixture.project.id, { ...fixture, messages: [...fixture.messages], activity, events })
         }
         // Open subscriptions start over from a fresh snapshot, as after a reconnect.
         for (const record of records.values()) yield* PubSub.publish(record.events, snapshotOf(record))
@@ -139,7 +183,8 @@ export class FakeBackend extends Context.Service<
           status: record.status,
           messages: record.messages.slice(-snapshotSize),
           hasEarlierMessages: record.messages.length > snapshotSize,
-          working: record.working
+          working: record.working,
+          activity: record.activity
         })
 
       yield* load(makeWorld(yield* DateTime.now))
@@ -169,10 +214,62 @@ export class FakeBackend extends Context.Service<
           }
           record.project = { ...record.project, updatedAt: yield* DateTime.now }
         })
-      const setWorking = (record: ProjectRecord, working: boolean) =>
+      /** As the ProjectDO does: `WorkingChanged` for older builds when that flips, then `ActivityChanged`. */
+      const setActivity = (record: ProjectRecord, activity: AgentActivity) =>
         Effect.gen(function* () {
-          record.working = working
-          yield* emit(record, ProjectEvent.cases.WorkingChanged.make({ working }))
+          const working = activity.state === "working"
+          record.activity = activity
+          if (record.working !== working) {
+            record.working = working
+            yield* emit(record, ProjectEvent.cases.WorkingChanged.make({ working }))
+          }
+          yield* emit(record, ProjectEvent.cases.ActivityChanged.make({ activity }))
+        })
+      const nextWake = (record: ProjectRecord) =>
+        record.activity.nextWakeAt ? { nextWakeAt: record.activity.nextWakeAt } : {}
+      /** The sandbox is being brought up to deliver something. */
+      const startComputer = (record: ProjectRecord) =>
+        Effect.gen(function* () {
+          yield* setActivity(record, { state: "starting", since: yield* DateTime.now, ...nextWake(record) })
+        })
+      /** A turn takes their unseen messages: they read "Seen". */
+      const startTurn = (record: ProjectRecord) =>
+        Effect.gen(function* () {
+          const now = yield* DateTime.now
+          if (record.activity.state !== "working") {
+            yield* setActivity(record, { state: "working", since: now, ...nextWake(record) })
+          }
+          for (const message of record.messages)
+            if (message._tag === "Text" && message.from === "user" && message.seenAt === undefined)
+              yield* setMessage(record, { ...message, seenAt: now })
+        })
+      const endTurn = (record: ProjectRecord) =>
+        Effect.gen(function* () {
+          const now = yield* DateTime.now
+          yield* setActivity(record, {
+            state: "idle",
+            since: now,
+            awakeUntil: DateTime.addDuration(now, awakeFor),
+            ...nextWake(record)
+          })
+        })
+      const isAwake = (record: ProjectRecord, now: DateTime.Utc) =>
+        record.activity.state !== "idle" ||
+        (record.activity.awakeUntil !== undefined && DateTime.isGreaterThan(record.activity.awakeUntil, now))
+      /** Something they did reaches the agent: its computer starts first if it was asleep. Returns the paces taken. */
+      const wake = (record: ProjectRecord) =>
+        Effect.gen(function* () {
+          if (record.activity.state === "working") {
+            yield* later(1, startTurn(record))
+            return 1
+          }
+          if (isAwake(record, yield* DateTime.now)) {
+            yield* later(1, startTurn(record))
+            return 1
+          }
+          yield* later(1, startComputer(record))
+          yield* later(3, startTurn(record))
+          return 3
         })
       const setStatus = (record: ProjectRecord, patch: Partial<StatusCard>) =>
         Effect.gen(function* () {
@@ -234,7 +331,8 @@ export class FakeBackend extends Context.Service<
           ...(milestones.length > 0
             ? { progress: { done: milestones.filter((m) => m.state === "done").length, total: milestones.length } }
             : {}),
-          ...(record.status.pausedUntil ? { pausedUntil: record.status.pausedUntil } : {})
+          ...(record.status.pausedUntil ? { pausedUntil: record.status.pausedUntil } : {}),
+          activity: record.activity
         }
       }
 
@@ -264,7 +362,7 @@ export class FakeBackend extends Context.Service<
 
       const ackAnswer = (record: ProjectRecord, question: QuestionMessage, text: string) =>
         Effect.gen(function* () {
-          yield* setWorking(record, true)
+          yield* startTurn(record)
           yield* later(
             2,
             Effect.gen(function* () {
@@ -273,7 +371,7 @@ export class FakeBackend extends Context.Service<
                 yield* setStatus(record, { now: `Shaping the first version around “${text}”.` })
                 yield* setProject(record, { headline: `Shaping the first version around “${text}”.` })
               }
-              yield* setWorking(record, false)
+              yield* endTurn(record)
             })
           )
           return question
@@ -364,10 +462,12 @@ export class FakeBackend extends Context.Service<
                     media: []
                   }
                 ],
-                working: true,
+                working: false,
+                activity: { state: "starting", since: now },
                 events: yield* PubSub.unbounded<ProjectEvent>()
               }
               records = new Map([[id, record], ...records])
+              yield* later(3, startTurn(record))
               yield* later(
                 6,
                 Effect.gen(function* () {
@@ -392,7 +492,7 @@ export class FakeBackend extends Context.Service<
                     notificationId: yield* notificationId()
                   }
                   yield* setMessage(record, question)
-                  yield* setWorking(record, false)
+                  yield* endTurn(record)
                   yield* push(record, question, question.question)
                 })
               )
@@ -425,12 +525,12 @@ export class FakeBackend extends Context.Service<
                 media: []
               }
               yield* setMessage(record, message)
-              yield* later(1, setWorking(record, true))
+              const taken = yield* wake(record)
               yield* later(
-                5,
+                taken + 3,
                 Effect.gen(function* () {
                   yield* agentText(record, "Noted. I’ll fold that in and show you when it’s ready.")
-                  yield* setWorking(record, false)
+                  yield* endTurn(record)
                 })
               )
               return message
@@ -682,6 +782,56 @@ export class FakeBackend extends Context.Service<
           })
         })
 
+      /** Lift Log at one stage of the mock's scenario, re-sent as a fresh snapshot. */
+      const liftStage = (stage: ActivityStage, now: DateTime.Utc) =>
+        Effect.gen(function* () {
+          const lift = Array.from(records.values()).find((r) => r.project.slug === "lift-log")
+          if (!lift) return
+          const sentAt =
+            stage === "working"
+              ? DateTime.subtract(now, { minutes: 2, seconds: 30 })
+              : stage === "done"
+                ? DateTime.subtract(now, { minutes: 7 })
+                : now
+          const ask: TextMessage = {
+            _tag: "Text",
+            ...liftAsk,
+            projectId: lift.project.id,
+            createdAt: sentAt,
+            from: "user",
+            media: [],
+            ...(stage === "working" || stage === "done" ? { seenAt: DateTime.add(sentAt, { seconds: 30 }) } : {})
+          }
+          const reply: TextMessage = {
+            _tag: "Text",
+            ...liftReply,
+            projectId: lift.project.id,
+            createdAt: now,
+            from: "agent",
+            media: []
+          }
+          lift.messages = [
+            ...lift.messages.filter((m) => m.id !== liftAsk.id && m.id !== liftReply.id),
+            ask,
+            ...(stage === "done" ? [reply] : [])
+          ]
+          lift.activity =
+            stage === "sent"
+              ? {
+                  state: "idle",
+                  since: DateTime.subtract(now, { minutes: 40 }),
+                  awakeUntil: DateTime.subtract(now, { minutes: 35 })
+                }
+              : stage === "starting"
+                ? { state: "starting", since: now }
+                : stage === "working"
+                  ? { state: "working", since: DateTime.subtract(now, { minutes: 2 }) }
+                  : { state: "idle", since: now, awakeUntil: DateTime.addDuration(now, awakeFor) }
+          lift.working = stage === "working"
+          lift.project = { ...lift.project, updatedAt: now }
+          yield* emit(lift, snapshotOf(lift))
+        })
+
       const scenario = Effect.fn("FakeBackend.scenario")(function* (name: Scenario) {
         const now = yield* DateTime.now
         switch (name) {
@@ -692,7 +842,7 @@ export class FakeBackend extends Context.Service<
             const lift = Array.from(records.values()).find((r) => r.project.slug === "lift-log")
             if (lift) {
               yield* setStatus(lift, { pausedUntil: DateTime.add(now, { hours: 1, minutes: 28 }) })
-              yield* setWorking(lift, false)
+              yield* setActivity(lift, { state: "idle", since: DateTime.subtract(now, { minutes: 20 }) })
             }
             return
           }
@@ -784,6 +934,66 @@ export class FakeBackend extends Context.Service<
           case "stall-next-write":
             stallNextWrite = true
             return
+          case "activity-sent":
+            return yield* liftStage("sent", now)
+          case "activity-starting":
+            return yield* liftStage("starting", now)
+          case "activity-working":
+            return yield* liftStage("working", now)
+          case "activity-done":
+            return yield* liftStage("done", now)
+          case "activity-home": {
+            yield* liftStage("done", DateTime.subtract(now, { minutes: 3 }))
+            const recipe = Array.from(records.values()).find((r) => r.project.slug === "recipe-scaler")
+            if (recipe) {
+              yield* setStatus(recipe, { pausedUntil: nextLocal(now, 16, 0) })
+              yield* setActivity(recipe, { state: "idle", since: DateTime.subtract(now, { hours: 1 }) })
+            }
+            return
+          }
+          case "activity-new-idea": {
+            const id = "prj_newidea" as ProjectId
+            if (records.has(id)) return
+            const idea = "Scale any recipe up or down, and keep the ingredient math honest."
+            const project: Project = {
+              id,
+              ownerId: user.id,
+              title: "New idea",
+              kind: "Just now",
+              idea,
+              harness: "codex",
+              phase: "new",
+              slug: "new-idea",
+              publicUrl: "https://new-idea-q7x2k9.omer.build",
+              createdAt: now,
+              updatedAt: now
+            }
+            records = new Map([
+              [
+                id,
+                {
+                  project,
+                  status: { phase: "new", phaseSince: now, media: [], milestones: [], updatedAt: now },
+                  messages: [
+                    {
+                      _tag: "Text",
+                      id: "msg_newidea" as MessageId,
+                      projectId: id,
+                      createdAt: now,
+                      from: "user",
+                      text: idea,
+                      media: []
+                    }
+                  ],
+                  working: false,
+                  activity: { state: "starting", since: now },
+                  events: yield* PubSub.unbounded<ProjectEvent>()
+                }
+              ],
+              ...records
+            ])
+            return
+          }
           case "signed-in":
           case "signed-out":
             return

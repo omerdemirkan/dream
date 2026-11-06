@@ -46,6 +46,11 @@ export const SandboxRecord = Schema.Struct({
   keyFilesDirty: Schema.optionalKey(Schema.Boolean),
   working: Schema.Boolean,
   turnStartedAt: Schema.optionalKey(Schema.DateTimeUtc),
+  /** Set while events wait for a sandbox that's being created or resumed, until a turn takes them. */
+  startingSince: Schema.optionalKey(Schema.DateTimeUtc),
+  /** When the last turn ended, and when the sandbox goes to sleep after it (IdleTimeout later). */
+  turnEndedAt: Schema.optionalKey(Schema.DateTimeUtc),
+  awakeUntil: Schema.optionalKey(Schema.DateTimeUtc),
   /** A turn has started at least once. Before then, the first turn moves the phase on from "new". */
   startedWork: Schema.optionalKey(Schema.Boolean),
   /** Consecutive delivery failures, for backoff. */
@@ -233,6 +238,8 @@ export class Store extends Context.Service<
     readonly enqueue: (event: AgentEvent) => Effect.Effect<void>
     readonly pendingEvents: (limit: number) => Effect.Effect<ReadonlyArray<AgentEvent>>
     readonly markDelivered: (ids: ReadonlyArray<EventId>, at: string) => Effect.Effect<void>
+    /** Events by id, delivered or not, in inbox order. Unknown ids are left out. */
+    readonly events: (ids: ReadonlyArray<EventId>) => Effect.Effect<ReadonlyArray<AgentEvent>>
 
     readonly putBrowser: (record: BrowserRecord) => Effect.Effect<void>
     readonly browser: (id: string) => Effect.Effect<Option.Option<BrowserRecord>>
@@ -384,6 +391,14 @@ export class Store extends Context.Service<
       const markDelivered = (ids: ReadonlyArray<EventId>, at: string) =>
         ids.length === 0 ? Effect.void : exec(sql`UPDATE events SET delivered_at = ${at} WHERE ${sql.in("id", ids)}`)
 
+      const events = (ids: ReadonlyArray<EventId>) =>
+        ids.length === 0
+          ? Effect.succeed([])
+          : sql`SELECT json FROM events WHERE ${sql.in("id", ids)} ORDER BY seq`.pipe(
+              decodeRows(JsonRow),
+              Effect.map((rows) => rows.map((row) => Schema.decodeUnknownSync(jsonCodec(AgentEvent))(row.json)))
+            )
+
       const putBrowser = (record: BrowserRecord) =>
         exec(sql`
           INSERT INTO browser_sessions (id, json, ended) VALUES (${record.id}, ${encodeJson(BrowserRecord, record)},
@@ -449,6 +464,7 @@ export class Store extends Context.Service<
         enqueue,
         pendingEvents,
         markDelivered,
+        events,
         putBrowser,
         browser,
         openBrowsers,
