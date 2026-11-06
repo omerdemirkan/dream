@@ -17,6 +17,7 @@
  */
 import { SandboxKeyDir } from "@dream/domain"
 import { Option, Schema } from "effect"
+import { claudeAutoCompactWindow } from "./Fleet.ts"
 
 // ---------------------------------------------------------------------------
 // AskUserQuestion
@@ -194,8 +195,8 @@ const asObject = (value: unknown): JsonObject =>
   Schema.decodeUnknownOption(JsonObject)(value).pipe(Option.getOrElse(() => ({})))
 
 /**
- * `~/.claude/settings.json` with Dream's denials and skill overrides added to
- * whatever else is there. Claude Code reads user settings in SDK sessions too.
+ * `~/.claude/settings.json` with Dream's denials, skill overrides and auto-compact window
+ * (`claudeAutoCompactWindow`) added to whatever else is there. Claude Code reads user settings in SDK sessions too.
  */
 export const claudeSettings = (existing: unknown): JsonObject => {
   const settings = asObject(existing)
@@ -206,6 +207,7 @@ export const claudeSettings = (existing: unknown): JsonObject => {
   return {
     ...settings,
     permissions: { ...permissions, deny: [...new Set([...deny, ...deniedClaudeTools, ...keyFileDenials])] },
+    autoCompactWindow: claudeAutoCompactWindow,
     skillOverrides: {
       ...asObject(settings.skillOverrides),
       ...Object.fromEntries(disabledClaudeSkills.map((skill) => [skill, "off"]))

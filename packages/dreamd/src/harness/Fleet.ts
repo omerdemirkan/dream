@@ -33,6 +33,15 @@ export const flagship: Readonly<Record<Harness, TopLevel>> = {
  */
 export const codexContextWindow = 1_000_000
 
+/**
+ * Where Claude Code compacts a conversation (`autoCompactWindow` in its settings). Left on "auto", the window is
+ * whatever Claude Code tunes for the model, up to Opus 5.5's 1M, and the top-level session lives as long as the
+ * project, so every step could grow toward re-sending a million tokens, and the first step after an hour's sleep (when the prompt cache has gone) would
+ * re-cache all of it. 300k bounds both, at the cost of a summary instead of the full history past that point; the
+ * agent's memory, the project's files and git keep what matters. See docs/research/agent-token-usage.md.
+ */
+export const claudeAutoCompactWindow = 300_000
+
 export const topLevel = (
   harness: Harness,
   override: { readonly model: Option.Option<string>; readonly effort: Option.Option<ReasoningEffort> }

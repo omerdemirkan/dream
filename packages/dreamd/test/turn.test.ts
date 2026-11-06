@@ -4,6 +4,7 @@ import { join } from "node:path"
 import type { ToolResultPart } from "@ai-sdk/provider-utils"
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Option, Ref, Stream } from "effect"
+import { claudeAutoCompactWindow } from "../src/harness/Fleet.ts"
 import { Harness } from "../src/harness/Harness.ts"
 import {
   claudeSettings,
@@ -223,6 +224,7 @@ describe("Claude Code's built-ins", () => {
       assert.include(deniedClaudeTools, tool)
     }
     assert.notInclude(deniedClaudeTools, "AskUserQuestion")
+    assert.strictEqual(settings.autoCompactWindow, claudeAutoCompactWindow)
   })
 
   it("keep the person's key files out of the transcript", () => {
@@ -234,7 +236,11 @@ describe("Claude Code's built-ins", () => {
   })
 
   it("starts from nothing when the settings aren't an object", () => {
-    assert.deepStrictEqual(Object.keys(claudeSettings("garbage")), ["permissions", "skillOverrides"])
+    assert.deepStrictEqual(Object.keys(claudeSettings("garbage")), [
+      "permissions",
+      "autoCompactWindow",
+      "skillOverrides"
+    ])
   })
 
   it.effect("are written to ~/.claude/settings.json when the Claude Code harness starts", () =>
