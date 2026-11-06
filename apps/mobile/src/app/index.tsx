@@ -270,40 +270,44 @@ function ProjectRow(props: {
   const sub = headline ?? phaseLabel(project.phase)
   return (
     <ProjectLink project={project}>
-      <Pressable
-        accessibilityRole="button"
-        style={({ pressed }) => ({
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 14,
-          paddingVertical: 13,
-          borderTopWidth: props.first ? 0 : 1,
-          borderColor: color.line,
-          opacity: pressed ? 0.6 : 1
-        })}
-      >
-        <PresenceTile icon={project.icon} dot={dotOf(presence)} />
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={{ fontSize: 17, fontWeight: "600", letterSpacing: -0.25, color: color.t1 }}>
-            {project.title}
-          </Text>
-          {line ? (
-            <StateLineText line={line} style={{ fontSize: 14, marginTop: 2 }} />
-          ) : (
-            <Text numberOfLines={1} style={{ fontSize: 14, color: color.t2, marginTop: 2 }}>
-              {sub}
-            </Text>
-          )}
-        </View>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          {open > 0 ? (
-            <Dot kind="need" />
-          ) : project.phase === "live" ? (
-            <Text style={{ fontSize: 13, color: color.t3 }}>Live</Text>
-          ) : progress && progress.total > 0 && project.phase === "building" ? (
-            <Progress done={progress.done} total={progress.total} current={project.phase === "building"} />
-          ) : null}
-        </View>
+      {/* Link's Slot drops a function style, so the pressed look lives on a View inside. */}
+      <Pressable accessibilityRole="button">
+        {({ pressed }) => (
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 14,
+              paddingVertical: 13,
+              borderTopWidth: props.first ? 0 : 1,
+              borderColor: color.line,
+              opacity: pressed ? 0.6 : 1
+            }}
+          >
+            <PresenceTile icon={project.icon} dot={dotOf(presence)} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={{ fontSize: 17, fontWeight: "600", letterSpacing: -0.25, color: color.t1 }}>
+                {project.title}
+              </Text>
+              {line ? (
+                <StateLineText line={line} style={{ fontSize: 14, marginTop: 2 }} />
+              ) : (
+                <Text numberOfLines={1} style={{ fontSize: 14, color: color.t2, marginTop: 2 }}>
+                  {sub}
+                </Text>
+              )}
+            </View>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              {open > 0 ? (
+                <Dot kind="need" />
+              ) : project.phase === "live" ? (
+                <Text style={{ fontSize: 13, color: color.t3 }}>Live</Text>
+              ) : progress && progress.total > 0 && project.phase === "building" ? (
+                <Progress done={progress.done} total={progress.total} current={project.phase === "building"} />
+              ) : null}
+            </View>
+          </View>
+        )}
       </Pressable>
     </ProjectLink>
   )
