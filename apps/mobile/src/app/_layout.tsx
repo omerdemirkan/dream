@@ -17,6 +17,7 @@ import { sessionAtom } from "../state/atoms.ts"
 import { DeviceHost } from "../ui/DeviceHost.tsx"
 import { FixturesLaunch } from "../ui/FixturesLaunch.tsx"
 import { FocusOverlay } from "../ui/FocusOverlay.tsx"
+import { DeclineHost } from "../ui/Decline.tsx"
 import { MediaViewer } from "../ui/Media.tsx"
 import { color } from "../ui/theme.ts"
 import { Toast } from "../ui/Toast.tsx"
@@ -79,6 +80,7 @@ function Shell() {
       <FocusOverlay />
       <Toast />
       <MediaViewer />
+      <DeclineHost />
     </>
   )
 }

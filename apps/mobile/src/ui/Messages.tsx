@@ -24,6 +24,7 @@ import { useAction, useSignInAccess, useToast } from "./actions.ts"
 import { useAskPush } from "./hooks.ts"
 import { GoogleButton, Choices, Icon, SignInButton } from "./kit.tsx"
 import { Markdown, MarkdownText } from "./Markdown.tsx"
+import { useDecline } from "./Decline.tsx"
 import { MediaTile } from "./Media.tsx"
 import { Receipt } from "./Presence.tsx"
 import { color, gutter, needGlow } from "./theme.ts"
@@ -525,6 +526,28 @@ function OpenAccessBody(props: { readonly message: AccessMessage; readonly onOpe
   }
 }
 
+/** The card's quiet "Don't connect", which opens the decline sheet. */
+function DeclineLink(props: { readonly message: AccessMessage }) {
+  const decline = useDecline(props.message)
+  return (
+    <>
+      <Pressable
+        accessibilityRole="button"
+        onPress={decline.open}
+        hitSlop={8}
+        style={({ pressed }) => ({
+          alignSelf: "flex-start",
+          marginTop: 12,
+          marginHorizontal: 2,
+          opacity: pressed ? 0.5 : 1
+        })}
+      >
+        <Text style={{ fontSize: 14, color: color.t2 }}>Don’t connect</Text>
+      </Pressable>
+    </>
+  )
+}
+
 export const AccessCard = forwardRef<HostInstance, { readonly message: AccessMessage; readonly onOpen: () => void }>(
   function AccessCard(props, ref) {
     const m = props.message
@@ -566,7 +589,17 @@ export const AccessCard = forwardRef<HostInstance, { readonly message: AccessMes
             title={label}
             strong
             check={false}
-            detail="You said not now. Tap to connect it anyway."
+            detail={
+              m.state.reason ? (
+                <>
+                  {"You said: "}
+                  <Text style={{ color: color.t1 }}>{`“${m.state.reason}”`}</Text>
+                  {" · Tap to connect it anyway."}
+                </>
+              ) : (
+                "You said not now. Tap to connect it anyway."
+              )
+            }
           />
         </Card>
       )
@@ -613,6 +646,7 @@ export const AccessCard = forwardRef<HostInstance, { readonly message: AccessMes
             </Text>
           </View>
         )}
+        {later ? null : <DeclineLink message={m} />}
       </Card>
     )
   }

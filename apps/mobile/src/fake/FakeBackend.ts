@@ -93,7 +93,8 @@ export const Scenario = [
   "ask-series",
   "links-empty",
   "links-new",
-  "long-chat"
+  "long-chat",
+  "declined-reason"
 ] as const
 export type Scenario = (typeof Scenario)[number]
 
@@ -794,7 +795,7 @@ export class FakeBackend extends Context.Service<
               return yield* new InvalidRequest({ message: "That request isn't for an App Store Connect key." })
             return yield* connectIntegration(record, message, "Apple Developer", { _tag: "Apple", issuerId, keyId })
           }),
-        DeclineAccess: ({ projectId, messageId }) =>
+        DeclineAccess: ({ projectId, messageId, reason }) =>
           stallable(
             Effect.gen(function* () {
               const { record, message } = yield* findMessage(projectId, messageId)
@@ -802,7 +803,7 @@ export class FakeBackend extends Context.Service<
                 return yield* new InvalidRequest({ message: "That message isn't an access request." })
               const declined: AccessMessage = {
                 ...message,
-                state: { _tag: "Declined", declinedAt: yield* DateTime.now }
+                state: { _tag: "Declined", declinedAt: yield* DateTime.now, ...(reason ? { reason } : {}) }
               }
               yield* setMessage(record, declined)
               return declined
@@ -1136,6 +1137,16 @@ export class FakeBackend extends Context.Service<
           case "stall-next-write":
             stallNextWrite = true
             return
+          case "declined-reason": {
+            // Cabin's calendar request, declined with a reason (the card says what they said).
+            const cabin = Array.from(records.values()).find((r) => r.project.slug === "cabin")
+            const ask = cabin?.messages.find((m) => m.id === "msg_gcal")
+            if (!cabin || ask?._tag !== "Access") return
+            return yield* setMessage(cabin, {
+              ...ask,
+              state: { _tag: "Declined", declinedAt: now, reason: "Use a free option instead" }
+            })
+          }
           case "ask-series": {
             // Cabin: three open questions and the calendar request.
             const cabin = Array.from(records.values()).find((r) => r.project.slug === "cabin")

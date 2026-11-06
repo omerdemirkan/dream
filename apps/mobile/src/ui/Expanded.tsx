@@ -25,7 +25,6 @@ import { draftKey } from "../data/Replies.ts"
 import {
   answerNowFn,
   clearDraftFn,
-  declineAccessFn,
   draftAtom,
   disconnectIntegrationFn,
   submitAppleAccessFn,
@@ -33,6 +32,7 @@ import {
 } from "../state/atoms.ts"
 import { useAction, useSignInAccess, useToast } from "./actions.ts"
 import { ElseComposer } from "./Composer.tsx"
+import { useDecline } from "./Decline.tsx"
 import { useAskPush } from "./hooks.ts"
 import {
   accessExplainer,
@@ -511,7 +511,6 @@ function KeyForm(props: { readonly message: AccessMessage; readonly onBack: () =
   const m = props.message
   const [key, setKey] = useState("")
   const submit = useAction(submitKeyAccessFn)
-  const decline = useAction(declineAccessFn)
   return (
     <>
       <SecretField value={key} onChange={setKey} placeholder="Paste key" />
@@ -521,11 +520,7 @@ function KeyForm(props: { readonly message: AccessMessage; readonly onBack: () =
         busy={submit.busy}
         onPress={() => submit.run({ projectId: m.projectId, messageId: m.id, key })}
       />
-      <NotNow
-        message={m}
-        onBack={props.onBack}
-        decline={() => decline.run({ projectId: m.projectId, messageId: m.id })}
-      />
+      <NotNow message={m} onBack={props.onBack} />
     </>
   )
 }
@@ -537,7 +532,6 @@ function AppleForm(props: { readonly message: AccessMessage; readonly onBack: ()
   const [privateKey, setPrivateKey] = useState("")
   const [fileName, setFileName] = useState<string | undefined>(undefined)
   const submit = useAction(submitAppleAccessFn)
-  const decline = useAction(declineAccessFn)
   const toast = useToast()
   const pick = () =>
     void DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true }).then(async (result) => {
@@ -590,22 +584,22 @@ function AppleForm(props: { readonly message: AccessMessage; readonly onBack: ()
           })
         }
       />
-      <NotNow
-        message={m}
-        onBack={props.onBack}
-        decline={() => decline.run({ projectId: m.projectId, messageId: m.id })}
-      />
+      <NotNow message={m} onBack={props.onBack} />
     </>
   )
 }
 
-function NotNow(props: { readonly message: AccessMessage; readonly onBack: () => void; readonly decline: () => void }) {
+/** "Don't connect" (with a reason, in the decline sheet), or "Not yet" when it's already declined or for later. */
+function NotNow(props: { readonly message: AccessMessage; readonly onBack: () => void }) {
+  const decline = useDecline(props.message)
   return props.message.when ||
     props.message.state._tag === "Declined" ||
     props.message.state._tag === "Disconnected" ? (
     <LinkButton title="Not yet" onPress={props.onBack} />
   ) : (
-    <LinkButton title="Don’t connect" onPress={props.decline} />
+    <>
+      <LinkButton title="Don’t connect" onPress={decline.open} />
+    </>
   )
 }
 
@@ -744,6 +738,11 @@ export function ExpandedAccess(props: {
       body={
         <>
           {gone ? <Lead style={{ marginBottom: 12 }}>{gone.lead}</Lead> : null}
+          {m.state._tag === "Declined" ? (
+            <Lead style={{ marginBottom: 12 }}>
+              {m.state.reason ? `You said: “${m.state.reason}”. ` : "You said not now. "}You can still connect it.
+            </Lead>
+          ) : null}
           {heading.reason ? <Lead style={{ color: color.t1, marginBottom: 12 }}>{heading.reason}</Lead> : null}
           <Lead>{accessExplainer(m)}</Lead>
           {m.context ? <HowToGet source={m.context} /> : null}
@@ -767,9 +766,15 @@ export function ExpandedAccess(props: {
       bottom={
         <>
           {m.request._tag === "Google" ? (
-            <GoogleButton busy={signIn.busy} onPress={signIn.start} />
+            <>
+              <GoogleButton busy={signIn.busy} onPress={signIn.start} />
+              <NotNow message={m} onBack={props.onBack} />
+            </>
           ) : m.request._tag === "OAuth" ? (
-            <SignInButton service={signIn.service} busy={signIn.busy} onPress={signIn.start} />
+            <>
+              <SignInButton service={signIn.service} busy={signIn.busy} onPress={signIn.start} />
+              <NotNow message={m} onBack={props.onBack} />
+            </>
           ) : m.request._tag === "Key" || m.request._tag === "File" ? (
             <KeyForm message={m} onBack={props.onBack} />
           ) : (
