@@ -134,4 +134,15 @@ export const LinkTileSvg = forwardRef<Svg, { readonly look: TileLook; readonly s
   }
 )
 
+/** A `LinkTileSvg` as a base64 png, or nothing if it can't be drawn within 3 seconds. */
+export const capture = (svg: Svg | null) =>
+  new Promise<string | undefined>((resolve) => {
+    if (svg === null) return resolve(undefined)
+    const timer = setTimeout(() => resolve(undefined), 3000)
+    svg.toDataURL((base64: string) => {
+      clearTimeout(timer)
+      resolve(base64 ? base64.replace(/\s/g, "") : undefined)
+    })
+  })
+
 export const tileInk = (color: LinkColor) => linkTile[color].ink

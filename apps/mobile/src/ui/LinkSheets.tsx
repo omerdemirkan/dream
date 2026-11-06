@@ -30,7 +30,7 @@ import { addLinkFn, linksAtom, prepareHomeScreenFn, updateLinkFn } from "../stat
 import { linkSheetAtom } from "../state/ui.ts"
 import { useAction, useToast } from "./actions.ts"
 import { Button, Icon, Tile } from "./kit.tsx"
-import { LinkTile, LinkTileSvg, type TileLook } from "./LinkTile.tsx"
+import { capture, LinkTile, LinkTileSvg, type TileLook } from "./LinkTile.tsx"
 import { color, gutter, linkTile } from "./theme.ts"
 
 const colors = Object.keys(linkTile) as ReadonlyArray<LinkColor>
@@ -560,16 +560,6 @@ function ChangeIcon(props: {
 // ---------------------------------------------------------------------------
 // Put it on the Home Screen (H1)
 // ---------------------------------------------------------------------------
-
-const capture = (svg: Svg | null) =>
-  new Promise<string | undefined>((resolve) => {
-    if (svg === null) return resolve(undefined)
-    const timer = setTimeout(() => resolve(undefined), 3000)
-    svg.toDataURL((base64: string) => {
-      clearTimeout(timer)
-      resolve(base64 ? base64.replace(/\s/g, "") : undefined)
-    })
-  })
 
 function HomeScreen(props: {
   readonly link: AppLink

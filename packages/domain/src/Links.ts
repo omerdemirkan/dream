@@ -1,7 +1,7 @@
 /**
  * App links: the row of app icons at the top of Home, under the Dream header and above Projects. Each is a
  * launcher for something they open often, usually what a project published. Tapping one opens it; holding it
- * brings up a menu (Open, Add to Home Screen, Rename, Change icon, Copy link, Remove) headed by who made it and
+ * brings up a menu (Open, Share, Add to Home Screen, Rename, Change icon, Remove) headed by who made it and
  * the host it goes to.
  *
  * The shape is exactly what the row shows: an icon tile and a one-line label under it, a small dot before the

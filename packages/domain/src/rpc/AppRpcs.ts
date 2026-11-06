@@ -205,9 +205,9 @@ export class AuthedAppRpcs extends RpcGroup.make(
   /** They opened it from Home: an agent's new link loses its dot. */
   Rpc.make("MarkLinkOpened", { payload: { linkId: LinkId }, error: NotFound }),
   /**
-   * Before opening a link in Safari to add it to their Home Screen. `iconPng` is the tile as the phone draws it
-   * (base64 png, square), which the gateway serves as the app's icon; an image icon needs none. Returns the URL to
-   * open: on a published app, one that shows Safari's steps once.
+   * Before opening a link in Safari to add it to their Home Screen, or when they share it. `iconPng` is the tile as
+   * the phone draws it (base64 png, square), which the gateway serves as the app's icon and its link preview's image;
+   * an image icon needs none. Returns the URL to open: on a published app, one that shows Safari's steps once.
    */
   Rpc.make("PrepareHomeScreen", {
     payload: {

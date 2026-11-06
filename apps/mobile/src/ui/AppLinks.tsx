@@ -7,17 +7,17 @@ import { type AppLink, linkHost, linkMenuHeader, type Project, type ProjectSumma
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
 import { Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
-import * as Clipboard from "expo-clipboard"
 import * as Haptics from "expo-haptics"
 import { Link } from "expo-router"
+import { useEffect, useRef, useState } from "react"
 import * as WebBrowser from "expo-web-browser"
-import { Alert, Pressable, ScrollView, Text, View } from "react-native"
+import { Alert, Pressable, ScrollView, Share, Text, View } from "react-native"
 import Svg, { Rect } from "react-native-svg"
-import { linksAtom, markLinkOpenedFn, removeLinkFn, updateLinkFn } from "../state/atoms.ts"
+import { linksAtom, markLinkOpenedFn, prepareHomeScreenFn, removeLinkFn, updateLinkFn } from "../state/atoms.ts"
 import { linkSheetAtom } from "../state/ui.ts"
 import { useAction, useToast } from "./actions.ts"
 import { Icon } from "./kit.tsx"
-import { LinkTile } from "./LinkTile.tsx"
+import { capture, LinkTile, LinkTileSvg } from "./LinkTile.tsx"
 import { color, gutter } from "./theme.ts"
 
 /** Each icon's column: the 60 pt tile centred, its label up to the column's width. */
@@ -49,6 +49,7 @@ export function AppLinksRow(props: { readonly projects: ReadonlyArray<ProjectSum
   // An API from before app links has no list; the row stays away rather than offering to add one.
   if (!AsyncResult.isSuccess(result) && Option.isNone(AsyncResult.value(result))) return null
   const links = Option.getOrElse(AsyncResult.value(result), (): ReadonlyArray<AppLink> => [])
+  const published = new Set(props.projects.map((s) => linkHost(s.project.publicUrl)))
   const add = () => setSheet(Option.some({ kind: "add" }))
   if (links.length === 0) return <EmptyLinks onAdd={add} />
   return (
@@ -59,7 +60,12 @@ export function AppLinksRow(props: { readonly projects: ReadonlyArray<ProjectSum
       contentContainerStyle={{ paddingHorizontal: gutter - (column - tileSize) / 2 }}
     >
       {links.map((link) => (
-        <LinkIcon key={link.id} link={link} project={projectOf(link, props.projects)} />
+        <LinkIcon
+          key={link.id}
+          link={link}
+          project={projectOf(link, props.projects)}
+          published={published.has(linkHost(link.url))}
+        />
       ))}
       <AddTile onPress={add} />
     </ScrollView>
@@ -86,7 +92,12 @@ function Label(props: { readonly text: string; readonly fresh?: boolean; readonl
   )
 }
 
-function LinkIcon(props: { readonly link: AppLink; readonly project: Project | undefined }) {
+function LinkIcon(props: {
+  readonly link: AppLink
+  readonly project: Project | undefined
+  /** On one of their projects' hosts, where the gateway can use the tile for link previews. */
+  readonly published: boolean
+}) {
   const { link, project } = props
   const open = useOpenLink()
   const setSheet = useAtomSet(linkSheetAtom)
@@ -95,6 +106,24 @@ function LinkIcon(props: { readonly link: AppLink; readonly project: Project | u
   const toast = useToast()
   const header = linkMenuHeader(link, project?.title)
   const agents = link.addedBy === "agent" && project !== undefined
+
+  const prepare = useAction(prepareHomeScreenFn)
+  const tile = useRef<Svg>(null)
+  const [drawing, setDrawing] = useState(false)
+
+  // iOS's share sheet, which has Copy too: the link, and its name for targets that take text (Messages, Mail).
+  // A published app's page previews with its tile, so the gateway gets the tile as they see it meanwhile.
+  const share = () => {
+    void Share.share({ url: link.url, message: link.title }, { subject: link.title })
+    if (props.published && link.icon?._tag !== "Image") setDrawing(true)
+  }
+  useEffect(() => {
+    if (!drawing) return
+    void capture(tile.current).then((iconPng) => {
+      setDrawing(false)
+      if (iconPng !== undefined) prepare.run({ linkId: link.id, iconPng }, { onFailure: () => {} })
+    })
+  }, [drawing])
 
   const rename = () =>
     Alert.prompt(
@@ -158,6 +187,11 @@ function LinkIcon(props: { readonly link: AppLink; readonly project: Project | u
             <View style={{ width: column, alignItems: "center", opacity: pressed ? 0.7 : 1 }}>
               <LinkTile look={link} size={tileSize} />
               <Label text={link.title} fresh={link.addedBy === "agent" && link.openedAt === undefined} />
+              {drawing ? (
+                <View pointerEvents="none" style={{ position: "absolute", opacity: 0 }}>
+                  <LinkTileSvg ref={tile} look={link} size={62} />
+                </View>
+              ) : null}
             </View>
           )}
         </Pressable>
@@ -165,6 +199,7 @@ function LinkIcon(props: { readonly link: AppLink; readonly project: Project | u
       <Link.Menu title={`${header.title}\n${header.host}`}>
         <Link.Menu displayInline title="">
           <Link.MenuAction title="Open" icon="arrow.up.forward.app" onPress={() => open(link)} />
+          <Link.MenuAction title="Share" icon="square.and.arrow.up" onPress={share} />
           <Link.MenuAction
             title="Add to Home Screen"
             icon="plus.app"
@@ -177,14 +212,6 @@ function LinkIcon(props: { readonly link: AppLink; readonly project: Project | u
             title="Change icon"
             icon="photo"
             onPress={() => setSheet(Option.some({ kind: "icon", linkId: link.id }))}
-          />
-          <Link.MenuAction
-            title="Copy link"
-            icon="doc.on.doc"
-            onPress={() => {
-              void Clipboard.setStringAsync(link.url)
-              toast(`Copied ${linkHost(link.url)}`, { done: true })
-            }}
           />
         </Link.Menu>
         <Link.MenuAction title="Remove" icon="trash" destructive onPress={confirmRemove} />
