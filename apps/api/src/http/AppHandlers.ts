@@ -37,6 +37,7 @@ import { timingSafeEqual } from "../lib/Bytes.ts"
 import { messageIdFor, newProjectId, projectIdFor } from "../lib/Ids.ts"
 import { ProjectClients } from "../project/Client.ts"
 import { deleteProject } from "../project/Deletion.ts"
+import { UsageReport } from "../usage/ProjectUsage.ts"
 import { MediaStore } from "./Media.ts"
 
 export const bearer = (headers: Headers.Headers): Option.Option<string> =>
@@ -122,6 +123,7 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
     const mediaStore = yield* MediaStore
     const appLinks = yield* AppLinks
     const links = yield* Links
+    const usageReport = yield* UsageReport
 
     const me = Effect.gen(function* () {
       return (yield* CurrentUser).userId
@@ -277,6 +279,8 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
             url: `wss://${config.apiHost}${Routes.projectLive(project.id)}?ticket=${encodeURIComponent(ticket)}`
           }
         }),
+
+      GetProjectUsage: ({ projectId }) => Effect.flatMap(owned(projectId), usageReport.projectUsage),
 
       ListMessages: ({ projectId, before, limit }) =>
         Effect.gen(function* () {

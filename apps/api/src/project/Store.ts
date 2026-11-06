@@ -16,6 +16,7 @@ import {
   NotificationId,
   Project,
   StatusCard,
+  UsageSnapshot,
   UsageWindowName,
   Wake,
   WakeId
@@ -46,6 +47,8 @@ export const SandboxRecord = Schema.Struct({
   keyFilesDirty: Schema.optionalKey(Schema.Boolean),
   working: Schema.Boolean,
   turnStartedAt: Schema.optionalKey(Schema.DateTimeUtc),
+  /** The subscription's usage as Dream knew it when the running turn started: its "before" in the turn ledger. */
+  turnUsageBefore: Schema.optionalKey(UsageSnapshot),
   /** Set while events wait for a sandbox that's being created or resumed, until a turn takes them. */
   startingSince: Schema.optionalKey(Schema.DateTimeUtc),
   /** When the last turn ended, and when the sandbox goes to sleep after it (IdleTimeout later). */
