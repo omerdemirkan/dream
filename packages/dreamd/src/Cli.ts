@@ -7,6 +7,10 @@
 import {
   AgentLinksPerProject,
   AccessMessage,
+  AppId,
+  AppNotification,
+  AppNotifications,
+  AppSender,
   AccessRequest,
   accessHostProblem,
   keyFileNameFor,
@@ -530,20 +534,217 @@ const access = Command.make("access").pipe(
   ])
 )
 
-const notify = Command.make("notify").pipe(
-  Command.withDescription("Manage notifications you've sent."),
-  Command.withSubcommands([
-    Command.make("withdraw", { notificationId: Argument.String("notification-id") }, (input) =>
-      Effect.gen(function* () {
-        const dream = yield* Dream
-        yield* userFacing(dream.WithdrawNotification({ notificationId: input.notificationId as NotificationId }))
-        yield* Console.log(`Withdrew notification ${input.notificationId}.`)
+// ---------------------------------------------------------------------------
+// Notifications from the project's apps
+// ---------------------------------------------------------------------------
+
+/** Against an API from before app notifications. */
+const notifyUnknown =
+  "Nothing was sent: this Dream's API predates notifications from apps, so `dream notify` can't send as an app here yet. Until it can, `dream message --notify` reaches them in your own voice."
+
+const notifying = <A, E, R>(effect: Effect.Effect<A, E, R>) => userFacing(effect).pipe(newerThanApi(notifyUnknown))
+
+const appIdOf = (text: string) =>
+  Effect.mapError(
+    Schema.decodeUnknownEffect(AppId)(text.trim()),
+    () =>
+      new CliError.UserError({
+        cause: text,
+        userMessage: `"${text}" isn't an app id: lowercase words joined by hyphens, 40 characters at most, like fare-watch.`
       })
-    ).pipe(
-      Command.withDescription("Remove a notification that no longer applies."),
-      Command.withExamples([{ command: "dream notify withdraw <notification-id>" }])
-    )
+  )
+
+const appFlag = Flag.String("app").pipe(
+  Flag.withDescription("The app it comes from, as set up with `dream notify setup <app>`."),
+  Flag.optional
+)
+
+const notifySetup = Command.make(
+  "setup",
+  {
+    app: Argument.String("app").pipe(
+      Argument.withDescription(
+        "An id for the app, lowercase words joined by hyphens (fare-watch); its code sends with --app <id>."
+      )
+    ),
+    name: Flag.String("name").pipe(
+      Flag.withDescription("The name its notifications are titled with, as they know the app. 30 characters at most.")
+    ),
+    why: Flag.String("why").pipe(
+      Flag.withDescription(
+        `What it will tell them: the card's heading, under "Let <name> notify you", e.g. "When a fare you're watching drops below your target".`
+      )
+    ),
+    often: Flag.String("often").pipe(
+      Flag.withDescription('How often, as the card says it: "A few times a week at most", "Once a day, at 7".')
+    ),
+    icon: Flag.String("icon").pipe(
+      Flag.withDescription("Its tile: an SF Symbol name (airplane) or one emoji. Without it, the name's first letter."),
+      Flag.optional
+    ),
+    color: Flag.Literals("color", LinkColor.literals).pipe(
+      Flag.withDescription("The tile's colour behind the glyph."),
+      Flag.optional
+    ),
+    url: Flag.String("url").pipe(
+      Flag.withDescription(
+        "Where a tap goes when a notification names no page: your published URL or a path on it (/today). Without it, a tap opens the notification in the project."
+      ),
+      Flag.optional
+    ),
+    work: workFlag,
+    json
+  },
+  (input) =>
+    Effect.gen(function* () {
+      const dream = yield* Dream
+      const app = yield* appIdOf(input.app)
+      const name = input.name.trim()
+      if (name.length === 0) return yield* fail("--name is empty: it's what their notifications are titled with.")
+      if (/[\n\r\t]/.test(name)) return yield* fail("--name has to be one line.")
+      if ([...name].length > 30) return yield* fail(`--name "${name}" is ${[...name].length} characters; 30 at most.`)
+      const why = input.why.trim()
+      const often = input.often.trim()
+      if (why.length === 0) return yield* fail("--why is empty: it's what the app will tell them, the card's heading.")
+      if (often.length === 0) return yield* fail("--often is empty: say how often it will notify them.")
+      const icon = Option.isSome(input.icon) ? yield* iconOf(input.icon.value) : null
+      if (icon?._tag === "Image") return yield* fail("--icon is an SF Symbol name or one emoji here, not an image.")
+      const result = yield* notifying(
+        dream.SetUpAppNotifications(
+          defined({
+            app,
+            name,
+            why,
+            often,
+            icon: icon ?? undefined,
+            color: Option.getOrUndefined(input.color),
+            url: Option.getOrUndefined(input.url)?.trim() || undefined,
+            workstream: workOf(input.work)
+          })
+        )
+      )
+      yield* show(
+        input.json,
+        Schema.Struct({ app: AppSender, card: AccessMessage }),
+        result,
+        Format.appSetUp(result.app, result.card)
+      )
+    })
+).pipe(
+  Command.withDescription(
+    "Ready one of your apps to notify them under its own name. It puts a card in Chat asking them to allow it; until they do, nothing it sends reaches them."
+  ),
+  Command.withExamples([
+    {
+      command:
+        'dream notify setup fare-watch --name "Fare watch" --icon airplane --color blue --why "When a fare you\'re watching drops below your target" --often "A few times a week at most" --url /'
+    }
   ])
+)
+
+const notifyList = Command.make(
+  "list",
+  {
+    app: appFlag,
+    json
+  },
+  (input) =>
+    Effect.gen(function* () {
+      const dream = yield* Dream
+      const app = Option.isSome(input.app) ? yield* appIdOf(input.app.value) : undefined
+      const result = yield* notifying(dream.ListAppNotifications(defined({ app })))
+      yield* show(input.json, AppNotifications, result, Format.appNotifications(result, yield* now))
+    })
+).pipe(
+  Command.withDescription(
+    "Your apps that notify them, how they've chosen to hear from each, and what each sent in the last 30 days: what happened to it, and which they opened."
+  )
+)
+
+const notifyWithdraw = Command.make("withdraw", { notificationId: Argument.String("notification-id") }, (input) =>
+  Effect.gen(function* () {
+    const dream = yield* Dream
+    yield* userFacing(dream.WithdrawNotification({ notificationId: input.notificationId as NotificationId }))
+    yield* Console.log(`Withdrew notification ${input.notificationId}.`)
+  })
+).pipe(
+  Command.withDescription("Remove a notification that no longer applies: one you sent, or one of your apps'."),
+  Command.withExamples([{ command: "dream notify withdraw <notification-id>" }])
+)
+
+const notify = Command.make(
+  "notify",
+  {
+    text: textArgument("text", "What it tells them, in plain text. The lock screen shows about four lines."),
+    app: appFlag,
+    title: Flag.String("title").pipe(Flag.withDescription("A bold headline above the text, one line."), Flag.optional),
+    url: Flag.String("url").pipe(
+      Flag.withDescription(
+        "Where a tap goes: a page of your published URL, or a path on it (/routes/lis). Without it, the app's page from setup."
+      ),
+      Flag.optional
+    ),
+    key: Flag.String("key").pipe(
+      Flag.withDescription(
+        "What it's about. A newer one with the same key replaces the older on their lock screen instead of stacking."
+      ),
+      Flag.optional
+    ),
+    quiet: Flag.Boolean("quiet").pipe(
+      Flag.withDescription("Deliver it to Notification Center without a sound or lighting their screen."),
+      Flag.withDefault(false)
+    ),
+    dryRun: Flag.Boolean("dry-run").pipe(
+      Flag.withDescription("Check it and print what would happen, without sending or keeping anything."),
+      Flag.withDefault(false)
+    ),
+    json
+  },
+  (input) =>
+    Effect.gen(function* () {
+      const dream = yield* Dream
+      if (Option.isNone(input.app)) {
+        return yield* fail(
+          'Say which app it comes from: `dream notify --app <app> "…"` (`dream notify setup` readies one). To tell them something yourself, use `dream message --notify`.'
+        )
+      }
+      const app = yield* appIdOf(input.app.value)
+      const text = (yield* textFrom(input.text, 'Say what: `dream notify --app <app> "…"`, or pipe it in.')).trim()
+      if (text.length === 0) return yield* fail("The text is empty.")
+      if ([...text].length > 500) return yield* fail(`The text is ${[...text].length} characters; 500 at most.`)
+      const title = Option.getOrUndefined(input.title)?.trim() || undefined
+      if (title !== undefined && /[\n\r]/.test(title)) return yield* fail("--title has to be one line.")
+      if (title !== undefined && [...title].length > 80) {
+        return yield* fail(`--title is ${[...title].length} characters; 80 at most.`)
+      }
+      const key = Option.getOrUndefined(input.key)?.trim() || undefined
+      if (key !== undefined && [...key].length > 64) return yield* fail("--key is 64 characters at most.")
+      const sent = yield* notifying(
+        dream.SendAppNotification(
+          defined({
+            app,
+            text,
+            title,
+            url: Option.getOrUndefined(input.url)?.trim() || undefined,
+            key,
+            quiet: input.quiet,
+            dryRun: input.dryRun
+          })
+        )
+      )
+      yield* show(input.json, AppNotification, sent, Format.appNotified(sent, input.dryRun))
+    })
+).pipe(
+  Command.withDescription(
+    "Notify them as one of your apps, under its own name, from any process here. It exits 0 whenever the app did its part, including when Dream held it back; it fails only when the call is wrong."
+  ),
+  Command.withExamples([
+    {
+      command:
+        'dream notify --app fare-watch --key lis --title "Lisbon dropped to $412" --url /routes/lis "Round trip May 14–21, down $90 since Monday."'
+    }
+  ]),
+  Command.withSubcommands([notifySetup, notifyList, notifyWithdraw])
 )
 
 // ---------------------------------------------------------------------------
@@ -1587,7 +1788,7 @@ const usage = Command.make("usage", { json }, (input) =>
 
 export const dream = Command.make("dream").pipe(
   Command.withDescription(
-    "Reach the person and Dream from this sandbox: messages, questions, access, status, workstreams, wake-ups, relays, publishing, app links on their Home, a browser, a Mac, and usage."
+    "Reach the person and Dream from this sandbox: messages, questions, access, notifications from your apps, status, workstreams, wake-ups, relays, publishing, app links on their Home, a browser, a Mac, and usage."
   ),
   Command.withSubcommands([
     message,
