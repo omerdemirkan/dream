@@ -36,6 +36,7 @@ expanded view.
 | `DREAM_UPDATES_CHANNEL` | see below | the over-the-air update channel the build follows |
 | `DREAM_UPDATES_URL` | `<DREAM_API_URL>/updates/manifest` | the update server |
 | `DREAM_UPDATES_CERTIFICATE` | `certs/updates-certificate.pem` | the certificate updates must be signed for; without the file, the build takes no updates |
+| `DREAM_UPDATES_ENABLED` | — | `1` gives a build that isn't for TestFlight over-the-air updates (on by default only with `DREAM_APS_ENVIRONMENT=production`) |
 
 `scripts/build-env.sh` holds the defaults builds are made with (`build-ios.sh` and publishing both read it).
 
@@ -51,6 +52,10 @@ The app has native modules (dictation, Google Sign-In, the Live Activity module 
 development build rather than in Expo Go: build it once with `scripts/build-ios.sh simulator` on a Mac (Debug builds
 load JavaScript from Metro: `CONFIGURATION=Debug DREAM_BACKEND=fixtures scripts/build-ios.sh simulator`), install the
 `.app` in a Simulator, and rebuild only when native dependencies change.
+
+Simulator and Debug builds (`build-ios.sh simulator`, `expo run:ios`) have over-the-air updates off, so Metro's
+unsigned JavaScript loads and a published update can't replace the JavaScript under test. `DREAM_UPDATES_ENABLED=1`
+turns them on for a build that should follow a channel (TestFlight builds always have them).
 
 ## Fixtures mode
 
@@ -171,7 +176,8 @@ version no build on the channel has asked with (`--force` overrides): if native 
 the update would reach no one, and you need a TestFlight build instead.
 
 **Channels.** `production`: TestFlight builds (`build-ios.sh testflight`). `development`: other builds against the
-live API. `fixtures`: builds with the sample world. A build follows the channel `build-env.sh` gives it
+live API. `fixtures`: builds with the sample world. Only TestFlight builds take updates by default; others follow
+their channel when built with `DREAM_UPDATES_ENABLED=1`. A build follows the channel `build-env.sh` gives it
 (`DREAM_UPDATES_CHANNEL` overrides), and `publish --channel` names the one to publish to (default `production`).
 Only `production` insists on main as pushed to origin, so test publishes go to another channel and can't reach the
 founder's phone.
@@ -225,7 +231,7 @@ plugin, an Expo upgrade), `publish` says no build has the new runtime version: s
 `apps/api/scripts/updates-dev-server.ts` runs the Worker's update routes locally (the real handlers over the
 test D1 and R2), and can serve unsigned, wrongly signed, tampered or wrong-runtime manifests to check that the app
 refuses them. Expose it (`ol expose 8787`), `init` with `DREAM_UPDATES_CERTIFICATE=certs/test/updates-certificate.pem`
-(gitignored), build a Release Simulator app with `DREAM_UPDATES_URL` and that certificate, and publish to the
+(gitignored), build a Release Simulator app with `DREAM_UPDATES_ENABLED=1`, `DREAM_UPDATES_URL` and that certificate, and publish to the
 `fixtures` channel with `DREAM_API_URL` and `DREAM_UPDATES_SECRET` pointing at it. See its header.
 
 ## Switching to EAS Update

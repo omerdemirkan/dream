@@ -12,6 +12,7 @@
 #   DREAM_APS_ENVIRONMENT       default "production" for testflight, "development" otherwise
 #   DREAM_UPDATES_CHANNEL       default "production" for testflight, "fixtures" with the fixtures backend,
 #                               "development" otherwise (the over-the-air update channel the build follows)
+#   DREAM_UPDATES_ENABLED       "1" gives a simulator build over-the-air updates; testflight builds always have them
 export DREAM_BACKEND="${DREAM_BACKEND:-live}"
 # Dream's own Apple team and Google iOS client (public identifiers, not secrets).
 export DREAM_APPLE_TEAM_ID="${DREAM_APPLE_TEAM_ID:-ZY6RS9293V}"

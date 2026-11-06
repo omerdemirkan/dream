@@ -95,6 +95,8 @@ const channelEnv = (): Record<string, string> => {
   const base = {
     ...process.env,
     DREAM_UPDATES_CHANNEL: channel,
+    // Builds on other channels have to ask for updates (app.config.ts), so they're built with this too.
+    DREAM_UPDATES_ENABLED: "1",
     ...(channel === "fixtures" && process.env.DREAM_BACKEND === undefined ? { DREAM_BACKEND: "fixtures" } : {})
   }
   const out = run("bash", ["-c", '. "$0" "$1" >/dev/null && env -0', join(appDir, "scripts/build-env.sh"), mode], {
