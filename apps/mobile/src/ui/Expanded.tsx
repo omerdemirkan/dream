@@ -45,6 +45,7 @@ import {
 } from "./describe.ts"
 import { BackPill, Button, Choices, Dot, GoogleButton, Icon, Lab, LinkButton, SignInButton, Tile } from "./kit.tsx"
 import { Markdown, MarkdownText } from "./Markdown.tsx"
+import { inlineLines } from "./markdownParse.ts"
 import { answerText } from "./Messages.tsx"
 import { color, gutter } from "./theme.ts"
 
@@ -78,7 +79,7 @@ function Shell(props: {
           <Text style={{ fontSize: 14, fontWeight: "600", color: color.t1 }}>{props.project?.title}</Text>
           {props.eyebrow}
         </View>
-        <MarkdownText source={props.title} style={titleStyle(props.title, props.titleSize ?? 32)} />
+        <Title text={props.title} size={props.titleSize ?? 32} />
         {props.body}
       </ScrollView>
       <View style={{ paddingHorizontal: gutter, paddingBottom: Math.max(insets.bottom, 12) + 6 }}>{props.bottom}</View>
@@ -103,6 +104,18 @@ const titleStyle = (title: string, size: number) => {
     marginTop: 22,
     marginBottom: 14
   }
+}
+
+/** A heading of several paragraphs (a whole message sent as the question) keeps its paragraphs apart. */
+function Title(props: { readonly text: string; readonly size: number }) {
+  const { marginTop, marginBottom, ...style } = titleStyle(props.text, props.size)
+  return inlineLines(props.text).length > 1 ? (
+    <View style={{ marginTop, marginBottom }}>
+      <Markdown source={props.text} style={style} />
+    </View>
+  ) : (
+    <MarkdownText source={props.text} style={{ ...style, marginTop, marginBottom }} />
+  )
 }
 
 const Eyebrow = (props: { readonly text: string; readonly need?: boolean }) => (

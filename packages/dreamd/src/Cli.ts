@@ -196,7 +196,9 @@ const ask = Command.make(
       "The question: the card's heading in large type, also on Home and in the notification, so it's the decision itself."
     ),
     option: Flag.String("option").pipe(
-      Flag.withDescription("An answer they can pick, shown as a button. Repeat for each."),
+      Flag.withDescription(
+        "An answer they can pick, shown as a button that cuts off after two lines. Repeat for each."
+      ),
       Flag.atLeast(0)
     ),
     why: Flag.String("why").pipe(
@@ -758,7 +760,10 @@ const media = Command.make("media").pipe(
       "upload",
       {
         file: Argument.String("file"),
-        caption: Flag.String("caption").pipe(Flag.withDescription("A short label under it."), Flag.optional),
+        caption: Flag.String("caption").pipe(
+          Flag.withDescription("A short label: one line under it in Chat, in full when they open it."),
+          Flag.optional
+        ),
         json
       },
       (input) =>
