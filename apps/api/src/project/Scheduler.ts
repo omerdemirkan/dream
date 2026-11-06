@@ -53,6 +53,7 @@ export class Scheduler extends Context.Service<Scheduler, { readonly run: Effect
               yield* store.putWake(fired, undefined)
             }
           }
+          yield* core.wakesChanged
         })
 
       const usageReset = Effect.gen(function* () {

@@ -5,6 +5,7 @@
  * its own rows here in sync; nothing else writes them.
  */
 import {
+  AgentActivity,
   AskMessage,
   Harness,
   MediaId,
@@ -42,6 +43,8 @@ const ProjectRow = Schema.Struct({
   progress_total: Schema.NullOr(Schema.Int),
   paused_until: Schema.NullOr(IsoDate),
   open_asks: Schema.Int,
+  /** Missing until migration 0007 ran; null until the project's DO first projects it. */
+  activity_json: Schema.optionalKey(Schema.NullOr(JsonColumn(AgentActivity))),
   created_at: IsoDate,
   updated_at: IsoDate
 })
@@ -70,7 +73,8 @@ const toSummary = (row: ProjectRow): ProjectSummary => ({
   ...(row.progress_total === null || row.progress_total === 0
     ? {}
     : { progress: { done: row.progress_done ?? 0, total: row.progress_total } }),
-  ...(row.paused_until === null ? {} : { pausedUntil: row.paused_until })
+  ...(row.paused_until === null ? {} : { pausedUntil: row.paused_until }),
+  ...(row.activity_json == null ? {} : { activity: row.activity_json })
 })
 
 /** What a ProjectDO reports about itself whenever it changes. */
@@ -79,6 +83,7 @@ export interface ProjectProjection {
   readonly sandboxId?: string | undefined
   readonly progress?: { readonly done: number; readonly total: number } | undefined
   readonly pausedUntil?: DateTime.Utc | undefined
+  readonly activity?: AgentActivity | undefined
   readonly openAsks: ReadonlyArray<AskMessage>
 }
 
@@ -285,6 +290,7 @@ export class Projects extends Context.Service<
             progress_total: projection.progress?.total ?? null,
             paused_until: projection.pausedUntil === undefined ? null : DateTime.formatIso(projection.pausedUntil),
             open_asks: projection.openAsks.length,
+            activity_json: projection.activity === undefined ? null : encodeJson(AgentActivity, projection.activity),
             updated_at: DateTime.formatIso(p.updatedAt)
           })} WHERE id = ${p.id}`,
           sql`DELETE FROM open_asks WHERE project_id = ${p.id}`,

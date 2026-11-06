@@ -4,7 +4,7 @@
  * `?tab=chat` opens Chat; `?focus=<messageId>` opens that question or access
  * request expanded (deep links and notifications use both).
  */
-import { MessageId, ProjectId } from "@dream/domain"
+import { type Message, MessageId, type Project as ProjectRecord, ProjectId, type ProjectSummary } from "@dream/domain"
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
 import { Option, Schema } from "effect"
 import { AsyncResult } from "effect/reactivity"
@@ -12,6 +12,8 @@ import { useLocalSearchParams, useRouter } from "expo-router"
 import { useEffect } from "react"
 import { KeyboardAvoidingView, Pressable, ScrollView, Text, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
+import { dotOf, headerLine, presenceOf } from "../../data/presence.ts"
+import type { ProjectState } from "../../data/projectState.ts"
 import { draftKey } from "../../data/Replies.ts"
 import { clearDraftFn, draftAtom, projectsAtom, sendMessageFn } from "../../state/atoms.ts"
 import { landingAtom } from "../../state/ui.ts"
@@ -19,7 +21,8 @@ import { useAction } from "../../ui/actions.ts"
 import { ChatTab } from "../../ui/Chat.tsx"
 import { ChatComposer } from "../../ui/Composer.tsx"
 import { useOpenMessage, useProject, useRequestId } from "../../ui/hooks.ts"
-import { Dot, IconButton, Tile } from "../../ui/kit.tsx"
+import { Dot, IconButton } from "../../ui/kit.tsx"
+import { PresenceTile, StateLineText, useTickingNow } from "../../ui/Presence.tsx"
 import { StatusTab } from "../../ui/Status.tsx"
 import { color, gutter } from "../../ui/theme.ts"
 
@@ -80,10 +83,10 @@ function Project(props: {
     router.setParams({ land: undefined })
   }, [props.land, props.projectId, router, setLanding])
 
-  const needsYou = state?.messages.some(
-    (m) => m._tag !== "Text" && m.state._tag === "Open" && !(m._tag === "Access" && m.when)
-  )
+  const needsYou = state?.messages.some(needsThem)
   const top = insets.top + 4
+
+  const summary = summaries?.find((s) => s.project.id === props.projectId)
 
   return (
     <View style={{ flex: 1, backgroundColor: color.bg }}>
@@ -141,16 +144,7 @@ function Project(props: {
             label="Back"
             onPress={() => (router.canGoBack() ? router.back() : router.replace("/"))}
           />
-          <Tile icon={project?.icon} size="md" />
-          <View style={{ flex: 1 }}>
-            <Text
-              numberOfLines={1}
-              style={{ fontSize: 20, fontWeight: "700", letterSpacing: -0.7, lineHeight: 22, color: color.t1 }}
-            >
-              {project?.title ?? ""}
-            </Text>
-            {project?.kind ? <Text style={{ fontSize: 13, color: color.t3, marginTop: 1 }}>{project.kind}</Text> : null}
-          </View>
+          <Identity project={project} state={state} summary={summary} />
         </View>
         <View style={{ flexDirection: "row", gap: 28, marginTop: 6, borderBottomWidth: 1, borderColor: color.line }}>
           <Tab title="Status" on={props.tab === "status"} onPress={() => router.setParams({ tab: "status" })} />
@@ -176,6 +170,54 @@ function Project(props: {
     </View>
   )
 }
+
+/**
+ * The tile with its presence dot, the title, and the state line (B), from the live state, else Home's row until
+ * the snapshot arrives. Its own component, so the elapsed time ticking each second redraws only this.
+ */
+function Identity(props: {
+  readonly project: ProjectRecord | undefined
+  readonly state: ProjectState | undefined
+  readonly summary: ProjectSummary | undefined
+}) {
+  const { project, state, summary } = props
+  const activity = state ? state.activity : summary?.activity
+  const now = useTickingNow(activity?.state === "working" || state?.working === true)
+  const presence = presenceOf({
+    activity,
+    working: state?.working ?? false,
+    pausedUntil: state ? state.status.pausedUntil : summary?.pausedUntil,
+    now
+  })
+  const line = project
+    ? headerLine(presence, {
+        now,
+        harness: project.harness,
+        openAsks: state ? state.messages.filter(needsThem).length : (summary?.openAsks ?? 0),
+        messages: state?.messages ?? []
+      })
+    : undefined
+  return (
+    <>
+      <PresenceTile icon={project?.icon} size="md" dot={dotOf(presence)} />
+      <View style={{ flex: 1 }}>
+        <Text
+          numberOfLines={1}
+          style={{ fontSize: 20, fontWeight: "700", letterSpacing: -0.7, lineHeight: 22, color: color.t1 }}
+        >
+          {project?.title ?? ""}
+        </Text>
+        {line ? (
+          <StateLineText line={line} style={{ fontSize: 13, marginTop: 1 }} />
+        ) : project?.kind ? (
+          <Text style={{ fontSize: 13, color: color.t3, marginTop: 1 }}>{project.kind}</Text>
+        ) : null}
+      </View>
+    </>
+  )
+}
+
+const needsThem = (m: Message) => m._tag !== "Text" && m.state._tag === "Open" && !(m._tag === "Access" && m.when)
 
 function Tab(props: {
   readonly title: string

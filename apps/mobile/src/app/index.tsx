@@ -7,14 +7,16 @@ import { useAtomRefresh, useAtomValue } from "@effect/atom-react"
 import { Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
 import { Redirect, useRouter } from "expo-router"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Pressable, ScrollView, Text, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { phaseLabel, providerName, usageLeft, usageLine } from "../data/format.ts"
+import { dotOf, homeLine, presenceOf } from "../data/presence.ts"
 import { modelConnectionsAtom, openAsksAtom, projectsAtom } from "../state/atoms.ts"
 import { Deck, Segments } from "../ui/Deck.tsx"
 import { usePendingAnswers } from "../ui/hooks.ts"
-import { Dot, Icon, IconButton, LinkButton, Orb, Tile } from "../ui/kit.tsx"
+import { Dot, Icon, IconButton, LinkButton, Orb } from "../ui/kit.tsx"
+import { PresenceTile, StateLineText, useTickingNow } from "../ui/Presence.tsx"
 import { color, gutter } from "../ui/theme.ts"
 
 const listOf = <A,>(result: AsyncResult.AsyncResult<ReadonlyArray<A>, unknown>) =>
@@ -43,6 +45,14 @@ export default function Home() {
     (AsyncResult.isFailure(projectsResult) || AsyncResult.isFailure(asksResult)) &&
     !projectsResult.waiting &&
     !asksResult.waiting
+
+  // While an agent is starting or working, Home checks back every so often, so its row moves on by itself.
+  const busy = projects.some((s) => s.activity?.state === "starting" || s.activity?.state === "working")
+  useEffect(() => {
+    if (!busy) return
+    const id = setInterval(refreshProjects, 15_000)
+    return () => clearInterval(id)
+  }, [busy, refreshProjects])
 
   // Nothing runs without a subscription: a new person connects one first.
   if (AsyncResult.isSuccess(connectionsResult) && connections.length === 0) return <Redirect href="/connect" />
@@ -233,6 +243,19 @@ function ProjectRow(props: {
   const router = useRouter()
   const { project, progress } = props.summary
   const open = props.asks.filter((ask) => ask.project.id === project.id).length
+  const now = useTickingNow(props.summary.activity?.state === "working")
+  const presence = presenceOf({
+    activity: props.summary.activity,
+    working: false,
+    pausedUntil: props.summary.pausedUntil,
+    now
+  })
+  const line = homeLine(presence, {
+    now,
+    harness: project.harness,
+    openAsks: open,
+    headline: project.headline
+  })
   const sub = project.headline ?? phaseLabel(project.phase)
   return (
     <Pressable
@@ -248,12 +271,16 @@ function ProjectRow(props: {
         opacity: pressed ? 0.6 : 1
       })}
     >
-      <Tile icon={project.icon} />
+      <PresenceTile icon={project.icon} dot={dotOf(presence)} />
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={{ fontSize: 17, fontWeight: "600", letterSpacing: -0.25, color: color.t1 }}>{project.title}</Text>
-        <Text numberOfLines={1} style={{ fontSize: 14, color: color.t2, marginTop: 2 }}>
-          {sub}
-        </Text>
+        {line ? (
+          <StateLineText line={line} style={{ fontSize: 14, marginTop: 2 }} />
+        ) : (
+          <Text numberOfLines={1} style={{ fontSize: 14, color: color.t2, marginTop: 2 }}>
+            {sub}
+          </Text>
+        )}
       </View>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
         {open > 0 ? (

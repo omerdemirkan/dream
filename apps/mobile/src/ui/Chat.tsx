@@ -1,6 +1,8 @@
 /**
  * The Chat tab: only what Dream chose to send, and what they send. Sparse by
- * design; long gaps are normal and nothing animates while the agent works.
+ * design; long gaps are normal. One row at the bottom says whether the agent is
+ * up (sent, starting, working, done for now), and a receipt under their latest
+ * message says whether it has been seen.
  */
 import type { AskMessage, Message, MessageId } from "@dream/domain"
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
@@ -17,11 +19,13 @@ import {
 } from "react-native"
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withSequence, withTiming } from "react-native-reanimated"
 import { dayLabel, sameDay, timeLabel } from "../data/format.ts"
+import { chatRowOf, presenceOf, receiptOf } from "../data/presence.ts"
 import type { ProjectState } from "../data/projectState.ts"
 import { loadEarlierFn } from "../state/atoms.ts"
 import { landingAtom, messageRects } from "../state/ui.ts"
 import { useNow, useOpenMessage, usePendingAnswers, withPending } from "./hooks.ts"
 import { AccessCard, AgentText, QuestionCard, UserBubble } from "./Messages.tsx"
+import { ChatActivityRow } from "./Presence.tsx"
 import { color, gutter } from "./theme.ts"
 
 /** The ring that flashes around a message Chat just landed on (`.msg.hl`). */
@@ -104,6 +108,20 @@ function AskRow(props: { readonly message: AskMessage; readonly highlightAt: num
   )
 }
 
+/** The row at the bottom (A). It ticks every few seconds, so the typing dots give way on time, without redrawing Chat. */
+function ChatActivity(props: { readonly state: ProjectState }) {
+  const { state } = props
+  const now = useNow(5000)
+  const presence = presenceOf({
+    activity: state.activity,
+    working: state.working,
+    pausedUntil: state.status.pausedUntil,
+    now
+  })
+  const row = chatRowOf(presence, state.messages, now)
+  return row ? <ChatActivityRow row={row} /> : null
+}
+
 export function ChatTab(props: {
   readonly state: ProjectState
   readonly topInset: number
@@ -166,6 +184,8 @@ export function ChatTab(props: {
     }
   }
 
+  const receipt = receiptOf(state.messages, state.activity)
+
   const rows: Array<ReactNode> = []
   let previous: Message | undefined
   for (const raw of state.messages) {
@@ -185,7 +205,11 @@ export function ChatTab(props: {
       >
         {message._tag === "Text" ? (
           message.from === "user" ? (
-            <UserBubble message={message} time={time} />
+            <UserBubble
+              message={message}
+              time={time}
+              receipt={receipt?.messageId === message.id ? { seen: receipt.seen } : undefined}
+            />
           ) : (
             <AgentText message={message} time={time} />
           )
@@ -219,6 +243,7 @@ export function ChatTab(props: {
         <Text style={{ alignSelf: "center", fontSize: 12.5, color: color.t3 }}>Loading earlier messages…</Text>
       ) : null}
       {rows}
+      <ChatActivity state={state} />
     </ScrollView>
   )
 }

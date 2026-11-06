@@ -31,6 +31,17 @@ describe("applyEvent", () => {
     assert.isUndefined(applyEvent(undefined, ProjectEvent.cases.WorkingChanged.make({ working: true })))
   })
 
+  it("keeps the agent's activity from the snapshot and its changes", () => {
+    let state = applyEvent(undefined, snapshot([]))
+    assert.isUndefined(state?.activity)
+    const since = DateTime.makeUnsafe("2026-11-04T22:02:30Z")
+    state = applyEvent(state, ProjectEvent.cases.ActivityChanged.make({ activity: { state: "working", since } }))
+    assert.deepStrictEqual(state?.activity, { state: "working", since })
+    assert.isTrue(state?.working)
+    state = applyEvent(state, ProjectEvent.cases.ActivityChanged.make({ activity: { state: "idle", since } }))
+    assert.isFalse(state?.working)
+  })
+
   it("folds changes after a snapshot, in order", () => {
     let state = applyEvent(undefined, snapshot([text("a", "2026-11-04T10:00:00Z")]))
     state = applyEvent(state, ProjectEvent.cases.MessageAdded.make({ message: text("b", "2026-11-04T11:00:00Z") }))

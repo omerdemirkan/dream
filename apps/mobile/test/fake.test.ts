@@ -3,10 +3,10 @@
  * client (through `RpcTest`), sessions, held answers with Undo, and live
  * project state.
  */
-import type { MessageId, ProjectId } from "@dream/domain"
+import { type MessageId, type ProjectId, RequestId } from "@dream/domain"
 import * as Fx from "@dream/domain/fixtures"
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Fiber, Layer, Option, Redacted, Stream, SubscriptionRef } from "effect"
+import { Clock, DateTime, Effect, Fiber, Layer, Option, Redacted, Stream, SubscriptionRef } from "effect"
 import { Reactivity } from "effect/reactivity"
 import { Socket } from "effect/socket"
 import { TestClock } from "effect/testing"
@@ -15,8 +15,9 @@ import { Answers } from "../src/data/Answers.ts"
 import { withWriteTimeout, writeTimeout } from "../src/data/errors.ts"
 import { makeAppLayer } from "../src/data/AppLayer.ts"
 import { ProjectStates } from "../src/data/ProjectStates.ts"
+import { chatRowOf, presenceOf, receiptOf } from "../src/data/presence.ts"
 import { SecureStorage } from "../src/data/SecureStorage.ts"
-import { Session } from "../src/data/Session.ts"
+import { randomUuid, Session } from "../src/data/Session.ts"
 import { unsupportedText } from "../src/data/Tolerant.ts"
 import { FakeBackend } from "../src/fake/FakeBackend.ts"
 
@@ -297,5 +298,86 @@ describe("fixtures backend through the app's services", () => {
       yield* second.signOut
       assert.isTrue(Option.isNone(yield* SubscriptionRef.get((yield* launch).current)))
     }).pipe(Effect.scoped)
+  )
+})
+
+describe("the agent's presence in fixtures (A+B+C)", () => {
+  const recipe = "prj_recipescaler" as ProjectId
+
+  it.effect("a message to a sleeping project: Sent, starting and Seen, working, then the reply and Done for now", () =>
+    run(
+      Effect.gen(function* () {
+        yield* signIn
+        const app = yield* AppClient
+        const states = yield* ProjectStates
+        const seen: Array<string> = []
+        const fiber = yield* states.state(recipe).pipe(
+          Stream.filter(Option.isSome),
+          Stream.map((state) => state.value),
+          Stream.tap((state) =>
+            Effect.gen(function* () {
+              const now = DateTime.makeUnsafe(yield* Clock.currentTimeMillis)
+              const presence = presenceOf({
+                activity: state.activity,
+                working: state.working,
+                pausedUntil: state.status.pausedUntil,
+                now
+              })
+              const row = chatRowOf(presence, state.messages, now)
+              const receipt = receiptOf(state.messages, state.activity)
+              const step = `${presence._tag}|${row?._tag ?? "-"}|${receipt ? (receipt.seen ? "Seen" : "Sent") : "-"}`
+              if (seen.at(-1) !== step) seen.push(step)
+            })
+          ),
+          Stream.runDrain,
+          Effect.forkChild
+        )
+        yield* TestClock.adjust("10 millis")
+        yield* app.SendMessage({
+          projectId: recipe,
+          text: "Metric too, please",
+          requestId: RequestId.make(randomUuid())
+        })
+        yield* TestClock.adjust("10 seconds")
+        yield* Fiber.interrupt(fiber)
+        assert.deepStrictEqual(seen, [
+          "Asleep|-|Seen",
+          "Asleep|Sent|Sent",
+          "Starting|Starting|Sent",
+          "Starting|Starting|Seen",
+          "Working|Working|Seen",
+          "Awake|Done|Seen"
+        ])
+        const [home] = (yield* app.ListProjects()).filter((s) => s.project.id === recipe)
+        assert.strictEqual(home?.activity?.state, "idle")
+      })
+    )
+  )
+
+  it.effect("every stage of the mock's scenario is a scenario", () =>
+    run(
+      Effect.gen(function* () {
+        yield* signIn
+        const app = yield* AppClient
+        const backend = yield* FakeBackend
+        const liftRow = Effect.map(app.ListProjects(), (rows) => rows.find((s) => s.project.slug === "lift-log"))
+        for (const [scenario, state] of [
+          ["activity-sent", "idle"],
+          ["activity-starting", "starting"],
+          ["activity-working", "working"],
+          ["activity-done", "idle"]
+        ] as const) {
+          yield* backend.scenario(scenario)
+          assert.strictEqual((yield* liftRow)?.activity?.state, state, scenario)
+        }
+        yield* backend.scenario("activity-home")
+        const rows = yield* app.ListProjects()
+        assert.isDefined(rows.find((s) => s.project.slug === "recipe-scaler")?.pausedUntil)
+        assert.isDefined(rows.find((s) => s.project.slug === "morning-brief")?.activity?.nextWakeAt)
+        yield* backend.scenario("activity-new-idea")
+        const fresh = (yield* app.ListProjects()).find((s) => s.project.id === "prj_newidea")
+        assert.strictEqual(fresh?.activity?.state, "starting")
+      })
+    )
   )
 })

@@ -601,6 +601,7 @@ export const AgentHandlers = SandboxRpcs.toLayer(
           }
           yield* store.putWake(wake, next.value)
           yield* alarm.reschedule
+          yield* core.wakesChanged
           return wake
         }),
 
@@ -612,6 +613,7 @@ export const AgentHandlers = SandboxRpcs.toLayer(
           if (Option.isNone(wake)) return yield* notFound("wake", wakeId)
           yield* store.deleteWake(wakeId)
           yield* alarm.reschedule
+          yield* core.wakesChanged
         }),
 
       WakeNow: ({ why }) =>

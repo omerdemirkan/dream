@@ -85,7 +85,7 @@ types at its edge.
 | File | Contents |
 | --- | --- |
 | `Ids.ts` | Branded ids and the prefixes the API generates (`prj_…`, `msg_…`) |
-| `User.ts`, `Project.ts` | User, Device, Project (phase, headline, harness, public URL), ProjectSummary |
+| `User.ts`, `Project.ts` | User, Device, Project (phase, headline, harness, public URL), AgentActivity (starting/working/idle, next wake), ProjectSummary |
 | `Message.ts` | Chat messages: `Text`, `Question` (state Open/Answered/Withdrawn), `Access` (Google/Key/Apple; Open/Connected/Declined) |
 | `Status.ts` | Status card: now, justDid, next, media, milestones with pinned needs |
 | `AgentEvent.ts` | Events that wake the agent, and `renderAgentEvent` for the turn prompt |
