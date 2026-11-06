@@ -28,6 +28,15 @@ export interface Idea {
 
 export const ideas: ReadonlyArray<Idea> = [
   {
+    id: "my-podcast",
+    title: "Your own podcast",
+    symbol: "headphones",
+    line: "A private podcast about the things I follow, with a new episode every morning.",
+    draft:
+      "A private podcast about ⟦AI, climate tech and the NBA⟧, made just for me. Every ⟦weekday at 6 am⟧, it goes through what’s new from ⟦the sites and newsletters I read⟧, writes a ⟦15-minute⟧ episode in plain language, and publishes it to a private feed I can add to ⟦Apple Podcasts⟧.\n\nDon’t repeat stories from earlier episodes, and put the sources in the show notes.",
+    near: ["podcast", "episode"]
+  },
+  {
     id: "memory-tutor",
     title: "Study by voice",
     symbol: "brain.head.profile",
