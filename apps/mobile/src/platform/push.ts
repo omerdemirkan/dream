@@ -103,6 +103,25 @@ export const removeDelivered = (ids: ReadonlyArray<string>) =>
     catch: (cause) => new PushError({ step: "remove delivered", cause })
   })
 
+/** Removes delivered notifications about these messages, e.g. a question they just answered in the app. */
+export const removeDeliveredFor = (messageIds: ReadonlyArray<string>) =>
+  Effect.tryPromise({
+    try: async () => {
+      const presented = await Notifications.getPresentedNotificationsAsync()
+      await Promise.all(
+        presented
+          .filter((n) =>
+            Option.match(pushDataOf(n), {
+              onNone: () => false,
+              onSome: (data) => data._tag === "OpenMessage" && messageIds.includes(data.messageId)
+            })
+          )
+          .map((n) => Notifications.dismissNotificationAsync(n.request.identifier))
+      )
+    },
+    catch: (cause) => new PushError({ step: "remove delivered", cause })
+  })
+
 /** Ids of everything Dream has on the lock screen right now. */
 export const deliveredIds = Effect.tryPromise({
   try: () => Notifications.getPresentedNotificationsAsync(),
