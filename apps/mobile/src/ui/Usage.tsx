@@ -356,15 +356,13 @@ function Periods(props: { readonly periods: SheetView["periods"] }) {
           >
             {p.value}
           </Text>
-          {p.cacheRead ? (
-            <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 11.5, color: color.t3, marginTop: 2 }}>
-              {p.cacheRead}
-            </Text>
-          ) : null}
           {p.detail ? (
             <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 12.5, color: color.t2, marginTop: 1 }}>
               {p.detail}
             </Text>
+          ) : null}
+          {p.cacheRead ? (
+            <Text style={{ fontSize: 11.5, lineHeight: 15, color: color.t3, marginTop: 3 }}>{p.cacheRead}</Text>
           ) : null}
         </View>
       ))}
