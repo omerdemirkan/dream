@@ -66,6 +66,15 @@ export type WorkstreamId = typeof WorkstreamId.Type
 export const RelayId = opaque.pipe(Schema.brand("RelayId"))
 export type RelayId = typeof RelayId.Type
 
+/**
+ * An app that notifies them under its own name (`dream notify setup <app>`), chosen by the agent and unique within
+ * its project: lowercase words joined by hyphens, like "fare-watch".
+ */
+export const AppId = Schema.String.check(Schema.isPattern(/^[a-z0-9]+(-[a-z0-9]+)*$/), Schema.isMaxLength(40)).pipe(
+  Schema.brand("AppId")
+)
+export type AppId = typeof AppId.Type
+
 /** Client-generated UUID, kept in SecureStore for the life of the install. */
 export const DeviceId = Schema.String.check(Schema.isUUID()).pipe(Schema.brand("DeviceId"))
 export type DeviceId = typeof DeviceId.Type

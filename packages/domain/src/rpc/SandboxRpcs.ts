@@ -14,10 +14,20 @@
  */
 import { Schema } from "effect"
 import { Rpc, RpcGroup } from "effect/rpc"
+import {
+  AppName,
+  AppNotification,
+  AppNotificationKey,
+  AppNotifications,
+  AppNotificationText,
+  AppNotificationTitle,
+  AppSender
+} from "../AppNotifications.ts"
 import { SandboxAuth } from "../Auth.ts"
 import { Integration } from "../Connections.ts"
 import { InvalidRequest, NotFound, UpstreamFailure } from "../Errors.ts"
 import {
+  AppId,
   BrowserSessionId,
   EventId,
   LinkId,
@@ -122,7 +132,7 @@ export class SandboxRpcs extends RpcGroup.make(
   }),
   /** `dream access list`: what works here, meaning their shared integrations and this project's file keys. */
   Rpc.make("ListAccess", { success: Schema.Array(Integration) }),
-  /** `dream notify withdraw <notification-id>`. */
+  /** `dream notify withdraw <notification-id>`: one the agent sent, or one of its apps'. */
   Rpc.make("WithdrawNotification", {
     payload: { notificationId: NotificationId },
     error: NotFound
@@ -248,6 +258,53 @@ export class SandboxRpcs extends RpcGroup.make(
   Rpc.make("RemoveRelay", { payload: { relayId: RelayId }, error: NotFound }),
   /** `dream relay restart <relay-id>`: opens the line afresh, e.g. once a failed one's cause is fixed. */
   Rpc.make("RestartRelay", { payload: { relayId: RelayId }, success: Relay, error: NotFound }),
+
+  // Notifications from the project's apps ------------------------------------------------
+  /**
+   * `dream notify setup <app> --name … --why … --often … [--icon …] [--color …] [--url …] [--work …]`: readies an app
+   * to notify them under its own name, and puts a `Notifications` card in Chat asking them to allow it. Again for
+   * the same app: an open card is updated in place, a declined one asks again, and an allowed app keeps its
+   * permission with the new name, tile and page. `InvalidRequest` for a URL off the project's published one.
+   * Added in November 2026.
+   */
+  Rpc.make("SetUpAppNotifications", {
+    payload: {
+      app: AppId,
+      name: AppName,
+      why: Schema.NonEmptyString,
+      often: Schema.NonEmptyString,
+      icon: Schema.optionalKey(LinkIcon),
+      color: Schema.optionalKey(LinkColor),
+      url: Schema.optionalKey(Schema.NonEmptyString),
+      workstream: work
+    },
+    success: Schema.Struct({ app: AppSender, card: AccessMessage }),
+    error: InvalidRequest
+  }),
+  /**
+   * `dream notify --app <app> [--title …] [--url …] [--key …] [--quiet] [--dry-run] "text"`, from any process. The
+   * result's `outcome` says what happened; none of them is an error. `InvalidRequest` only when the call is wrong:
+   * an app that isn't set up, a URL off the project's published one, or text with one of the project's file keys.
+   * `dryRun` decides the outcome without sending or keeping anything. Added in November 2026.
+   */
+  Rpc.make("SendAppNotification", {
+    payload: {
+      app: AppId,
+      text: AppNotificationText,
+      title: Schema.optionalKey(AppNotificationTitle),
+      url: Schema.optionalKey(Schema.NonEmptyString),
+      key: Schema.optionalKey(AppNotificationKey),
+      quiet: Schema.Boolean,
+      dryRun: Schema.Boolean
+    },
+    success: AppNotification,
+    error: InvalidRequest
+  }),
+  /** `dream notify list [--app <app>]`: the apps, and what they sent (newest first). Added in November 2026. */
+  Rpc.make("ListAppNotifications", {
+    payload: { app: Schema.optionalKey(AppId) },
+    success: AppNotifications
+  }),
 
   // App links on their Home ------------------------------------------------------------
   /**

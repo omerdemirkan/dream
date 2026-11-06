@@ -5,7 +5,8 @@
  * Home while they are open.
  */
 import { Schema } from "effect"
-import { IntegrationId, MessageId, NotificationId, ProjectId, WorkstreamId } from "./Ids.ts"
+import { AppId, IntegrationId, MessageId, NotificationId, ProjectId, WorkstreamId } from "./Ids.ts"
+import { LinkColor, LinkIcon } from "./Links.ts"
 import { MediaRef } from "./Media.ts"
 
 const MessageFields = {
@@ -110,6 +111,18 @@ export const AccessRequest = Schema.TaggedUnion({
     provider: Schema.NonEmptyString,
     service: Schema.optionalKey(Schema.String),
     scopes: Schema.Array(Schema.NonEmptyString)
+  },
+  /**
+   * Let one of the project's apps notify them under its own name (`dream notify setup`). The card says what it will
+   * tell them (the message's `why`) and how `often`, with the app's tile. "Allow" makes it `Allowed`; until then
+   * nothing the app sends reaches their phone. Added in November 2026: older apps show a card they can't display.
+   */
+  Notifications: {
+    app: AppId,
+    name: Schema.NonEmptyString,
+    often: Schema.NonEmptyString,
+    icon: Schema.optionalKey(LinkIcon),
+    color: Schema.optionalKey(LinkColor)
   }
 })
 export type AccessRequest = typeof AccessRequest.Type
@@ -193,7 +206,9 @@ export const AccessState = Schema.TaggedUnion({
    * It was connected, and the connection is gone. Like `Declined`, they can still connect it from the card. Added
    * after the first release: older apps show the card as one they can't display.
    */
-  Disconnected: { integrationId: IntegrationId, disconnectedAt: Schema.DateTimeUtc, reason: DisconnectReason }
+  Disconnected: { integrationId: IntegrationId, disconnectedAt: Schema.DateTimeUtc, reason: DisconnectReason },
+  /** A `Notifications` request they allowed (there's nothing to connect). Added in November 2026. */
+  Allowed: { allowedAt: Schema.DateTimeUtc }
 })
 export type AccessState = typeof AccessState.Type
 
@@ -253,6 +268,8 @@ export const accessService = (request: AccessRequest): string => {
     case "OAuth":
       // The API always fills in `service`; the provider id stands in otherwise.
       return request.service ?? request.provider.charAt(0).toUpperCase() + request.provider.slice(1)
+    case "Notifications":
+      return request.name
   }
 }
 
@@ -263,6 +280,7 @@ export const accessService = (request: AccessRequest): string => {
  */
 export const accessHeading = (message: Pick<AccessMessage, "request" | "why">): { title: string; reason?: string } => {
   const request = message.request
+  if (request._tag === "Notifications") return { title: `Let ${request.name} notify you`, reason: message.why.trim() }
   const service = accessService(request)
   const names = [
     service,
