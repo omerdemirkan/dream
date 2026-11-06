@@ -42,12 +42,14 @@ export class SandboxRpcs extends RpcGroup.make(
     success: TextMessage,
     error: Schema.Union([NotFound, InvalidRequest])
   }),
-  /** `dream ask "question" --option "…" … [--why "…"] [--meanwhile "…"]`. Always notifies. */
+  /** `dream ask "question" --option "…" … [--why "…"] [--context "…"] [--meanwhile "…"]`. Always notifies. */
   Rpc.make("AskQuestion", {
     payload: {
       question: Schema.NonEmptyString,
       options: Schema.Array(Schema.NonEmptyString),
       why: Schema.optionalKey(Schema.String),
+      /** Added after the first release; an older API ignores it. */
+      context: Schema.optionalKey(Schema.String),
       meanwhile: Schema.optionalKey(Schema.String)
     },
     success: QuestionMessage,

@@ -263,18 +263,23 @@ describe("a project, end to end", () => {
       const question = yield* dreamd.AskQuestion({
         question: "Who'll use this besides you?",
         options: ["Just me", "My gym friends"],
-        why: "It decides whether accounts matter."
+        why: "It decides whether accounts matter.",
+        context: "With friends, everyone **signs in** and sees only their own lifts."
       })
       const alert = cloud.world.pushes.find((p) => p.kind === "alert")!
       assert.strictEqual(alert.token, "apns-token-1")
       assert.strictEqual((alert.payload as any).category, "question")
       assert.strictEqual((alert.payload as any).id, question.notificationId)
+      assert.strictEqual((alert.payload as any).body, "Who'll use this besides you?")
 
       const asks = yield* cloud.phone.ListOpenAsks()
       assert.deepStrictEqual(
         asks.map((a) => a.message.id),
         [question.id]
       )
+      const shown = asks[0]?.message
+      assert.strictEqual(shown?._tag === "Question" ? shown.context : undefined, question.context)
+      assert.include(question.context, "signs in")
       assert.strictEqual((yield* cloud.phone.ListProjects())[0]?.openAsks, 1)
 
       const invalid = yield* Effect.flip(
@@ -476,6 +481,11 @@ describe("a project, end to end", () => {
         format: "Bearer {key}"
       }
       const request = yield* dreamd.RequestAccess({ request: stripe, why: "Take payments for cabin weekends." })
+      // The heading doesn't name Stripe, so the notification says what's asked first.
+      assert.strictEqual(
+        (cloud.world.pushes.findLast((p) => p.kind === "alert")?.payload as any)?.body,
+        "Add your Stripe key: Take payments for cabin weekends."
+      )
       const submit = { projectId: project.id, messageId: request.id, key: Redacted.make("sk_live_123") }
       const connected = yield* cloud.phone.SubmitKeyAccess(submit)
       // The response was lost and the phone sends it again: the card as it is, and the agent hears once.

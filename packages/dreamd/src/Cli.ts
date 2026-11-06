@@ -72,9 +72,9 @@ const defined = <T extends Record<string, unknown>>(fields: T) =>
 const now = DateTime.now
 
 /** `-`, or leaving the text out while stdin is piped, reads it from stdin; for long messages. */
-const textArgument = (name: string) =>
+const textArgument = (name: string, description: string) =>
   Argument.String(name).pipe(
-    Argument.withDescription(`The ${name}; markdown. Use "-" or leave it out to read it from piped stdin.`),
+    Argument.withDescription(`${description} Use "-" or leave it out to read it from piped stdin.`),
     Argument.optional
   )
 
@@ -148,10 +148,13 @@ const mediaFlag = Flag.String("media").pipe(
 const message = Command.make(
   "message",
   {
-    text: textArgument("message"),
+    text: textArgument(
+      "message",
+      "The message, in markdown: paragraphs, lists, bold, italic, code and links (headings show as bold lines). They read it on a phone."
+    ),
     media: mediaFlag,
     notify: Flag.Boolean("notify").pipe(
-      Flag.withDescription("Also put it on their lock screen."),
+      Flag.withDescription("Also notify them: its first lines, as plain text, on their lock screen."),
       Flag.withDefault(false)
     ),
     json
@@ -188,13 +191,22 @@ const askWithdraw = Command.make("withdraw", { messageId: Argument.String("messa
 const ask = Command.make(
   "ask",
   {
-    question: textArgument("question"),
+    question: textArgument(
+      "question",
+      "The question: the card's heading in large type, also on Home and in the notification, so it's the decision itself."
+    ),
     option: Flag.String("option").pipe(
-      Flag.withDescription("An answer they can pick. Repeat for each."),
+      Flag.withDescription("An answer they can pick, shown as a button. Repeat for each."),
       Flag.atLeast(0)
     ),
     why: Flag.String("why").pipe(
       Flag.withDescription('The one-line reason shown under the question; "-" reads it from stdin.'),
+      Flag.optional
+    ),
+    context: Flag.String("context").pipe(
+      Flag.withDescription(
+        'What they need to know to decide, when that takes more than a line, like the options and their trade-offs. Markdown at body size under the question: a few lines on the card, all of it when they open it. "-" reads it from stdin.'
+      ),
       Flag.optional
     ),
     meanwhile: Flag.String("meanwhile").pipe(
@@ -213,16 +225,18 @@ const ask = Command.make(
       const fromStdin = [
         Option.getOrElse(input.question, () => (stdinIsPiped() ? "-" : "")),
         Option.getOrUndefined(input.why),
+        Option.getOrUndefined(input.context),
         Option.getOrUndefined(input.meanwhile)
       ].filter((text) => text === "-")
       if (fromStdin.length > 1)
-        return yield* fail("Only one of the question, --why and --meanwhile can come from stdin.")
+        return yield* fail("Only one of the question, --why, --context and --meanwhile can come from stdin.")
       const question = yield* textFrom(input.question, 'Ask what? `dream ask "question" --option "…" --option "…"`')
       if (question.length === 0) return yield* fail("The question is empty.")
       const why = yield* readOptional(input.why)
+      const context = yield* readOptional(input.context)
       const meanwhile = yield* readOptional(input.meanwhile)
       if (!input.notASecret) {
-        const secret = Secrets.requestedSecret([question, why ?? "", ...input.option])
+        const secret = Secrets.requestedSecret([question, why ?? "", ...input.option, context ?? ""])
         if (Option.isSome(secret)) return yield* fail(Secrets.refusal(secret.value))
       }
       const asked = yield* userFacing(
@@ -231,6 +245,7 @@ const ask = Command.make(
             question,
             options: input.option,
             why,
+            context: context === "" ? undefined : context,
             meanwhile
           })
         )
@@ -245,13 +260,21 @@ const ask = Command.make(
     {
       command:
         'dream ask "Which days should it post?" --option "Weekdays" --option "Every day" --why "So it fits your routine"'
+    },
+    {
+      command:
+        'dream ask "Which voice should the coach use?" --option "OpenAI voice" --option "Your phone\'s voice" --context "OpenAI\'s voice sounds natural and copes with interruptions, for a few cents a session. Your phone\'s own voice is free but flatter."'
     }
   ]),
   Command.withSubcommands([askWithdraw])
 )
 
 const accessFlags = {
-  why: Flag.String("why").pipe(Flag.withDescription("What it's for, in your words; the card's heading.")),
+  why: Flag.String("why").pipe(
+    Flag.withDescription(
+      "The card's heading, in your words, which they read first and often alone (Home, the lock screen): what you're asking them to connect and what it's for."
+    )
+  ),
   when: Flag.String("when").pipe(
     Flag.withDescription('Roughly when it\'s needed, e.g. "around Thursday". Shows as upcoming instead of notifying.'),
     Flag.optional
@@ -278,7 +301,7 @@ const access = Command.make("access").pipe(
   Command.withExamples([
     {
       command:
-        'dream access key --service Stripe --host api.stripe.com --header Authorization --format "Bearer {key}" --why "Take payments"'
+        'dream access key --service Stripe --host api.stripe.com --header Authorization --format "Bearer {key}" --why "Add your Stripe key so the shop can take payments"'
     }
   ]),
   Command.withSubcommands([
@@ -301,7 +324,10 @@ const access = Command.make("access").pipe(
     ).pipe(
       Command.withDescription("Let them sign in with Google and grant these scopes."),
       Command.withExamples([
-        { command: 'dream access google --scopes gmail.readonly,calendar --why "Plan workouts around your calendar"' }
+        {
+          command:
+            'dream access google --scopes gmail.readonly,calendar --why "Connect Google Calendar so workouts fit around your meetings"'
+        }
       ])
     ),
     Command.make(
@@ -343,11 +369,11 @@ const access = Command.make("access").pipe(
       Command.withExamples([
         {
           command:
-            'dream access key --service Discord --host discord.com --header Authorization --format "Bot {key}" --why "Post quotes to your channel"'
+            'dream access key --service Discord --host discord.com --header Authorization --format "Bot {key}" --why "Add your Discord bot key so it can post quotes to your channel"'
         },
         {
           command:
-            'dream access key --service Stripe --host api.stripe.com --header Authorization --format "Bearer {key}" --why "Take payments"'
+            'dream access key --service Stripe --host api.stripe.com --header Authorization --format "Bearer {key}" --why "Add your Stripe key so the shop can take payments"'
         }
       ])
     ),
@@ -379,7 +405,7 @@ const access = Command.make("access").pipe(
       Command.withExamples([
         {
           command:
-            'dream access file --service Telegram --name telegram-bot-token --why "Your bot token, so the bot can post to you"'
+            'dream access file --service Telegram --name telegram-bot-token --why "Add your Telegram bot token so the bot can message you"'
         }
       ])
     ),
@@ -418,15 +444,18 @@ const access = Command.make("access").pipe(
       Command.withExamples([
         {
           command:
-            'dream access oauth spotify --scopes user-read-private,playlist-modify-private --why "Build playlists from your runs"'
+            'dream access oauth spotify --scopes user-read-private,playlist-modify-private --why "Connect Spotify so I can build playlists from your runs"'
         },
-        { command: 'dream access oauth github --scopes repo --why "Keep the code in your GitHub"' }
+        { command: 'dream access oauth github --scopes repo --why "Connect GitHub so the code lives in your account"' }
       ])
     ),
     Command.make("apple", accessFlags, (input) => requestAccess(AccessRequest.cases.Apple.make({}), input)).pipe(
       Command.withDescription("Ask for their App Store Connect API key, which TestFlight uploads need."),
       Command.withExamples([
-        { command: 'dream access apple --why "Put the app on TestFlight" --when "around Thursday"' }
+        {
+          command:
+            'dream access apple --why "Add your App Store Connect key so the app can go on TestFlight" --when "around Thursday"'
+        }
       ])
     ),
     Command.make("list", { json }, (input) =>
@@ -474,7 +503,7 @@ const status = Command.make(
     title: Flag.String("title").pipe(Flag.withDescription("The project's name on their Home screen."), Flag.optional),
     kind: lineFlag("kind", "What it is, e.g. Web app, iOS app, Background worker."),
     icon: lineFlag("icon", "SF Symbol name for the project tile, e.g. dumbbell."),
-    now: lineFlag("now", "What you're doing now (Home shows this line)."),
+    now: lineFlag("now", "What you're doing now: the card's large line, and the first line of it shows on Home."),
     justDid: lineFlag("just-did", "What you just did."),
     next: lineFlag("next", "What's next."),
     media: mediaFlag,
@@ -531,8 +560,13 @@ const status = Command.make(
 )
 
 const liveFlags = {
-  title: Flag.String("title").pipe(Flag.withDescription('The big line, e.g. "Building progress charts" (≤ 80).')),
-  detail: Flag.String("detail").pipe(Flag.withDescription("A supporting line (≤ 120)."), Flag.optional),
+  title: Flag.String("title").pipe(
+    Flag.withDescription('The big line, two lines of large type at most, e.g. "Building progress charts" (≤ 80).')
+  ),
+  detail: Flag.String("detail").pipe(
+    Flag.withDescription("A supporting line, shown on one line (≤ 120)."),
+    Flag.optional
+  ),
   next: Flag.String("next").pipe(Flag.withDescription('Shown as "Next · …" (≤ 80).'), Flag.optional),
   step: Flag.String("step").pipe(Flag.withDescription("Progress through milestones, e.g. 3/5."), Flag.optional),
   badge: Flag.String("badge").pipe(Flag.withDescription('Small corner label, e.g. "Day 3" (≤ 20).'), Flag.optional)

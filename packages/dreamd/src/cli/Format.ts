@@ -16,7 +16,7 @@ import type {
   UsageWindow,
   Wake
 } from "@dream/domain"
-import { sandboxKeyPath } from "@dream/domain"
+import { accessHeading, sandboxKeyPath } from "@dream/domain"
 import { DateTime } from "effect"
 import type { PageLoad } from "./PageCheck.ts"
 
@@ -65,10 +65,17 @@ const accessLabel = (message: AccessMessage): string => {
   }
 }
 
+/** When `--why` doesn't name the service, the card leads with a heading of its own; the agent hears what it says. */
+const headingNote = (message: AccessMessage): string => {
+  const heading = accessHeading(message)
+  return heading.reason === undefined ? "" : ` Its heading reads "${heading.title}", with your --why under it.`
+}
+
 export const accessRequested = (message: AccessMessage): string =>
-  message.when === undefined
+  (message.when === undefined
     ? `Asked for ${accessLabel(message)} as ${message.id}${notified(message)}. You'll get an event when they connect.`
-    : `Noted ${accessLabel(message)} as needed ${message.when} (${message.id}); it shows as upcoming until you ask again.`
+    : `Noted ${accessLabel(message)} as needed ${message.when} (${message.id}); it shows as upcoming until you ask again.`) +
+  headingNote(message)
 
 export const integrations = (list: ReadonlyArray<Integration>): string => {
   if (list.length === 0) return "Nothing connected yet."

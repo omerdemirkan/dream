@@ -450,7 +450,7 @@ export const AgentHandlers = SandboxRpcs.toLayer(
           return message
         }),
 
-      AskQuestion: ({ question, options, why, meanwhile }) =>
+      AskQuestion: ({ question, options, why, context, meanwhile }) =>
         Effect.gen(function* () {
           const current = yield* project
           const notificationId = yield* newNotificationId()
@@ -462,6 +462,7 @@ export const AgentHandlers = SandboxRpcs.toLayer(
             question,
             options,
             ...(why === undefined ? {} : { why }),
+            ...(context === undefined || context.trim() === "" ? {} : { context }),
             ...(meanwhile === undefined ? {} : { meanwhile }),
             state: QuestionState.cases.Open.make({})
           })

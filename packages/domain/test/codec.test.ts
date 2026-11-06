@@ -224,6 +224,54 @@ describe("JSON codecs", () => {
     }
   })
 
+  it("adds a question's context without breaking older decoders", () => {
+    const withContext = {
+      ...Fixtures.cabinQuestion,
+      question: "Which voice should the coach use?",
+      context: "**OpenAI voice** sounds natural, for a few cents a session.\n\n- Your phone's own voice is free."
+    }
+    const { wire, decoded } = roundTrip(Message, withContext)
+    assert.deepStrictEqual(decoded, withContext)
+    // An app built before `context` decodes the question and drops the field (Schema ignores excess keys).
+    const { context: _, ...fields } = Domain.QuestionMessage.fields
+    const Before = Schema.TaggedStruct("Question", fields)
+    const old = Schema.decodeUnknownSync(Schema.toCodecJson(Before))(wire)
+    assert.notProperty(old, "context")
+    assert.strictEqual(old.question, "Which voice should the coach use?")
+    // And an API built before it takes `dream ask --context` from a newer dreamd, without the context.
+    const OldPayload = Schema.Struct({ question: Schema.String, options: Schema.Array(Schema.String) })
+    assert.deepStrictEqual(
+      Schema.decodeUnknownSync(OldPayload)({ question: "Which voice?", options: [], context: "More" }),
+      { question: "Which voice?", options: [] }
+    )
+  })
+
+  it("heads an access card with a complete request, whatever the agent wrote", () => {
+    const key = AccessRequest.cases.Key.make({
+      service: "OpenAI",
+      host: "api.openai.com",
+      header: "Authorization",
+      format: "Bearer {key}"
+    })
+    assert.deepStrictEqual(Domain.accessHeading({ request: key, why: "Powers the voice coach" }), {
+      title: "Add your OpenAI key",
+      reason: "Powers the voice coach"
+    })
+    assert.deepStrictEqual(Domain.accessHeading({ request: key, why: "Add your OpenAI key for the voice coach." }), {
+      title: "Add your OpenAI key for the voice coach."
+    })
+    assert.deepStrictEqual(Domain.accessHeading(Fixtures.gmailAccess), { title: Fixtures.gmailAccess.why })
+    assert.deepStrictEqual(
+      Domain.accessHeading({ request: AccessRequest.cases.Apple.make({}), why: "Put the app on TestFlight" }),
+      { title: "Add your App Store Connect key", reason: "Put the app on TestFlight" }
+    )
+    const spotify = AccessRequest.cases.OAuth.make({ provider: "spotify", scopes: [] })
+    assert.strictEqual(
+      Domain.askHeadline({ ...Fixtures.gmailAccess, request: spotify, why: "Build playlists from your runs" }),
+      "Connect Spotify: Build playlists from your runs"
+    )
+  })
+
   it("round-trips a disconnected access request", () => {
     const disconnected = {
       ...Fixtures.telegramKey,

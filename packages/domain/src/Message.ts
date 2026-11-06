@@ -56,10 +56,17 @@ export type QuestionState = typeof QuestionState.Type
 
 export const QuestionMessage = Schema.TaggedStruct("Question", {
   ...MessageFields,
+  /** The decision itself, shown as the card's heading in large type. Agents sometimes write more here anyway. */
   question: Schema.NonEmptyString,
   options: Schema.Array(Schema.NonEmptyString),
   /** The one-line reason shown under the question (the TL;DR). */
   why: Schema.optionalKey(Schema.String),
+  /**
+   * What they need to know to decide, when it takes more than a line (the options and their trade-offs), in
+   * markdown at body size under the question: a few lines on the card, all of it expanded. Added after the
+   * first release: older apps ignore it and show the question alone.
+   */
+  context: Schema.optionalKey(Schema.String),
   /** What the agent keeps doing while it waits. */
   meanwhile: Schema.optionalKey(Schema.String),
   state: QuestionState
@@ -180,13 +187,79 @@ export type AccessState = typeof AccessState.Type
 export const AccessMessage = Schema.TaggedStruct("Access", {
   ...MessageFields,
   request: AccessRequest,
-  /** What the access is for, in the agent's words; the heading, e.g. "Connect Gmail so I can read your newsletters." */
+  /**
+   * The request in the agent's words, read first and often alone (Home, the lock screen); the heading, e.g.
+   * "Connect Gmail so I can read your newsletters." See `accessHeading` for one that doesn't name the service.
+   */
   why: Schema.NonEmptyString,
   /** Roughly when it's needed, if not now, e.g. "around Thursday". Absent means now. */
   when: Schema.optionalKey(Schema.String),
   state: AccessState
 })
 export type AccessMessage = typeof AccessMessage.Type
+
+const googleProducts: ReadonlyArray<readonly [string, string]> = [
+  ["gmail", "Gmail"],
+  ["calendar", "Google Calendar"],
+  ["drive", "Google Drive"],
+  ["spreadsheets", "Google Sheets"],
+  ["sheets", "Google Sheets"],
+  ["documents", "Google Docs"],
+  ["docs", "Google Docs"],
+  ["youtube", "YouTube"],
+  ["photos", "Google Photos"],
+  ["contacts", "Google Contacts"],
+  ["tasks", "Google Tasks"]
+]
+
+/** The Google product the scopes are for ("Gmail"), or "Google" when they span several or none. */
+export const googleProduct = (scopes: ReadonlyArray<string>): string => {
+  const products = new Set<string>()
+  for (const scope of scopes) {
+    const product = googleProducts.find(([prefix]) => scope.toLowerCase().startsWith(prefix))
+    if (product) products.add(product[1])
+  }
+  return products.size === 1 ? (Array.from(products)[0] ?? "Google") : "Google"
+}
+
+/** The service an access request is for, as they know it: "Gmail", "Stripe", "Apple Developer", "Spotify". */
+export const accessService = (request: AccessRequest): string => {
+  switch (request._tag) {
+    case "Google":
+      return googleProduct(request.scopes)
+    case "Key":
+    case "File":
+      return request.service
+    case "Apple":
+      return "Apple Developer"
+    case "OAuth":
+      // The API always fills in `service`; the provider id stands in otherwise.
+      return request.service ?? request.provider.charAt(0).toUpperCase() + request.provider.slice(1)
+  }
+}
+
+/**
+ * The heading of an access card, which they read first and often alone. The agent's `why` is the heading when it
+ * names the service ("Connect Gmail so I can read your newsletters."). When it doesn't ("Take payments"), the
+ * heading says what's asked ("Add your Stripe key") and the agent's words become the `reason` under it.
+ */
+export const accessHeading = (message: Pick<AccessMessage, "request" | "why">): { title: string; reason?: string } => {
+  const request = message.request
+  const service = accessService(request)
+  const names = [
+    service,
+    ...(request._tag === "Google" ? ["Google"] : request._tag === "Apple" ? ["App Store", "Apple"] : [])
+  ]
+  const why = message.why.trim()
+  if (names.some((name) => why.toLowerCase().includes(name.toLowerCase()))) return { title: why }
+  const title =
+    request._tag === "Apple"
+      ? "Add your App Store Connect key"
+      : request._tag === "Key" || request._tag === "File"
+        ? `Add your ${service} key`
+        : `Connect ${service}`
+  return { title, reason: why }
+}
 
 // ---------------------------------------------------------------------------
 
@@ -200,3 +273,10 @@ export type AskMessage = typeof AskMessage.Type
 /** Whether a question or access request is still waiting on them. */
 export const isOpenAsk = (message: Message): message is AskMessage =>
   message._tag !== "Text" && message.state._tag === "Open"
+
+/** An ask's heading on one line, for a notification or the Live Activity: "Add your Stripe key: Take payments". */
+export const askHeadline = (message: AskMessage): string => {
+  if (message._tag === "Question") return message.question
+  const heading = accessHeading(message)
+  return heading.reason === undefined ? heading.title : `${heading.title}: ${heading.reason}`
+}
