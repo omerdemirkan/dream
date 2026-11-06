@@ -304,7 +304,7 @@ describe("fixtures backend through the app's services", () => {
 describe("the agent's presence in fixtures (A+B+C)", () => {
   const recipe = "prj_recipescaler" as ProjectId
 
-  it.effect("a message to a sleeping project: Sent, starting, working and Seen, then the reply and Done for now", () =>
+  it.effect("a message to a sleeping project: Sent, starting and Seen, working, then the reply and Done for now", () =>
     run(
       Effect.gen(function* () {
         yield* signIn
@@ -344,7 +344,7 @@ describe("the agent's presence in fixtures (A+B+C)", () => {
           "Asleep|-|Seen",
           "Asleep|Sent|Sent",
           "Starting|Starting|Sent",
-          "Working|Working|Sent",
+          "Starting|Starting|Seen",
           "Working|Working|Seen",
           "Awake|Done|Seen"
         ])

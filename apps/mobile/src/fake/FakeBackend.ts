@@ -227,21 +227,26 @@ export class FakeBackend extends Context.Service<
         })
       const nextWake = (record: ProjectRecord) =>
         record.activity.nextWakeAt ? { nextWakeAt: record.activity.nextWakeAt } : {}
+      /** Delivery to the sandbox begins: their unseen messages read "Seen". */
+      const markSeen = (record: ProjectRecord) =>
+        Effect.gen(function* () {
+          const now = yield* DateTime.now
+          for (const message of record.messages)
+            if (message._tag === "Text" && message.from === "user" && message.seenAt === undefined)
+              yield* setMessage(record, { ...message, seenAt: now })
+        })
       /** The sandbox is being brought up to deliver something. */
       const startComputer = (record: ProjectRecord) =>
         Effect.gen(function* () {
           yield* setActivity(record, { state: "starting", since: yield* DateTime.now, ...nextWake(record) })
+          yield* markSeen(record)
         })
-      /** A turn takes their unseen messages: they read "Seen". */
       const startTurn = (record: ProjectRecord) =>
         Effect.gen(function* () {
-          const now = yield* DateTime.now
+          yield* markSeen(record)
           if (record.activity.state !== "working") {
-            yield* setActivity(record, { state: "working", since: now, ...nextWake(record) })
+            yield* setActivity(record, { state: "working", since: yield* DateTime.now, ...nextWake(record) })
           }
-          for (const message of record.messages)
-            if (message._tag === "Text" && message.from === "user" && message.seenAt === undefined)
-              yield* setMessage(record, { ...message, seenAt: now })
         })
       const endTurn = (record: ProjectRecord) =>
         Effect.gen(function* () {
@@ -459,7 +464,8 @@ export class FakeBackend extends Context.Service<
                     createdAt: now,
                     from: "user",
                     text: idea,
-                    media: []
+                    media: [],
+                    seenAt: now
                   }
                 ],
                 working: false,
@@ -800,7 +806,7 @@ export class FakeBackend extends Context.Service<
             createdAt: sentAt,
             from: "user",
             media: [],
-            ...(stage === "working" || stage === "done" ? { seenAt: DateTime.add(sentAt, { seconds: 30 }) } : {})
+            ...(stage === "sent" ? {} : { seenAt: sentAt })
           }
           const reply: TextMessage = {
             _tag: "Text",
@@ -982,7 +988,8 @@ export class FakeBackend extends Context.Service<
                       createdAt: now,
                       from: "user",
                       text: idea,
-                      media: []
+                      media: [],
+                      seenAt: now
                     }
                   ],
                   working: false,

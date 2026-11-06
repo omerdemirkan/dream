@@ -90,11 +90,11 @@ gives up after 25 s; the retry goes through).
 The agent's presence (Deck v3 "A+B+C": the row at the bottom of Chat, the dot and state line in the header and on
 Home, the receipt under their latest message) follows the mock's scenario, a question about estimated 1RM in Lift
 Log (`msg_ask1rm`, reply `msg_reply1rm`): `activity-sent` (Sent, typing dots, "Asleep · waking up"),
-`activity-starting` ("Starting its computer…"), `activity-working` ("Working · 2m", Seen), `activity-done` (the
+`activity-starting` ("Starting its computer…", Seen), `activity-working` ("Working · 2m"), `activity-done` (the
 reply, "Done for now", a green dot), `activity-home` (Home with every state: done, asleep until 6:55 AM, waiting
 for you, paused until 4 PM), and `activity-new-idea` (a new idea's first half-minute, at
 `/project/prj_newidea?tab=chat`). Without a scenario, Lift Log is working, Cabin is awake and Morning Brief sleeps
-until 6:55 AM; a message to any project goes through Sent, starting (if it was asleep), working and Seen, then the
+until 6:55 AM; a message to any project goes through Sent, then Seen as delivery begins (with "starting" if it was asleep), working, then the
 reply and "Done for now".
 
 ```sh

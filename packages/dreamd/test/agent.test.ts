@@ -127,11 +127,6 @@ describe("Agent", () => {
         "evt_1",
         "evt_2"
       ])
-      // The steered event is reported as soon as the turn takes it, so Dream can mark the message "Seen".
-      const started = (yield* Ref.get(reports)).flatMap((report) =>
-        report._tag === "Turn" && report.state === "started" ? [report.eventIds.join(",")] : []
-      )
-      assert.deepStrictEqual(started, ["evt_1", "evt_2"])
       assert.strictEqual((yield* inbox.state).entries.length, 0)
     }).pipe(Effect.scoped)
   )

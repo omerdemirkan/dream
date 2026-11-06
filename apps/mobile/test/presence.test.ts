@@ -73,7 +73,7 @@ describe("presence through one message (A+B+C)", () => {
     assert.strictEqual(line(headerLine(p, context(now, messages))), "Asleep · waking up")
   })
 
-  it("starting: Seen once a turn takes it; the row says what's happening and how long it takes", () => {
+  it("starting: Seen once delivery begins; the row says what's happening and how long it takes", () => {
     const now = at("14:02")
     const p = presence(starting, now)
     assert.strictEqual(dotOf(p), "starting")

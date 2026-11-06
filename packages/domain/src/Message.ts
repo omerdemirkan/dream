@@ -29,7 +29,7 @@ export const TextMessage = Schema.TaggedStruct("Text", {
   /** Markdown from the agent; plain text from them. */
   text: Schema.String,
   media: Schema.Array(MediaRef),
-  /** Their messages only: when the agent's turn took it (the receipt under it reads "Seen"). */
+  /** Their messages only: when Dream began delivering it to the agent's machine (the receipt under it reads "Seen"). */
   seenAt: Schema.optionalKey(Schema.DateTimeUtc)
 })
 export type TextMessage = typeof TextMessage.Type

@@ -99,8 +99,6 @@ export class Agent extends Context.Service<
               const text = renderSteerPrompt({ events, now: yield* DateTime.now, timeZone })
               return yield* harness.steer(text).pipe(
                 Effect.tap(() => Ref.update(taken, (all) => [...all, ...ids])),
-                // Dream marks their messages among these "Seen" now, rather than when the turn ends.
-                Effect.tap(() => api.reportTurn("started", ids)),
                 Effect.tap(() => Ref.update(fromPerson, (before) => before || !events.every(agentOnly))),
                 Effect.tap(() => Effect.logInfo("Gave new events to the running turn", { events: ids })),
                 Effect.as(true),

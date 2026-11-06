@@ -71,7 +71,7 @@ export class Core extends Context.Service<
     readonly saveUsagePause: (pause: Option.Option<UsagePause>) => Effect.Effect<void>
     /** The scheduled wakes changed: tells phones and Home about the next one. */
     readonly wakesChanged: Effect.Effect<void>
-    /** A turn took these events: their messages that the events carry read "Seen" from now on. */
+    /** Delivery of these events to the sandbox began: their messages among them read "Seen" from now on. */
     readonly markSeen: (eventIds: ReadonlyArray<EventId>) => Effect.Effect<void>
 
     readonly message: (id: Message["id"]) => Effect.Effect<Option.Option<Message>>

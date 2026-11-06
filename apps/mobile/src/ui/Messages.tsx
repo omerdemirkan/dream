@@ -34,7 +34,7 @@ import { color, gutter, needGlow } from "./theme.ts"
 export function UserBubble(props: {
   readonly message: TextMessage
   readonly time: string | undefined
-  /** On their latest message: "Sent", then "Seen" once the agent's turn took it. */
+  /** On their latest message: "Sent", then "Seen" once Dream began delivering it to the agent's machine. */
   readonly receipt?: { readonly seen: boolean } | undefined
 }) {
   return (

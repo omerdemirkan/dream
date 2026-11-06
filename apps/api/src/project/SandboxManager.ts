@@ -526,6 +526,8 @@ export class SandboxManager extends Context.Service<
         const pending = yield* store.pendingEvents(BatchSize)
         if (pending.length === 0) return
         const project = yield* core.project.pipe(Effect.orDie)
+        // Their messages have reached the agent's machine: they read "Seen" from here on.
+        yield* core.markSeen(pending.map((event) => event.id))
         // Between turns, the phone says the agent is starting until a turn takes these (or delivery fails).
         const before = yield* core.sandbox
         if (!before.working && before.startingSince === undefined) {

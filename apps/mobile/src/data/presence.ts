@@ -276,7 +276,7 @@ export const chatRowOf = (
 }
 
 /**
- * The receipt under their latest message: "Sent", then "Seen" once the agent's turn took it. A message from before
+ * The receipt under their latest message: "Sent", then "Seen" once Dream began delivering it to the agent's machine. A message from before
  * Dream marked messages seen counts as seen once the agent answered or finished a turn after it. Only from APIs that
  * send the activity, since older ones never mark a message seen.
  */

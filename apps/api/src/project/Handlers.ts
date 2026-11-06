@@ -658,9 +658,7 @@ export const AgentHandlers = SandboxRpcs.toLayer(
           yield* directory.usageLimited(current.ownerId, window, until, current.id).pipe(Effect.forkDetach)
         }),
 
-      // dreamd reports "started" again with events it hands to a running turn, so those read "Seen" right away.
-      ReportTurn: ({ state, eventIds }) =>
-        core.markSeen(eventIds).pipe(Effect.andThen(state === "started" ? sandbox.turnStarted : sandbox.turnFinished))
+      ReportTurn: ({ state }) => (state === "started" ? sandbox.turnStarted : sandbox.turnFinished)
     }
   })
 )

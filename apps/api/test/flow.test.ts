@@ -887,17 +887,7 @@ describe("a project, end to end", () => {
       assert.strictEqual(idea?._tag === "Text" && idea.from, "user")
       assert.deepStrictEqual((yield* snapshot).activity, { state: "idle" })
 
-      // Delivering the idea brings the sandbox up: "starting" until a turn takes it.
-      yield* cloud.alarm(project.id)
-      const delivered = cloud.world.delivered.at(-1)!.events as ReadonlyArray<AgentEvent>
-      const starting = yield* snapshot
-      assert.strictEqual(starting.activity?.state, "starting")
-      assert.isDefined(starting.activity?.since)
-      assert.strictEqual((yield* home).activity?.state, "starting")
-      const seenBefore = starting.messages[0]
-      assert.isTrue(seenBefore?._tag === "Text" && seenBefore.seenAt === undefined)
-
-      const dreamd = yield* cloud.sandbox(envFileOf(cloud, project.id).env.DREAM_PROJECT_TOKEN)
+      // Delivering the idea brings the sandbox up: "starting" until a turn takes it, and the idea reads "Seen".
       const changes = yield* live.Subscribe().pipe(
         Stream.filter((event) => event._tag === "ActivityChanged" || event._tag === "MessageChanged"),
         Stream.take(2),
@@ -905,19 +895,27 @@ describe("a project, end to end", () => {
         Effect.forkChild
       )
       yield* Effect.sleep("50 millis")
-      yield* dreamd.ReportTurn({ state: "started", eventIds: delivered.map((event) => event.id) })
+      yield* cloud.alarm(project.id)
       const pushed = yield* Fiber.join(changes)
       assert.deepStrictEqual(pushed.map((event) => event._tag).sort(), ["ActivityChanged", "MessageChanged"])
+      const delivered = cloud.world.delivered.at(-1)!.events as ReadonlyArray<AgentEvent>
+      const starting = yield* snapshot
+      assert.strictEqual(starting.activity?.state, "starting")
+      assert.isDefined(starting.activity?.since)
+      assert.strictEqual((yield* home).activity?.state, "starting")
+      const seen = starting.messages[0]
+      assert.isTrue(seen?._tag === "Text" && seen.seenAt !== undefined)
+      // Chat history from ListMessages carries it too.
+      const history = yield* cloud.phone.ListMessages({ projectId: project.id })
+      assert.isTrue(history.messages.some((m) => m._tag === "Text" && m.from === "user" && m.seenAt !== undefined))
+
+      const dreamd = yield* cloud.sandbox(envFileOf(cloud, project.id).env.DREAM_PROJECT_TOKEN)
+      yield* dreamd.ReportTurn({ state: "started", eventIds: delivered.map((event) => event.id) })
       const working = yield* snapshot
       assert.strictEqual(working.activity?.state, "working")
       assert.isDefined(working.activity?.since)
       assert.isTrue(working.working)
-      const seen = working.messages[0]
-      assert.isTrue(seen?._tag === "Text" && seen.seenAt !== undefined)
       assert.strictEqual((yield* home).activity?.state, "working")
-      // Chat history from ListMessages carries it too.
-      const history = yield* cloud.phone.ListMessages({ projectId: project.id })
-      assert.isTrue(history.messages.some((m) => m._tag === "Text" && m.from === "user" && m.seenAt !== undefined))
 
       yield* dreamd.ReportTurn({ state: "finished", eventIds: delivered.map((event) => event.id) })
       const done = (yield* snapshot).activity
