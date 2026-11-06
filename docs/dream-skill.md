@@ -16,6 +16,10 @@ this sandbox, including the apps you build. `dream <command> --help` lists every
   - `dream message -` (or no text, with stdin piped) reads the message from stdin, so `dream message - <<'EOF'` keeps
     long markdown out of shell quoting. `dream ask` does the same for the question, or for `--why -`, `--context -`
     or `--meanwhile -`.
+- They can attach photos and files to what they send, a new idea included. Before your turn, Dream copies each into
+  `~/.dream/attachments/<message id>/`, and the event names every path, so you can look at a photo or read a file
+  where it is. Photos arrive downscaled to at most 2048 pixels on the long edge. Copy one into the project if your
+  app needs it.
 - `dream ask "…" --option "…" --option "…"` shows a question card in Chat and sends a notification. The question
   is the card's heading, in large type, and it's what the notification shows, often with nothing around it.
   - `--why` adds the one-line reason shown under the question. When deciding takes more than that, such as two

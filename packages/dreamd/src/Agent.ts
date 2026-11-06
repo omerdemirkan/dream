@@ -14,6 +14,9 @@
  * to say, having sent them nothing, posts its final words to Chat, unless
  * nothing the person did is among its events (see `agentOnly`).
  *
+ * Attachments in the events are copied into the sandbox before the prompt
+ * that names them (see `Attachments.ts`).
+ *
  * After a completed turn with nothing else queued, the published URL is
  * loaded, and a new breakage there becomes an event for the agent (see
  * `Published.ts`).
@@ -22,6 +25,7 @@ import { renderSteerPrompt, renderTurnPrompt } from "@dream/agent-context"
 import type { AgentEvent, EventId, ModelProvider, TurnState } from "@dream/domain"
 import { Clock, Context, DateTime, Duration, Effect, Exit, Layer, Option, Ref, Stream } from "effect"
 import { Api } from "./Api.ts"
+import { Attachments } from "./Attachments.ts"
 import { Harness, type TurnResult, TurnOutcome } from "./harness/Harness.ts"
 import { type QuestionOutcome, replyFromFinalText } from "./harness/PersonChannel.ts"
 import type { TurnHandlers } from "./harness/Turn.ts"
@@ -63,6 +67,7 @@ export class Agent extends Context.Service<
       const api = yield* Api
       const outreach = yield* Outreach
       const published = yield* Published
+      const attachments = yield* Attachments
       const provider: ModelProvider = harness.name === "claude-code" ? "claude" : "chatgpt"
       const running = yield* Ref.make(false)
       const lastTurnEndedMs = yield* Ref.make(Option.none<number>())
@@ -99,7 +104,8 @@ export class Agent extends Context.Service<
               const events = yield* inbox.take
               if (events.length === 0) return true
               const ids = events.map((event) => event.id)
-              const text = renderSteerPrompt({ events, now: yield* DateTime.now, timeZone })
+              const missingAttachments = yield* attachments.fetch(events)
+              const text = renderSteerPrompt({ events, now: yield* DateTime.now, timeZone, missingAttachments })
               return yield* harness.steer(text).pipe(
                 Effect.tap(() => Ref.update(taken, (all) => [...all, ...ids])),
                 Effect.tap(() => Ref.update(fromPerson, (before) => before || !events.every(agentOnly))),
@@ -159,7 +165,8 @@ export class Agent extends Context.Service<
         yield* api.reportTurn("started", yield* Ref.get(taken))
         yield* Effect.logInfo("Turn started", { events: yield* Ref.get(taken) })
 
-        const prompt = renderTurnPrompt({ events, now: yield* DateTime.now, timeZone })
+        const missingAttachments = yield* attachments.fetch(events)
+        const prompt = renderTurnPrompt({ events, now: yield* DateTime.now, timeZone, missingAttachments })
         const reachedBefore = yield* outreach.count
         const exit = yield* Effect.scoped(
           Effect.gen(function* () {
