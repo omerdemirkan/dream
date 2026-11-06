@@ -22,6 +22,7 @@ import { Connections, toIntegration } from "../db/Connections.ts"
 import { Projects } from "../db/Projects.ts"
 import { Google } from "../integrations/Google.ts"
 import { KeyFiles } from "../integrations/KeyFiles.ts"
+import { AppLinks } from "../links/AppLinks.ts"
 import { OAuthProviders, scopesFor } from "../integrations/OAuth.ts"
 import { newMediaId } from "../lib/Ids.ts"
 import { type ProjectClient, ProjectClients } from "../project/Client.ts"
@@ -58,6 +59,7 @@ export const WorkerSandboxHandlers = SandboxRpcs.toLayer(
     const keyFiles = yield* KeyFiles
     const providers = yield* OAuthProviders
     const google = yield* Google
+    const appLinks = yield* AppLinks
 
     const current = Effect.gen(function* () {
       return yield* CurrentProject
@@ -114,6 +116,20 @@ export const WorkerSandboxHandlers = SandboxRpcs.toLayer(
       CancelWake: (payload) => forward((c) => c.CancelWake(payload)),
       WakeNow: (payload) => forward((c) => c.WakeNow(payload)),
       Publish: (payload) => forward((c) => c.Publish(payload)),
+      AddLink: (payload) =>
+        Effect.gen(function* () {
+          const { projectId, userId } = yield* current
+          yield* keyFiles.refuseLeak(userId, projectId, payload)
+          return yield* appLinks.addByAgent(projectId, userId, payload)
+        }),
+      UpdateLink: ({ linkId, ...changes }) =>
+        Effect.gen(function* () {
+          const { projectId, userId } = yield* current
+          yield* keyFiles.refuseLeak(userId, projectId, changes)
+          return yield* appLinks.updateByAgent(projectId, linkId, changes)
+        }),
+      RemoveLink: ({ linkId }) => Effect.flatMap(current, ({ projectId }) => appLinks.removeByAgent(projectId, linkId)),
+      ListLinks: () => Effect.flatMap(current, ({ projectId }) => appLinks.listForAgent(projectId)),
       CreateMediaUpload: ({ filename, contentType, sizeBytes, caption }) =>
         Effect.gen(function* () {
           const { projectId, userId } = yield* current

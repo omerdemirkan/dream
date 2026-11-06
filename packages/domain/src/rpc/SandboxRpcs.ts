@@ -17,7 +17,8 @@ import { Rpc, RpcGroup } from "effect/rpc"
 import { SandboxAuth } from "../Auth.ts"
 import { Integration } from "../Connections.ts"
 import { InvalidRequest, NotFound, UpstreamFailure } from "../Errors.ts"
-import { BrowserSessionId, EventId, MediaId, MessageId, NotificationId, WakeId } from "../Ids.ts"
+import { BrowserSessionId, EventId, LinkId, MediaId, MessageId, NotificationId, WakeId } from "../Ids.ts"
+import { AppLink, LinkColor, LinkIcon, LinkTitle, LinkUrl } from "../Links.ts"
 import { LiveActivityContent } from "../LiveActivity.ts"
 import { BrowserSession, MacSshAccess, MacStatus } from "../Machines.ts"
 import { MediaContentType, MediaRef, MediaUploadTarget } from "../Media.ts"
@@ -29,6 +30,13 @@ import { Wake, WakeWhen } from "../Wake.ts"
 
 /** Absent leaves a field as it is; `null` clears it. */
 const Patch = <S extends Schema.Top>(schema: S) => Schema.optionalKey(Schema.NullOr(schema))
+
+/** A link as `dream link` shows it, with the project name its long-press menu shows ("Made by …"). */
+export const ProjectLink = Schema.Struct({ link: AppLink, projectTitle: Schema.String })
+export type ProjectLink = typeof ProjectLink.Type
+
+export const ProjectLinks = Schema.Struct({ links: Schema.Array(AppLink), projectTitle: Schema.String })
+export type ProjectLinks = typeof ProjectLinks.Type
 
 export class SandboxRpcs extends RpcGroup.make(
   // Talking to them ------------------------------------------------------------
@@ -147,6 +155,37 @@ export class SandboxRpcs extends RpcGroup.make(
     success: Schema.Struct({ url: Schema.String }),
     error: InvalidRequest
   }),
+
+  // App links on their Home ------------------------------------------------------------
+  /**
+   * `dream link add <url> --title … [--icon <symbol|emoji|file>] [--color …]`. `InvalidRequest` when the project
+   * already has `AgentLinksPerProject` links on Home, when they removed a link to this URL, or for an image that
+   * isn't this project's upload. Added after the first release.
+   */
+  Rpc.make("AddLink", {
+    payload: { url: LinkUrl, title: LinkTitle, icon: Schema.optionalKey(LinkIcon), color: LinkColor },
+    success: ProjectLink,
+    error: InvalidRequest
+  }),
+  /**
+   * `dream link update <link-id> [--url …] [--title …] [--icon …] [--color …]`; `--icon ""` makes it a monogram.
+   * `InvalidRequest` for a link they added, and for a title or icon they've since made their own.
+   */
+  Rpc.make("UpdateLink", {
+    payload: {
+      linkId: LinkId,
+      url: Schema.optionalKey(LinkUrl),
+      title: Schema.optionalKey(LinkTitle),
+      icon: Patch(LinkIcon),
+      color: Schema.optionalKey(LinkColor)
+    },
+    success: ProjectLink,
+    error: Schema.Union([NotFound, InvalidRequest])
+  }),
+  /** `dream link remove <link-id>`. `InvalidRequest` for a link they added. */
+  Rpc.make("RemoveLink", { payload: { linkId: LinkId }, error: Schema.Union([NotFound, InvalidRequest]) }),
+  /** `dream link list`: this project's links, theirs too, and the agent's ones they removed (with `removedAt`). */
+  Rpc.make("ListLinks", { success: ProjectLinks }),
 
   // Media ----------------------------------------------------------------------------
   /** `dream media upload <file>`: reserve a media id, then PUT the bytes to `upload`. */

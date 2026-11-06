@@ -8,6 +8,7 @@
  * "7:00 AM" read as in the mock, in that time zone, whenever the app runs.
  */
 import type {
+  AppLink,
   AccessMessage,
   Integration,
   IntegrationId,
@@ -73,8 +74,8 @@ export const media = {
 // Projects
 // ---------------------------------------------------------------------------
 
-const liftLog: Project = { ...Fx.liftLog, updatedAt: at("2026-11-04T22:09:00Z") }
-const morningBrief: Project = { ...Fx.morningBrief, updatedAt: at("2026-11-04T15:02:00Z") }
+const liftLog: Project = { ...Fx.liftLog, publishedPort: 3000, updatedAt: at("2026-11-04T22:09:00Z") }
+const morningBrief: Project = { ...Fx.morningBrief, publishedPort: 8080, updatedAt: at("2026-11-04T15:02:00Z") }
 const cabin: Project = {
   ...Fx.cabin,
   headline: "Three prototypes are ready for your reaction.",
@@ -358,6 +359,8 @@ export interface FixtureWorld {
   readonly projects: ReadonlyArray<FixtureProject>
   readonly integrations: ReadonlyArray<Integration>
   readonly modelConnections: ReadonlyArray<ModelConnection>
+  /** App links on Home (option A, the dock). */
+  readonly links: ReadonlyArray<AppLink>
 }
 
 const chatgpt: ModelConnection = {
@@ -377,7 +380,8 @@ const world: FixtureWorld = {
     { project: recipeScaler, status: recipeStatus, messages: recipeMessages, working: false }
   ],
   integrations: [Fx.google],
-  modelConnections: [chatgpt]
+  modelConnections: [chatgpt],
+  links: Fx.links
 }
 
 /** Moves every `DateTime` in a value by `millis`. */

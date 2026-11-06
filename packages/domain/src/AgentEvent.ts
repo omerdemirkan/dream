@@ -6,7 +6,7 @@
  */
 import { DateTime, Schema } from "effect"
 import { IntegrationAccess } from "./Connections.ts"
-import { EventId, MessageId, WakeId } from "./Ids.ts"
+import { EventId, LinkId, MessageId, WakeId } from "./Ids.ts"
 import { QuestionAnswer } from "./Message.ts"
 import { UsageWindowName } from "./Usage.ts"
 
@@ -83,6 +83,23 @@ export const AgentEvent = Schema.TaggedUnion({
     port: Schema.Int,
     /** What the check saw, as `dream publish` prints it. */
     facts: Schema.String
+  },
+  /**
+   * They changed or removed one of this project's app links on their Home (`dream link`). Their change stays: the
+   * agent can't rename or re-icon what they did, or add a link to a URL they removed. Only sent for links an agent
+   * made, so only to dreamd builds that know `dream link` and this event.
+   */
+  LinkEdited: {
+    ...EventFields,
+    linkId: LinkId,
+    url: Schema.String,
+    /** Its title now, or for `removed`, the title it had. */
+    title: Schema.String,
+    change: Schema.Literals(["renamed", "icon", "removed"]),
+    /** `renamed`: the title it had before. */
+    previousTitle: Schema.optionalKey(Schema.String),
+    /** `icon`: the new tile in words, e.g. "the SF Symbol dumbbell on a red tile". */
+    tile: Schema.optionalKey(Schema.String)
   }
 })
 export type AgentEvent = typeof AgentEvent.Type
@@ -217,7 +234,16 @@ export const renderAgentEvent = (event: AgentEvent, options: RenderOptions = {})
     UsageReset: ({ window }) =>
       window === "fiveHour" ? "Their five-hour usage window has reset." : "Their weekly usage limit has reset.",
     PublishedUrlBroken: ({ url, port, facts }) =>
-      `When your last turn ended, Dream loaded your published URL ${url} (port ${port}):\n${quote(facts)}`
+      `When your last turn ended, Dream loaded your published URL ${url} (port ${port}):\n${quote(facts)}`,
+    LinkEdited: ({ linkId, url, title, change, previousTitle, tile }) =>
+      change === "renamed"
+        ? `They renamed your app link ${linkId} (${url}) on their Home from "${previousTitle ?? "?"}" to "${title}". ` +
+          "The name is theirs now, here and on their Home Screen if they add it there."
+        : change === "icon"
+          ? `They changed the icon of your app link "${title}" (${linkId}, ${url}) to ${tile ?? "one of their own"}. ` +
+            "The icon is theirs now."
+          : `They removed your app link "${title}" (${url}) from their Home. It stays off: Dream won't take a new ` +
+            "link to that URL from this project, though they can add it back themselves."
   })
   return `[${time}] ${body}`
 }

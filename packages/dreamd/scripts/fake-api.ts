@@ -10,7 +10,10 @@
  */
 import { createServer } from "node:http"
 import {
+  type AppLink,
   CurrentProject,
+  InvalidRequest,
+  LinkId,
   HttpRpcSerialization,
   MediaId,
   MessageId,
@@ -53,6 +56,13 @@ const Handlers = SandboxRpcs.toLayer(
     })
     const wakes = yield* Ref.make<ReadonlyArray<Wake>>([])
     const usage = yield* Ref.make<Option.Option<UsageSnapshot>>(Option.none())
+    const links = yield* Ref.make<ReadonlyArray<AppLink>>([])
+    const projectTitle = "Dev project"
+    const findLink = (linkId: LinkId) =>
+      Effect.flatMap(Ref.get(links), (all) => {
+        const found = all.find((link) => link.id === linkId)
+        return found === undefined ? Effect.fail(new NotFound({ entity: "link", id: linkId })) : Effect.succeed(found)
+      })
     const unavailable = (service: string) =>
       Effect.fail(new UpstreamFailure({ service, message: "not available in the fake API" }))
     const message = { projectId, createdAt: start }
@@ -141,6 +151,48 @@ const Handlers = SandboxRpcs.toLayer(
       WakeNow: (payload) => log("WakeNow", payload),
       Publish: (payload) =>
         log("Publish", payload).pipe(Effect.as({ url: `https://dev-${payload.port}.dream.example` })),
+      AddLink: (payload) =>
+        Effect.gen(function* () {
+          yield* log("AddLink", payload)
+          const all = yield* Ref.get(links)
+          if (all.length >= 3) return yield* new InvalidRequest({ message: "This project already has 3 links." })
+          const now = yield* DateTime.now
+          const link: AppLink = {
+            id: LinkId.make(id("lnk")),
+            ...payload,
+            projectId,
+            addedBy: "agent",
+            createdAt: now,
+            updatedAt: now
+          }
+          yield* Ref.set(links, [...all, link])
+          return { link, projectTitle }
+        }),
+      UpdateLink: ({ linkId, icon, ...rest }) =>
+        Effect.gen(function* () {
+          yield* log("UpdateLink", { linkId, icon, ...rest })
+          const found = yield* findLink(linkId)
+          const { icon: previous, ...kept } = found
+          const nextIcon = clear(icon, previous)
+          const link: AppLink = {
+            ...kept,
+            ...rest,
+            ...(nextIcon === undefined ? {} : { icon: nextIcon }),
+            updatedAt: yield* DateTime.now
+          }
+          yield* Ref.update(links, (all) => all.map((l) => (l.id === linkId ? link : l)))
+          return { link, projectTitle }
+        }),
+      RemoveLink: ({ linkId }) =>
+        log("RemoveLink", { linkId }).pipe(
+          Effect.andThen(findLink(linkId)),
+          Effect.andThen(Ref.update(links, (all) => all.filter((l) => l.id !== linkId)))
+        ),
+      ListLinks: () =>
+        log("ListLinks", {}).pipe(
+          Effect.andThen(Ref.get(links)),
+          Effect.map((all) => ({ links: all, projectTitle }))
+        ),
       CreateMediaUpload: (payload) =>
         Effect.gen(function* () {
           yield* log("CreateMediaUpload", payload)

@@ -10,6 +10,9 @@
  */
 import {
   type AccessMessage,
+  type AppLink,
+  type LinkId,
+  linkHost,
   type AgentActivity,
   AppAuth,
   type ArchivedProject,
@@ -86,7 +89,9 @@ export const Scenario = [
   "activity-home",
   "activity-new-idea",
   "archived",
-  "ask-series"
+  "ask-series",
+  "links-empty",
+  "links-new"
 ] as const
 export type Scenario = (typeof Scenario)[number]
 
@@ -177,11 +182,13 @@ export class FakeBackend extends Context.Service<
       let integrations: Array<Integration> = []
       let connections: Array<ModelConnection> = []
       let devices = new Map<string, Device>()
+      let links: Array<AppLink> = []
 
       const load = Effect.fn("FakeBackend.load")(function* (world: FixtureWorld) {
         const previous = records
         user = world.user
         integrations = [...world.integrations]
+        links = [...world.links]
         connections = [...world.modelConnections]
         devices = new Map()
         records = new Map()
@@ -567,6 +574,71 @@ export class FakeBackend extends Context.Service<
               return project
             })
           ),
+        ListLinks: () =>
+          Effect.sync(() =>
+            links.filter(
+              (link) => link.projectId === undefined || active().some((r) => r.project.id === link.projectId)
+            )
+          ),
+        AddLink: ({ url, title, icon, color }) =>
+          stallable(
+            Effect.gen(function* () {
+              const now = yield* DateTime.now
+              const host = linkHost(url)
+              const project = Array.from(records.values()).find((r) => linkHost(r.project.publicUrl) === host)
+              const link: AppLink = {
+                id: nextId("lnk") as LinkId,
+                url,
+                title,
+                ...(icon ? { icon } : {}),
+                color,
+                ...(project ? { projectId: project.project.id } : {}),
+                addedBy: "person",
+                createdAt: now,
+                updatedAt: now,
+                openedAt: now
+              }
+              links = [...links, link]
+              return link
+            })
+          ),
+        UpdateLink: ({ linkId, title, icon, color }) =>
+          Effect.gen(function* () {
+            const link = links.find((l) => l.id === linkId)
+            if (!link) return yield* new NotFound({ entity: "link", id: linkId })
+            const theirs = new Set(link.theirs ?? [])
+            if (link.addedBy === "agent" && title !== undefined && title !== link.title) theirs.add("title")
+            if (link.addedBy === "agent" && (icon !== undefined || color !== undefined)) theirs.add("icon")
+            const { icon: _old, ...rest } = link
+            const next: AppLink = {
+              ...rest,
+              ...(title === undefined ? {} : { title }),
+              ...(icon === undefined ? (link.icon ? { icon: link.icon } : {}) : icon === null ? {} : { icon }),
+              ...(color === undefined ? {} : { color }),
+              ...(theirs.size > 0 ? { theirs: [...theirs] } : {}),
+              updatedAt: yield* DateTime.now
+            }
+            links = links.map((l) => (l.id === linkId ? next : l))
+            return next
+          }),
+        RemoveLink: ({ linkId }) =>
+          Effect.sync(() => {
+            links = links.filter((l) => l.id !== linkId)
+          }),
+        MarkLinkOpened: ({ linkId }) =>
+          Effect.gen(function* () {
+            const now = yield* DateTime.now
+            links = links.map((l) => (l.id === linkId && !l.openedAt ? { ...l, openedAt: now } : l))
+          }),
+        PrepareHomeScreen: ({ linkId }) =>
+          Effect.gen(function* () {
+            const link = links.find((l) => l.id === linkId)
+            if (!link) return yield* new NotFound({ entity: "link", id: linkId })
+            const published = Array.from(records.values()).some(
+              (r) => linkHost(r.project.publicUrl) === linkHost(link.url)
+            )
+            return { url: published ? `${link.url}${link.url.includes("?") ? "&" : "?"}dream_home_screen=1` : link.url }
+          }),
         GetLiveUrl: ({ projectId }) =>
           find(projectId).pipe(
             Effect.map(() => ({ url: `wss://fixtures.invalid/projects/${projectId}/live?ticket=${nextId("tkt")}` }))
@@ -916,6 +988,40 @@ export class FakeBackend extends Context.Service<
           case "reset":
             stallNextWrite = false
             return yield* load(makeWorld(now))
+          case "links-empty":
+            links = []
+            return
+          case "links-new": {
+            // Lift Log's agent just published a second page; its tile shows the dot until they open it.
+            const lift = Array.from(records.values()).find((r) => r.project.slug === "lift-log")
+            if (!lift) return
+            links = [
+              ...links,
+              {
+                id: "lnk_liftlogtimer" as LinkId,
+                url: `${lift.project.publicUrl}/timer`,
+                title: "Rest timer",
+                icon: { _tag: "Symbol", name: "timer" },
+                color: "teal",
+                projectId: lift.project.id,
+                addedBy: "agent",
+                createdAt: now,
+                updatedAt: now
+              },
+              {
+                id: "lnk_recipes" as LinkId,
+                url: "https://www.seriouseats.com/the-food-lab",
+                title: "Food Lab",
+                icon: { _tag: "Emoji", emoji: "🍳" },
+                color: "yellow",
+                addedBy: "person",
+                createdAt: now,
+                updatedAt: now,
+                openedAt: now
+              }
+            ]
+            return
+          }
           case "archived": {
             // Recipe Scaler was put away a few days ago, Morning Brief last month.
             const at = (slug: string, days: number) => {

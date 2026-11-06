@@ -11,6 +11,7 @@ import { LiveForwarder } from "./http/Router.ts"
 import { UpdateAssets } from "./http/Updates.ts"
 import { Access } from "./integrations/Access.ts"
 import { CredentialStore } from "./integrations/CredentialStore.ts"
+import { AppLinks } from "./links/AppLinks.ts"
 import { type PlatformOverrides, platformLayer } from "./Platform.ts"
 import { type ProjectFetch, ProjectDirectory } from "./project/Client.ts"
 
@@ -25,7 +26,7 @@ export interface WorkerBindings {
 
 export const workerLayer = (bindings: WorkerBindings, overrides: PlatformOverrides = {}) =>
   ConnectLinks.layer.pipe(
-    Layer.provideMerge(Layer.mergeAll(ModelConnect.layer, Access.layer)),
+    Layer.provideMerge(Layer.mergeAll(ModelConnect.layer, Access.layer, AppLinks.layer)),
     Layer.provideMerge(platformLayer({ d1: bindings.d1, fetchProject: bindings.fetchProject }, overrides)),
     Layer.provideMerge(MediaStore.layer(bindings.r2)),
     Layer.provideMerge(UpdateAssets.layer(bindings.updates)),

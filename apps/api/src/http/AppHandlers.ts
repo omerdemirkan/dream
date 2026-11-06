@@ -30,6 +30,8 @@ import { Connections, toModelConnection } from "../db/Connections.ts"
 import { Projects, titleFromIdea } from "../db/Projects.ts"
 import { Users } from "../db/Users.ts"
 import { Access } from "../integrations/Access.ts"
+import { AppLinks } from "../links/AppLinks.ts"
+import { Links } from "../db/Links.ts"
 import { Google } from "../integrations/Google.ts"
 import { timingSafeEqual } from "../lib/Bytes.ts"
 import { messageIdFor, newProjectId, projectIdFor } from "../lib/Ids.ts"
@@ -118,6 +120,8 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
     const modelConnect = yield* ModelConnect
     const connectLinks = yield* ConnectLinks
     const mediaStore = yield* MediaStore
+    const appLinks = yield* AppLinks
+    const links = yield* Links
 
     const me = Effect.gen(function* () {
       return (yield* CurrentUser).userId
@@ -200,7 +204,8 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
           yield* deleteProject(projectId).pipe(
             Effect.provideService(ProjectClients, clients),
             Effect.provideService(Projects, projects),
-            Effect.provideService(MediaStore, mediaStore)
+            Effect.provideService(MediaStore, mediaStore),
+            Effect.provideService(Links, links)
           )
         }),
 
@@ -255,6 +260,14 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
           yield* projects.insert(project, host)
           return yield* start(project)
         }),
+
+      ListLinks: () => Effect.flatMap(me, appLinks.list),
+      AddLink: (input) => Effect.flatMap(me, (userId) => appLinks.add(userId, input)),
+      UpdateLink: ({ linkId, ...changes }) => Effect.flatMap(me, (userId) => appLinks.update(userId, linkId, changes)),
+      RemoveLink: ({ linkId }) => Effect.flatMap(me, (userId) => appLinks.remove(userId, linkId)),
+      MarkLinkOpened: ({ linkId }) => Effect.flatMap(me, (userId) => appLinks.markOpened(userId, linkId)),
+      PrepareHomeScreen: ({ linkId, iconPng }) =>
+        Effect.flatMap(me, (userId) => appLinks.prepareHomeScreen(userId, linkId, iconPng)),
 
       GetLiveUrl: ({ projectId }) =>
         Effect.gen(function* () {

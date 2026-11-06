@@ -1,9 +1,10 @@
 /**
  * Deleting a project for good, from the Worker: its DO deletes everything it holds (`ProjectRpcs.Delete`), then
- * its media goes from R2 and D1. For `DeleteProject` and the operator's cleanup route.
+ * its media goes from R2 and D1, and its app links leave Home. For `DeleteProject` and the operator's cleanup route.
  */
 import type { ProjectId } from "@dream/domain"
 import { Effect, Option } from "effect"
+import { Links } from "../db/Links.ts"
 import { Projects } from "../db/Projects.ts"
 import { MediaStore } from "../http/Media.ts"
 import { ProjectClients } from "./Client.ts"
@@ -27,4 +28,6 @@ export const deleteProject = Effect.fn("deleteProject")(function* (projectId: Pr
     }
   }
   yield* projects.removeMedia(projectId)
+  // Its links went to an app that's gone.
+  yield* (yield* Links).deleteForProject(projectId)
 })
