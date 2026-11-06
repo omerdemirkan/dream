@@ -1,18 +1,7 @@
 import * as Fx from "@dream/domain/fixtures"
 import { assert, describe, it } from "@effect/vitest"
 import { caretAt, insertAt } from "../src/data/draft.ts"
-import {
-  connectedNeeds,
-  draftRuns,
-  ideaGroups,
-  ideas,
-  nearProject,
-  parseDraft,
-  pickStarters,
-  priorityBand,
-  rankIdeas,
-  shiftGuesses
-} from "../src/data/ideas.ts"
+import { draftRuns, ideas, nearProject, parseDraft, shiftGuesses, startersFor } from "../src/data/ideas.ts"
 
 const idea = (id: string) => {
   const found = ideas.find((i) => i.id === id)
@@ -24,80 +13,86 @@ const guessTexts = (text: string, guesses: ReadonlyArray<{ start: number; end: n
 const sampleTitles = [Fx.liftLog, Fx.morningBrief, Fx.cabin, Fx.recipeScaler].map((p) => p.title)
 
 describe("ideas", () => {
-  it("are about twenty, each with a short starter and a draft with guesses", () => {
-    assert.isAtLeast(ideas.length, 18)
-    assert.strictEqual(new Set(ideas.map((i) => i.id)).size, ideas.length)
+  it("are the founder's four, in their order, each a short starter and a draft with guesses", () => {
+    assert.deepStrictEqual(
+      ideas.map((i) => i.id),
+      ["memory-tutor", "points-trips", "run-club-bot", "dinner-plan"]
+    )
     for (const i of ideas) {
-      assert.isAtMost(i.line.length, 100, i.id)
-      assert.isTrue(
-        ideaGroups.some((g) => g.id === i.group),
-        i.id
-      )
+      assert.isAtMost(i.line.length, 110, i.id)
       const draft = parseDraft(i.draft)
-      assert.isAtLeast(draft.guesses.length, 1, i.id)
+      assert.isAtLeast(draft.guesses.length, 2, i.id)
       assert.notInclude(draft.text, "⟦", i.id)
       assert.notInclude(draft.text, "⟧", i.id)
+      // Dollars or no currency.
+      assert.notMatch(i.line + i.draft, /[£€]/, i.id)
     }
   })
 
   it("marks the guesses in a draft", () => {
-    const draft = parseDraft(idea("fare-watch").draft)
-    assert.deepStrictEqual(guessTexts(draft.text, draft.guesses), ["London", "Lisbon", "May", "£120"])
-    assert.isTrue(draft.text.startsWith("Check return flights from London to Lisbon"))
+    const draft = parseDraft(idea("run-club-bot").draft)
+    assert.deepStrictEqual(guessTexts(draft.text, draft.guesses), [
+      "Wednesday",
+      "three",
+      "our usual meeting spot",
+      "Saturday",
+      "WhatsApp"
+    ])
+    assert.isTrue(draft.text.startsWith("A bot for our running club’s group chat. Every Wednesday"))
     assert.deepStrictEqual(parseDraft("no guesses"), { text: "no guesses", guesses: [] })
     // An unclosed bracket is left as written rather than eating the rest.
     assert.deepStrictEqual(parseDraft("a ⟦b"), { text: "a ⟦b", guesses: [] })
   })
 
   it("cuts a draft into plain runs and guesses for drawing", () => {
-    const draft = parseDraft("Fly to ⟦Lisbon⟧ under ⟦£120⟧.")
+    const draft = parseDraft("Fly to ⟦Denver⟧ under ⟦$120⟧.")
     assert.deepStrictEqual(draftRuns(draft.text, draft.guesses), [
       { text: "Fly to ", guess: false },
-      { text: "Lisbon", guess: true },
+      { text: "Denver", guess: true },
       { text: " under ", guess: false },
-      { text: "£120", guess: true },
+      { text: "$120", guess: true },
       { text: ".", guess: false }
     ])
   })
 })
 
 describe("guesses through edits", () => {
-  const draft = parseDraft("Fly to ⟦Lisbon⟧ under ⟦£120⟧.")
+  const draft = parseDraft("Fly to ⟦Denver⟧ under ⟦$120⟧.")
   const lisbon = draft.guesses[0]!
 
   it("stop being guesses once typed over, and the rest move with the text", () => {
-    // Lisbon is selected; the first keystroke replaces it.
+    // Denver is selected; the first keystroke replaces it.
     const typed = `${draft.text.slice(0, lisbon.start)}P${draft.text.slice(lisbon.end)}`
     const after = shiftGuesses(draft.guesses, draft.text, typed)
-    assert.deepStrictEqual(guessTexts(typed, after), ["£120"])
+    assert.deepStrictEqual(guessTexts(typed, after), ["$120"])
     // A replacement that starts with the guess's own first letter is still an edit of it.
     const same = `${draft.text.slice(0, lisbon.start)}L${draft.text.slice(lisbon.end)}`
-    assert.deepStrictEqual(guessTexts(same, shiftGuesses(draft.guesses, draft.text, same)), ["£120"])
+    assert.deepStrictEqual(guessTexts(same, shiftGuesses(draft.guesses, draft.text, same)), ["$120"])
   })
 
   it("stop being guesses when typed into", () => {
     const typed = `${draft.text.slice(0, lisbon.start + 3)}x${draft.text.slice(lisbon.start + 3)}`
-    assert.deepStrictEqual(guessTexts(typed, shiftGuesses(draft.guesses, draft.text, typed)), ["£120"])
+    assert.deepStrictEqual(guessTexts(typed, shiftGuesses(draft.guesses, draft.text, typed)), ["$120"])
   })
 
   it("stay when the edit is elsewhere", () => {
     const front = `Please f${draft.text.slice(1)}`
-    assert.deepStrictEqual(guessTexts(front, shiftGuesses(draft.guesses, draft.text, front)), ["Lisbon", "£120"])
+    assert.deepStrictEqual(guessTexts(front, shiftGuesses(draft.guesses, draft.text, front)), ["Denver", "$120"])
     const end = `${draft.text} Soon.`
-    assert.deepStrictEqual(guessTexts(end, shiftGuesses(draft.guesses, draft.text, end)), ["Lisbon", "£120"])
+    assert.deepStrictEqual(guessTexts(end, shiftGuesses(draft.guesses, draft.text, end)), ["Denver", "$120"])
     // Typing right before or right after a guess leaves it a guess.
     const touching = `${draft.text.slice(0, lisbon.end)},${draft.text.slice(lisbon.end)}`
-    assert.deepStrictEqual(guessTexts(touching, shiftGuesses(draft.guesses, draft.text, touching)), ["Lisbon", "£120"])
+    assert.deepStrictEqual(guessTexts(touching, shiftGuesses(draft.guesses, draft.text, touching)), ["Denver", "$120"])
   })
 
   it("follow a dictation take placed over the selected guess", () => {
     const placed = insertAt(draft.text, lisbon, "Porto")
-    assert.strictEqual(placed.text, "Fly to Porto under £120.")
-    assert.deepStrictEqual(guessTexts(placed.text, shiftGuesses(draft.guesses, draft.text, placed.text)), ["£120"])
+    assert.strictEqual(placed.text, "Fly to Porto under $120.")
+    assert.deepStrictEqual(guessTexts(placed.text, shiftGuesses(draft.guesses, draft.text, placed.text)), ["$120"])
     const atEnd = insertAt(draft.text, caretAt(draft.text.length), "In May.")
     assert.deepStrictEqual(guessTexts(atEnd.text, shiftGuesses(draft.guesses, draft.text, atEnd.text)), [
-      "Lisbon",
-      "£120"
+      "Denver",
+      "$120"
     ])
   })
 
@@ -107,64 +102,14 @@ describe("guesses through edits", () => {
 })
 
 describe("which starters", () => {
-  it("knows what Gmail, Calendar and OAuth connections make available", () => {
-    assert.deepStrictEqual([...connectedNeeds([Fx.google])], ["gmail"])
-    const calendar = {
-      ...Fx.google,
-      access: { ...Fx.google.access, scopes: ["gmail.readonly", "calendar.readonly"] }
-    } as typeof Fx.google
-    assert.deepStrictEqual([...connectedNeeds([calendar])].sort(), ["calendar", "gmail"])
-    assert.deepStrictEqual([...connectedNeeds([{ ...Fx.google, status: "revoked" }])], [])
-  })
-
-  it("drops ideas their projects already are", () => {
-    assert.isTrue(nearProject(idea("newsletter-digest"), ["Morning Brief"]))
-    assert.isTrue(nearProject(idea("lift-log"), ["Lift Log"]))
-    assert.isTrue(nearProject(idea("receipts"), ["Receipts"]))
-    assert.isFalse(nearProject(idea("fare-watch"), sampleTitles))
-    const ranked = rankIdeas(ideas, { connected: new Set(), projectTitles: sampleTitles })
-    assert.notInclude(
-      ranked.map((i) => i.id),
-      "newsletter-digest"
-    )
-    assert.notInclude(
-      ranked.map((i) => i.id),
-      "lift-log"
-    )
-  })
-
-  it("keeps the founder's order, with what's connected breaking ties only within each band of four", () => {
-    const ids = ideas.map((i) => i.id)
+  it("drops ideas one of their projects already is, and keeps the order", () => {
+    assert.isTrue(nearProject(idea("dinner-plan"), ["Meal planner"]))
+    assert.isTrue(nearProject(idea("run-club-bot"), ["Running club"]))
+    assert.isFalse(nearProject(idea("memory-tutor"), sampleTitles))
+    assert.deepStrictEqual(startersFor(ideas, sampleTitles), ideas)
     assert.deepStrictEqual(
-      rankIdeas(ideas, { connected: new Set(), projectTitles: [] }).map((i) => i.id),
-      ids
+      startersFor(ideas, ["Meal planner"]).map((i) => i.id),
+      ["memory-tutor", "points-trips", "run-club-bot"]
     )
-    const ranked = rankIdeas(ideas, { connected: new Set(["gmail"]), projectTitles: [] }).map((i) => i.id)
-    // Band one is evening-inbox, anki-walk, before-meetings, fare-watch: Gmail fully, then partly, then the rest.
-    assert.deepStrictEqual(ranked.slice(0, priorityBand), [
-      "evening-inbox",
-      "before-meetings",
-      "anki-walk",
-      "fare-watch"
-    ])
-    // Nothing leaves its band, however much it uses what's connected.
-    ranked.forEach((id, n) =>
-      assert.strictEqual(Math.floor(ids.indexOf(id) / priorityBand), Math.floor(n / priorityBand))
-    )
-  })
-
-  it("picks four in ranked order: the top two, and two of the next six, the same for the same seed", () => {
-    const ranked = rankIdeas(ideas, { connected: new Set(["gmail"]), projectTitles: sampleTitles })
-    const four = pickStarters(ranked, 0.42)
-    assert.strictEqual(four.length, 4)
-    assert.deepStrictEqual(four.slice(0, 2), ranked.slice(0, 2))
-    assert.isTrue(four.slice(2).every((i) => ranked.slice(2, 8).includes(i)))
-    assert.deepStrictEqual(
-      four.map((i) => ranked.indexOf(i)),
-      four.map((i) => ranked.indexOf(i)).toSorted((a, b) => a - b)
-    )
-    assert.deepStrictEqual(pickStarters(ranked, 0.42), four)
-    const seen = new Set([0.1, 0.2, 0.3, 0.4, 0.5, 0.6].flatMap((s) => pickStarters(ranked, s).map((i) => i.id)))
-    assert.isAtLeast(seen.size, 6)
   })
 })
