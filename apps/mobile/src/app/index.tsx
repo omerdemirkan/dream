@@ -55,9 +55,11 @@ export default function Home() {
     <View style={{ flex: 1, backgroundColor: color.bg }}>
       <ScrollView
         contentContainerStyle={{
+          flexGrow: 1,
           paddingTop: insets.top + 4,
           paddingHorizontal: gutter,
-          paddingBottom: insets.bottom + 120
+          // Ends just above the docked input, so the usage line sits there when the list is short.
+          paddingBottom: Math.max(insets.bottom, 12) + 2 + 56 + 22
         }}
         showsVerticalScrollIndicator={false}
       >
@@ -96,6 +98,8 @@ export default function Home() {
         {projects.map((summary, i) => (
           <ProjectRow key={summary.project.id} summary={summary} first={i === 0} open={summary.openAsks} />
         ))}
+        {/* Pushes usage to the bottom of a short list; a long one scrolls it out of view. */}
+        <View style={{ flex: 1 }} />
         <Usage connections={connections} />
       </ScrollView>
       {/* Keeps the clock readable over a long project list. */}
@@ -295,7 +299,7 @@ function Usage(props: { readonly connections: ReadonlyArray<ModelConnection> }) 
   const line = usage ? usageLine(usage) : undefined
   if (!usage || !line) return null
   return (
-    <View style={{ marginTop: 18, flexDirection: "row", alignItems: "center", gap: 10 }}>
+    <View style={{ marginTop: 18, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10 }}>
       <View
         style={{ width: 44, height: 3, borderRadius: 2, backgroundColor: "rgba(255,255,255,0.14)", overflow: "hidden" }}
       >
