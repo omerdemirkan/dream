@@ -16,6 +16,7 @@ import {
   Routes,
   SandboxAuth,
   SandboxRpcs,
+  type TurnUsage,
   type UsageSnapshot
 } from "@dream/domain"
 import { Context, Data, Effect, Layer, Redacted, Ref, Schedule } from "effect"
@@ -25,7 +26,12 @@ import { DreamdConfig } from "./Config.ts"
 import type { DreamQuestion } from "./harness/PersonChannel.ts"
 
 export type Report =
-  | { readonly _tag: "Turn"; readonly state: "started" | "finished"; readonly eventIds: ReadonlyArray<EventId> }
+  | {
+      readonly _tag: "Turn"
+      readonly state: "started" | "finished"
+      readonly eventIds: ReadonlyArray<EventId>
+      readonly usage?: TurnUsage
+    }
   | { readonly _tag: "Usage"; readonly usage: UsageSnapshot }
   | { readonly _tag: "Question"; readonly question: DreamQuestion }
   | { readonly _tag: "Message"; readonly text: string }
@@ -53,7 +59,12 @@ export const layerClient = Layer.unwrap(
 export class Api extends Context.Service<
   Api,
   {
-    readonly reportTurn: (state: "started" | "finished", eventIds: ReadonlyArray<EventId>) => Effect.Effect<void>
+    /** `usage`, with "finished", is what the turn used of the model. */
+    readonly reportTurn: (
+      state: "started" | "finished",
+      eventIds: ReadonlyArray<EventId>,
+      usage?: TurnUsage
+    ) => Effect.Effect<void>
     readonly reportUsage: (usage: UsageSnapshot) => Effect.Effect<void>
     /** `dream ask` on the agent's behalf. */
     readonly askQuestion: (question: DreamQuestion) => Effect.Effect<MessageId, ApiError>
@@ -84,7 +95,8 @@ export class Api extends Context.Service<
           Effect.mapError((error) => new ApiError({ message: error.message }))
         )
       return Api.of({
-        reportTurn: (state, eventIds) => report(`turn ${state}`, client.ReportTurn({ state, eventIds })),
+        reportTurn: (state, eventIds, usage) =>
+          report(`turn ${state}`, client.ReportTurn({ state, eventIds, ...(usage === undefined ? {} : { usage }) })),
         reportUsage: (usage) => report("usage", client.ReportUsage({ usage })),
         askQuestion: (question) => speak(client.AskQuestion(question)),
         sendMessage: (text) =>
@@ -108,8 +120,14 @@ export class Api extends Context.Service<
     Layer.succeed(
       Api,
       Api.of({
-        reportTurn: (state, eventIds) =>
-          Ref.update(reports, (all): ReadonlyArray<Report> => [...all, { _tag: "Turn", state, eventIds }]),
+        reportTurn: (state, eventIds, usage) =>
+          Ref.update(
+            reports,
+            (all): ReadonlyArray<Report> => [
+              ...all,
+              { _tag: "Turn", state, eventIds, ...(usage === undefined ? {} : { usage }) }
+            ]
+          ),
         reportUsage: (usage) => Ref.update(reports, (all): ReadonlyArray<Report> => [...all, { _tag: "Usage", usage }]),
         askQuestion: (question) =>
           Ref.modify(reports, (all) => [
