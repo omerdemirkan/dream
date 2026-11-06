@@ -126,9 +126,13 @@ export class AppLinks extends Context.Service<
           Option.filter(found, (p) => p.ownerId === userId)
         )
 
-      const projectTitle = (projectId: ProjectId) =>
+      /** The project's name and public URL, as `dream link` echoes them. */
+      const about = (projectId: ProjectId) =>
         Effect.map(projects.find(projectId), (found) =>
-          Option.match(found, { onNone: () => "this project", onSome: (p) => p.title })
+          Option.match(found, {
+            onNone: () => ({ projectTitle: "this project", publicUrl: "" }),
+            onSome: (p) => ({ projectTitle: p.title, publicUrl: p.publicUrl })
+          })
         )
 
       /** An agent's link changed by them: its agent hears. Delivery problems don't fail their edit. */
@@ -248,7 +252,7 @@ export class AppLinks extends Context.Service<
 
       const listForAgent = Effect.fn("AppLinks.listForAgent")(function* (projectId: ProjectId) {
         const rows = yield* links.forProject(projectId)
-        return { links: rows.map(toAppLink), projectTitle: yield* projectTitle(projectId) }
+        return { links: rows.map(toAppLink), ...(yield* about(projectId)) }
       })
 
       const removedByThem = (rows: ReadonlyArray<LinkRow>, url: string) =>
@@ -313,7 +317,7 @@ export class AppLinks extends Context.Service<
           updatedAt: now
         }
         yield* links.insert(link, userId)
-        return { link, projectTitle: yield* projectTitle(projectId) }
+        return { link, ...(yield* about(projectId)) }
       })
 
       const agentsOwn = (projectId: ProjectId, linkId: LinkId) =>
@@ -369,7 +373,7 @@ export class AppLinks extends Context.Service<
           yield* links.update(linkId, update, now)
           if (reiconed) yield* links.dropIcon(linkId)
         }
-        return { link: toAppLink(yield* reread(linkId)), projectTitle: yield* projectTitle(projectId) }
+        return { link: toAppLink(yield* reread(linkId)), ...(yield* about(projectId)) }
       })
 
       const removeByAgent = Effect.fn("AppLinks.removeByAgent")(function* (projectId: ProjectId, linkId: LinkId) {

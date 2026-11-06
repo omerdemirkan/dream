@@ -57,7 +57,7 @@ const Handlers = SandboxRpcs.toLayer(
     const wakes = yield* Ref.make<ReadonlyArray<Wake>>([])
     const usage = yield* Ref.make<Option.Option<UsageSnapshot>>(Option.none())
     const links = yield* Ref.make<ReadonlyArray<AppLink>>([])
-    const projectTitle = "Dev project"
+    const about = { projectTitle: "Dev project", publicUrl: "https://dev-3000.dream.example" }
     const findLink = (linkId: LinkId) =>
       Effect.flatMap(Ref.get(links), (all) => {
         const found = all.find((link) => link.id === linkId)
@@ -166,7 +166,7 @@ const Handlers = SandboxRpcs.toLayer(
             updatedAt: now
           }
           yield* Ref.set(links, [...all, link])
-          return { link, projectTitle }
+          return { link, ...about }
         }),
       UpdateLink: ({ linkId, icon, ...rest }) =>
         Effect.gen(function* () {
@@ -181,7 +181,7 @@ const Handlers = SandboxRpcs.toLayer(
             updatedAt: yield* DateTime.now
           }
           yield* Ref.update(links, (all) => all.map((l) => (l.id === linkId ? link : l)))
-          return { link, projectTitle }
+          return { link, ...about }
         }),
       RemoveLink: ({ linkId }) =>
         log("RemoveLink", { linkId }).pipe(
@@ -191,7 +191,7 @@ const Handlers = SandboxRpcs.toLayer(
       ListLinks: () =>
         log("ListLinks", {}).pipe(
           Effect.andThen(Ref.get(links)),
-          Effect.map((all) => ({ links: all, projectTitle }))
+          Effect.map((all) => ({ links: all, ...about }))
         ),
       CreateMediaUpload: (payload) =>
         Effect.gen(function* () {

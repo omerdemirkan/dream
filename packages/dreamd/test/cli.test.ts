@@ -8,9 +8,19 @@ import { CliOutput, Command } from "effect/cli"
 import { FetchHttpClient } from "effect/http"
 import { dream } from "../src/Cli.ts"
 import { Dream } from "../src/cli/Client.ts"
-import { accessRequested, integrations, pageCheck } from "../src/cli/Format.ts"
+import { accessRequested, integrations, linkAdded, pageCheck } from "../src/cli/Format.ts"
+import * as Fx from "@dream/domain/fixtures"
 import { PageCheck, PageLoad } from "../src/cli/PageCheck.ts"
-import { checkCron, mediaType, parseAt, parseStep, planCopy } from "../src/cli/Parse.ts"
+import {
+  checkCron,
+  iconImageProblem,
+  iconInput,
+  imageSize,
+  mediaType,
+  parseAt,
+  parseStep,
+  planCopy
+} from "../src/cli/Parse.ts"
 import { requestedSecret } from "../src/cli/Secrets.ts"
 import { invalidInvocation } from "../src/cli/Usage.ts"
 import { publishedPorts, requestedTags } from "../src/Servers.ts"
@@ -436,5 +446,61 @@ describe("dream publish's check", () => {
       assert.strictEqual(load._tag, "Loaded")
       assert.include(pageCheck(load), `403 text/plain, "Blocked request. This host ("localhost") is not allowed."`)
     }).pipe(Effect.scoped)
+  )
+})
+
+describe("dream link", () => {
+  it("reads --icon as a symbol, an emoji, a file, or nothing", () => {
+    assert.deepStrictEqual(iconInput("dumbbell"), Result.succeed({ _tag: "Symbol", name: "dumbbell" }))
+    assert.deepStrictEqual(iconInput("🏋️"), Result.succeed({ _tag: "Emoji", emoji: "🏋️" }))
+    assert.deepStrictEqual(iconInput("art/icon.PNG"), Result.succeed({ _tag: "File", path: "art/icon.PNG" }))
+    assert.deepStrictEqual(iconInput(""), Result.succeed({ _tag: "Clear" }))
+    assert.isTrue(Result.isFailure(iconInput("Dumbbell Icon")))
+  })
+
+  it("wants a square image of at least 180 px", () => {
+    const png = (width: number, height: number) => {
+      const bytes = new Uint8Array(24)
+      const view = new DataView(bytes.buffer)
+      view.setUint32(0, 0x89504e47)
+      view.setUint32(16, width)
+      view.setUint32(20, height)
+      return bytes
+    }
+    assert.deepStrictEqual(imageSize(png(512, 512)), { width: 512, height: 512 })
+    assert.isUndefined(iconImageProblem("icon.png", imageSize(png(512, 512))))
+    assert.include(iconImageProblem("icon.png", imageSize(png(512, 300)))!, "has to be square")
+    assert.include(iconImageProblem("icon.png", imageSize(png(64, 64)))!, "at least 180")
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x01, 0x00, 0x02, 0x00, 0x03])
+    assert.deepStrictEqual(imageSize(jpeg), { width: 512, height: 256 })
+  })
+
+  it("says what they'll see", () => {
+    const cabin = Fx.links[2]!
+    assert.deepStrictEqual(
+      linkAdded({ link: cabin, projectTitle: "Cabin", publicUrl: Fx.cabin.publicUrl }).split("\n"),
+      [
+        "Added lnk_cabin to their Home, at the end of the row of app icons.",
+        'On their Home it shows as "Cabin" under the SF Symbol house on a green tile, with a dot before the label until they first open it.',
+        'Held, it reads "Made by Cabin · cabin-k3x9q2.dream.example".',
+        "Added to their iPhone's Home Screen, it's an app called \"Cabin\" with this tile as its icon."
+      ]
+    )
+  })
+
+  it.effect("refuses what wouldn't show right before asking Dream", () =>
+    Effect.gen(function* () {
+      const add = (...args: Array<string>) => run(["link", "add", "https://cabin-7fq2.omer.build", ...args])
+      assert.include(yield* add("--title", "Cabin weekend booking tool", "--color", "green"), "is 26 characters")
+      assert.include(yield* add("--title", "Cabin", "--icon", "house"), "--color is missing")
+      assert.include(yield* add("--title", "Cabin", "--icon", "House Icon", "--color", "green"), "isn't an SF Symbol")
+      assert.include(
+        yield* run(["link", "add", "http://x.example", "--title", "X", "--color", "red"]),
+        "must start with https://"
+      )
+      assert.include(yield* run(["link", "update", "lnk_x"]), "at least one of")
+      // A good link gets past the checks, to the socket (absent here).
+      assert.notInclude(yield* add("--title", "Cabin", "--icon", "house", "--color", "green"), "--")
+    })
   )
 })

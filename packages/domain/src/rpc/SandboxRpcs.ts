@@ -31,11 +31,18 @@ import { Wake, WakeWhen } from "../Wake.ts"
 /** Absent leaves a field as it is; `null` clears it. */
 const Patch = <S extends Schema.Top>(schema: S) => Schema.optionalKey(Schema.NullOr(schema))
 
-/** A link as `dream link` shows it, with the project name its long-press menu shows ("Made by …"). */
-export const ProjectLink = Schema.Struct({ link: AppLink, projectTitle: Schema.String })
+/**
+ * A link as `dream link` shows it, with the project name its long-press menu shows ("Made by …") and the project's
+ * public URL (only links there get Dream's name and icon when added to their iPhone's Home Screen).
+ */
+export const ProjectLink = Schema.Struct({ link: AppLink, projectTitle: Schema.String, publicUrl: Schema.String })
 export type ProjectLink = typeof ProjectLink.Type
 
-export const ProjectLinks = Schema.Struct({ links: Schema.Array(AppLink), projectTitle: Schema.String })
+export const ProjectLinks = Schema.Struct({
+  links: Schema.Array(AppLink),
+  projectTitle: Schema.String,
+  publicUrl: Schema.String
+})
 export type ProjectLinks = typeof ProjectLinks.Type
 
 export class SandboxRpcs extends RpcGroup.make(

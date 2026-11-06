@@ -5,6 +5,7 @@
  * Unix socket. Results print as short text, or as JSON with `--json`.
  */
 import {
+  AgentLinksPerProject,
   AccessMessage,
   AccessRequest,
   accessHostProblem,
@@ -13,8 +14,15 @@ import {
   BrowserSession,
   type BrowserSessionId,
   Integration,
+  LinkColor,
+  LinkIcon,
+  type LinkId,
+  LinkTitleMaxLength,
+  linkUrlProblem,
   LiveActivityContent,
   MacStatus,
+  ProjectLink,
+  ProjectLinks,
   type MediaId,
   MediaRef,
   type MessageId,
@@ -798,6 +806,168 @@ const media = Command.make("media").pipe(
 )
 
 // ---------------------------------------------------------------------------
+// App links on their Home
+// ---------------------------------------------------------------------------
+
+const linkFlags = {
+  title: Flag.String("title").pipe(
+    Flag.withDescription(
+      `The label under the tile, and the app's name if they add it to their iPhone's Home Screen. ${LinkTitleMaxLength} characters at most; about ten fit under the tile.`
+    )
+  ),
+  icon: Flag.String("icon").pipe(
+    Flag.withDescription(
+      "What's on the tile: an SF Symbol name (dumbbell), one emoji, or a square png or jpg of at least 180 px that fills the tile edge to edge. Without it, the title's first letter."
+    )
+  ),
+  color: Flag.Literals("color", LinkColor.literals).pipe(
+    Flag.withDescription("The tile's colour behind a symbol, emoji or letter. Light and yellow get a dark glyph.")
+  )
+}
+
+const titleOf = (title: string) => {
+  const text = title.trim()
+  if (text.length === 0) return fail("--title is empty: it's the label under the tile.")
+  if (/[\n\r\t]/.test(text)) return fail("--title has to be one line.")
+  if ([...text].length > LinkTitleMaxLength) {
+    return fail(
+      `--title "${text}" is ${[...text].length} characters; a link's title is ${LinkTitleMaxLength} at most, and about ten fit under its tile.`
+    )
+  }
+  return Effect.succeed(text)
+}
+
+const urlOf = (url: string) => {
+  const problem = linkUrlProblem(url.trim())
+  return problem === undefined ? Effect.succeed(url.trim()) : fail(`The link "${url}" ${problem}.`)
+}
+
+/** `--icon` as a tile glyph; a file is checked and uploaded. `null`: clear it (update only). */
+const iconOf = (text: string) =>
+  Effect.gen(function* () {
+    const input = yield* fromResult(Parse.iconInput(text))
+    switch (input._tag) {
+      case "Clear":
+        return null
+      case "Symbol":
+        return LinkIcon.cases.Symbol.make({ name: input.name })
+      case "Emoji":
+        return LinkIcon.cases.Emoji.make({ emoji: input.emoji })
+      case "File": {
+        const fs = yield* FileSystem.FileSystem
+        const bytes = yield* fs
+          .readFile(input.path)
+          .pipe(Effect.mapError((cause) => new CliError.UserError({ cause, userMessage: `Can't read ${input.path}.` })))
+        const problem = Parse.iconImageProblem(input.path, Parse.imageSize(bytes))
+        if (problem !== undefined) return yield* fail(problem)
+        return LinkIcon.cases.Image.make({ media: yield* upload(input.path) })
+      }
+    }
+  })
+
+const linkList = Command.make("list", { json }, (input) =>
+  Effect.gen(function* () {
+    const dream = yield* Dream
+    const result = yield* userFacing(dream.ListLinks())
+    yield* show(input.json, ProjectLinks, result, Format.links(result, yield* now))
+  })
+).pipe(Command.withDescription("This project's links on their Home, theirs too, and the ones they removed."))
+
+const link = Command.make("link", { json }, (input) =>
+  Effect.gen(function* () {
+    const dream = yield* Dream
+    const result = yield* userFacing(dream.ListLinks())
+    yield* show(input.json, ProjectLinks, result, Format.links(result, yield* now))
+  })
+).pipe(
+  Command.withDescription(
+    "App icons at the top of their Home that open what you've made. With no subcommand, lists this project's."
+  ),
+  Command.withSubcommands([
+    Command.make(
+      "add",
+      {
+        url: Argument.String("url").pipe(
+          Argument.withDescription("The https URL it opens, usually your published URL or a page on it.")
+        ),
+        title: linkFlags.title,
+        icon: linkFlags.icon.pipe(Flag.optional),
+        color: linkFlags.color.pipe(Flag.optional),
+        json
+      },
+      (input) =>
+        Effect.gen(function* () {
+          const dream = yield* Dream
+          const url = yield* urlOf(input.url)
+          const title = yield* titleOf(input.title)
+          const icon = Option.isSome(input.icon) ? yield* iconOf(input.icon.value) : null
+          if (Option.isNone(input.color) && icon?._tag !== "Image") {
+            return yield* fail(
+              `--color is missing: the tile behind the ${icon === null ? "letter" : "glyph"}, one of ${LinkColor.literals.join(", ")}.`
+            )
+          }
+          const added = yield* userFacing(
+            dream.AddLink({
+              url,
+              title,
+              ...(icon === null ? {} : { icon }),
+              color: Option.getOrElse(input.color, () => "graphite" as const)
+            })
+          )
+          yield* show(input.json, ProjectLink, added, Format.linkAdded(added))
+        })
+    ).pipe(
+      Command.withDescription(
+        `Put an icon on their Home that opens a URL. A project gets ${AgentLinksPerProject} at most, so it's for what they'll open again and again.`
+      ),
+      Command.withExamples([
+        { command: 'dream link add https://lift-log-x1.omer.build --title "Lift Log" --icon dumbbell --color purple' }
+      ])
+    ),
+    Command.make(
+      "update",
+      {
+        linkId: Argument.String("link-id"),
+        url: Flag.String("url").pipe(
+          Flag.withDescription("Point it somewhere else; it shows a dot again."),
+          Flag.optional
+        ),
+        title: linkFlags.title.pipe(Flag.optional),
+        icon: linkFlags.icon.pipe(Flag.optional),
+        color: linkFlags.color.pipe(Flag.optional),
+        json
+      },
+      (input) =>
+        Effect.gen(function* () {
+          const dream = yield* Dream
+          const url = Option.isSome(input.url) ? yield* urlOf(input.url.value) : undefined
+          const title = Option.isSome(input.title) ? yield* titleOf(input.title.value) : undefined
+          const icon = Option.isSome(input.icon) ? yield* iconOf(input.icon.value) : undefined
+          const change = defined({ url, title, icon, color: Option.getOrUndefined(input.color) })
+          if (Object.keys(change).length === 0)
+            return yield* fail("Give at least one of --url, --title, --icon or --color.")
+          const updated = yield* userFacing(dream.UpdateLink({ linkId: input.linkId as LinkId, ...change }))
+          yield* show(input.json, ProjectLink, updated, Format.linkUpdated(updated))
+        })
+    ).pipe(
+      Command.withDescription('Change a link you made. `--icon ""` makes the tile the title\'s first letter.'),
+      Command.withExamples([{ command: "dream link update lnk_\u2026 --icon figure.strengthtraining.traditional" }])
+    ),
+    Command.make("remove", { linkId: Argument.String("link-id") }, (input) =>
+      Effect.gen(function* () {
+        const dream = yield* Dream
+        yield* userFacing(dream.RemoveLink({ linkId: input.linkId as LinkId }))
+        yield* Console.log(`Removed ${input.linkId} from their Home.`)
+      })
+    ).pipe(
+      Command.withDescription("Take a link you made off their Home."),
+      Command.withExamples([{ command: "dream link remove lnk_\u2026" }])
+    ),
+    linkList
+  ])
+)
+
+// ---------------------------------------------------------------------------
 // Beyond the sandbox
 // ---------------------------------------------------------------------------
 
@@ -993,7 +1163,7 @@ const usage = Command.make("usage", { json }, (input) =>
 
 export const dream = Command.make("dream").pipe(
   Command.withDescription(
-    "Reach the person and Dream from this sandbox: messages, questions, access, status, wake-ups, publishing, a browser, a Mac, and usage."
+    "Reach the person and Dream from this sandbox: messages, questions, access, status, wake-ups, publishing, app links on their Home, a browser, a Mac, and usage."
   ),
-  Command.withSubcommands([message, ask, access, notify, status, live, wake, publish, media, browser, mac, usage])
+  Command.withSubcommands([message, ask, access, notify, status, live, wake, publish, link, media, browser, mac, usage])
 )

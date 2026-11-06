@@ -5,6 +5,9 @@
  */
 import type {
   AccessMessage,
+  AppLink,
+  ProjectLink,
+  ProjectLinks,
   BrowserSession,
   Integration,
   MacStatus,
@@ -16,7 +19,15 @@ import type {
   UsageWindow,
   Wake
 } from "@dream/domain"
-import { accessHeading, sandboxKeyPath } from "@dream/domain"
+import {
+  AgentLinksPerProject,
+  accessHeading,
+  describeLinkTile,
+  linkHost,
+  linkLabel,
+  linkMenuHeader,
+  sandboxKeyPath
+} from "@dream/domain"
 import { DateTime } from "effect"
 import type { PageLoad } from "./PageCheck.ts"
 
@@ -202,4 +213,56 @@ export const pageCheck = (load: PageLoad): string => {
     ...listed("console error", load.consoleErrors)
   ]
   return lines.length <= 10 ? lines.join("\n") : [...lines.slice(0, 9), `… ${lines.length - 9} more lines`].join("\n")
+}
+
+// ---------------------------------------------------------------------------
+// App links
+// ---------------------------------------------------------------------------
+
+/** What they'll see of a link, so the agent can check it against what it meant. */
+export const linkSeen = ({ link, projectTitle, publicUrl }: ProjectLink): string => {
+  const label = linkLabel(link.title)
+  const header = linkMenuHeader(link, projectTitle)
+  const dot = link.openedAt === undefined ? ", with a dot before the label until they first open it" : ""
+  const ours = publicUrl !== "" && linkHost(link.url) === linkHost(publicUrl)
+  return [
+    `On their Home it shows as "${label.shown}" under ${describeLinkTile(link)}${dot}.`,
+    ...(label.whole
+      ? []
+      : [`"${link.title}" doesn't fit under the tile; about ten characters do, so a shorter title reads whole.`]),
+    `Held, it reads "${header.title} · ${header.host}".`,
+    ours
+      ? `Added to their iPhone's Home Screen, it's an app called "${link.title}" with this tile as its icon.`
+      : `It's not on ${linkHost(publicUrl) || "this project's site"}, so on their iPhone's Home Screen it would get that site's own name and icon.`
+  ].join("\n")
+}
+
+export const linkAdded = (result: ProjectLink): string =>
+  `Added ${result.link.id} to their Home, at the end of the row of app icons.\n${linkSeen(result)}`
+
+export const linkUpdated = (result: ProjectLink): string => `Updated ${result.link.id}.\n${linkSeen(result)}`
+
+const linkLine = (link: AppLink) => `${link.id} "${link.title}" → ${link.url}`
+
+const theirChanges = (link: AppLink) =>
+  link.theirs === undefined || link.theirs.length === 0
+    ? ""
+    : ` They changed its ${link.theirs.join(" and ")}, which ${link.theirs.length > 1 ? "stay" : "stays"} theirs.`
+
+export const links = ({ links: all }: ProjectLinks, now: DateTime.Utc): string => {
+  const mine = all.filter((link) => link.addedBy === "agent" && link.removedAt === undefined)
+  const theirs = all.filter((link) => link.addedBy === "person")
+  const removed = all.filter((link) => link.removedAt !== undefined)
+  const lines = [
+    mine.length === 0
+      ? "This project has no links on their Home."
+      : `This project's links on their Home (${mine.length} of ${AgentLinksPerProject}):`,
+    ...mine.map(
+      (link) =>
+        `${linkLine(link)}, ${describeLinkTile(link)}, ${link.openedAt === undefined ? "not opened yet" : "opened"}.${theirChanges(link)}`
+    ),
+    ...theirs.map((link) => `They added ${linkLine(link)} themselves; it's theirs.`),
+    ...removed.map((link) => `They removed ${linkLine(link)} ${time(link.removedAt!, now)}; it stays off.`)
+  ]
+  return lines.join("\n")
 }

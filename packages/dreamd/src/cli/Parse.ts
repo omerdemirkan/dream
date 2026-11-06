@@ -1,5 +1,5 @@
 /** Turning what the agent types into domain values, with messages that say what's accepted. */
-import type { MediaContentType } from "@dream/domain"
+import { isSingleEmoji, type MediaContentType } from "@dream/domain"
 import { Cron, DateTime, Duration, Result } from "effect"
 
 const units: Record<string, number> = { s: 1_000, m: 60_000, h: 3_600_000, d: 86_400_000, w: 604_800_000 }
@@ -72,4 +72,61 @@ export const planCopy = (paths: ReadonlyArray<string>): Result.Result<CopyPlan, 
   if (!onMac(destination) && sources.every(onMac))
     return Result.succeed({ direction: "from-mac", sources: sources.map(strip), destination })
   return Result.fail(`One side must be the Mac (mac:<path>) and the other this sandbox. ${usage}`)
+}
+
+/** What `--icon` names: an SF Symbol, one emoji, an image file to upload, or "" (update only: a monogram). */
+export type IconInput =
+  | { readonly _tag: "Symbol"; readonly name: string }
+  | { readonly _tag: "Emoji"; readonly emoji: string }
+  | { readonly _tag: "File"; readonly path: string }
+  | { readonly _tag: "Clear" }
+
+export const iconInput = (text: string): Result.Result<IconInput, string> => {
+  const value = text.trim()
+  if (value === "") return Result.succeed({ _tag: "Clear" })
+  if (/\.(png|jpe?g)$/i.test(value)) return Result.succeed({ _tag: "File", path: value })
+  if (/^[a-z0-9]+(\.[a-z0-9]+)*$/.test(value) && value.length <= 64)
+    return Result.succeed({ _tag: "Symbol", name: value })
+  if (isSingleEmoji(value)) return Result.succeed({ _tag: "Emoji", emoji: value })
+  return Result.fail(
+    `--icon "${text}" isn't an SF Symbol name (lowercase, dotted: dumbbell, sun.horizon.fill), one emoji, or a png/jpg file.`
+  )
+}
+
+/** Width and height of a png or jpg, from its header. */
+export const imageSize = (bytes: Uint8Array): { readonly width: number; readonly height: number } | undefined => {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  if (bytes.length >= 24 && view.getUint32(0) === 0x89504e47)
+    return { width: view.getUint32(16), height: view.getUint32(20) }
+  if (bytes.length < 4 || view.getUint16(0) !== 0xffd8) return undefined
+  let offset = 2
+  while (offset + 9 < bytes.length) {
+    if (bytes[offset] !== 0xff) return undefined
+    const marker = bytes[offset + 1]!
+    const length = view.getUint16(offset + 2)
+    // SOF0–SOF15 carry the frame size, except DHT (C4), JPG (C8) and DAC (CC).
+    if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+      return { width: view.getUint16(offset + 7), height: view.getUint16(offset + 5) }
+    }
+    offset += 2 + length
+  }
+  return undefined
+}
+
+/** The smallest icon image that stays sharp on a tile and as a Home Screen icon (180 × 180 px on iPhone). */
+export const IconMinPixels = 180
+
+/** Why an image can't be a link's icon, or undefined if it can. */
+export const iconImageProblem = (
+  file: string,
+  size: { readonly width: number; readonly height: number } | undefined
+) => {
+  if (size === undefined) return `${file} isn't a png or jpg Dream can read.`
+  const { width, height } = size
+  if (Math.abs(width - height) > Math.max(width, height) * 0.02) {
+    return `${file} is ${width}×${height}; an icon has to be square (it fills the tile, which iOS rounds).`
+  }
+  if (width < IconMinPixels)
+    return `${file} is ${width}×${height}; make it at least ${IconMinPixels}×${IconMinPixels} so it's sharp.`
+  return undefined
 }
