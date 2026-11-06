@@ -75,10 +75,10 @@ const misbehave = async (mode: string, response: Response): Promise<Response> =>
           ).key
         : otherKey
     const signature = await Effect.runPromise(signatureHeader(signing, text, "main"))
-    return [head.replace(/expo-signature: .*\r\n/, `expo-signature: ${signature}\r\n`), text]
+    return [head.replace(/expo-signature: [^\r\n]*/, `expo-signature: ${signature}`), text]
   }
   let next: [string, string]
-  if (mode === "unsigned") next = [head.replace(/expo-signature: .*\r\n/, ""), manifest]
+  if (mode === "unsigned") next = [head.replace(/\r\nexpo-signature: [^\r\n]*/, ""), manifest]
   else if (mode === "wrong-key") next = (await resign(manifest, "other")) as [string, string]
   else if (mode === "tampered")
     next = [head, manifest.replace(/"createdAt":"[^"]+"/, `"createdAt":"${new Date().toISOString()}"`)]
