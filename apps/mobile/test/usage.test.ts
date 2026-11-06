@@ -100,9 +100,9 @@ describe("usageSheet", () => {
     assert.strictEqual(sheet.hero?.share, "4%")
     assert.isUndefined(sheet.callout)
     assert.deepStrictEqual(sheet.periods, [
-      { label: "Today", value: "2.1M", cacheRead: "+18M read from cache", detail: "≈2% of week" },
-      { label: "This 5 hours", value: "0.9M", cacheRead: "+7.9M read from cache", detail: "≈9% of 5 hours" },
-      { label: "This week", value: "9.6M", cacheRead: "+83M read from cache", detail: "≈4% of week" }
+      { label: "Today", value: "2.1M", cacheRead: "+18M from cache", detail: "≈2% of week" },
+      { label: "This 5 hours", value: "0.9M", cacheRead: "+7.9M from cache", detail: "≈9% of 5 hours" },
+      { label: "This week", value: "9.6M", cacheRead: "+83M from cache", detail: "≈4% of week" }
     ])
     assert.strictEqual(sheet.windowsTitle, "Your ChatGPT Pro")
     assert.deepStrictEqual(

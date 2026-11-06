@@ -260,7 +260,10 @@ function Body(props: { readonly view: SheetView; readonly title: string }) {
           ))}
         </>
       ) : null}
-      <Text style={{ fontSize: 12.5, lineHeight: 18, color: color.t3, marginTop: 10 }}>{view.footnote}</Text>
+      {/* With nothing measured yet there are no shares to explain. */}
+      {view.hero || view.projects.length > 0 ? (
+        <Text style={{ fontSize: 12.5, lineHeight: 18, color: color.t3, marginTop: 10 }}>{view.footnote}</Text>
+      ) : null}
     </>
   )
 }

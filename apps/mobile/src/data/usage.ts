@@ -30,9 +30,9 @@ export const tokensLabel = (tokens: number) => {
   return `${Math.round(tokens / 1_000_000)}M`
 }
 
-/** Cache reads, which dwarf the headline: "+18M read from cache", "+640K read from cache". */
+/** Cache reads, which dwarf the headline: "+18M from cache", "+640K from cache" (one line in the sheet's narrow cells). */
 export const cacheReadLabel = (tokens: number) =>
-  `+${tokens >= 10_000_000 ? `${Math.round(tokens / 1_000_000)}M` : tokensLabel(tokens)} read from cache`
+  `+${tokens >= 10_000_000 ? `${Math.round(tokens / 1_000_000)}M` : tokensLabel(tokens)} from cache`
 
 /** One ring's arcs, as fractions of the circle: this project's, then everything else's; the rest is the track. */
 export interface RingArcs {
