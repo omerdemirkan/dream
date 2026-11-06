@@ -50,7 +50,8 @@
  *                             namespace-compute connection adds it
  *   NAMESPACE_API_URL         default https://us.compute.namespaceapis.com
  *   DREAM_APPLE_TEAM_ID, DREAM_BUNDLE_ID, DREAM_API_URL, DREAM_BACKEND, DREAM_GOOGLE_IOS_CLIENT_ID,
- *   DREAM_GOOGLE_WEB_CLIENT_ID, DREAM_APS_ENVIRONMENT, BUILD_NUMBER   passed to build-ios.sh (see there)
+ *   DREAM_GOOGLE_WEB_CLIENT_ID, DREAM_APS_ENVIRONMENT, DREAM_UPDATES_CHANNEL, DREAM_UPDATES_URL,
+ *   BUILD_NUMBER   passed to build-ios.sh (see there)
  *
  * It prints no secret: not the key, not the ID token, not the Mac's SSH key, not the App Store Connect token.
  * Never put one on an SSH command line: Namespace logs every SSH command run on the Mac.
@@ -95,6 +96,8 @@ const passThrough = [
   "DREAM_GOOGLE_IOS_CLIENT_ID",
   "DREAM_GOOGLE_WEB_CLIENT_ID",
   "DREAM_APS_ENVIRONMENT",
+  "DREAM_UPDATES_CHANNEL",
+  "DREAM_UPDATES_URL",
   "BUILD_NUMBER"
 ]
 
@@ -496,6 +499,10 @@ const main = async () => {
     log(`Picking up build Mac ${instanceId} (${existing[0]!.status})`)
   } else {
     if (mode === "testflight") {
+      // build-ios.sh refuses a TestFlight build that couldn't take over-the-air updates; say so before a Mac starts.
+      const certificate = await run("git", ["ls-files", "--error-unmatch", "apps/mobile/certs/updates-certificate.pem"])
+      if (certificate.code !== 0)
+        throw new Error("No committed update signing certificate: run `node apps/mobile/scripts/updates.ts init` first")
       const dirty = await run("git", ["status", "--porcelain", "--untracked-files=no"])
       if (dirty.stdout.trim()) log("Uncommitted changes aren't shipped: the Mac builds HEAD")
     }

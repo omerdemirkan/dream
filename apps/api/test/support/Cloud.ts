@@ -13,6 +13,7 @@ import {
   SandboxAuth,
   SandboxRpcs
 } from "@dream/domain"
+import type { R2Bucket } from "@cloudflare/workers-types"
 import { Context, Effect, Exit, Layer, Scope } from "effect"
 import { FetchHttpClient, Headers, HttpClientResponse, HttpEffect } from "effect/http"
 import * as HttpServerRequest from "effect/http/HttpServerRequest"
@@ -62,10 +63,13 @@ export interface ProjectInstance {
   readonly storage: ReturnType<typeof makeDoStorage>
 }
 
-export const makeCloud = (configOverrides: Partial<ApiConfigShape> = {}) =>
+export const makeCloud = (
+  configOverrides: Partial<ApiConfigShape> = {},
+  options: { readonly updates?: R2Bucket | undefined; readonly databasePath?: string } = {}
+) =>
   Effect.gen(function* () {
     const world = new FakeWorld()
-    const { d1, db } = makeD1()
+    const { d1, db } = makeD1(undefined, options.databasePath)
     const scope = yield* Scope.make()
     const config = ApiConfig.layerTest(configOverrides)
     const services = fakeServices(world)
@@ -104,7 +108,7 @@ export const makeCloud = (configOverrides: Partial<ApiConfigShape> = {}) =>
     }
 
     const worker = workerLayer(
-      { d1, r2: undefined, fetchProject, forwardLive: () => Effect.die("no live in tests") },
+      { d1, r2: undefined, updates: options.updates, fetchProject, forwardLive: () => Effect.die("no live in tests") },
       { services, config }
     )
     const workerContext = yield* Layer.buildWithScope(worker, scope)

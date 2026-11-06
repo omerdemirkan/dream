@@ -17,6 +17,8 @@ expanded view.
 | `modules/dream-native` | Local Expo module (Swift): Live Activity push-to-start and update tokens, launch arguments |
 | `targets/widget` | The Live Activity widget (lock screen + Dynamic Island), via `@bacons/apple-targets` |
 | `scripts/build-ios.sh` | `expo prebuild` + CocoaPods + `xcodebuild`, for the Simulator or TestFlight |
+| `scripts/updates.ts` | Over-the-air updates: publish, roll back, status (below) |
+| `certs/updates-certificate.pem` | The update signing certificate every build embeds |
 
 ## Configuration
 
@@ -31,6 +33,11 @@ expanded view.
 | `DREAM_GOOGLE_IOS_CLIENT_ID` | — | enables native Google Sign-In (adds its URL scheme) |
 | `DREAM_GOOGLE_WEB_CLIENT_ID` | — | optional: Google's ID token audience becomes the web client |
 | `DREAM_APS_ENVIRONMENT` | `development` | APNs entitlement; the TestFlight build uses `production` |
+| `DREAM_UPDATES_CHANNEL` | see below | the over-the-air update channel the build follows |
+| `DREAM_UPDATES_URL` | `<DREAM_API_URL>/updates/manifest` | the update server |
+| `DREAM_UPDATES_CERTIFICATE` | `certs/updates-certificate.pem` | the certificate updates must be signed for; without the file, the build takes no updates |
+
+`scripts/build-env.sh` holds the defaults builds are made with (`build-ios.sh` and publishing both read it).
 
 ## Running
 
@@ -119,3 +126,107 @@ key is the Worker secret `ASC_TESTFLIGHT_KEY_P8` (see `docs/setup/testflight.md`
 encrypted to a key it generated (`apps/api/src/http/Testflight.ts`); it never touches the machine running the
 script. `check` verifies the key on a fresh Mac in about a minute; `testflight [--no-upload]` ships
 `git archive HEAD`, runs `build-ios.sh testflight` there, then destroys the Mac.
+
+## Over-the-air updates
+
+JavaScript-only changes reach installed builds without a new TestFlight build. The app runs stock `expo-updates`
+with standard config only (`app.config.ts`): `updates.url`, `runtimeVersion: { policy: "fingerprint" }`,
+`codeSigningCertificate` with `codeSigningMetadata` (`keyid: "main"`, `rsa-v1_5-sha256`), and the channel in the
+standard `expo-channel-name` request header. The server is Dream's Worker (`apps/api/src/http/Updates.ts`), which
+implements the [Expo Updates protocol v1](https://docs.expo.dev/technical-specs/expo-updates-1/) and nothing else:
+`GET /updates/manifest` (a signed manifest, a signed `rollBackToEmbedded` directive, or 204) and
+`GET /updates/assets/:hash`, with bundles and assets in the `dream-updates` R2 bucket.
+
+**When an update takes over.** expo-updates checks on every launch without holding the launch up
+(`fallbackToCacheTimeout: 0`) and downloads in the background; the update runs from the next launch. The app also
+looks again when it comes back after a minute or more in the background, and restarts on a downloaded update when
+it comes back after 15 minutes or more (held answers were sent when it left, and the screen it returns to is stale
+by then). Nothing interrupts someone using the app. Settings shows which update is running under the version, and
+"Restart to update Dream" once one is downloaded. So to see a fix right away: open Dream, wait a few seconds, open
+Settings and tap Restart (or close Dream and open it again).
+
+**Compatibility.** The runtime version is a fingerprint of everything that makes the native app
+(`fingerprint.config.js`): native modules and their versions, config plugins, the app config, the certificate.
+Version, build number and `extra` are left out, so TestFlight builds with the same native code share a runtime
+version and JS-only config changes ship as updates. An update reaches only builds of its runtime version, so it
+can't land on a build missing a native module it needs. `EXPO_UPDATES_WORKFLOW_OVERRIDE=managed` (in
+`build-env.sh`) keeps the fingerprint the same on the build Mac (a `git archive` checkout) and wherever you
+publish. The Worker records what each runtime version's builds last asked with, and `publish` refuses a runtime
+version no build on the channel has asked with (`--force` overrides): if native code changed since the last build,
+the update would reach no one, and you need a TestFlight build instead.
+
+**Channels.** `production`: TestFlight builds (`build-ios.sh testflight`). `development`: other builds against the
+live API. `fixtures`: builds with the sample world. A build follows the channel `build-env.sh` gives it
+(`DREAM_UPDATES_CHANNEL` overrides), and `publish --channel` names the one to publish to (default `production`).
+Only `production` insists on main as pushed to origin, so test publishes go to another channel and can't reach the
+founder's phone.
+
+**Signing.** The Worker generates the RSA key itself (`updates.ts init`) and stores it sealed with
+`DREAM_ENCRYPTION_KEY` in D1 (`update_signing_key`), so the private key never exists outside the Worker: not in
+the repo, a dev machine, a log, or a Worker secret anyone could read. It signs each manifest and directive as it
+serves it. The certificate (public) is committed at `certs/updates-certificate.pem`; every build embeds it and
+refuses updates that are unsigned or signed by another key, and checks each asset's SHA-256 from the signed
+manifest. The key is never replaced (builds out there trust only it).
+
+**Who can publish.** The routes that upload, publish and roll back need `UPDATES_PUBLISH_SECRET` in
+`x-dream-updates-secret`. It's a Worker secret with a copy in the operator's D1 `dream-ops`
+(`infra/scripts/updates-secret.ts`), which `updates.ts` reads with the workspace's Cloudflare connection. It isn't
+`DEV_LOGIN_SECRET`, and project sandboxes never get either, so an agent in a sandbox can't publish. The Worker
+only signs updates whose assets it hash-checked on upload.
+
+### Setting up (once)
+
+From the repo root on main, after the branch that adds this is merged:
+
+1. `bun run infra:deploy` (adds the `dream-updates` bucket, migration 0006 and the routes).
+2. `node infra/scripts/updates-secret.ts ensure` (generates `UPDATES_PUBLISH_SECRET`).
+3. `node apps/mobile/scripts/updates.ts init`, then commit and push `apps/mobile/certs/updates-certificate.pem`.
+4. A TestFlight build (`node apps/mobile/scripts/testflight-namespace.ts testflight`). It's the baseline: builds
+   from before it have no expo-updates, so they never update. `build-ios.sh testflight` refuses to build without
+   the certificate.
+5. Open that build once on the phone. It checks in, and from then on `publish` targets it.
+
+### Publishing, rolling back, what's live
+
+```sh
+node apps/mobile/scripts/updates.ts publish                      # the committed app, to production builds
+node apps/mobile/scripts/updates.ts publish --message "Fix the composer"
+node apps/mobile/scripts/updates.ts status                       # per runtime version: live, history, last check-in
+node apps/mobile/scripts/updates.ts rollback                     # the update before the live one, again
+node apps/mobile/scripts/updates.ts rollback --to <update id>    # a named one (also rolls forward)
+node apps/mobile/scripts/updates.ts rollback --to embedded       # the bundle inside the build
+node apps/mobile/scripts/updates.ts publish --channel development
+```
+
+`publish` refuses uncommitted changes, exports with `expo export` under the channel's build config (about a
+minute), uploads only files the Worker doesn't have, and makes the update live. A rollback publishes the earlier
+update again under a new id, since expo-updates only moves to newer updates; rolling back past the first update
+sends `rollBackToEmbedded`. `status` shows, per runtime version, when a build last asked and which update it was
+running, so you can see the phone pick an update up. When native code changes (a new native module, a config
+plugin, an Expo upgrade), `publish` says no build has the new runtime version: ship a TestFlight build.
+
+### Checking it without a phone
+
+`apps/api/scripts/updates-dev-server.ts` runs the Worker's update routes locally (the real handlers over the
+test D1 and R2), and can serve unsigned, wrongly signed, tampered or wrong-runtime manifests to check that the app
+refuses them. Expose it (`ol expose 8787`), `init` with `DREAM_UPDATES_CERTIFICATE=certs/test/updates-certificate.pem`
+(gitignored), build a Release Simulator app with `DREAM_UPDATES_URL` and that certificate, and publish to the
+`fixtures` channel with `DREAM_API_URL` and `DREAM_UPDATES_SECRET` pointing at it. See its header.
+
+## Switching to EAS Update
+
+The client side is stock, so moving to Expo's hosted service is a checklist:
+
+1. `eas init` and `eas update:configure`: they set `updates.url` to `https://u.expo.dev/<project id>` and
+   `extra.eas.projectId`. Remove `DREAM_UPDATES_URL` and the Worker URL from `app.config.ts`.
+2. Create EAS channels named like ours (`production`, `development`, `fixtures`), each pointing at a branch. The
+   `expo-channel-name` header and the fingerprint runtime version policy stay as they are.
+3. A new certificate: Dream's key never leaves the Worker, so EAS can't sign with it.
+   `npx expo-updates codesigning:generate` makes a key and certificate; `eas update --private-key-path` signs
+   with it, so the key lives wherever you publish from. Replace `certs/updates-certificate.pem` (keep keyid
+   `main`, or change `codeSigningMetadata`).
+4. One native build: a new URL and certificate change the runtime version, so the next TestFlight build is the
+   new baseline; builds from before it keep following the Worker until they're replaced.
+5. Publish with `eas update --channel production` instead of `updates.ts publish`, roll back with
+   `eas update:rollback`. Then the Worker's update routes, the `dream-updates` bucket and
+   `UPDATES_PUBLISH_SECRET` can go once no build uses them (`updates.ts status` shows their last check-ins).

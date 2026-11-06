@@ -21,6 +21,18 @@ import { downloadMedia, uploadMedia } from "./Media.ts"
 import { homePage, privacyPage } from "./PublicPages.ts"
 import { SandboxAuthServer, WorkerSandboxHandlers } from "./SandboxHandlers.ts"
 import { grantAscKey, releaseAscKey, storeSigningIdentity } from "./Testflight.ts"
+import {
+  answered,
+  ensureSigningKey,
+  isPublisher,
+  publishUpdate,
+  rollbackUpdate,
+  serveAsset,
+  serveCertificate,
+  serveManifest,
+  updatesStatus,
+  uploadAsset
+} from "./Updates.ts"
 
 export class LiveForwarder extends Context.Service<
   LiveForwarder,
@@ -99,6 +111,24 @@ export const route = (raw: Request) =>
       const session = yield* tokens.verifySession(token.value).pipe(Effect.option)
       if (Option.isNone(session)) return HttpServerResponse.text("Session expired", { status: 401 })
       return yield* downloadMedia(request, media[1]!, session.value.userId)
+    }
+
+    // Over-the-air updates of the app (Updates.ts): the Expo Updates protocol, and the operator's publishing routes.
+    const reading = request.method === "GET" || request.method === "HEAD"
+    if (path === Routes.updatesManifest && request.method === "GET") return yield* answered(serveManifest(request))
+    const updateAsset = /^\/updates\/assets\/([^/]+)$/.exec(path)
+    if (updateAsset !== null && reading) return yield* answered(serveAsset(request, updateAsset[1]!))
+    if (path === Routes.updatesCertificate && reading) return yield* answered(serveCertificate)
+    if (path.startsWith("/admin/updates/")) {
+      if (!(yield* isPublisher(request))) return HttpServerResponse.text("Forbidden", { status: 403 })
+      const upload = /^\/admin\/updates\/assets\/([^/]+)$/.exec(path)
+      if (upload !== null && (request.method === "PUT" || request.method === "HEAD"))
+        return yield* answered(uploadAsset(request, upload[1]!, raw))
+      if (path === Routes.updatesPublish && request.method === "POST") return yield* answered(publishUpdate(request))
+      if (path === Routes.updatesRollback && request.method === "POST") return yield* answered(rollbackUpdate(request))
+      if (path === Routes.updatesStatus && request.method === "GET") return yield* answered(updatesStatus(url))
+      if (path === Routes.updatesSigningKey && request.method === "POST") return yield* answered(ensureSigningKey)
+      return HttpServerResponse.text("Not found", { status: 404 })
     }
 
     // Operator tools need the DEV_LOGIN_SECRET in `x-dream-dev-secret`.

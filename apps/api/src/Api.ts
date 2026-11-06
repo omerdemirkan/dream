@@ -21,7 +21,7 @@ import { route } from "./http/Router.ts"
 import type { ProjectFetch } from "./project/Client.ts"
 import ProjectDO from "./ProjectDO.ts"
 import { maintenance, type WorkerBindings, workerLayer } from "./WorkerLayer.ts"
-import { Database, Media } from "./Resources.ts"
+import { Database, Media, Updates } from "./Resources.ts"
 
 /** The apex domain Dream runs on, e.g. "omer.build". */
 export const DreamDomain = Config.NonEmptyString("DREAM_DOMAIN")
@@ -55,14 +55,18 @@ export default class Api extends Cloudflare.Worker<Api>()(
     yield* DreamDomain
     const projects = yield* ProjectDO
     const database = yield* Cloudflare.D1.QueryDatabase(Database)
-    const media = (yield* R2Enabled) ? yield* Cloudflare.R2.ReadWriteBucket(Media) : undefined
+    const r2Enabled = yield* R2Enabled
+    const media = r2Enabled ? yield* Cloudflare.R2.ReadWriteBucket(Media) : undefined
+    const updates = r2Enabled ? yield* Cloudflare.R2.ReadWriteBucket(Updates) : undefined
 
     const bindings = Effect.gen(function* () {
       const d1 = (yield* database.raw) as unknown as D1Database
       const r2 = media === undefined ? undefined : ((yield* media.raw) as unknown as R2Bucket)
+      const updatesBucket = updates === undefined ? undefined : ((yield* updates.raw) as unknown as R2Bucket)
       return {
         d1,
         r2,
+        updates: updatesBucket,
         fetchProject: (projectId: ProjectId, request: HttpClientRequest.HttpClientRequest) =>
           (
             projects.getByName(projectId).fetch as unknown as (

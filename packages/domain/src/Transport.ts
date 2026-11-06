@@ -34,7 +34,23 @@ export const Routes = {
   /** POST a `TestflightIdentityUpload` from the build Mac that was just released the key. */
   testflightIdentity: "/testflight/signing-identity",
   /** POST a `TestflightGrantRequest` with the operator's `x-dream-dev-secret`. */
-  testflightGrant: "/admin/testflight/grants"
+  testflightGrant: "/admin/testflight/grants",
+  /** GET: the Expo Updates protocol (v1) manifest endpoint, the app's `updates.url`. */
+  updatesManifest: "/updates/manifest",
+  /** GET an update asset by its `AssetHash` (public and immutable, like the bundle inside the app). */
+  updatesAsset: (hash: string) => `/updates/assets/${hash}`,
+  /** GET the signing certificate (`UpdatesCertificate`, `created` false). */
+  updatesCertificate: "/updates/certificate",
+  /** The operator's update routes, behind `UpdatesSecretHeader`. HEAD / PUT an asset's bytes. */
+  updatesUpload: (hash: string) => `/admin/updates/assets/${hash}`,
+  /** POST a `PublishUpdateRequest`; responds with the new `UpdateRelease`. */
+  updatesPublish: "/admin/updates/publish",
+  /** POST a `RollbackUpdateRequest`; responds with the new `UpdateRelease`. */
+  updatesRollback: "/admin/updates/rollback",
+  /** GET `?channel=…`: `UpdatesStatus`. */
+  updatesStatus: "/admin/updates/status",
+  /** POST: creates the signing key if there's none; responds with `UpdatesCertificate`. */
+  updatesSigningKey: "/admin/updates/signing-key"
 } as const
 
 /** HTTP RPC endpoints use NDJSON, which also carries streaming responses. */

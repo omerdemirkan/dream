@@ -5,9 +5,10 @@
 import type { Integration, ModelConnection, ProjectId, ProjectSummary } from "@dream/domain"
 import { useAtomValue } from "@effect/atom-react"
 import * as Application from "expo-application"
-import { Option } from "effect"
+import { Effect, Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
 import { useRouter } from "expo-router"
+import { useUpdates } from "expo-updates"
 import { type ReactNode, useState } from "react"
 import { Pressable, ScrollView, Text, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
@@ -22,6 +23,7 @@ import {
   sessionAtom,
   signOutFn
 } from "../state/atoms.ts"
+import { applyUpdate, runningUpdate } from "../platform/updates.ts"
 import { appConfig } from "../state/runtime.ts"
 import { useAction, useToast } from "../ui/actions.ts"
 import { integrationReach, integrationSummary } from "../ui/describe.ts"
@@ -31,6 +33,8 @@ import { color, gutter } from "../ui/theme.ts"
 
 export default function Settings() {
   const router = useRouter()
+  const { isUpdatePending } = useUpdates()
+  const update = runningUpdate()
   const insets = useSafeAreaInsets()
   const session = Option.getOrUndefined(Option.flatten(AsyncResult.value(useAtomValue(sessionAtom))))
   const connections = Option.getOrElse(
@@ -109,9 +113,26 @@ export default function Settings() {
         />
       ) : null}
 
+      {isUpdatePending ? (
+        <Button
+          title="Restart to update Dream"
+          variant="ghost"
+          onPress={() => void Effect.runPromise(applyUpdate.pipe(Effect.ignore))}
+          style={{ marginTop: 10 }}
+        />
+      ) : null}
+
       <Text style={{ marginTop: 28, fontSize: 12, lineHeight: 18, color: color.t3, textAlign: "center" }}>
         Dream {Application.nativeApplicationVersion ?? ""} ·{" "}
         {appConfig.backend === "fixtures" ? "sample projects" : appConfig.apiUrl.replace(/^https?:\/\//, "")}
+        {update === undefined
+          ? ""
+          : `\nUpdate ${update.id.slice(0, 8)} · ${update.createdAt.toLocaleString(undefined, {
+              month: "short",
+              day: "numeric",
+              hour: "numeric",
+              minute: "2-digit"
+            })}`}
       </Text>
     </ScrollView>
   )
