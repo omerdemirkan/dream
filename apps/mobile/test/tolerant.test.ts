@@ -147,3 +147,11 @@ describe("TolerantMessage and TolerantProjectEvent", () => {
     assert.throws(() => Schema.decodeUnknownSync(Schema.toCodecJson(TolerantMessage))({ _tag: "Poll" }))
   })
 })
+
+describe("a field this build doesn't know", () => {
+  it("leaves the message as it is, the way builds before a question's context read one with it", () => {
+    const wire = { ...JSON.parse(JSON.stringify(Schema.encodeSync(Schema.toCodecJson(Message))(Fx.cabinQuestion))) }
+    const decoded = Schema.decodeUnknownSync(TolerantMessage)({ ...wire, summary: "A field from a newer API" })
+    assert.deepStrictEqual(decoded, Fx.cabinQuestion)
+  })
+})

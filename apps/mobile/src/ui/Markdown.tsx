@@ -1,10 +1,12 @@
 /**
  * The markdown the agent writes in messages: paragraphs, headings, lists,
- * rules, code, **bold**, *italic*, `code` and links. Links open in Safari.
+ * rules, code, quotes, tables, **bold**, *italic*, `code` and links. Links
+ * open in Safari. `MarkdownText` is the same markdown in one run of text, for
+ * headings and clamped previews.
  */
-import { Fragment, type ReactNode } from "react"
+import { Fragment, type ReactNode, useState } from "react"
 import { Linking, type StyleProp, Text, type TextStyle, View } from "react-native"
-import { type Inline, parseBlocks, parseInline } from "./markdownParse.ts"
+import { type Inline, inlineLines, parseBlocks, parseInline, tableLine } from "./markdownParse.ts"
 import { color } from "./theme.ts"
 
 function renderInline(nodes: ReadonlyArray<Inline>, key = ""): ReactNode {
@@ -70,6 +72,31 @@ export function Markdown(props: { readonly source: string; readonly style?: Styl
             )
           case "rule":
             return <View key={i} style={{ height: 1, backgroundColor: color.line2, marginVertical: 4 }} />
+          case "quote":
+            return (
+              <Text
+                key={i}
+                style={[base, { color: color.t2, borderLeftWidth: 2, borderColor: color.line2, paddingLeft: 12 }]}
+                selectable
+              >
+                {renderInline(parseInline(block.text))}
+              </Text>
+            )
+          case "table":
+            // Too wide for a phone: a row per line, the header row in bold.
+            return (
+              <View key={i} style={{ gap: 4 }}>
+                {block.rows.map((row, j) => (
+                  <Text
+                    key={j}
+                    style={[base, j === 0 && block.rows.length > 1 ? { fontWeight: "600" } : null]}
+                    selectable
+                  >
+                    {renderInline(parseInline(tableLine(row)))}
+                  </Text>
+                ))}
+              </View>
+            )
           case "code":
             return (
               <Text
@@ -106,6 +133,49 @@ export function Markdown(props: { readonly source: string; readonly style?: Styl
             )
         }
       })}
+    </View>
+  )
+}
+
+/**
+ * Markdown in one run of text, at the size `style` sets: inline markdown renders, blocks become lines. With
+ * `numberOfLines` it clamps, and `onClamp` hears whether anything was cut, measured against an unclamped copy.
+ */
+export function MarkdownText(props: {
+  readonly source: string
+  readonly style?: StyleProp<TextStyle>
+  readonly numberOfLines?: number | undefined
+  readonly onClamp?: ((clamped: boolean) => void) | undefined
+}) {
+  const [lines, setLines] = useState<number | undefined>(undefined)
+  const content = inlineLines(props.source).map((line, i) => (
+    <Fragment key={i}>
+      {i > 0 ? "\n" : null}
+      {renderInline(parseInline(line), `${i}-`)}
+    </Fragment>
+  ))
+  const onClamp = props.onClamp
+  const limit = props.numberOfLines
+  return (
+    <View>
+      {limit !== undefined && onClamp ? (
+        // Behind the visible text, so it never takes a tap.
+        <Text
+          accessibilityElementsHidden
+          style={[props.style, { position: "absolute", left: 0, right: 0, top: 0, opacity: 0 }]}
+          onTextLayout={(e) => {
+            const count = e.nativeEvent.lines.length
+            if (count === lines) return
+            setLines(count)
+            onClamp(count > limit)
+          }}
+        >
+          {content}
+        </Text>
+      ) : null}
+      <Text style={props.style} numberOfLines={limit}>
+        {content}
+      </Text>
     </View>
   )
 }

@@ -70,8 +70,8 @@ const normalize = (text: string) =>
 
 /**
  * The credential a question asks the person for, if it asks for one: the
- * matched words, for the refusal. `texts` are the question, `--why` and the
- * options, taken together.
+ * matched words, for the refusal. `texts` are the question, `--why`, the
+ * options and `--context`, taken together.
  */
 export const requestedSecret = (texts: ReadonlyArray<string>): Option.Option<string> => {
   const text = normalize(texts.join("\n"))
@@ -91,7 +91,7 @@ export const refusal = (secret: string) =>
   [
     `Not sent: this asks them for a secret ("${secret}"). Answers to \`dream ask\` are visible in Chat and arrive in this sandbox, so a typed-in secret leaks.`,
     "Ask for it with `dream access key`; they paste it into Dream, and Dream adds it to your HTTPS requests to --host:",
-    `  dream access key --service Discord --host discord.com --header Authorization --format "Bot {key}" --why "Post quotes to your channel"`,
+    `  dream access key --service Discord --host discord.com --header Authorization --format "Bot {key}" --why "Add your Discord bot key so it can post quotes to your channel"`,
     "Google sign-in is `dream access google --scopes …`; other OAuth sign-ins (Spotify, GitHub, Strava, Dropbox, Slack, Notion, …) are `dream access oauth <provider>`; App Store Connect is `dream access apple`.",
     "Only if it can't go in a header (a URL path, a login payload, SMTP), `dream access file` puts it in a file here.",
     "If it isn't a credential (e.g. you're asking how the app's own login should work), run it again with --not-a-secret."

@@ -3,7 +3,7 @@
  * eyebrow and title as the card in Chat; more room, more context, and the
  * fastest ways to answer. "Something else…" (typed or dictated) lives only here.
  */
-import type { AccessMessage, Project, QuestionMessage } from "@dream/domain"
+import { type AccessMessage, accessHeading, type Project, type QuestionMessage } from "@dream/domain"
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
 import { Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
@@ -44,6 +44,8 @@ import {
   whenTag
 } from "./describe.ts"
 import { BackPill, Button, Choices, Dot, GoogleButton, Icon, Lab, LinkButton, SignInButton, Tile } from "./kit.tsx"
+import { Markdown, MarkdownText } from "./Markdown.tsx"
+import { inlineLines } from "./markdownParse.ts"
 import { answerText } from "./Messages.tsx"
 import { color, gutter } from "./theme.ts"
 
@@ -77,23 +79,42 @@ function Shell(props: {
           <Text style={{ fontSize: 14, fontWeight: "600", color: color.t1 }}>{props.project?.title}</Text>
           {props.eyebrow}
         </View>
-        <Text
-          style={{
-            fontSize: props.titleSize ?? 32,
-            lineHeight: (props.titleSize ?? 32) * 1.08,
-            fontWeight: "700",
-            letterSpacing: -0.04 * (props.titleSize ?? 32),
-            color: color.t1,
-            marginTop: 22,
-            marginBottom: 14
-          }}
-        >
-          {props.title}
-        </Text>
+        <Title text={props.title} size={props.titleSize ?? 32} />
         {props.body}
       </ScrollView>
       <View style={{ paddingHorizontal: gutter, paddingBottom: Math.max(insets.bottom, 12) + 6 }}>{props.bottom}</View>
     </View>
+  )
+}
+
+/**
+ * The heading at `size`, stepped down when it runs long: a question an agent wrote as a whole message reads as
+ * text, not a poster.
+ */
+const titleStyle = (title: string, size: number) => {
+  const length = title.length
+  const fontSize = length > 280 ? 19 : length > 160 ? 22 : length > 90 ? Math.min(size, 26) : size
+  const poster = fontSize >= 26
+  return {
+    fontSize,
+    lineHeight: fontSize * (poster ? 1.08 : 1.3),
+    fontWeight: poster ? ("700" as const) : ("600" as const),
+    letterSpacing: -0.04 * fontSize * (poster ? 1 : 0.5),
+    color: color.t1,
+    marginTop: 22,
+    marginBottom: 14
+  }
+}
+
+/** A heading of several paragraphs (a whole message sent as the question) keeps its paragraphs apart. */
+function Title(props: { readonly text: string; readonly size: number }) {
+  const { marginTop, marginBottom, ...style } = titleStyle(props.text, props.size)
+  return inlineLines(props.text).length > 1 ? (
+    <View style={{ marginTop, marginBottom }}>
+      <Markdown source={props.text} style={style} />
+    </View>
+  ) : (
+    <MarkdownText source={props.text} style={{ ...style, marginTop, marginBottom }} />
   )
 }
 
@@ -103,11 +124,17 @@ const Eyebrow = (props: { readonly text: string; readonly need?: boolean }) => (
   </Text>
 )
 
-const Lead = (props: { readonly children: ReactNode; readonly style?: object }) => (
-  <Text style={[{ fontSize: 17, lineHeight: 24, letterSpacing: -0.085, color: color.t2 }, props.style]}>
-    {props.children}
-  </Text>
-)
+const Lead = (props: { readonly children: ReactNode; readonly style?: object }) =>
+  typeof props.children === "string" ? (
+    <MarkdownText
+      source={props.children}
+      style={[{ fontSize: 17, lineHeight: 24, letterSpacing: -0.085, color: color.t2 }, props.style]}
+    />
+  ) : (
+    <Text style={[{ fontSize: 17, lineHeight: 24, letterSpacing: -0.085, color: color.t2 }, props.style]}>
+      {props.children}
+    </Text>
+  )
 
 // ---------------------------------------------------------------------------
 // Question
@@ -223,6 +250,11 @@ export function ExpandedQuestion(props: {
       body={
         <>
           {m.why ? <Lead>{m.why}</Lead> : null}
+          {m.context ? (
+            <View style={{ marginTop: m.why ? 16 : 0 }}>
+              <Markdown source={m.context} style={{ fontSize: 17, lineHeight: 25 }} />
+            </View>
+          ) : null}
           {m.meanwhile ? (
             <View
               style={{
@@ -355,6 +387,27 @@ function KeyFileWarning() {
           This key will live in a file on this project’s computer. Any code that runs there can read it, including code
           the agent writes or installs. Other keys stay in Dream’s vault.
         </Text>
+      </View>
+    </View>
+  )
+}
+
+/** The agent's steps for getting the key, right above where it goes; links open in Safari. */
+function HowToGet(props: { readonly source: string }) {
+  return (
+    <View
+      style={{
+        marginTop: 20,
+        padding: 14,
+        borderRadius: 18,
+        backgroundColor: color.s1,
+        borderWidth: 1,
+        borderColor: color.line
+      }}
+    >
+      <Lab>How to get it</Lab>
+      <View style={{ marginTop: 8 }}>
+        <Markdown source={props.source} style={{ fontSize: 16, lineHeight: 23 }} />
       </View>
     </View>
   )
@@ -566,6 +619,7 @@ export function ExpandedAccess(props: {
   const signIn = useSignInAccess(m)
   const disconnect = useAction(disconnectIntegrationFn)
   const titleSize = oauth ? 32 : 30
+  const heading = accessHeading(m)
 
   if (m.state._tag === "Connected") {
     const integrationId = m.state.integrationId
@@ -574,7 +628,7 @@ export function ExpandedAccess(props: {
         project={props.project}
         onBack={props.onBack}
         eyebrow={<Eyebrow text="Access · connected" />}
-        title={m.why}
+        title={heading.title}
         titleSize={titleSize}
         body={
           <>
@@ -682,12 +736,14 @@ export function ExpandedAccess(props: {
           ) : null}
         </>
       }
-      title={m.why}
+      title={heading.title}
       titleSize={titleSize}
       body={
         <>
           {gone ? <Lead style={{ marginBottom: 12 }}>{gone.lead}</Lead> : null}
+          {heading.reason ? <Lead style={{ color: color.t1, marginBottom: 12 }}>{heading.reason}</Lead> : null}
           <Lead>{accessExplainer(m)}</Lead>
+          {m.context ? <HowToGet source={m.context} /> : null}
           {keyFile ? <KeyFileWarning /> : <Shared oauth={oauth} />}
           {oauth ? <Vault /> : null}
           {m.request._tag === "Apple" ? (

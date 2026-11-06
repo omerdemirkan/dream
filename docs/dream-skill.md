@@ -10,26 +10,36 @@ this sandbox, including the apps you build. `dream <command> --help` lists every
 
 ## Talking to them
 
-- `dream message "…"` puts a message in their Chat, with markdown rendered. `--media <file>` attaches a screenshot or
-  a recording (png, jpg, or mp4). `--notify` also puts it on their lock screen.
+- `dream message "…"` puts a message in their Chat. Chat renders paragraphs, lists, bold, italic, code and links;
+  headings show as bold lines, and a table as one line per row. `--media <file>` attaches a screenshot or a recording
+  (png, jpg, or mp4). `--notify` also puts its opening lines on their lock screen, as plain text.
   - `dream message -` (or no text, with stdin piped) reads the message from stdin, so `dream message - <<'EOF'` keeps
-    long markdown out of shell quoting. `dream ask` does the same for the question, or for `--why -` or `--meanwhile -`.
-- `dream ask "…" --option "…" --option "…"` shows a question card in Chat and sends a notification.
-  - `--why` adds the one-line reason shown under the question. `--meanwhile` says what you'll keep doing.
+    long markdown out of shell quoting. `dream ask` does the same for the question, or for `--why -`, `--context -`
+    or `--meanwhile -`.
+- `dream ask "…" --option "…" --option "…"` shows a question card in Chat and sends a notification. The question
+  is the card's heading, in large type, and it's what Home and the notification show, often with nothing around it.
+  - `--why` adds the one-line reason shown under the question. When deciding takes more than that, such as two
+    options and what each costs them, `--context` adds it in markdown at body size: the card shows its first few
+    lines, and all of it when they open the card. `--meanwhile` says what you'll keep doing.
   - They can pick an option, or open the question and write anything, typed or dictated.
   - Their answer arrives as an event. Until they answer, the question also sits at the top of their Home screen.
   - Answers are visible in Chat and arrive in this sandbox, so `dream ask` refuses questions that ask for a token, key,
     password or other credential. Ask for those with `dream access`. `--not-a-secret` sends a question that only
     mentions one.
   - `dream ask withdraw <id>` takes back a question that no longer needs an answer.
-- `dream access …` asks for access to a service. It shows up like a question, with a way to connect.
+- `dream access …` asks for access to a service. It shows up like a question, with a way to connect. `--why` is its
+  heading, which they read first and often alone, on Home or the lock screen, so it says what they're connecting and
+  what for, as in "Connect Gmail so I can read your newsletters". `--context` adds markdown on the card and just
+  above where they paste: for a key they make themselves, the link to the page where it's made and what to tap.
+  Links open in Safari, and they come back to paste.
   - `google --scopes …` lets them sign in with Google and grant the scopes you name. Like `oauth` below, it works
     only once whoever runs Dream has registered Dream's Google app, and when they haven't, `dream access google` says
     so before any card reaches them.
   - `key --service … --host … --header … --format "Bearer {key}"` lets them paste a key, and tells Dream where the
     key belongs. `--host` is the real host your requests go to, like `api.stripe.com`. A key card isn't a place to
     keep values you'd send some other way.
-  - `apple` asks for their App Store Connect API key, which TestFlight needs.
+  - `apple` asks for their App Store Connect API key, which TestFlight needs. Its card already links Apple's guide
+    to making one.
   - `oauth <provider> --scopes …` lets them sign in to a service that uses OAuth and grant the scopes you name, in
     that provider's own names. Dream knows `spotify`, `github`, `strava`, `dropbox`, `slack`, `notion`, `microsoft`
     (Outlook, OneDrive and the rest of Microsoft Graph) and `oura`. Each one works only once whoever runs Dream has
@@ -75,11 +85,13 @@ this sandbox, including the apps you build. `dream <command> --help` lists every
 ## Status
 
 - `dream status` updates the Status card: now, just did, next, and milestones. Each milestone can carry needs, meaning
-  what you'll need from them and roughly when. Their Home screen shows your "now" line.
+  what you'll need from them and roughly when. "Now" is the card's large line, and their Home screen shows its first
+  line under the project's name.
   - `--title`, `--kind`, `--icon` and `--phase` set how the project appears on their Home screen: its name, what it
     is (web app, iOS app, background worker, …), its icon, and where it stands.
 - `dream live start|update|end` controls a Live Activity on their lock screen and Dynamic Island, for a stretch when
-  something is actively happening that they might want to glance at. iOS ends it after about eight hours.
+  something is actively happening that they might want to glance at: a title of two lines in large type at most,
+  with a line of detail. iOS ends it after about eight hours.
 
 ## Waking
 

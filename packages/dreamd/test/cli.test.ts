@@ -165,7 +165,7 @@ describe("dream usage errors", () => {
       )
       assert.strictEqual(
         lines[1],
-        'Example: dream access key --service Discord --host discord.com --header Authorization --format "Bot {key}" --why "Post quotes to your channel"'
+        'Example: dream access key --service Discord --host discord.com --header Authorization --format "Bot {key}" --why "Add your Discord bot key so it can post quotes to your channel" --context "In the [Developer Portal](https://discord.com/developers/applications), open your app, tap **Bot**, then **Reset Token**, and copy it."'
       )
       assert.strictEqual(lines[2], "Usage: dream access key [flags]. All flags: `dream access key --help`.")
       assert.lengthOf(lines, 3)
@@ -233,7 +233,7 @@ describe("dream access oauth", () => {
       projectId: "prj_1" as never,
       createdAt,
       request: { _tag: "OAuth", provider: "spotify", service: "Spotify", scopes: ["user-read-private"] },
-      why: "Build playlists",
+      why: "Connect Spotify so I can build playlists",
       state: { _tag: "Open" }
     })
     assert.strictEqual(
@@ -263,6 +263,27 @@ describe("dream access oauth", () => {
       'GitHub [connected] OAuth as octocat (repo); hosts api.github.com, github.com; placeholder "dream-github-oauth-placeholder"\n' +
         "  api.github.com refuses requests without a User-Agent header."
     )
+  })
+})
+
+describe("dream access --why", () => {
+  it("tells the agent the heading its card shows when --why doesn't name the service", () => {
+    const requested = accessRequested({
+      _tag: "Access",
+      id: "msg_1" as never,
+      projectId: "prj_1" as never,
+      createdAt: DateTime.makeUnsafe("2026-11-05T10:00:00Z"),
+      request: {
+        _tag: "Key",
+        service: "OpenAI",
+        host: "api.openai.com",
+        header: "Authorization",
+        format: "Bearer {key}"
+      },
+      why: "Powers the voice coach",
+      state: { _tag: "Open" }
+    })
+    assert.isTrue(requested.endsWith(' Its heading reads "Add your OpenAI key", with your --why under it.'), requested)
   })
 })
 

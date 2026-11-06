@@ -450,7 +450,7 @@ export const AgentHandlers = SandboxRpcs.toLayer(
           return message
         }),
 
-      AskQuestion: ({ question, options, why, meanwhile }) =>
+      AskQuestion: ({ question, options, why, context, meanwhile }) =>
         Effect.gen(function* () {
           const current = yield* project
           const notificationId = yield* newNotificationId()
@@ -462,6 +462,7 @@ export const AgentHandlers = SandboxRpcs.toLayer(
             question,
             options,
             ...(why === undefined ? {} : { why }),
+            ...(context === undefined || context.trim() === "" ? {} : { context }),
             ...(meanwhile === undefined ? {} : { meanwhile }),
             state: QuestionState.cases.Open.make({})
           })
@@ -489,7 +490,7 @@ export const AgentHandlers = SandboxRpcs.toLayer(
           return withdrawn
         }),
 
-      RequestAccess: ({ request, why, when }) =>
+      RequestAccess: ({ request, why, context, when }) =>
         Effect.gen(function* () {
           // An old dreamd doesn't check the host, and a card for a host no request goes to can never work.
           const problem =
@@ -508,6 +509,7 @@ export const AgentHandlers = SandboxRpcs.toLayer(
             ...(notificationId === undefined ? {} : { notificationId }),
             request,
             why,
+            ...(context === undefined || context.trim() === "" ? {} : { context }),
             ...(when === undefined ? {} : { when }),
             state: AccessState.cases.Open.make({})
           })

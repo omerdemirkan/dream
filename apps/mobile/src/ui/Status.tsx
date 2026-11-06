@@ -13,7 +13,7 @@ import type {
   StatusCard,
   TextMessage
 } from "@dream/domain"
-import { isOpenAsk } from "@dream/domain"
+import { accessHeading, isOpenAsk } from "@dream/domain"
 import { DateTime } from "effect"
 import { useEffect, useRef, useState } from "react"
 import { type HostInstance, Linking, Pressable, Text, View } from "react-native"
@@ -32,6 +32,7 @@ import { unsupportedText } from "../data/Tolerant.ts"
 import { accessLabel, accessReach, accessScope } from "./describe.ts"
 import { useNow, useOpenMessage } from "./hooks.ts"
 import { Dot, Icon, Lab } from "./kit.tsx"
+import { MarkdownText } from "./Markdown.tsx"
 import { MediaStrip } from "./Media.tsx"
 import { plainText } from "./markdownParse.ts"
 import { color, gutter } from "./theme.ts"
@@ -102,16 +103,15 @@ function Block(props: {
   return (
     <View style={{ marginTop: 16 }}>
       <Lab>{props.label}</Lab>
-      <Text
+      <MarkdownText
+        source={props.text}
         numberOfLines={props.lines}
         style={
           props.hero
             ? { marginTop: 5, fontSize: 19, lineHeight: 25, fontWeight: "600", letterSpacing: -0.38, color: color.t1 }
             : { marginTop: 5, fontSize: 16, lineHeight: 23, letterSpacing: -0.08, color: color.t1 }
         }
-      >
-        {props.text}
-      </Text>
+      />
       {props.live ? <LiveBar /> : null}
     </View>
   )
@@ -233,7 +233,9 @@ function NeedRow(props: { readonly message: AskMessage }) {
         >
           {m._tag === "Access" ? "Access" : "Question"} · in Chat
         </Text>
-        <Text
+        <MarkdownText
+          source={m._tag === "Access" ? accessHeading(m).title : m.question}
+          numberOfLines={3}
           style={{
             fontSize: 15.5,
             lineHeight: 20,
@@ -242,9 +244,7 @@ function NeedRow(props: { readonly message: AskMessage }) {
             color: color.t1,
             marginTop: 3
           }}
-        >
-          {m._tag === "Access" ? m.why : m.question}
-        </Text>
+        />
       </View>
       <Icon name="chev" size={15} color={color.t3} />
     </Pressable>
@@ -449,9 +449,10 @@ function MilestoneView(props: {
       </Text>
       {m.state !== "done" && when ? <Text style={{ fontSize: 14, color: color.t3, marginTop: -2 }}>{when}</Text> : null}
       {m.detail ? (
-        <Text style={{ fontSize: m.state === "done" ? 15 : 14, lineHeight: 21, color: color.t2, marginTop: 2 }}>
-          {m.detail}
-        </Text>
+        <MarkdownText
+          source={m.detail}
+          style={{ fontSize: m.state === "done" ? 15 : 14, lineHeight: 21, color: color.t2, marginTop: 2 }}
+        />
       ) : null}
       {props.focus ? <FocusBlocks card={card} working={props.working} paused={paused} current={isCurrent} /> : null}
       {m.needs.map((need, i) => (

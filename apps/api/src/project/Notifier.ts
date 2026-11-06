@@ -4,7 +4,7 @@
  * that withdraw stale ones; and the Live Activity.
  */
 import {
-  type AskMessage,
+  askHeadline,
   InvalidRequest,
   type LiveActivityContent,
   type Message,
@@ -31,8 +31,6 @@ export const notificationText = (markdown: string): string => {
     .trim()
   return plain.length > 180 ? `${plain.slice(0, 177).trimEnd()}…` : plain
 }
-
-const askPrompt = (ask: AskMessage): string => (ask._tag === "Question" ? ask.question : ask.why)
 
 const DismissAfterEndSeconds = 60 * 60
 
@@ -90,12 +88,7 @@ export class Notifier extends Context.Service<
           messageId: message.id,
           sentAt: now
         })
-        const body =
-          message._tag === "Text"
-            ? notificationText(message.text)
-            : message._tag === "Question"
-              ? notificationText(message.question)
-              : notificationText(message.why)
+        const body = notificationText(message._tag === "Text" ? message.text : askHeadline(message))
         for (const device of yield* devices) {
           if (device.apnsToken === undefined) continue
           const token = device.apnsToken
@@ -160,7 +153,7 @@ export class Notifier extends Context.Service<
           const { needsYou: _, ...rest } = content
           const first = asks[0]
           if (first === undefined) return rest
-          const prompt = askPrompt(first)
+          const prompt = notificationText(askHeadline(first))
           return { ...rest, needsYou: { prompt: prompt.length > 120 ? `${prompt.slice(0, 117)}…` : prompt } }
         })
 

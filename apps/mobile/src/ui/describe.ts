@@ -2,21 +2,14 @@
  * Words for access requests and integrations, derived from what the agent
  * asked for: which Google product, what the scopes allow, when it's needed.
  */
-import type { AccessMessage, AccessRequest, Integration, ProjectId } from "@dream/domain"
-
-const googleProducts: ReadonlyArray<readonly [string, string]> = [
-  ["gmail", "Gmail"],
-  ["calendar", "Google Calendar"],
-  ["drive", "Google Drive"],
-  ["spreadsheets", "Google Sheets"],
-  ["sheets", "Google Sheets"],
-  ["documents", "Google Docs"],
-  ["docs", "Google Docs"],
-  ["youtube", "YouTube"],
-  ["photos", "Google Photos"],
-  ["contacts", "Google Contacts"],
-  ["tasks", "Google Tasks"]
-]
+import {
+  type AccessMessage,
+  type AccessRequest,
+  accessService,
+  googleProduct,
+  type Integration,
+  type ProjectId
+} from "@dream/domain"
 
 const scopeWords: Record<string, string> = {
   "gmail.readonly": "Read-only.",
@@ -34,14 +27,7 @@ const scopeWords: Record<string, string> = {
   "contacts.readonly": "Read-only contacts."
 }
 
-export const googleLabel = (scopes: ReadonlyArray<string>) => {
-  const products = new Set<string>()
-  for (const scope of scopes) {
-    const product = googleProducts.find(([prefix]) => scope.toLowerCase().startsWith(prefix))
-    if (product) products.add(product[1])
-  }
-  return products.size === 1 ? (Array.from(products)[0] ?? "Google") : "Google"
-}
+export const googleLabel = googleProduct
 
 /** "Calendar events only." / "Read-only." — absent when the scopes say nothing a person cares about. */
 export const scopeSummary = (scopes: ReadonlyArray<string>) => {
@@ -49,23 +35,10 @@ export const scopeSummary = (scopes: ReadonlyArray<string>) => {
   return words.length > 0 ? words.join(" ") : undefined
 }
 
-export const accessLabel = (request: AccessRequest) => {
-  switch (request._tag) {
-    case "Google":
-      return googleLabel(request.scopes)
-    case "Key":
-    case "File":
-      return request.service
-    case "Apple":
-      return "Apple Developer"
-    case "OAuth":
-      return oauthService(request)
-  }
-}
+export const accessLabel = accessService
 
 /** The provider's display name; the API always fills it in, the provider id stands in otherwise. */
-export const oauthService = (request: Extract<AccessRequest, { readonly _tag: "OAuth" }>) =>
-  request.service ?? request.provider.charAt(0).toUpperCase() + request.provider.slice(1)
+export const oauthService = (request: Extract<AccessRequest, { readonly _tag: "OAuth" }>) => accessService(request)
 
 /** The line under the heading: how the access works. */
 export const accessExplainer = (message: AccessMessage) => {

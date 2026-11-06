@@ -418,3 +418,64 @@ export const liveActivitySamples: Record<
     }
   }
 }
+
+// ---------------------------------------------------------------------------
+// What agents actually send (scenarios `long-question`, `vague-access`, `question-context`)
+// ---------------------------------------------------------------------------
+
+/** A whole message sent as the question, markdown and all, the way an agent once did. */
+export const longQuestion = (projectId: Project["id"], now: DateTime.Utc): QuestionMessage => ({
+  _tag: "Question",
+  id: msg("msg_voicelong"),
+  projectId,
+  createdAt: now,
+  notificationId: "5e1d7c3a-8b2f-4a6e-9d0c-1f3b5a7c9e2d" as NotificationId,
+  question: [
+    "Got your email, thanks.",
+    "On Codex: unfortunately no. Dream can’t connect a ChatGPT/Codex subscription, and even if it could, that sign-in only covers Codex’s coding models, not OpenAI’s live voice model. Live voice is billed only through an OpenAI API account.",
+    "Two ways forward:\n• **OpenAI voice**, using the OpenAI card I already sent: natural voice that responds quickly and handles interruptions. Pay as you go, roughly a few cents a session.\n• **No key:** your phone does the listening and speaking with its built-in speech, so it sounds more robotic, and reviews count against your Claude limits.",
+    "Which do you want?",
+    "Your Codex/ChatGPT sign-in won’t be used for any of this."
+  ].join("\n\n"),
+  options: ["OpenAI voice", "No key"],
+  why: "So the coach can talk you through your sets.",
+  state: { _tag: "Open" }
+})
+
+/** A key request whose heading only made sense next to the command the agent typed, with where to get the key. */
+export const vagueAccess = (projectId: Project["id"], now: DateTime.Utc): AccessMessage => ({
+  _tag: "Access",
+  id: msg("msg_openai"),
+  projectId,
+  createdAt: now,
+  notificationId: "7a2c4e6f-9b1d-4c3e-8f5a-2b4d6f8a0c1e" as NotificationId,
+  request: {
+    _tag: "Key",
+    service: "OpenAI",
+    host: "api.openai.com",
+    header: "Authorization",
+    format: "Bearer {key}"
+  },
+  why: "Powers the voice coach that talks you through your sets",
+  context:
+    "Make one at [platform.openai.com/api-keys](https://platform.openai.com/api-keys): tap **Create new secret key**, name it Lift Log, and copy it. OpenAI shows it only once.",
+  state: { _tag: "Open" }
+})
+
+/** The same decision as `longQuestion`, asked as Dream means it: a short question, with what it takes to decide under it. */
+export const questionWithContext = (projectId: Project["id"], now: DateTime.Utc): QuestionMessage => ({
+  _tag: "Question",
+  id: msg("msg_voice"),
+  projectId,
+  createdAt: now,
+  notificationId: "9c3e5a7b-2d4f-4b6a-8e0c-3a5c7e9b1d2f" as NotificationId,
+  question: "Which voice should the coach use?",
+  options: ["OpenAI voice", "Your phone’s voice"],
+  why: "Your ChatGPT sign-in can’t power live voice, so it’s one of these.",
+  context: [
+    "**OpenAI voice** sounds natural, answers quickly and copes when you talk over it. It needs the OpenAI key I asked for, and costs a few cents a session.",
+    "**Your phone’s voice** is free and needs no key, but it sounds flatter, and each session counts against your Claude limits."
+  ].join("\n\n"),
+  meanwhile: "I’ll keep building the set tracker; only the coach depends on this.",
+  state: { _tag: "Open" }
+})
