@@ -80,6 +80,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
     const directory = yield* ProjectDirectory
     const alarm = yield* Alarm
     const projects = yield* Projects
+    const machines = yield* Machines
 
     const findMessage = (id: Message["id"]) =>
       Effect.flatMap(core.message(id), (found) =>
@@ -347,6 +348,31 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
             }
             yield* projects.remove(current.value.id)
           }
+        }),
+
+      Archive: () =>
+        Effect.gen(function* () {
+          const project = yield* core.project.pipe(Effect.orDie)
+          const existing = yield* store.getSingleton(...Singletons.archived)
+          if (Option.isSome(existing)) return existing.value.at
+          const at = yield* DateTime.now
+          yield* store.putSingleton(...Singletons.archived, { at })
+          yield* projects.setArchived(project.id, at)
+          yield* sandbox.pause
+          // Nothing will use a Mac it rented; don't leave it running until it idles out.
+          yield* machines.stopMac.pipe(
+            Effect.catch((error) => Effect.logWarning("couldn't stop the archived project's Mac", error.message))
+          )
+          return at
+        }),
+
+      Restore: () =>
+        Effect.gen(function* () {
+          const project = yield* core.project.pipe(Effect.orDie)
+          if (Option.isNone(yield* store.getSingleton(...Singletons.archived))) return
+          yield* store.clearSingleton(Singletons.archived[0])
+          yield* projects.setArchived(project.id, undefined)
+          yield* sandbox.restored
         }),
 
       RefreshModelCredential: () =>

@@ -98,5 +98,12 @@ export class ProjectRpcs extends RpcGroup.make(
    * file keys, drops its wakes and undelivered events, and removes it from Home. There's no undoing it, so the phone
    * never reaches it.
    */
-  Rpc.make("Retire", {})
+  Rpc.make("Retire", {}),
+  /**
+   * They archived the project (`ArchiveProject`): hold the agent and pause the sandbox, keeping everything. Returns
+   * when it was archived (the first time, for a repeat).
+   */
+  Rpc.make("Archive", { success: Schema.DateTimeUtc }),
+  /** They restored it (`RestoreProject`): the agent goes on with what was waiting. Nothing for one that isn't archived. */
+  Rpc.make("Restore", {})
 ) {}

@@ -9,7 +9,7 @@ import { ConnectLink, ConnectLinkProvider, Integration, ModelConnectFlow, ModelC
 import { InvalidRequest, NoModelConnection, NotFound, NotInvited, Unauthorized, UpstreamFailure } from "../Errors.ts"
 import { DeviceId, IntegrationId, MessageId, ModelConnectionId, NotificationId, ProjectId, RequestId } from "../Ids.ts"
 import { AccessMessage, AskMessage, Message, QuestionAnswer, QuestionMessage, TextMessage } from "../Message.ts"
-import { Harness, Project, ProjectSummary } from "../Project.ts"
+import { ArchivedProject, Harness, Project, ProjectSummary } from "../Project.ts"
 import { ModelProvider } from "../Usage.ts"
 import { Device, TimeZone, User } from "../User.ts"
 
@@ -109,6 +109,28 @@ export class AuthedAppRpcs extends RpcGroup.make(
     success: Project,
     error: Schema.Union([NoModelConnection, UpstreamFailure, InvalidRequest])
   }),
+  /**
+   * Put a project away: it leaves Home and the deck, its agent stops (nothing is delivered, wakes wait, a turn in
+   * progress is paused with the sandbox) and its published URL stops serving. Nothing is deleted. Archiving an
+   * archived project returns it as it is.
+   */
+  Rpc.make("ArchiveProject", {
+    payload: { projectId: ProjectId },
+    success: ArchivedProject,
+    error: NotFound
+  }),
+  /**
+   * Bring an archived project back as it was: on Home again, its agent picking up what was waiting (a paused turn
+   * starts over, wakes that came due while it was archived fire once). Restoring one that isn't archived returns
+   * its Home row.
+   */
+  Rpc.make("RestoreProject", {
+    payload: { projectId: ProjectId },
+    success: ProjectSummary,
+    error: NotFound
+  }),
+  /** Their archived projects for Settings, most recently archived first. */
+  Rpc.make("ListArchivedProjects", { success: Schema.Array(ArchivedProject) }),
 
   // A project ----------------------------------------------------------------
   /**

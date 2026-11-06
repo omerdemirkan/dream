@@ -64,6 +64,11 @@ export const SandboxRecord = Schema.Struct({
   latestBuild: Schema.optionalKey(
     Schema.Struct({ build: Schema.String, release: Schema.optionalKey(Schema.String), checkedAt: Schema.DateTimeUtc })
   ),
+  /**
+   * A turn was running when they archived the project, and the sandbox was paused under it. On restore dreamd is
+   * restarted, so the turn's events go to a fresh turn in the same session.
+   */
+  interruptedTurn: Schema.optionalKey(Schema.Boolean),
   /** Refreshing to `build` failed `failures` times in a row; don't try that build again before `retryAt`. */
   refreshFailure: Schema.optionalKey(
     Schema.Struct({
@@ -184,6 +189,10 @@ export const migrations = Migrator.fromRecord({
   "0002_archived": Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     yield* sql`CREATE TABLE archived (id INTEGER PRIMARY KEY CHECK (id = 1), json TEXT NOT NULL)`
+  }),
+  "0003_owner_archived": Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    yield* sql`CREATE TABLE owner_archived (id INTEGER PRIMARY KEY CHECK (id = 1), json TEXT NOT NULL)`
   })
 })
 
@@ -204,6 +213,7 @@ export type TimerName =
   | "browser-sweep"
   | "sandbox-retry"
   | "sandbox-refresh"
+  | "sandbox-resume"
 
 export class Store extends Context.Service<
   Store,
@@ -489,5 +499,7 @@ export const Singletons = {
   mac: ["mac", MacRecord] as const,
   usagePause: ["usage_pause", UsagePause] as const,
   /** Retired by the operator (`ProjectRpcs.Retire`). The table is older than the name. */
-  retired: ["archived", Schema.Struct({ at: Schema.DateTimeUtc })] as const
+  retired: ["archived", Schema.Struct({ at: Schema.DateTimeUtc })] as const,
+  /** Archived by its owner (`ProjectRpcs.Archive`), until they restore it: the agent is held, nothing is lost. */
+  archived: ["owner_archived", Schema.Struct({ at: Schema.DateTimeUtc })] as const
 }

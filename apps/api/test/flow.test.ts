@@ -1321,3 +1321,140 @@ describe("sandbox refresh", () => {
     })
   )
 })
+
+describe("archiving a project (theirs, reversible)", () => {
+  const bodyOf = (response: { readonly body: any }) =>
+    response.body._tag === "Uint8Array" ? new TextDecoder().decode(response.body.body) : ""
+
+  it.live(
+    "puts it away: off Home and the deck, nothing delivered, sandbox paused, link down; restore brings it all back",
+    () =>
+      Effect.gen(function* () {
+        const cloud = yield* makeCloud()
+        const { project } = yield* setup(cloud)
+        yield* cloud.alarm(project.id)
+        const { sandbox, env } = envFileOf(cloud, project.id)
+        const dreamd = yield* cloud.sandbox(env.DREAM_PROJECT_TOKEN)
+        yield* dreamd.AskQuestion({ question: "Kilograms or pounds?", options: ["kg", "lb"] })
+        yield* dreamd.Publish({ port: 3000 })
+
+        const archived = yield* cloud.phone.ArchiveProject({ projectId: project.id })
+        assert.strictEqual(archived.project.id, project.id)
+        assert.deepStrictEqual(yield* cloud.phone.ListProjects(), [])
+        assert.deepStrictEqual(yield* cloud.phone.ListOpenAsks(), [])
+        const listed = yield* cloud.phone.ListArchivedProjects()
+        assert.deepStrictEqual(
+          listed.map((row) => [row.project.id, row.archivedAt]),
+          [[project.id, archived.archivedAt]]
+        )
+        assert.strictEqual(sandbox.state, "paused")
+        // Archiving again changes nothing.
+        const again = yield* cloud.phone.ArchiveProject({ projectId: project.id })
+        assert.deepStrictEqual(again.archivedAt, archived.archivedAt)
+
+        // A message sent meanwhile waits; the published link says it's put away rather than waking the sandbox.
+        yield* cloud.phone.SendMessage({ projectId: project.id, text: "Pounds, actually" })
+        yield* cloud.alarm(project.id)
+        assert.strictEqual(cloud.world.delivered.length, 1)
+        assert.strictEqual(sandbox.state, "paused")
+        const host = new URL(project.publicUrl).host
+        const page = yield* gateway(host, new Request(project.publicUrl)).pipe(
+          Effect.provideContext(cloud.workerContext)
+        )
+        assert.strictEqual(page.status, 404)
+        assert.include(bodyOf(page), "archived it")
+
+        const restored = yield* cloud.phone.RestoreProject({ projectId: project.id })
+        assert.strictEqual(restored.project.id, project.id)
+        assert.strictEqual(restored.openAsks, 1)
+        assert.deepStrictEqual(
+          (yield* cloud.phone.ListProjects()).map((row) => row.project.id),
+          [project.id]
+        )
+        assert.strictEqual((yield* cloud.phone.ListOpenAsks()).length, 1)
+        assert.deepStrictEqual(yield* cloud.phone.ListArchivedProjects(), [])
+        yield* cloud.alarm(project.id)
+        assert.strictEqual(cloud.world.delivered.length, 2)
+        assert.deepStrictEqual(
+          cloud.world.delivered[1]?.events.map((e: any) => e.text),
+          ["Pounds, actually"]
+        )
+        // The same sandbox, with everything in it.
+        assert.strictEqual(envFileOf(cloud, project.id).sandbox, sandbox)
+        yield* cloud.close
+      })
+  )
+
+  it.live("pauses a running turn with the sandbox, and restarts it on restore", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project } = yield* setup(cloud)
+      yield* cloud.alarm(project.id)
+      const { sandbox, env } = envFileOf(cloud, project.id)
+      const dreamd = yield* cloud.sandbox(env.DREAM_PROJECT_TOKEN)
+      yield* dreamd.ReportTurn({ state: "started", eventIds: [] })
+      const core = Context.get((yield* Effect.promise(() => cloud.project(project.id))).context, Core)
+      const store = Context.get((yield* Effect.promise(() => cloud.project(project.id))).context, Store)
+
+      yield* cloud.phone.ArchiveProject({ projectId: project.id })
+      assert.strictEqual(sandbox.state, "paused")
+      const held = yield* core.sandbox
+      assert.isFalse(held.working)
+      assert.isTrue(held.interruptedTurn)
+      assert.strictEqual((yield* core.activity).state, "idle")
+      // No keepalive wakes it while it's archived.
+      assert.deepStrictEqual(yield* store.dueTimers(Number.MAX_SAFE_INTEGER), [])
+      yield* cloud.alarm(project.id)
+      assert.strictEqual(sandbox.state, "paused")
+
+      const written = sandbox.files.get(DaemonEnvFile)!
+      sandbox.files.set(DaemonEnvFile, "before the restore")
+      yield* cloud.phone.RestoreProject({ projectId: project.id })
+      yield* cloud.alarm(project.id)
+      // dreamd was restarted (its env file rewritten), so the paused turn's events go to a fresh turn.
+      assert.strictEqual(sandbox.state, "running")
+      assert.strictEqual(sandbox.files.get(DaemonEnvFile)?.split("\n")[0], written.split("\n")[0])
+      assert.isUndefined((yield* core.sandbox).interruptedTurn)
+      yield* cloud.close
+    })
+  )
+
+  it.live("holds its wakes while archived, and fires the ones that came due once it's restored", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project } = yield* setup(cloud)
+      yield* cloud.alarm(project.id)
+      const dreamd = yield* cloud.sandbox(envFileOf(cloud, project.id).env.DREAM_PROJECT_TOKEN)
+      yield* dreamd.ScheduleWake({
+        when: { _tag: "At", at: DateTime.add(yield* DateTime.now, { milliseconds: 200 }) },
+        why: "Check the digest"
+      })
+      yield* cloud.phone.ArchiveProject({ projectId: project.id })
+      yield* Effect.sleep("300 millis")
+      yield* cloud.alarm(project.id)
+      assert.strictEqual(cloud.world.delivered.length, 1)
+      assert.strictEqual((yield* dreamd.ListWakes()).length, 1)
+
+      yield* cloud.phone.RestoreProject({ projectId: project.id })
+      yield* cloud.alarm(project.id)
+      const [due] = cloud.world.delivered.at(-1)!.events as ReadonlyArray<AgentEvent>
+      assert.strictEqual(due?._tag, "WakeDue")
+      assert.strictEqual(cloud.world.delivered.length, 2)
+      yield* cloud.close
+    })
+  )
+
+  it.live("only their owner can archive, restore or list them", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project } = yield* setup(cloud)
+      yield* cloud.phone.ArchiveProject({ projectId: project.id })
+      const other = yield* cloud.phone.DevSignIn({ email: "someone@else.com", secret: Redacted.make("dev-secret") })
+      cloud.session.token = Redacted.value(other.sessionToken)
+      assert.strictEqual((yield* Effect.flip(cloud.phone.RestoreProject({ projectId: project.id })))._tag, "NotFound")
+      assert.strictEqual((yield* Effect.flip(cloud.phone.ArchiveProject({ projectId: project.id })))._tag, "NotFound")
+      assert.deepStrictEqual(yield* cloud.phone.ListArchivedProjects(), [])
+      yield* cloud.close
+    })
+  )
+})

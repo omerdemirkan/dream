@@ -182,6 +182,23 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
 
       ListProjects: () => Effect.flatMap(me, projects.summaries),
       ListOpenAsks: () => Effect.flatMap(me, projects.openAsks),
+      ListArchivedProjects: () => Effect.flatMap(me, projects.archived),
+
+      ArchiveProject: ({ projectId }) =>
+        Effect.gen(function* () {
+          const project = yield* owned(projectId)
+          const archivedAt = yield* clients.use(projectId, (client) => client.Archive())
+          return { project, archivedAt }
+        }),
+
+      RestoreProject: ({ projectId }) =>
+        Effect.gen(function* () {
+          yield* owned(projectId)
+          yield* clients.use(projectId, (client) => client.Restore())
+          const summary = yield* projects.summary(projectId)
+          if (Option.isNone(summary)) return yield* new NotFound({ entity: "project", id: projectId })
+          return summary.value
+        }),
 
       CreateProject: ({ idea, harness, requestId }) =>
         Effect.gen(function* () {

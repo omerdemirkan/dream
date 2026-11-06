@@ -9,6 +9,7 @@ import * as HttpServerResponse from "effect/http/HttpServerResponse"
 import { Projects } from "../db/Projects.ts"
 import { ProjectClients } from "../project/Client.ts"
 import type { GatewayTarget } from "../project/ProjectRpcs.ts"
+import { ArchivedEntity } from "../project/SandboxManager.ts"
 
 // Per-isolate caches: hosts never move between projects; targets are rechecked every minute.
 const hostCache = new Map<string, ProjectId | null>()
@@ -46,9 +47,16 @@ export const gateway = (host: string, raw: Request) =>
     } else {
       const result = yield* clients.use(id, (client) => client.GatewayTarget()).pipe(Effect.result)
       if (result._tag === "Failure") {
-        return result.failure._tag === "NotFound"
-          ? page(404, "Not published yet", "This app is still being built. It will appear here once it's published.")
-          : page(502, "Waking up", "The app couldn't be reached just now. Try again in a moment.")
+        if (result.failure._tag !== "NotFound") {
+          return page(502, "Waking up", "The app couldn't be reached just now. Try again in a moment.")
+        }
+        return result.failure.entity === ArchivedEntity
+          ? page(
+              404,
+              "Put away for now",
+              "Whoever made this app has archived it. It comes back here if they restore it."
+            )
+          : page(404, "Not published yet", "This app is still being built. It will appear here once it's published.")
       }
       target = result.success
       targetCache.set(id, { target, atMs: now })

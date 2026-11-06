@@ -459,3 +459,27 @@ describe("Testflight key release", () => {
     assert.strictEqual(TestflightKeyAudience("abc"), "dream-testflight:abc")
   })
 })
+
+describe("archiving (additive)", () => {
+  it("round-trips an archived project with its archive time as an ISO string", () => {
+    const archived = { project: Fixtures.recipeScaler, archivedAt: DateTime.makeUnsafe("2026-11-06T09:30:00Z") }
+    const { wire, decoded } = roundTrip(Domain.ArchivedProject, archived)
+    assert.strictEqual(wire.archivedAt, "2026-11-06T09:30:00.000Z")
+    assert.deepStrictEqual(decoded, archived)
+  })
+
+  it("adds ArchiveProject, RestoreProject and ListArchivedProjects behind the session", () => {
+    for (const tag of ["ArchiveProject", "RestoreProject"]) {
+      const rpc = AuthedAppRpcs.requests.get(tag)!
+      const payload = Schema.toCodecJson(rpc.payloadSchema)
+      assert.deepStrictEqual(Schema.decodeUnknownSync(payload)({ projectId: Fixtures.cabin.id }), {
+        projectId: Fixtures.cabin.id
+      })
+      assert.isTrue(Exit.isFailure(Schema.decodeUnknownExit(payload)({})))
+    }
+    const list = AuthedAppRpcs.requests.get("ListArchivedProjects")!
+    const success = Schema.toCodecJson(list.successSchema)
+    assert.deepStrictEqual(Schema.decodeUnknownSync(success)([]), [])
+    assert.isFalse(PublicAppRpcs.requests.has("ArchiveProject"))
+  })
+})
