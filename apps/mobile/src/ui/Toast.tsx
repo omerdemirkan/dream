@@ -8,7 +8,8 @@ import { useEffect, useRef } from "react"
 import { Pressable, Text } from "react-native"
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
-import { answerFailuresAtom, undoAnswerFn } from "../state/atoms.ts"
+import { answerFailuresAtom, restoreProjectFn, undoAnswerFn } from "../state/atoms.ts"
+import { useAction } from "./actions.ts"
 import { toastAtom } from "../state/ui.ts"
 import { Icon } from "./kit.tsx"
 import { color } from "./theme.ts"
@@ -18,6 +19,7 @@ const lifetime = 4200
 export function Toast() {
   const [toast, setToast] = useAtom(toastAtom)
   const undo = useAtomSet(undoAnswerFn)
+  const restore = useAction(restoreProjectFn)
   const insets = useSafeAreaInsets()
   const shown = useSharedValue(0)
   const current = Option.getOrUndefined(toast)
@@ -76,12 +78,13 @@ export function Toast() {
     >
       {visible.done ? <Icon name="check" size={16} /> : <Icon name="warn" size={16} color={color.need} />}
       <Text style={{ flex: 1, fontSize: 14.5, color: color.t1 }}>{visible.message}</Text>
-      {visible.undo ? (
+      {visible.undo || visible.restore ? (
         <Pressable
           accessibilityRole="button"
           hitSlop={8}
           onPress={() => {
             if (visible.undo) undo(visible.undo)
+            if (visible.restore) restore.run(visible.restore)
             setToast(Option.none())
           }}
         >

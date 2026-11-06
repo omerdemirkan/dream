@@ -12,12 +12,13 @@ import { Pressable, ScrollView, Text, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { phaseLabel, providerName, usageLeft, usageLine } from "../data/format.ts"
 import { dotOf, homeLine, presenceOf } from "../data/presence.ts"
-import { modelConnectionsAtom, openAsksAtom, projectsAtom } from "../state/atoms.ts"
+import { hiddenProjectsAtom, modelConnectionsAtom, openAsksAtom, projectsAtom } from "../state/atoms.ts"
 import { Deck, Segments } from "../ui/Deck.tsx"
 import { usePendingAnswers } from "../ui/hooks.ts"
 import { Dot, Icon, IconButton, LinkButton, Orb } from "../ui/kit.tsx"
 import { plainText } from "../ui/markdownParse.ts"
 import { PresenceTile, StateLineText, useTickingNow } from "../ui/Presence.tsx"
+import { ProjectLink } from "../ui/ProjectMenu.tsx"
 import { color, gutter } from "../ui/theme.ts"
 
 const listOf = <A,>(result: AsyncResult.AsyncResult<ReadonlyArray<A>, unknown>) =>
@@ -27,13 +28,21 @@ export default function Home() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
   const projectsResult = useAtomValue(projectsAtom)
-  const projects = listOf(projectsResult)
+  // Archived or deleted here: gone from Home at once, before the API's lists say so.
+  const hidden = Option.getOrElse(
+    AsyncResult.value(useAtomValue(hiddenProjectsAtom)),
+    (): ReadonlySet<string> => new Set()
+  )
+  const projects = listOf(projectsResult).filter((summary) => !hidden.has(summary.project.id))
   const pending = usePendingAnswers()
   const asksResult = useAtomValue(openAsksAtom)
   const refreshProjects = useAtomRefresh(projectsAtom)
   const refreshAsks = useAtomRefresh(openAsksAtom)
   const asks = listOf(asksResult).filter(
-    (ask) => !pending.has(ask.message.id) && !(ask.message._tag === "Access" && ask.message.when)
+    (ask) =>
+      !pending.has(ask.message.id) &&
+      !(ask.message._tag === "Access" && ask.message.when) &&
+      !hidden.has(ask.project.id)
   )
   const connectionsResult = useAtomValue(modelConnectionsAtom)
   const connections = listOf(connectionsResult)
@@ -241,7 +250,6 @@ function ProjectRow(props: {
   readonly first: boolean
   readonly asks: ReadonlyArray<OpenAsk>
 }) {
-  const router = useRouter()
   const { project, progress } = props.summary
   const open = props.asks.filter((ask) => ask.project.id === project.id).length
   // The Status card's now line, as plain text: markdown and any lines after the first don't fit here.
@@ -261,40 +269,43 @@ function ProjectRow(props: {
   })
   const sub = headline ?? phaseLabel(project.phase)
   return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={() => router.push({ pathname: "/project/[id]", params: { id: project.id } })}
-      style={({ pressed }) => ({
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 14,
-        paddingVertical: 13,
-        borderTopWidth: props.first ? 0 : 1,
-        borderColor: color.line,
-        opacity: pressed ? 0.6 : 1
-      })}
-    >
-      <PresenceTile icon={project.icon} dot={dotOf(presence)} />
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={{ fontSize: 17, fontWeight: "600", letterSpacing: -0.25, color: color.t1 }}>{project.title}</Text>
-        {line ? (
-          <StateLineText line={line} style={{ fontSize: 14, marginTop: 2 }} />
-        ) : (
-          <Text numberOfLines={1} style={{ fontSize: 14, color: color.t2, marginTop: 2 }}>
-            {sub}
+    <ProjectLink project={project}>
+      <Pressable
+        accessibilityRole="button"
+        style={({ pressed }) => ({
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 14,
+          paddingVertical: 13,
+          borderTopWidth: props.first ? 0 : 1,
+          borderColor: color.line,
+          opacity: pressed ? 0.6 : 1
+        })}
+      >
+        <PresenceTile icon={project.icon} dot={dotOf(presence)} />
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={{ fontSize: 17, fontWeight: "600", letterSpacing: -0.25, color: color.t1 }}>
+            {project.title}
           </Text>
-        )}
-      </View>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-        {open > 0 ? (
-          <Dot kind="need" />
-        ) : project.phase === "live" ? (
-          <Text style={{ fontSize: 13, color: color.t3 }}>Live</Text>
-        ) : progress && progress.total > 0 && project.phase === "building" ? (
-          <Progress done={progress.done} total={progress.total} current={project.phase === "building"} />
-        ) : null}
-      </View>
-    </Pressable>
+          {line ? (
+            <StateLineText line={line} style={{ fontSize: 14, marginTop: 2 }} />
+          ) : (
+            <Text numberOfLines={1} style={{ fontSize: 14, color: color.t2, marginTop: 2 }}>
+              {sub}
+            </Text>
+          )}
+        </View>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          {open > 0 ? (
+            <Dot kind="need" />
+          ) : project.phase === "live" ? (
+            <Text style={{ fontSize: 13, color: color.t3 }}>Live</Text>
+          ) : progress && progress.total > 0 && project.phase === "building" ? (
+            <Progress done={progress.done} total={progress.total} current={project.phase === "building"} />
+          ) : null}
+        </View>
+      </Pressable>
+    </ProjectLink>
   )
 }
 
