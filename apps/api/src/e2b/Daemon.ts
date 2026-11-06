@@ -83,9 +83,12 @@ export class Daemon extends Context.Service<
       const deliver = (
         sandbox: SandboxAccess,
         daemonToken: string,
-        events: readonly [AgentEvent, ...Array<AgentEvent>]
+        events: readonly [AgentEvent, ...Array<AgentEvent>],
+        timeZone?: string | undefined
       ) =>
-        withClient(sandbox, daemonToken, (client) => client.Deliver({ events })).pipe(
+        withClient(sandbox, daemonToken, (client) =>
+          client.Deliver({ events, ...(timeZone === undefined ? {} : { timeZone }) })
+        ).pipe(
           Effect.map((result) => result.accepted as ReadonlyArray<string>),
           Effect.timeout("60 seconds"),
           Effect.mapError((error) => (error._tag === "DaemonRestarting" ? error : failure("Delivering events")(error)))
