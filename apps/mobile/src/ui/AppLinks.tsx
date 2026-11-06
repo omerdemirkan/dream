@@ -252,7 +252,7 @@ function EmptyLinks(props: { readonly onAdd: () => void }) {
             <Icon name="plus" size={22} color={color.t2} weight="regular" />
           </View>
           <Text style={{ flex: 1, fontSize: 15, lineHeight: 20, color: color.t2 }}>
-            Apps your projects publish show up here, like icons on your Home Screen. Add any link too.
+            Apps your projects publish show up here.
           </Text>
         </View>
       )}

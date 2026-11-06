@@ -24,6 +24,10 @@ const AnimatedPath = Animated.createAnimatedComponent(Path)
 const AnimatedG = Animated.createAnimatedComponent(G)
 
 const handFont = "GochiHand"
+/** The drawing at a little under full size, so the tip stops short of the input. */
+const scale = 0.85
+/** How far above the input the tip stops. */
+const tipGap = 28
 
 export function EmptyInvite() {
   const [loaded, error] = useFonts({ [handFont]: require("../../assets/fonts/GochiHand-Regular.ttf") })
@@ -51,17 +55,17 @@ function Drawing(props: { readonly hand: boolean }) {
   return (
     <View
       pointerEvents="none"
-      // The tip lands 12 pt above the input; the list's padding leaves 22.
-      style={{ alignItems: "center", marginBottom: -(22 - (12 - (arrowBox.height - arrowArt.tip[1]))) }}
+      // The tip stops tipGap above the input; the list's padding leaves 22.
+      style={{ alignItems: "center", marginBottom: tipGap - 22 - scale * (arrowBox.height - arrowArt.tip[1]) }}
     >
       <Animated.Text
         maxFontSizeMultiplier={1.3}
         style={[
           {
             fontFamily: props.hand ? handFont : undefined,
-            fontSize: props.hand ? 27 : 22,
+            fontSize: props.hand ? 23 : 19,
             color: color.ink,
-            marginBottom: 4
+            marginBottom: 3
           },
           wordsStyle
         ]}
@@ -69,8 +73,8 @@ function Drawing(props: { readonly hand: boolean }) {
         What should exist?
       </Animated.Text>
       <Svg
-        width={arrowBox.width}
-        height={arrowBox.height}
+        width={arrowBox.width * scale}
+        height={arrowBox.height * scale}
         viewBox={`0 0 ${arrowBox.width} ${arrowBox.height}`}
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
