@@ -494,6 +494,14 @@ const run = (command: string, args: Array<string>, input?: string | Buffer) =>
 const buildDir = "$HOME/dream-build"
 const keyDir = "$HOME/.dream-asc"
 
+/** Purpose strings the app's linked APIs need, or App Store Connect rejects the upload (ITMS-90683). */
+const requiredPurposeStrings = [
+  "NSCameraUsageDescription",
+  "NSMicrophoneUsageDescription",
+  "NSPhotoLibraryUsageDescription",
+  "NSSpeechRecognitionUsageDescription"
+]
+
 const main = async () => {
   if (mode === "destroy") {
     const macs = await buildMacs()
@@ -523,6 +531,20 @@ const main = async () => {
         throw new Error("No committed update signing certificate: run `node apps/mobile/scripts/updates.ts init` first")
       const dirty = await run("git", ["status", "--porcelain", "--untracked-files=no"])
       if (dirty.stdout.trim()) log("Uncommitted changes aren't shipped: the Mac builds HEAD")
+      // App Store Connect rejects a build after upload, by email an hour later, when the binary links an API without
+      // its purpose string (ITMS-90683): the picker links the camera and microphone, dictation the microphone and
+      // speech recognition. A plugin option can also delete one another plugin set. Check the real Info.plist first.
+      const introspect = await run("sh", [
+        "-c",
+        "cd apps/mobile && DREAM_APS_ENVIRONMENT=production npx expo config --type introspect --json"
+      ])
+      const plist = (JSON.parse(introspect.stdout || "{}") as Json).ios?.infoPlist ?? {}
+      const missing = requiredPurposeStrings.filter((key) => typeof plist[key] !== "string" || plist[key].trim() === "")
+      if (introspect.code !== 0 || missing.length > 0)
+        throw new Error(
+          `Info.plist lacks ${missing.join(", ") || "(couldn't read it)"}: App Store Connect would reject the build`
+        )
+      log(`Info.plist has its purpose strings (${requiredPurposeStrings.length})`)
     }
     const deadline = new Date(Date.now() + (mode === "check" ? 20 : 120) * 60_000).toISOString()
     // A run label, so a CreateInstance whose answer was lost can be found instead of repeated.

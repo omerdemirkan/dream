@@ -106,7 +106,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         // The picker's native code references the camera, so the string is required even though Dream only opens
         // the library.
         cameraPermission: "Dream lets you attach a photo you take to what you send, so the agent can see it.",
-        microphonePermission: false
+        // `false` here deletes NSMicrophoneUsageDescription, including the one expo-speech-recognition sets for
+        // dictation, and App Store Connect then rejects the build after upload (ITMS-90683, Nov 2026).
+        microphonePermission: "Dream uses the microphone so you can dictate instead of typing."
       }
     ],
     [
