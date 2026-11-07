@@ -891,6 +891,46 @@ describe("a project, end to end", () => {
     })
   )
 
+  it.live('takes a turn\'s "before" from its first reading when the stored one is hours old', () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project } = yield* setup(cloud)
+      yield* cloud.alarm(project.id)
+      const dreamd = yield* cloud.sandbox(envFileOf(cloud, project.id).env.DREAM_PROJECT_TOKEN)
+      const now = yield* DateTime.now
+      const report = (week: number, observedAt: DateTime.Utc) =>
+        dreamd.ReportUsage({
+          usage: {
+            provider: "claude",
+            weekly: { usedPercent: week, resetsAt: DateTime.add(now, { days: 4 }) },
+            observedAt
+          }
+        })
+      const finish = dreamd.ReportTurn({
+        state: "finished",
+        eventIds: [],
+        usage: { tokens: { input: 1, cacheRead: 10, cacheWrite: 1, output: 1 }, costUsd: 0.1 }
+      })
+      const rows = () => cloud.db.prepare("SELECT * FROM turn_usage ORDER BY started_at").all() as Array<any>
+
+      // The last reading is four hours old, and they used Claude elsewhere since: the turn's first reading says so.
+      yield* report(28, DateTime.subtract(now, { hours: 4 }))
+      yield* dreamd.ReportTurn({ state: "started", eventIds: [] })
+      yield* report(32, yield* DateTime.now)
+      yield* report(33, yield* DateTime.now)
+      yield* finish
+      assert.deepStrictEqual([rows()[0].weekly_before_percent, rows()[0].weekly_after_percent], [32, 33])
+
+      // A reading from well into the turn already holds the turn's own use, so it doesn't replace the old one.
+      yield* report(33, DateTime.subtract(now, { hours: 4 }))
+      yield* dreamd.ReportTurn({ state: "started", eventIds: [] })
+      yield* report(35, DateTime.add(yield* DateTime.now, { minutes: 5 }))
+      yield* finish
+      assert.deepStrictEqual([rows()[1].weekly_before_percent, rows()[1].weekly_after_percent], [33, 35])
+      yield* cloud.close
+    })
+  )
+
   it.live("records each turn's tokens and the windows around it, and tells the phone its share of the week", () =>
     Effect.gen(function* () {
       const cloud = yield* makeCloud()

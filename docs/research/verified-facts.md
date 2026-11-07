@@ -429,3 +429,17 @@ subscription with real models. No ChatGPT account is connected, so nothing on Co
   but forum reports say TestFlight builds signed with it can stop installing, so Dream keeps one certificate
   (private key sealed in D1 `testflight_identity`) and reuses it. `xcodeproj` (1.28) is usable through CocoaPods'
   gems (`GEM_HOME=/opt/homebrew/Cellar/cocoapods/<v>/libexec`).
+
+## Claude usage windows (2026-11-07, fix/usage-attribution; Claude Code 2.1.318)
+- `rate_limit_event.rate_limit_info.unifiedWindows` has a window only when the API response carried its
+  utilization header (`anthropic-ratelimit-unified-5h-utilization`, `…-7d-utilization`). Checked with
+  `fake-anthropic.ts` serving the unified headers: both headers → `five_hour` and `seven_day`; no 5h header →
+  `seven_day` alone. Claude Code's built-in header mock sends no per-window utilization in its "normal" scenario.
+- Every reading from the founder's Max plan (the `claude-rate-limit-event.json` fixture at 4%, D1's snapshot at 36%,
+  and all eight `turn_usage` rows of 2026-11-06) had the weekly window alone, named as `rateLimitType: seven_day`.
+  So the five-hour window is missing because the API doesn't report it, not because dreamd drops it. Dream has no
+  other source: `/api/oauth/usage`, which Claude Code's `/usage` reads, needs the profile scope, and Dream's
+  `claude setup-token` credential is inference-only (unchecked against the real API, by design: no founder tokens).
+- Within a turn the first event comes with the first model response of a new CLI process; dreamd now reports it at
+  once, and the Worker uses it as the turn's "before" when the stored reading is over ten minutes older than the
+  turn (`freshBefore`).

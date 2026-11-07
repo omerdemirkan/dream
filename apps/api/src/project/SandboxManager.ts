@@ -39,7 +39,8 @@ import {
   SandboxKeyDir,
   sandboxKeyPath,
   type TurnUsage,
-  UpstreamFailure
+  UpstreamFailure,
+  type UsageSnapshot
 } from "@dream/domain"
 import {
   Cause,
@@ -146,6 +147,32 @@ const latestRecord = (current: TemplateBuild, checkedAt: DateTime.Utc) => ({
   checkedAt
 })
 
+/** A turn's "before" this much older than the turn's start may hide use from outside Dream. */
+export const StaleBefore = Duration.minutes(10)
+/** How far into a turn a reading still says where the window stood when it began: about its first model call. */
+export const EarlyReading = Duration.minutes(3)
+
+/**
+ * The "before" a running turn should use once dreamd reports `usage`, or undefined to keep the one it has.
+ *
+ * The turn starts with the latest stored reading, which dreamd took at the end of the previous turn: after a quiet
+ * spell it can be hours old, and whatever they used elsewhere since then would be credited to this turn. dreamd
+ * reports the first reading of each turn as soon as the harness gives one, a model call in, so when the stored one
+ * is stale and this one came early enough, it takes over (it then misses that first call, a sliver of a percent).
+ */
+export const freshBefore = (record: SandboxRecord, usage: UsageSnapshot): UsageSnapshot | undefined => {
+  if (!record.working || record.turnStartedAt === undefined) return undefined
+  const started = DateTime.toEpochMillis(record.turnStartedAt)
+  const observed = DateTime.toEpochMillis(usage.observedAt)
+  if (observed < started || observed - started > Duration.toMillis(EarlyReading)) return undefined
+  const before = record.turnUsageBefore
+  const stale =
+    before === undefined ||
+    before.provider !== usage.provider ||
+    started - DateTime.toEpochMillis(before.observedAt) > Duration.toMillis(StaleBefore)
+  return stale ? usage : undefined
+}
+
 const withoutStarting = (record: SandboxRecord): SandboxRecord => {
   const { startingSince: _, ...rest } = record
   return rest
@@ -174,6 +201,11 @@ export class SandboxManager extends Context.Service<
     readonly turnStarted: Effect.Effect<void>
     /** A turn finished, with the tokens it used (none from older dreamd builds): recorded, and the header updated. */
     readonly turnFinished: (usage?: TurnUsage | undefined) => Effect.Effect<void>
+    /**
+     * dreamd reported where the subscription stands. Early in a turn, a reading replaces the turn's "before" when
+     * that one is stale (see `freshBefore`).
+     */
+    readonly usageReported: (usage: UsageSnapshot) => Effect.Effect<void>
     readonly keepalive: Effect.Effect<void>
     /** dreamd is running a scheduled command or serving the published app: keep the sandbox up a while longer. */
     readonly stayAwake: Effect.Effect<void>
@@ -873,6 +905,12 @@ export class SandboxManager extends Context.Service<
         yield* keepalive
       })
 
+      const usageReported = (usage: UsageSnapshot) =>
+        update((r) => {
+          const before = freshBefore(r, usage)
+          return before === undefined ? r : { ...r, turnUsageBefore: before }
+        })
+
       /**
        * Records the turn's model usage in the ledger, with the subscription's usage before (when it started) and
        * after (now: dreamd reports usage just before it reports the turn finished), then sends the phone the
@@ -1027,6 +1065,7 @@ export class SandboxManager extends Context.Service<
         gatewayTarget,
         turnStarted,
         turnFinished,
+        usageReported,
         keepalive: keepalive.pipe(Effect.catch(() => Effect.void)),
         stayAwake,
         sleep,

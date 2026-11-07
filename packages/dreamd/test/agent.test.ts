@@ -187,6 +187,35 @@ describe("Agent", () => {
     }).pipe(Effect.scoped)
   )
 
+  it.effect("reports the turn's first usage reading as soon as the harness has it", () =>
+    Effect.gen(function* () {
+      const { turns, inbox, reports, sent } = yield* setup()
+      const midTurn = yield* Deferred.make<void>()
+      const resetsAt = DateTime.add(yield* DateTime.now, { days: 4 })
+      yield* Queue.offer(turns, (_prompt, handlers) =>
+        Effect.gen(function* () {
+          yield* handlers.firstUsage?.({ weekly: { usedPercent: 32, resetsAt } }) ?? Effect.void
+          yield* Deferred.await(midTurn)
+          return { ...completed(), usage: { weekly: { usedPercent: 33, resetsAt } } }
+        })
+      )
+      yield* inbox.deliver([userMessage(1, "make it weekly")])
+      while (!(yield* Ref.get(reports)).some((report) => report._tag === "Usage")) yield* Effect.yieldNow
+      const early = (yield* Ref.get(reports)).filter((report) => report._tag === "Usage" || report._tag === "Turn")
+      // Started, then the reading, while the turn still runs.
+      assert.deepStrictEqual(
+        early.map((report) => (report._tag === "Turn" ? report.state : report.usage.weekly?.usedPercent)),
+        ["started", 32]
+      )
+      yield* Deferred.succeed(midTurn, undefined)
+      yield* sent
+      const usages = (yield* Ref.get(reports)).flatMap((report) =>
+        report._tag === "Usage" ? [report.usage.weekly?.usedPercent] : []
+      )
+      assert.deepStrictEqual(usages, [32, 33])
+    }).pipe(Effect.scoped)
+  )
+
   it.effect("stops at a usage limit and waits for the reset", () =>
     Effect.gen(function* () {
       const { turns, inbox, log, logged, reports } = yield* setup()

@@ -285,14 +285,14 @@ const make = Effect.gen(function* () {
       })
     )
 
-  const codexUsage = (since: DateTime.Utc) =>
+  const codexUsage = (since: DateTime.Utc, options?: { readonly onlySince?: boolean }) =>
     Effect.gen(function* () {
       const threadId = Option.getOrUndefined(yield* savedString("threadId"))
       if (threadId === undefined) return {}
       const file = yield* Usage.findCodexRollout(path.join(config.home, ".codex"), threadId)
       if (Option.isNone(file)) return {}
       const text = yield* Usage.readTail(file.value)
-      return Usage.fromCodexRollout(text, since, yield* DateTime.now)
+      return Usage.fromCodexRollout(text, since, yield* DateTime.now, options)
     }).pipe(
       provide,
       Effect.catch((error) =>
@@ -311,6 +311,14 @@ const make = Effect.gen(function* () {
     const controller = new AbortController()
 
     const finalText = yield* Ref.make("")
+    // The turn's first reading goes out as soon as there is one (`TurnHandlers.firstUsage`).
+    const firstReported = yield* Ref.make(false)
+    const reportFirst = (reading: Usage.UsageReading) =>
+      Effect.gen(function* () {
+        if (handlers.firstUsage === undefined || Object.keys(reading).length === 0) return
+        if (yield* Ref.getAndSet(firstReported, true)) return
+        yield* Effect.forkDetach(handlers.firstUsage(reading))
+      })
 
     const streamOf = (start: () => ReturnType<typeof agent.stream>) =>
       Stream.unwrap(
@@ -327,6 +335,7 @@ const make = Effect.gen(function* () {
             const reading = Usage.fromClaudeRaw(part.rawValue, yield* DateTime.now)
             if (Option.isSome(reading)) {
               yield* Ref.update(usage, (previous) => Usage.merge(previous, reading.value))
+              yield* reportFirst(reading.value)
               if (reading.value.limit !== undefined) {
                 yield* Effect.logWarning("Usage limit reached; stopping the turn", {
                   window: reading.value.limit.window,
@@ -337,6 +346,12 @@ const make = Effect.gen(function* () {
             }
             return
           }
+          case "finish-step":
+            // Codex writes its usage to the rollout, not the stream: read it once, after the turn's first call.
+            if (name === "codex" && !(yield* Ref.get(firstReported))) {
+              yield* reportFirst(yield* codexUsage(startedAt, { onlySince: true }))
+            }
+            return
           case "error":
             yield* Ref.set(lastError, Option.some(String(part.error)))
             return

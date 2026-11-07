@@ -10,7 +10,10 @@
  * Where this is wrong, and which way:
  * - A stale "before". dreamd reports usage after each turn, so "before" is usually the reading the previous turn
  *   left. If they used Claude elsewhere (claude.ai, a CLI) since then, that use rises the window during the next
- *   turn's span and is credited to the turn: the project's share is too high and Outside Dream too low. Chaining
+ *   turn's span and is credited to the turn: the project's share is too high and Outside Dream too low. When the
+ *   stored reading is more than ten minutes older than the turn, the turn's own first reading (dreamd sends it a
+ *   model call in) replaces it (`freshBefore` in SandboxManager.ts); a harness that reports nothing early, or a
+ *   provider whose percentages didn't move, leaves the old one. Chaining
  *   groups (a group's "before" is never older than the previous group's "after") keeps this from double counting,
  *   but can't tell their own use apart.
  * - Outside use during a turn is credited to the turn for the same reason.
