@@ -801,14 +801,6 @@ export class SandboxManager extends Context.Service<
         yield* alarm.reschedule
       })
 
-      /**
-       * Where the gateway sends a visit to the published app. A visit is also when a sandbox that's behind the template
-       * is brought up to date: a project woken only by its app (a podcast feed that apps poll, a page people open) gets
-       * no delivery and no turn, so it would otherwise keep the dreamd it last ran a turn with, along with whatever that
-       * one got wrong. The gateway asks, rather than dreamd, because an old dreamd may be the problem: one from before
-       * API calls took a new connection hung on its first call after a sleep, and so never reported a visit. The
-       * refresh restarts dreamd, which the app runs outside of.
-       */
       /** A visit is on its way to the sandbox: unless dreamd reports serving it, `visitCheck` runs after `VisitGrace`. */
       const expectVisit = Effect.gen(function* () {
         if ((yield* core.sandbox).working) return
@@ -818,6 +810,14 @@ export class SandboxManager extends Context.Service<
         yield* alarm.reschedule
       })
 
+      /**
+       * Where the gateway sends a visit to the published app. A visit is also when a sandbox that's behind the template
+       * is brought up to date: a project woken only by its app (a podcast feed that apps poll, a page people open) gets
+       * no delivery and no turn, so it would otherwise keep the dreamd it last ran a turn with, along with whatever that
+       * one got wrong. The gateway asks, rather than dreamd, because an old dreamd may be the problem: one from before
+       * API calls took a new connection hung on its first call after a sleep, and so never reported a visit. The
+       * refresh restarts dreamd, which the app runs outside of.
+       */
       const gatewayTarget = Effect.gen(function* () {
         const project = yield* core.project
         // Serving it would wake the sandbox, and with it a turn the archive paused.
