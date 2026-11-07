@@ -1,5 +1,6 @@
 /**
- * Build the `dream-sandbox` E2B template:
+ * Build the `dream-sandbox` E2B template, at both sizes: `dream-sandbox` (2 vCPU, 4 GB; new projects) and
+ * `dream-sandbox-large` (4 vCPU, 8 GB; projects the agent moved up), from the same image and release:
  *
  *   bun run template:build                          build, check, and make it the build new sandboxes get
  *   bun run template:build --background             start the build on E2B and print its ids
@@ -24,7 +25,7 @@ import { NodeRuntime } from "@effect/platform-node"
 import { defaultBuildLogger, Template } from "e2b"
 import { checkTemplate, report } from "./harness-check.ts"
 import { Effect } from "effect"
-import { makeTemplate, minFreeDiskMb, resources, stageContext, templateName } from "../src/index.ts"
+import { largeTemplateName, makeTemplate, minFreeDiskMb, sizes, stageContext, templateName } from "../src/index.ts"
 
 const args = process.argv.slice(2)
 
@@ -39,45 +40,77 @@ const build = Effect.gen(function* () {
   )
   const { release } = JSON.parse(readFileSync(join(context, "dream", "release.json"), "utf8")) as { release: string }
   const options = {
-    ...resources,
     tags: [`release-${release}`],
     ...connection,
     minFreeDiskMb,
     skipCache: args.includes("--no-cache"),
     onBuildLogs: defaultBuildLogger()
   }
-  const started = Date.now()
-  if (args.includes("--background")) {
+  // The same image at both sizes: the standard one for new projects, the large one for projects that moved up.
+  const targets = [
+    { name: templateName, resources: sizes.standard },
+    { name: largeTemplateName, resources: sizes.large }
+  ] as const
+  for (const target of targets) {
+    const started = Date.now()
+    if (args.includes("--background")) {
+      const info = yield* Effect.tryPromise(() =>
+        Template.buildInBackground(makeTemplate(context), target.name, { ...options, ...target.resources })
+      )
+      yield* Effect.logInfo(
+        `Started building ${info.name} (release ${release}): status ${info.templateId} ${info.buildId}`
+      )
+      continue
+    }
     const info = yield* Effect.tryPromise(() =>
-      Template.buildInBackground(makeTemplate(context), templateName, options)
+      Template.build(makeTemplate(context), target.name, { ...options, ...target.resources })
     )
     yield* Effect.logInfo(
-      `Started building ${info.name} (release ${release}): status ${info.templateId} ${info.buildId}`
+      `Built ${info.name} (template ${info.templateId}, build ${info.buildId}, release ${release}, ${target.resources.cpuCount} vCPU, ${target.resources.memoryMB} MB) in ${Math.round((Date.now() - started) / 1000)} s`
     )
-    return
   }
-  const info = yield* Effect.tryPromise(() => Template.build(makeTemplate(context), templateName, options))
-  yield* Effect.logInfo(
-    `Built ${info.name} (template ${info.templateId}, build ${info.buildId}, release ${release}) in ${Math.round((Date.now() - started) / 1000)} s`
-  )
-  yield* promote(release, args.includes("--no-check"))
+  if (!args.includes("--background")) yield* promote(release, args.includes("--no-check"))
 })
 
-/** Checks the build tagged `release-<release>` (unless `skipCheck`), then tags it `default`. */
+/**
+ * Checks the builds tagged `release-<release>` of both sizes (unless `skipCheck`), then tags both `default`, so the
+ * two sizes always carry the same Dream. Either failing its check leaves both where they were.
+ */
 const promote = (release: string, skipCheck = false) =>
   Effect.gen(function* () {
-    const target = `${templateName}:release-${release}`
+    const standard = `${templateName}:release-${release}`
+    const large = `${largeTemplateName}:release-${release}`
+    // A release from before sizes has no large build: promoting it (a rollback) leaves the large template alone.
+    const hasLarge = yield* Effect.tryPromise(() => hasBuild(largeTemplateName, `release-${release}`)).pipe(
+      Effect.orElseSucceed(() => false)
+    )
+    if (!hasLarge) yield* Effect.logWarning(`${largeTemplateName} has no build of ${release}; it stays where it is`)
+    const targets = hasLarge ? [standard, large] : [standard]
     if (!skipCheck) {
-      yield* Effect.logInfo(`Running a turn on each harness in ${target}`)
-      const results = yield* Effect.tryPromise(() => checkTemplate(target))
-      console.log(report(results))
-      if (results.some((result) => !result.ok)) {
-        return yield* Effect.die(new Error(`${target} failed its harness check; the current build stays current`))
+      for (const target of targets) {
+        yield* Effect.logInfo(`Running a turn on each harness in ${target}`)
+        const results = yield* Effect.tryPromise(() => checkTemplate(target))
+        console.log(report(results))
+        if (results.some((result) => !result.ok)) {
+          return yield* Effect.die(new Error(`${target} failed its harness check; the current builds stay current`))
+        }
       }
     }
-    yield* Effect.tryPromise(() => Template.assignTags(target, "default", connection))
-    yield* Effect.logInfo(`${target} is now ${templateName}'s current build`)
+    for (const target of targets) {
+      yield* Effect.tryPromise(() => Template.assignTags(target, "default", connection))
+      yield* Effect.logInfo(`${target} is now ${target.split(":")[0]}'s current build`)
+    }
   })
+
+/** Whether `template` has a build tagged `tag`, from E2B's API (the SDK has no lookup for it). */
+const hasBuild = async (template: string, tag: string) => {
+  const headers = { "X-API-KEY": connection.apiKey }
+  const alias = await fetch(`https://api.e2b.app/templates/aliases/${encodeURIComponent(template)}`, { headers })
+  if (!alias.ok) return false
+  const { templateID } = (await alias.json()) as { templateID: string }
+  const tags = await fetch(`https://api.e2b.app/templates/${templateID}/tags`, { headers })
+  return tags.ok && ((await tags.json()) as ReadonlyArray<{ tag: string }>).some((entry) => entry.tag === tag)
+}
 
 /** Prints the build's logs from `logsOffset` on (E2B pages them), then its status. */
 const status = (templateId: string, buildId: string, logsOffset: number) =>
