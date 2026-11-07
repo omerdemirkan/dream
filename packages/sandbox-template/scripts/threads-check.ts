@@ -81,13 +81,6 @@ const check = async (sandbox: Sandbox): Promise<ReadonlyArray<string>> => {
   )
   if (up.exitCode !== 0) return ["dreamd didn't start"]
 
-  const skill = await sh(sandbox, "grep -rl -- '--reply-to' /home/user/.claude/skills 2>/dev/null | head -1")
-  if (skill.output === "") problems.push("the skill the agent reads doesn't mention --reply-to")
-  else {
-    const body = await sh(sandbox, `grep -c -e '^## Threads' -e 'dream ask revise' ${skill.output}`)
-    if (Number(body.output) < 2) problems.push(`the skill (${skill.output}) lacks the Threads section`)
-  }
-
   const asked = await sh(
     sandbox,
     `dream ask ${shellQuote(question)} --option 'Soft chime' --option 'Three short buzzes' --json`
@@ -120,6 +113,13 @@ const check = async (sandbox: Sandbox): Promise<ReadonlyArray<string>> => {
   if (line === undefined) problems.push("the turn prompt didn't say which thread the reply is in")
   else if (!line.includes("still open")) problems.push("the turn prompt didn't say the question is still open")
 
+  // The harness writes the skill when the session starts, with the turn.
+  const skill = await sh(sandbox, "grep -rl -- '--reply-to' /home/user/.claude/skills 2>/dev/null | head -1")
+  if (skill.output === "") problems.push("the skill the agent reads doesn't mention --reply-to")
+  else {
+    const body = await sh(sandbox, `grep -c -e '^## Threads' -e 'dream ask revise' ${skill.output}`)
+    if (Number(body.output) < 2) problems.push(`the skill (${skill.output}) lacks the Threads section`)
+  }
   const calls = jsonLines((await sh(sandbox, "cat /tmp/fakes/api.log")).output)
   const revise = calls.find((c) => c.rpc === "ReviseQuestion")?.payload
   console.log(`ReviseQuestion: ${JSON.stringify(revise)}`)
