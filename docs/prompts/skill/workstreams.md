@@ -21,8 +21,9 @@ are active, the Status card shows a row for each in place of `--now`.
 - `--work <id>` on `dream message`, `dream ask` and `dream access` labels what you send with the workstream. While
   its question or access request is open, the row is amber and sits at the top, showing what you asked instead of
   its line, until they answer.
-- Their messages arrive with the workstream when they replied into one. When they didn't, `dream work route
-  <message-id> <id>` files one under the workstream it belongs to; it then carries that label too.
+- Their messages arrive with the workstream when they wrote into one, from its row on the card or in a thread on one
+  of its messages. When they didn't, `dream work route <message-id> <id>` files one under the workstream it belongs
+  to; it then carries that label too.
 - Three rows fit on the card. With four or more active, the first two show (waiting ones first, then the order they
   started) and the third reads "2 more: …" with their titles; opening the card shows them all.
 - `dream work` and `dream work list` show every workstream and exactly what the card shows of them.

@@ -268,6 +268,8 @@ export const sendMessageFn = appRuntime.fn(
     readonly requestId: RequestId
     /** Written into one of the agent's workstreams. */
     readonly workstream?: WorkstreamId
+    /** Written in the thread on this message. */
+    readonly replyTo?: MessageId
     /** Uploaded photos and files that go with it. */
     readonly attachments?: ReadonlyArray<MediaId>
   }) {
@@ -278,6 +280,15 @@ export const sendMessageFn = appRuntime.fn(
   }),
   { reactivityKeys: ["projects"] }
 )
+
+/**
+ * A thread as the API has it (`ListThread`), keyed `<projectId>/<messageId>`, for one whose first message is older
+ * than the Chat loaded. The thread view merges it with the live messages, which win.
+ */
+export const threadAtom = Atom.family((key: string) => {
+  const [projectId, messageId] = key.split("/") as [ProjectId, MessageId]
+  return appRuntime.atom(AppClient.use((app) => app.ListThread({ projectId, messageId })))
+})
 
 /** A reply typed into a notification (see `Replies`): retried, and kept as a draft if it still fails. */
 export const replyFn = appRuntime.fn(

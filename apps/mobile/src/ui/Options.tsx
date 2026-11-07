@@ -27,7 +27,7 @@ import { KeyboardAvoidingView } from "react-native-keyboard-controller"
 import Animated, { Easing, FadeIn, SlideInDown } from "react-native-reanimated"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { answerNowFn } from "../state/atoms.ts"
-import { optionsViewerAtom } from "../state/ui.ts"
+import { focusAtom, optionsViewerAtom, threadOpenAtom } from "../state/ui.ts"
 import { useAction, useToast } from "./actions.ts"
 import { ReasonField } from "./Composer.tsx"
 import { useAskPush } from "./hooks.ts"
@@ -247,6 +247,8 @@ const playDot = {
 export function OptionsViewerHost() {
   const [viewing, setViewing] = useAtom(optionsViewerAtom)
   const view = Option.getOrUndefined(viewing)
+  const setFocus = useAtomSet(focusAtom)
+  const setThread = useAtomSet(threadOpenAtom)
   return (
     <Modal
       visible={view !== undefined}
@@ -260,6 +262,13 @@ export function OptionsViewerHost() {
           message={view.message}
           start={view.index}
           onClose={() => setViewing(Option.none())}
+          onReply={() => {
+            const { projectId, id } = view.message
+            setViewing(Option.none())
+            setFocus(Option.none())
+            // The viewer opens over the project (its Chat, or the expanded question over it), where the thread opens.
+            setThread(Option.some({ projectId, messageId: id, compose: true, at: Date.now() }))
+          }}
         />
       ) : null}
     </Modal>
@@ -272,6 +281,8 @@ function OptionsViewer(props: {
   readonly message: QuestionMessage
   readonly start: number
   readonly onClose: () => void
+  /** Reply: the question's thread, over its project's Chat. */
+  readonly onReply: () => void
 }) {
   const m = props.message
   const insets = useSafeAreaInsets()
@@ -321,7 +332,26 @@ function OptionsViewer(props: {
             {tiles.length > 1 ? `${current + 1} of ${tiles.length} · swipe to compare` : "1 option"}
           </Text>
         </View>
-        <View style={{ width: 40 }} />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityHint="Opens the question's thread"
+          hitSlop={8}
+          onPress={props.onReply}
+          style={({ pressed }) => ({
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 6,
+            height: 40,
+            paddingHorizontal: 13,
+            borderRadius: 20,
+            backgroundColor: pressed ? color.s3 : color.s1,
+            borderWidth: 1,
+            borderColor: color.line
+          })}
+        >
+          <Icon name="reply" size={14} weight="semibold" />
+          <Text style={{ color: color.t1, fontSize: 15, fontWeight: "600" }}>Reply</Text>
+        </Pressable>
       </View>
 
       <View style={{ flex: 1, marginTop: 12 }} onLayout={(e) => setArea(e.nativeEvent.layout.height)}>

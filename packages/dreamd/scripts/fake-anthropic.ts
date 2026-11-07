@@ -268,6 +268,8 @@ createServer((request, response) => {
         userMessages: userTexts.length,
         // What the last user message opens with, so a check can see what the turn's prompt started with.
         opening: openingOf(last),
+        // Every line of the last user message that says what they wrote and where (a thread), for checks.
+        wrote: lastText.split("\n").filter((line) => /They (wrote|sent) \(/.test(line)),
         remembered,
         // Every `SKILL-MARK: <word>` in the conversation, oldest first: which skill listings and bodies it saw.
         skillMarks: messages.flatMap((m) =>

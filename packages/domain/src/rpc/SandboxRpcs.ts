@@ -74,26 +74,36 @@ export type ProjectLinks = typeof ProjectLinks.Type
  */
 const work = Schema.optionalKey(WorkstreamId)
 
+/**
+ * `--reply-to <message-id>`: it goes in that message's thread (`Thread.ts`), theirs or the agent's, and in that
+ * message's workstream; a reply to a reply goes into the same thread. `NotFound` for a message the project doesn't
+ * have, and `InvalidRequest` with a `--work` other than the thread's. Added in November 2026; an older API ignores it
+ * (the message goes to Chat on its own, which `dream` says).
+ */
+const replyTo = Schema.optionalKey(MessageId)
+
 export class SandboxRpcs extends RpcGroup.make(
   // Talking to them ------------------------------------------------------------
   /**
-   * `dream message [--notify] [--media file…] [--work id] "text"`. The CLI uploads each file first
-   * (`CreateMediaUpload`). `InvalidRequest` for a workstream the project doesn't have.
+   * `dream message [--notify] [--media file…] [--work id] [--reply-to message-id] "text"`. The CLI uploads each file
+   * first (`CreateMediaUpload`). `InvalidRequest` for a workstream the project doesn't have.
    */
   Rpc.make("SendMessage", {
     payload: {
       text: Schema.NonEmptyString,
       media: Schema.Array(MediaId),
       notify: Schema.Boolean,
-      workstream: work
+      workstream: work,
+      replyTo
     },
     success: TextMessage,
     error: Schema.Union([NotFound, InvalidRequest])
   }),
   /**
    * `dream ask "question" --option "…" … [--show "<option>=<files>"] [--why "…"] [--context "…"] [--meanwhile "…"]
-   * [--work id]`. Always notifies. While it's open, its workstream waits on them. `InvalidRequest` when a preview
-   * names no option or breaks `QuestionPreviewLimits` (`questionPreviewsProblem`), or its media isn't uploaded.
+   * [--work id] [--reply-to message-id]`. Always notifies. While it's open, its workstream waits on them.
+   * `InvalidRequest` when a preview names no option or breaks `QuestionPreviewLimits` (`questionPreviewsProblem`),
+   * or its media isn't uploaded.
    */
   Rpc.make("AskQuestion", {
     payload: {
@@ -107,10 +117,35 @@ export class SandboxRpcs extends RpcGroup.make(
       previews: Schema.optionalKey(
         Schema.Array(Schema.Struct({ option: Schema.NonEmptyString, media: Schema.NonEmptyArray(MediaId) }))
       ),
-      workstream: work
+      workstream: work,
+      replyTo
     },
     success: QuestionMessage,
-    error: InvalidRequest
+    error: Schema.Union([NotFound, InvalidRequest])
+  }),
+  /**
+   * `dream ask revise <message-id> [--question "…"] [--option "…" …] [--show "<option>=<files>"] [--why "…"]
+   * [--context "…"] [--meanwhile "…"]`: changes an open question in place, usually because they asked for a change
+   * in its thread. The card shows "Changed" (`revisedAt`), keeps its place, thread and notification, and doesn't
+   * notify again. `options` replaces the list; previews of options that stay are kept unless `previews` replaces
+   * them all. `why`, `context` and `meanwhile` take `null` (or `""`) to clear. `InvalidRequest` once it's answered
+   * or withdrawn (ask a new one), when nothing would change, or for previews as `AskQuestion`. Added in November
+   * 2026: an older API answers with "Unknown request tag".
+   */
+  Rpc.make("ReviseQuestion", {
+    payload: {
+      messageId: MessageId,
+      question: Schema.optionalKey(Schema.NonEmptyString),
+      options: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
+      why: Patch(Schema.String),
+      context: Patch(Schema.String),
+      meanwhile: Patch(Schema.String),
+      previews: Schema.optionalKey(
+        Schema.Array(Schema.Struct({ option: Schema.NonEmptyString, media: Schema.NonEmptyArray(MediaId) }))
+      )
+    },
+    success: QuestionMessage,
+    error: Schema.Union([NotFound, InvalidRequest])
   }),
   /** `dream ask withdraw <message-id>`: the answer is no longer needed. Also withdraws its notification. */
   Rpc.make("WithdrawQuestion", {
@@ -131,10 +166,11 @@ export class SandboxRpcs extends RpcGroup.make(
       /** Added after the first release; an older API ignores it. */
       context: Schema.optionalKey(Schema.String),
       when: Schema.optionalKey(Schema.String),
-      workstream: work
+      workstream: work,
+      replyTo
     },
     success: AccessMessage,
-    error: InvalidRequest
+    error: Schema.Union([NotFound, InvalidRequest])
   }),
   /** `dream access list`: what works here, meaning their shared integrations and this project's file keys. */
   Rpc.make("ListAccess", { success: Schema.Array(Integration) }),

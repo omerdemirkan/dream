@@ -278,6 +278,8 @@ export class Store extends Context.Service<
       before: MessageId | undefined,
       limit: number
     ) => Effect.Effect<{ readonly messages: ReadonlyArray<Message>; readonly hasEarlier: boolean }>
+    /** The replies in a message's thread (`replyTo`), oldest first. */
+    readonly replies: (root: MessageId) => Effect.Effect<ReadonlyArray<Message>>
     readonly openAsks: Effect.Effect<ReadonlyArray<Message>>
     /** Access requests that are, or were, connected to this integration (Connected or Disconnected), oldest first. */
     readonly accessMessagesFor: (integrationId: IntegrationId) => Effect.Effect<ReadonlyArray<AccessMessage>>
@@ -387,6 +389,12 @@ export class Store extends Context.Service<
             hasEarlier: rows.length > limit
           }
         })
+
+      const replies = (root: MessageId) =>
+        sql`SELECT json FROM messages WHERE json_extract(json, '$.replyTo') = ${root} ORDER BY seq`.pipe(
+          decodeRows(JsonRow),
+          Effect.map((rows) => rows.map((row) => decodeMessage(row.json)))
+        )
 
       const openAsks = sql`SELECT json FROM messages
           WHERE json_extract(json, '$._tag') IN ('Question', 'Access') AND json_extract(json, '$.state._tag') = 'Open'
@@ -633,6 +641,7 @@ export class Store extends Context.Service<
         updateMessage,
         message,
         messagesBefore,
+        replies,
         openAsks,
         accessMessagesFor,
         putWake,

@@ -75,7 +75,8 @@ export class ProjectRpcs extends RpcGroup.make(
   }),
   /**
    * With an `id` (derived from the phone's request id), posting it again returns the message already posted. With a
-   * `workstream` the project has, they wrote it into that one.
+   * `workstream` the project has, they wrote it into that one. With `replyTo`, they wrote it in that message's
+   * thread, and it goes into that message's workstream instead.
    */
   Rpc.make("SendUserMessage", {
     payload: {
@@ -83,9 +84,17 @@ export class ProjectRpcs extends RpcGroup.make(
       text: Schema.String,
       attachments: Schema.optionalKey(Schema.Array(Attachment)),
       id: Schema.optionalKey(MessageId),
-      workstream: Schema.optionalKey(WorkstreamId)
+      workstream: Schema.optionalKey(WorkstreamId),
+      replyTo: Schema.optionalKey(MessageId)
     },
-    success: TextMessage
+    success: TextMessage,
+    error: NotFound
+  }),
+  /** A thread: its first message and its replies (`AppRpcs.ListThread`). */
+  Rpc.make("ListThread", {
+    payload: { messageId: MessageId },
+    success: Schema.Struct({ root: Message, replies: Schema.Array(Message) }),
+    error: NotFound
   }),
   Rpc.make("AnswerQuestion", {
     payload: { messageId: MessageId, answer: QuestionAnswer },

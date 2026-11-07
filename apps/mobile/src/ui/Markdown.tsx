@@ -48,8 +48,14 @@ function renderInline(nodes: ReadonlyArray<Inline>, key = ""): ReactNode {
   })
 }
 
-export function Markdown(props: { readonly source: string; readonly style?: StyleProp<TextStyle> }) {
+export function Markdown(props: {
+  readonly source: string
+  readonly style?: StyleProp<TextStyle>
+  /** Off in Chat and threads, where holding a message brings up its menu (with Copy) instead. */
+  readonly selectable?: boolean
+}) {
   const blocks = parseBlocks(props.source)
+  const selectable = props.selectable ?? true
   const base: StyleProp<TextStyle> = [
     { fontSize: 16, lineHeight: 24, color: color.t1, letterSpacing: -0.16 },
     props.style
@@ -60,13 +66,13 @@ export function Markdown(props: { readonly source: string; readonly style?: Styl
         switch (block.kind) {
           case "paragraph":
             return (
-              <Text key={i} style={base} selectable>
+              <Text key={i} style={base} selectable={selectable}>
                 {renderInline(parseInline(block.text))}
               </Text>
             )
           case "heading":
             return (
-              <Text key={i} style={[base, { fontWeight: "600", marginTop: i === 0 ? 0 : 4 }]} selectable>
+              <Text key={i} style={[base, { fontWeight: "600", marginTop: i === 0 ? 0 : 4 }]} selectable={selectable}>
                 {renderInline(parseInline(block.text))}
               </Text>
             )
@@ -77,7 +83,7 @@ export function Markdown(props: { readonly source: string; readonly style?: Styl
               <Text
                 key={i}
                 style={[base, { color: color.t2, borderLeftWidth: 2, borderColor: color.line2, paddingLeft: 12 }]}
-                selectable
+                selectable={selectable}
               >
                 {renderInline(parseInline(block.text))}
               </Text>
@@ -90,7 +96,7 @@ export function Markdown(props: { readonly source: string; readonly style?: Styl
                   <Text
                     key={j}
                     style={[base, j === 0 && block.rows.length > 1 ? { fontWeight: "600" } : null]}
-                    selectable
+                    selectable={selectable}
                   >
                     {renderInline(parseInline(tableLine(row)))}
                   </Text>
@@ -101,7 +107,7 @@ export function Markdown(props: { readonly source: string; readonly style?: Styl
             return (
               <Text
                 key={i}
-                selectable
+                selectable={selectable}
                 style={{
                   fontFamily: "Menlo",
                   fontSize: 13,
@@ -124,7 +130,7 @@ export function Markdown(props: { readonly source: string; readonly style?: Styl
                     <Text style={[base, { color: color.t2, minWidth: block.ordered ? 18 : 10 }]}>
                       {block.ordered ? `${block.start + j}.` : "•"}
                     </Text>
-                    <Text style={[base, { flex: 1 }]} selectable>
+                    <Text style={[base, { flex: 1 }]} selectable={selectable}>
                       {renderInline(parseInline(item))}
                     </Text>
                   </View>

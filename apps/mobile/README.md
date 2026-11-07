@@ -145,8 +145,8 @@ reply and "Done for now".
 Workstreams (mocks/screens/workstreams, option A): while two or more of a project's workstreams are active, the
 Status card shows a row for each in place of the "now" sentence, a row waiting on them in amber at the top, the rest
 summed up past three, and what finished lately folded into one line; messages carry their workstream's label.
-Tapping a row (or swiping one of its messages to the right) puts its tag on the composer and dims the other
-messages; what they send goes to that workstream. `workstreams` puts Lift Log in A1 (three rows, the Health import
+Tapping a row puts its tag on the composer and dims the other messages; what they send goes to that workstream
+(replying to one of its messages, in that message's thread, does too). `workstreams` puts Lift Log in A1 (three rows, the Health import
 folded), `workstreams-waiting` in A2 (the rest timer waits on `msg_wssound`), `workstreams-many` runs five, and
 `workstreams-one` leaves one active, which looks like a project without any. `?work=ws_android` opens the project
 writing to that workstream (A3):
@@ -154,6 +154,20 @@ writing to that workstream (A3):
 ```sh
 xcrun simctl launch --terminate-running-process booted build.omer.dream \
   -dreamScenario signed-in,workstreams -dreamRoute "/project/prj_liftlog?tab=chat&work=ws_android"
+```
+
+Threads (mocks/screens/replies, direction B): holding any message brings up its menu (Reply, Copy, and a card's
+Open and Don't connect); Reply, a swipe to the right, or the line a thread folds into ("2 replies · Dream: …")
+opens the thread over Chat, where a card can still be answered, and the expanded question and access views and the
+option viewer have a Reply button too. `threads` gives Lift Log a thread on the Health import update (its last
+reply also shows where it fell), the rest timer question changed in its thread (`msg_thsound`, "Changed"), one on
+their own message (`msg_thskip`), and one on the Apple key request (`msg_apple`). `?thread=<messageId>` opens a
+thread (`&compose=1` with the keyboard up) and `?hold=<messageId>` holds a message. In fixtures, replying in an open
+question's thread has the agent add the reply as its first option.
+
+```sh
+xcrun simctl launch --terminate-running-process booted build.omer.dream \
+  -dreamScenario signed-in,threads -dreamRoute "/project/prj_liftlog?tab=chat&thread=msg_thsound"
 ```
 
 Answering moves on: `ask-series` gives Cabin three open questions and the calendar request (`msg_cabinrule`,

@@ -12,8 +12,7 @@ access requests waits on them, and finished ones fold into a single line at the 
 the last row sums up the rest. With one workstream or none, the card is just your sentence, and Home and older
 versions of the app always show the sentence, so it stays worth keeping true.
 
-What you send about a workstream carries its name as a small label, so they can tell the threads apart in the one
-Chat, and they can reply into one, in which case their message tells you which.
+What you send about a workstream carries its name as a small label, so they can tell the lines of work apart in the one Chat, and they can write into one, in which case their message tells you which.
 
 Moving a workstream's row is silent: it changes on the card and nowhere else, so keeping rows current costs them
 nothing. Several workstreams moving in the same turn is normal, and one message that covers what changed reads better

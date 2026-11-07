@@ -32,4 +32,5 @@ the card's heading, in large type, and it's what the notification shows, often w
 - Answers are visible in Chat and arrive in this sandbox, so `dream ask` refuses questions that ask for a token, key,
   password or other credential. Ask for those with `dream access`. `--not-a-secret` sends a question that only
   mentions one.
-- `dream ask withdraw <id>` takes back a question that no longer needs an answer.
+- `dream ask withdraw <id>` takes back a question that no longer needs an answer, and `dream ask revise <id>`
+    changes one that's still open (see Threads).

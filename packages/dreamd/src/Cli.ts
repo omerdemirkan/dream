@@ -194,6 +194,15 @@ const workFlag = Flag.String("work").pipe(
 
 const workOf = (work: Option.Option<string>) => Option.getOrUndefined(work)?.trim() as WorkstreamId | undefined
 
+const replyFlag = Flag.String("reply-to").pipe(
+  Flag.withDescription(
+    "Put it in the thread on this message (msg_…, theirs or yours): Chat folds a thread into one line under its first message, and they read it there. It goes in that message's workstream, so leave out --work."
+  ),
+  Flag.optional
+)
+
+const replyOf = (reply: Option.Option<string>) => Option.getOrUndefined(reply)?.trim() as MessageId | undefined
+
 const mediaFlag = Flag.String("media").pipe(
   Flag.withDescription("Attach a screenshot or recording (png, jpg or mp4). Repeat for more."),
   Flag.atLeast(0)
@@ -216,6 +225,7 @@ const message = Command.make(
       Flag.withDefault(false)
     ),
     work: workFlag,
+    replyTo: replyFlag,
     json
   },
   (input) =>
@@ -229,12 +239,122 @@ const message = Command.make(
       const media: Array<MediaId> = []
       for (const file of input.media) media.push((yield* upload(file)).id)
       const workstream = workOf(input.work)
-      const sent = yield* userFacing(dream.SendMessage(defined({ text, media, notify: input.notify, workstream })))
-      yield* show(input.json, TextMessage, sent, Format.sent(sent) + Format.unlabeled(workstream, sent))
+      const replyTo = replyOf(input.replyTo)
+      const sent = yield* userFacing(
+        dream.SendMessage(defined({ text, media, notify: input.notify, workstream, replyTo }))
+      )
+      yield* show(
+        input.json,
+        TextMessage,
+        sent,
+        Format.sent(sent) + Format.unlabeled(workstream, sent) + Format.threaded(replyTo, sent)
+      )
     })
 ).pipe(
   Command.withDescription("Put a message in their Chat (markdown), optionally with media and a notification."),
-  Command.withExamples([{ command: 'dream message "The first version is live: https://…" --media shot.png --notify' }])
+  Command.withExamples([
+    { command: 'dream message "The first version is live: https://…" --media shot.png --notify' },
+    { command: 'dream message --reply-to msg_\u2026 "It does now: the 214 came down to 187."' }
+  ])
+)
+
+/** `--show "<option>=<files>"`: checked against the options, and each file uploaded with its caption. */
+const previewsFor = (options: ReadonlyArray<string>, show: ReadonlyArray<string>) =>
+  Effect.gen(function* () {
+    const shows = yield* Effect.forEach(show, (raw) => fromResult(Parse.parseShow(raw)))
+    for (const { option } of shows) {
+      if (!options.includes(option)) {
+        return yield* fail(
+          `--show names "${option}", which isn't one of the options (${options.map((o) => `"${o}"`).join(", ")}).`
+        )
+      }
+    }
+    const expanded = yield* Effect.forEach(shows, ({ option, files }) =>
+      Effect.map(Effect.forEach(files, filesFor), (paths) => ({ option, media: paths.flat() }))
+    )
+    const problem = questionPreviewsProblem(options, expanded)
+    if (problem !== undefined) return yield* fail(problem)
+    const previews = yield* Effect.forEach(expanded, ({ option, media: paths }) =>
+      Effect.gen(function* () {
+        const [first, ...rest] = yield* Effect.forEach(paths, (file) =>
+          Effect.map(upload(file, Parse.captionOf(file), true), (m) => m.id)
+        )
+        return { option, media: [first!, ...rest] as const }
+      })
+    )
+    return previews
+  })
+
+const askRevise = Command.make(
+  "revise",
+  {
+    messageId: Argument.String("message-id"),
+    question: Flag.String("question").pipe(Flag.withDescription("The question's new wording."), Flag.optional),
+    option: Flag.String("option").pipe(
+      Flag.withDescription("The new options, all of them, in order (repeat for each). Leave out to keep them."),
+      Flag.atLeast(0)
+    ),
+    show: Flag.String("show").pipe(
+      Flag.withDescription(
+        "Previews as on `dream ask`, replacing them all. Leave out to keep those of options that stay."
+      ),
+      Flag.atLeast(0)
+    ),
+    why: Flag.String("why").pipe(Flag.withDescription('A new reason under it; "" clears it.'), Flag.optional),
+    context: Flag.String("context").pipe(
+      Flag.withDescription('New context, in markdown; "" clears it, "-" reads it from stdin.'),
+      Flag.optional
+    ),
+    meanwhile: Flag.String("meanwhile").pipe(
+      Flag.withDescription('What you keep doing meanwhile; "" clears it.'),
+      Flag.optional
+    ),
+    json
+  },
+  (input) =>
+    Effect.gen(function* () {
+      const dream = yield* Dream
+      const options = input.option.length === 0 ? undefined : input.option
+      const question = Option.getOrUndefined(input.question)?.trim()
+      const why = Option.getOrUndefined(input.why)
+      const context = yield* readOptional(input.context)
+      const meanwhile = Option.getOrUndefined(input.meanwhile)
+      const secret = Secrets.requestedSecret([question ?? "", why ?? "", ...input.option, context ?? ""])
+      if (Option.isSome(secret)) return yield* fail(Secrets.refusal(secret.value))
+      if (input.show.length > 0 && options === undefined) {
+        return yield* fail("--show replaces the previews, so list the options too (--option for each).")
+      }
+      const previews = options === undefined ? [] : yield* previewsFor(options, input.show)
+      const clear = (text: string | undefined) => (text === undefined ? undefined : text.trim() === "" ? null : text)
+      const revised = yield* userFacing(
+        dream.ReviseQuestion(
+          defined({
+            messageId: input.messageId as MessageId,
+            question: question === "" ? undefined : question,
+            options,
+            why: clear(why),
+            context: clear(context),
+            meanwhile: clear(meanwhile),
+            previews: input.show.length === 0 ? undefined : previews
+          })
+        )
+      ).pipe(
+        newerThanApi(
+          "Nothing changed: this Dream's API predates `dream ask revise`. Withdraw the question (`dream ask withdraw`) and ask the new one instead."
+        )
+      )
+      yield* show(input.json, QuestionMessage, revised, Format.revised(revised))
+    })
+).pipe(
+  Command.withDescription(
+    'Change an open question in place, usually because they asked for a change in its thread. The card says "Changed"; it keeps its place and doesn\'t notify again.'
+  ),
+  Command.withExamples([
+    {
+      command:
+        'dream ask revise msg_\u2026 --option "A chime that gets louder" --option "Soft chime" --option "Three short buzzes"'
+    }
+  ])
 )
 
 const askWithdraw = Command.make("withdraw", { messageId: Argument.String("message-id"), json }, (input) =>
@@ -282,6 +402,7 @@ const ask = Command.make(
       Flag.atLeast(0)
     ),
     work: workFlag,
+    replyTo: replyFlag,
     notASecret: Flag.Boolean("not-a-secret").pipe(
       Flag.withDescription("Send it even though it mentions a credential, because it doesn't ask them for one."),
       Flag.withDefault(false)
@@ -308,27 +429,7 @@ const ask = Command.make(
         const secret = Secrets.requestedSecret([question, why ?? "", ...input.option, context ?? ""])
         if (Option.isSome(secret)) return yield* fail(Secrets.refusal(secret.value))
       }
-      const shows = yield* Effect.forEach(input.show, (raw) => fromResult(Parse.parseShow(raw)))
-      for (const { option } of shows) {
-        if (!input.option.includes(option)) {
-          return yield* fail(
-            `--show names "${option}", which isn't one of the options (${input.option.map((o) => `"${o}"`).join(", ")}).`
-          )
-        }
-      }
-      const expanded = yield* Effect.forEach(shows, ({ option, files }) =>
-        Effect.map(Effect.forEach(files, filesFor), (paths) => ({ option, media: paths.flat() }))
-      )
-      const problem = questionPreviewsProblem(input.option, expanded)
-      if (problem !== undefined) return yield* fail(problem)
-      const previews = yield* Effect.forEach(expanded, ({ option, media: paths }) =>
-        Effect.gen(function* () {
-          const [first, ...rest] = yield* Effect.forEach(paths, (file) =>
-            Effect.map(upload(file, Parse.captionOf(file), true), (m) => m.id)
-          )
-          return { option, media: [first!, ...rest] as const }
-        })
-      )
+      const previews = yield* previewsFor(input.option, input.show)
       const asked = yield* userFacing(
         dream.AskQuestion(
           defined({
@@ -338,7 +439,8 @@ const ask = Command.make(
             context: context === "" ? undefined : context,
             meanwhile,
             previews: previews.length === 0 ? undefined : previews,
-            workstream: workOf(input.work)
+            workstream: workOf(input.work),
+            replyTo: replyOf(input.replyTo)
           })
         )
       )
@@ -350,7 +452,8 @@ const ask = Command.make(
           (previews.length > 0 && asked.previews === undefined
             ? "\nDream's API here doesn't show previews yet, so they see the options as plain buttons."
             : "") +
-          Format.unlabeled(workOf(input.work), asked)
+          Format.unlabeled(workOf(input.work), asked) +
+          Format.threaded(replyOf(input.replyTo), asked)
       )
     })
 ).pipe(
@@ -367,7 +470,7 @@ const ask = Command.make(
         'dream ask "Which voice should the coach use?" --option "OpenAI voice" --option "Your phone\'s voice" --context "OpenAI\'s voice sounds natural and copes with interruptions, for a few cents a session. Your phone\'s own voice is free but flatter."'
     }
   ]),
-  Command.withSubcommands([askWithdraw])
+  Command.withSubcommands([askRevise, askWithdraw])
 )
 
 const accessFlags = {
@@ -387,6 +490,7 @@ const accessFlags = {
     Flag.optional
   ),
   work: workFlag,
+  replyTo: replyFlag,
   json
 }
 
@@ -397,6 +501,7 @@ const requestAccess = (
     readonly context: Option.Option<string>
     readonly when: Option.Option<string>
     readonly work: Option.Option<string>
+    readonly replyTo: Option.Option<string>
     readonly json: boolean
   }
 ) =>
@@ -410,7 +515,8 @@ const requestAccess = (
           why: input.why,
           context: context === "" ? undefined : context,
           when: Option.getOrUndefined(input.when),
-          workstream: workOf(input.work)
+          workstream: workOf(input.work),
+          replyTo: replyOf(input.replyTo)
         })
       )
     )
@@ -418,7 +524,9 @@ const requestAccess = (
       input.json,
       AccessMessage,
       requested,
-      Format.accessRequested(requested) + Format.unlabeled(workOf(input.work), requested)
+      Format.accessRequested(requested) +
+        Format.unlabeled(workOf(input.work), requested) +
+        Format.threaded(replyOf(input.replyTo), requested)
     )
   })
 

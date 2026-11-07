@@ -58,6 +58,7 @@ import { TolerantMessage } from "../data/Tolerant.ts"
 import {
   type FixtureWorld,
   cabinHold,
+  liftThreads,
   liftWorkstreams,
   longChat,
   longQuestion,
@@ -132,7 +133,8 @@ export const Scenario = [
   "workstreams-one",
   "notify-ask",
   "notify-app",
-  "attachments-sent"
+  "attachments-sent",
+  "threads"
 ] as const
 export type Scenario = (typeof Scenario)[number]
 
@@ -194,7 +196,7 @@ type ActivityStage = "sent" | "starting" | "working" | "done"
 type AppHandlers = Rpc.ToHandler<RpcGroup.Rpcs<typeof AppRpcs>>
 
 /** How many recent messages a snapshot carries; the rest come from `ListMessages`. */
-const snapshotSize = 6
+const snapshotSize = 10
 
 export class FakeBackend extends Context.Service<
   FakeBackend,
@@ -411,7 +413,7 @@ export class FakeBackend extends Context.Service<
           yield* emit(record, ProjectEvent.cases.ProjectChanged.make({ project: record.project }))
         })
 
-      const agentText = (record: ProjectRecord, text: string, workstream?: WorkstreamId) =>
+      const agentText = (record: ProjectRecord, text: string, workstream?: WorkstreamId, replyTo?: MessageId) =>
         Effect.gen(function* () {
           const message: TextMessage = {
             _tag: "Text",
@@ -421,7 +423,8 @@ export class FakeBackend extends Context.Service<
             from: "agent",
             text,
             media: [],
-            ...(workstream === undefined ? {} : { workstream })
+            ...(workstream === undefined ? {} : { workstream }),
+            ...(replyTo === undefined ? {} : { replyTo })
           }
           yield* setMessage(record, message)
           return message
@@ -796,7 +799,13 @@ export class FakeBackend extends Context.Service<
             const from = Math.max(0, until - (limit ?? 50))
             return { messages: record.messages.slice(from, until).reverse(), hasEarlier: from > 0 }
           }),
-        SendMessage: ({ projectId, text, workstream, attachments: attachmentIds }) =>
+        ListThread: ({ projectId, messageId }) =>
+          Effect.gen(function* () {
+            const { record, message } = yield* findMessage(projectId, messageId)
+            const root = record.messages.find((m) => m.id === message.replyTo) ?? message
+            return { root, replies: record.messages.filter((m) => m.replyTo === root.id) }
+          }),
+        SendMessage: ({ projectId, text, workstream, replyTo, attachments: attachmentIds }) =>
           stallable(
             Effect.gen(function* () {
               const record = yield* find(projectId)
@@ -804,8 +813,13 @@ export class FakeBackend extends Context.Service<
               if (text.trim().length === 0 && attachments.length === 0) {
                 return yield* new InvalidRequest({ message: "Write something or attach a file first." })
               }
-              // As the ProjectDO does: a workstream the project doesn't have is left off.
-              const into = record.status.workstreams?.find((w) => w.id === workstream)?.id
+              // As the ProjectDO does: a reply goes in the thread of the first message it answers, and in that
+              // message's workstream; a workstream the project doesn't have is left off.
+              const target = replyTo === undefined ? undefined : (yield* findMessage(projectId, replyTo)).message
+              const root =
+                target === undefined ? undefined : (record.messages.find((m) => m.id === target.replyTo) ?? target)
+              const wanted = root === undefined ? workstream : root.workstream
+              const into = record.status.workstreams?.find((w) => w.id === wanted)?.id
               const message: TextMessage = {
                 _tag: "Text",
                 id: nextId("msg") as MessageId,
@@ -815,19 +829,36 @@ export class FakeBackend extends Context.Service<
                 text,
                 media: [],
                 ...(attachments.length === 0 ? {} : { attachments }),
-                ...(into === undefined ? {} : { workstream: into })
+                ...(into === undefined ? {} : { workstream: into }),
+                ...(root === undefined ? {} : { replyTo: root.id })
               }
               yield* setMessage(record, message)
               const taken = yield* wake(record)
               yield* later(
                 taken + 3,
                 Effect.gen(function* () {
+                  // A reply on an open question asks for a change, and the agent makes it (`dream ask revise`).
+                  if (root?._tag === "Question" && root.state._tag === "Open") {
+                    const current = record.messages.find((m) => m.id === root.id)
+                    if (current?._tag === "Question" && current.state._tag === "Open") {
+                      const idea = text.trim().replace(/[.?!]+$/, "")
+                      const option = idea.length <= 48 ? idea : `${idea.slice(0, 47).trimEnd()}…`
+                      yield* setMessage(record, {
+                        ...current,
+                        options: [option, ...current.options.filter((o) => o !== option)],
+                        revisedAt: yield* DateTime.now
+                      })
+                      yield* agentText(record, "Good idea. It’s the first option now.", into, root.id)
+                      return yield* endTurn(record)
+                    }
+                  }
                   yield* agentText(
                     record,
                     attachments.length === 0
                       ? "Noted. I’ll fold that in and show you when it’s ready."
                       : `Got ${attachments.length === 1 ? "it" : `all ${attachments.length}`}. I’ll work from ${attachments.length === 1 ? "that" : "those"} and show you when it’s ready.`,
-                    into
+                    into,
+                    root?.id
                   )
                   yield* endTurn(record)
                 })
@@ -1558,6 +1589,20 @@ export class FakeBackend extends Context.Service<
               ...added
             ]
             lift.status = { ...lift.status, workstreams, updatedAt: now }
+            return yield* emit(lift, snapshotOf(lift))
+          }
+          case "threads": {
+            // Lift Log with threads (mocks/screens/replies, direction B).
+            const lift = Array.from(records.values()).find((r) => r.project.slug === "lift-log")
+            if (!lift) return
+            const base = lift.messages.filter((m) => !m.id.startsWith("msg_th"))
+            const latest = base.reduce(
+              (max, m) => (DateTime.isGreaterThan(m.createdAt, max) ? m.createdAt : max),
+              lift.project.updatedAt
+            )
+            lift.messages = [...base, ...liftThreads(lift.project.id, latest)].sort(
+              (a, b) => DateTime.toEpochMillis(a.createdAt) - DateTime.toEpochMillis(b.createdAt)
+            )
             return yield* emit(lift, snapshotOf(lift))
           }
           case "activity-sent":

@@ -19,7 +19,14 @@ const MessageFields = {
    * The workstream it belongs to (`Workstream.ts`): the agent's `--work`, their reply into one, or the agent filing
    * their message (`dream work route`). Added in November 2026; older apps ignore it.
    */
-  workstream: Schema.optionalKey(WorkstreamId)
+  workstream: Schema.optionalKey(WorkstreamId),
+  /**
+   * The message whose thread this one is in (`Thread.ts`): always the thread's first message, since a reply to a
+   * reply goes into the same thread. Their reply from a message's thread, or the agent's `--reply-to`. Chat folds
+   * replies into one line under that message, and the thread opens from there. Added in November 2026; older apps
+   * ignore it and show a reply in Chat where it falls, as a message of its own.
+   */
+  replyTo: Schema.optionalKey(MessageId)
 }
 
 // ---------------------------------------------------------------------------
@@ -136,6 +143,12 @@ export const QuestionMessage = Schema.TaggedStruct("Question", {
    * November 2026: older apps ignore it and show the options as buttons, which answer the same way.
    */
   previews: Schema.optionalKey(Schema.Array(QuestionPreview)),
+  /**
+   * When the agent last changed the open question in place (`dream ask revise`), usually because they asked for a
+   * change in its thread; the card shows "Changed". The fields always hold the latest version. Added in November
+   * 2026: older apps ignore it and show the latest version as the question it is.
+   */
+  revisedAt: Schema.optionalKey(Schema.DateTimeUtc),
   state: QuestionState
 })
 export type QuestionMessage = typeof QuestionMessage.Type

@@ -5,6 +5,7 @@
  * message says whether it has been seen.
  */
 import type { AskMessage, Message, MessageId, WorkstreamId } from "@dream/domain"
+import * as Haptics from "expo-haptics"
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
 import { Option } from "effect"
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -12,6 +13,7 @@ import {
   type HostInstance,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  Pressable,
   type ScrollViewInstance,
   Text,
   View
@@ -29,15 +31,17 @@ import Animated, {
 import { scheduleOnRN } from "react-native-worklets"
 import { dayLabel, sameDay, timeLabel } from "../data/format.ts"
 import { chatRowOf, presenceOf, receiptOf } from "../data/presence.ts"
+import { chatItems, foldLine, senderName, type ThreadSummary, topLevel } from "../data/threads.ts"
 import type { ProjectState } from "../data/projectState.ts"
 import { loadEarlierFn } from "../state/atoms.ts"
-import { landingAtom, messageRects } from "../state/ui.ts"
+import { heldAtom, holdRequestAtom, landingAtom, messageRects, threadOpenAtom } from "../state/ui.ts"
 import { nextOpenAsk } from "./asks.ts"
 import { useClearSeen } from "./clearSeen.ts"
 import { useNow, useOpenMessage } from "./hooks.ts"
 import { isNotificationsCard, NotificationsCard } from "./AppNotifications.tsx"
 import { AccessCard, AgentText, QuestionCard, UserBubble } from "./Messages.tsx"
 import { Icon } from "./kit.tsx"
+import { threadExcerpt } from "@dream/domain"
 import { ChatActivityRow } from "./Presence.tsx"
 import { color, gutter } from "./theme.ts"
 
@@ -89,7 +93,7 @@ function Divider(props: { readonly label: string; readonly first: boolean }) {
   )
 }
 
-function AskRow(props: {
+export function AskRow(props: {
   readonly message: AskMessage
   readonly highlightAt: number
   readonly onAnswered: (messageId: MessageId) => void
@@ -97,20 +101,19 @@ function AskRow(props: {
   const ref = useRef<HostInstance>(null)
   const open = useOpenMessage()
   const m = props.message
-  useEffect(() => {
-    messageRects.set(
-      m.id,
-      () =>
-        new Promise((resolve) => {
-          const node = ref.current
-          if (!node) return resolve(undefined)
-          node.measureInWindow((x, y, width, height) => resolve(width > 0 ? { x, y, width, height } : undefined))
-        })
-    )
-    return () => {
-      messageRects.delete(m.id)
-    }
-  }, [m.id])
+  useEffect(
+    () =>
+      messageRects.set(
+        m.id,
+        () =>
+          new Promise((resolve) => {
+            const node = ref.current
+            if (!node) return resolve(undefined)
+            node.measureInWindow((x, y, width, height) => resolve(width > 0 ? { x, y, width, height } : undefined))
+          })
+      ),
+    [m.id]
+  )
   const onOpen = () => open({ projectId: m.projectId, messageId: m.id, message: m, from: ref })
   const need = m.state._tag === "Open" && !(m._tag === "Access" && m.when !== undefined)
   return (
@@ -147,47 +150,230 @@ function WorkstreamLabel(props: { readonly title: string; readonly mine: boolean
   )
 }
 
-/** How far a message slides before letting go of it writes to its workstream, as a reply does in Messages. */
+/** How far a message slides before letting go of it opens its thread, as a reply does in Messages. */
 const replyAt = 56
 
-/** Swiping a labeled message to the right writes to its workstream. */
-function ReplySwipe(props: { readonly onReply: () => void; readonly children: ReactNode }) {
+/**
+ * A message in Chat or a thread: holding it lifts it with its menu (`HoldMenu`), and swiping it to the right opens its
+ * thread to reply, as in Messages. Holding cancels the tap underneath, so a card doesn't also open.
+ */
+export function Holdable(props: {
+  readonly message: Message
+  /** Swiping right replies (Chat); a thread's own messages don't swipe. */
+  readonly onReply?: (() => void) | undefined
+  readonly children: ReactNode
+}) {
   const x = useSharedValue(0)
-  // The latest callback, so the gesture is made once.
-  const reply = useRef(props.onReply)
-  reply.current = props.onReply
-  const pan = useMemo(() => {
-    const fire = () => reply.current()
-    return Gesture.Pan()
+  const setHeld = useAtomSet(heldAtom)
+  const box = useRef<HostInstance>(null)
+  // The latest callbacks and message, so the gestures are made once.
+  const latest = useRef(props)
+  latest.current = props
+  const gesture = useMemo(() => {
+    const reply = () => latest.current.onReply?.()
+    const hold = () => {
+      const node = box.current
+      if (!node) return
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
+      node.measureInWindow((left, top, width, height) =>
+        setHeld(
+          Option.some({
+            message: latest.current.message,
+            rect: { x: left, y: top, width, height }
+          })
+        )
+      )
+    }
+    const press = Gesture.LongPress()
+      .minDuration(380)
+      .maxDistance(12)
+      .onStart(() => {
+        scheduleOnRN(hold)
+      })
+    if (!props.onReply) return press
+    const pan = Gesture.Pan()
       .activeOffsetX(14)
       .failOffsetY([-12, 12])
       .onUpdate((e) => {
         x.value = Math.max(0, Math.min(replyAt + 16, e.translationX * 0.7))
       })
       .onEnd(() => {
-        if (x.value >= replyAt) scheduleOnRN(fire)
+        if (x.value >= replyAt) scheduleOnRN(reply)
         x.value = withTiming(0, { duration: 220 })
       })
-  }, [x])
+    return Gesture.Race(press, pan)
+  }, [x, setHeld, props.onReply === undefined])
+  // `?hold=<messageId>`: held as if pressed, once it's laid out.
+  const request = useAtomValue(holdRequestAtom)
+  const setRequest = useAtomSet(holdRequestAtom)
+  useEffect(() => {
+    if (!Option.contains(request, props.message.id)) return
+    const timer = setTimeout(() => {
+      setRequest(Option.none())
+      const node = box.current
+      node?.measureInWindow((left, top, width, height) =>
+        setHeld(Option.some({ message: props.message, rect: { x: left, y: top, width, height } }))
+      )
+    }, 900)
+    return () => clearTimeout(timer)
+  }, [request, props.message, setRequest, setHeld])
   const slide = useAnimatedStyle(() => ({ transform: [{ translateX: x.value }] }))
   const hint = useAnimatedStyle(() => ({
     opacity: interpolate(x.value, [12, replyAt], [0, 1], "clamp"),
     transform: [{ scale: interpolate(x.value, [12, replyAt], [0.6, 1], "clamp") }]
   }))
   return (
-    <GestureDetector gesture={pan}>
-      <View>
-        <Animated.View style={[{ position: "absolute", left: -2, top: 0, bottom: 0, justifyContent: "center" }, hint]}>
-          <Icon name="reply" size={17} color={color.t2} weight="semibold" />
-        </Animated.View>
+    <GestureDetector gesture={gesture}>
+      <View ref={box} collapsable={false}>
+        {props.onReply ? (
+          <Animated.View
+            style={[{ position: "absolute", left: -2, top: 0, bottom: 0, justifyContent: "center" }, hint]}
+          >
+            <Icon name="reply" size={17} color={color.t2} weight="semibold" />
+          </Animated.View>
+        ) : null}
         <Animated.View style={slide}>{props.children}</Animated.View>
       </View>
     </GestureDetector>
   )
 }
 
+/** The little curve from the agent's message down to its thread's line. */
+function Curve() {
+  return (
+    <View
+      style={{
+        width: 14,
+        height: 20,
+        marginTop: -6,
+        marginLeft: 10,
+        borderColor: color.line2,
+        borderBottomWidth: 1.5,
+        borderLeftWidth: 1.5,
+        borderBottomLeftRadius: 10
+      }}
+    />
+  )
+}
+
+/** A thread folded into one line under its message: how many replies, and the latest. Tapping opens it. */
+export function ThreadFold(props: {
+  readonly summary: ThreadSummary
+  readonly mine: boolean
+  readonly waiting: boolean
+  readonly onPress: () => void
+}) {
+  const line = foldLine(props.summary)
+  return (
+    <View
+      style={{
+        flexDirection: props.mine ? "row-reverse" : "row",
+        alignItems: "flex-start",
+        gap: 8,
+        marginTop: -6
+      }}
+    >
+      {props.mine ? null : <Curve />}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${line.count}. ${line.latest}`}
+        accessibilityHint="Opens the thread"
+        onPress={props.onPress}
+        hitSlop={6}
+        style={({ pressed }) => ({
+          flexShrink: 1,
+          maxWidth: "88%",
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 8,
+          marginTop: 6,
+          paddingVertical: 7,
+          paddingLeft: 8,
+          paddingRight: 12,
+          borderRadius: 16,
+          backgroundColor: pressed ? color.s2 : color.s1,
+          borderWidth: 1,
+          borderColor: props.waiting ? color.needLine : color.line
+        })}
+      >
+        <View
+          style={{
+            width: 20,
+            height: 20,
+            borderRadius: 10,
+            backgroundColor: color.s3,
+            alignItems: "center",
+            justifyContent: "center"
+          }}
+        >
+          <Icon name="reply" size={10} color={color.t1} weight="bold" />
+        </View>
+        <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 13.5, color: color.t2 }}>
+          <Text style={{ color: color.t1, fontWeight: "600" }}>{line.count}</Text>
+          {` · ${line.latest}`}
+        </Text>
+      </Pressable>
+    </View>
+  )
+}
+
+/** The agent's reply in a thread, where it falls in Chat, so it isn't missed folded far up. Tapping opens the thread. */
+function ReplyEcho(props: {
+  readonly reply: Message
+  readonly root: Message | undefined
+  readonly onPress: () => void
+}) {
+  const about = props.root === undefined ? "an earlier message" : `“${threadExcerpt(props.root, 60)}”`
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityHint="Opens the thread"
+      onPress={props.onPress}
+      style={({ pressed }) => ({
+        alignSelf: "flex-start",
+        maxWidth: "94%",
+        paddingVertical: 10,
+        paddingHorizontal: 13,
+        borderRadius: 18,
+        backgroundColor: pressed ? color.s2 : color.s1,
+        borderWidth: 1,
+        borderColor: color.line
+      })}
+    >
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+        <Icon name="reply" size={11} color={color.t3} weight="semibold" />
+        <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 12.5, fontWeight: "600", color: color.t3 }}>
+          {`${senderName(props.reply)} replied to ${about}`}
+        </Text>
+      </View>
+      <Text numberOfLines={3} style={{ fontSize: 15.5, lineHeight: 21.5, color: color.t1, marginTop: 4 }}>
+        {threadExcerpt(props.reply, 400)}
+      </Text>
+    </Pressable>
+  )
+}
+
+/** One message as Chat and a thread show it: their bubble, the agent's text, or a card. */
+export function MessageBody(props: {
+  readonly message: Message
+  readonly time: string | undefined
+  readonly receipt?: { readonly seen: boolean } | undefined
+  readonly highlightAt?: number
+  readonly onAnswered?: (messageId: MessageId) => void
+}) {
+  const message = props.message
+  if (message._tag === "Text") {
+    return message.from === "user" ? (
+      <UserBubble message={message} time={props.time} receipt={props.receipt} />
+    ) : (
+      <AgentText message={message} time={props.time} />
+    )
+  }
+  return <AskRow message={message} highlightAt={props.highlightAt ?? 0} onAnswered={props.onAnswered ?? (() => {})} />
+}
+
 /** The row at the bottom (A). It ticks every few seconds, so the typing dots give way on time, without redrawing Chat. */
-function ChatActivity(props: { readonly state: ProjectState }) {
+export function ChatActivity(props: { readonly state: ProjectState }) {
   const { state } = props
   const now = useNow(5000)
   const presence = presenceOf({
@@ -212,8 +398,6 @@ export function ChatTab(props: {
   readonly labels?: ReadonlyMap<WorkstreamId, string> | undefined
   /** The workstream they're writing to: the other messages dim. */
   readonly scope?: WorkstreamId | undefined
-  /** Swiping a labeled message writes to its workstream. */
-  readonly onReply?: (workstream: WorkstreamId) => void
 }) {
   const { state } = props
   const projectId = state.project.id
@@ -231,8 +415,22 @@ export function ChatTab(props: {
   const [highlights, setHighlights] = useState<ReadonlyMap<MessageId, number>>(new Map())
   const landed = useRef(false)
 
+  const setThread = useAtomSet(threadOpenAtom)
+  const openThread = useCallback(
+    (messageId: MessageId, highlight?: MessageId) =>
+      setThread(Option.some({ projectId, messageId, ...(highlight === undefined ? {} : { highlight }) })),
+    [projectId, setThread]
+  )
+
   const target = Option.getOrUndefined(landing)
   const wanted = target && target.projectId === projectId ? target : undefined
+  // A reply lives in its thread, not in Chat: landing on one (from a notification) opens the thread at it.
+  const wantedReply = wanted ? state.messages.find((m) => m.id === wanted.messageId)?.replyTo : undefined
+  useEffect(() => {
+    if (!wanted || wantedReply === undefined) return
+    setLanding(Option.none())
+    openThread(wantedReply, wanted.messageId)
+  }, [wanted, wantedReply, setLanding, openThread])
 
   /** Scrolls so the message sits a little above the middle, as the mock does. */
   const scrollTo = useCallback((messageId: MessageId, animated: boolean) => {
@@ -245,7 +443,7 @@ export function ChatTab(props: {
 
   // Land on a message when asked to (from the expanded view, Status, Home or a notification).
   useEffect(() => {
-    if (!wanted) return
+    if (!wanted || wantedReply !== undefined) return
     const done = scrollTo(wanted.messageId, false)
     if (!done) return
     landed.current = true
@@ -275,8 +473,15 @@ export function ChatTab(props: {
     window: () => ({ top: offset.current + props.topInset, bottom: offset.current + viewport.current })
   })
 
-  const onContentSizeChange = () => {
+  const onContentSizeChange = (_: number, height: number) => {
     checkSeen()
+    // Messages that don't fill the screen can't be scrolled back through, so the earlier ones load now. Replies fold
+    // into their threads, so a page of messages can make a short Chat.
+    if (viewport.current > 0 && height < viewport.current && state.hasEarlierMessages && !loadingEarlier.current) {
+      loadingEarlier.current = true
+      loadEarlier(projectId)
+      setTimeout(() => (loadingEarlier.current = false), 1500)
+    }
     if (wanted) return
     if (!landed.current || nearBottom.current) {
       scroll.current?.scrollToEnd({ animated: landed.current })
@@ -303,39 +508,39 @@ export function ChatTab(props: {
     }
   }
 
-  const receipt = receiptOf(state.messages, state.activity)
+  // Their latest message in Chat itself carries the receipt; one in a thread carries it there.
+  const receipt = receiptOf(topLevel(state.messages), state.activity)
+  const waiting = (m: Message) => m._tag !== "Text" && m.state._tag === "Open"
 
   const rows: Array<ReactNode> = []
   let previous: Message | undefined
-  for (const message of state.messages) {
+  for (const item of chatItems(state.messages)) {
+    const message = item._tag === "Message" ? item.message : item.reply
     if (!previous || !sameDay(previous.createdAt, message.createdAt)) {
       rows.push(<Divider key={`d-${message.id}`} label={dayLabel(message.createdAt, now)} first={!previous} />)
     }
     previous = message
+    if (item._tag === "Echo") {
+      const rootId = item.reply.replyTo
+      rows.push(
+        <View
+          key={message.id}
+          style={props.scope !== undefined && message.workstream !== props.scope ? { opacity: 0.32 } : undefined}
+        >
+          <ReplyEcho
+            reply={item.reply}
+            root={item.root}
+            onPress={() => rootId !== undefined && openThread(rootId, item.reply.id)}
+          />
+        </View>
+      )
+      continue
+    }
     const time = sameDay(message.createdAt, now) ? timeLabel(message.createdAt) : undefined
-    const highlightAt = highlights.get(message.id) ?? 0
     const workstream = message.workstream
     const label = workstream === undefined ? undefined : props.labels?.get(workstream)
     const mine = message._tag === "Text" && message.from === "user"
-    const body = (
-      <>
-        {label === undefined ? null : <WorkstreamLabel title={label} mine={mine} />}
-        {message._tag === "Text" ? (
-          message.from === "user" ? (
-            <UserBubble
-              message={message}
-              time={time}
-              receipt={receipt?.messageId === message.id ? { seen: receipt.seen } : undefined}
-            />
-          ) : (
-            <AgentText message={message} time={time} />
-          )
-        ) : (
-          <AskRow message={message} highlightAt={highlightAt} onAnswered={onAnswered} />
-        )}
-      </>
-    )
-    const onReply = props.onReply
+    const thread = item.thread
     rows.push(
       <View
         key={message.id}
@@ -345,11 +550,19 @@ export function ChatTab(props: {
         }}
         style={props.scope !== undefined && workstream !== props.scope ? { opacity: 0.32 } : undefined}
       >
-        {label !== undefined && workstream !== undefined && onReply ? (
-          <ReplySwipe onReply={() => onReply(workstream)}>{body}</ReplySwipe>
-        ) : (
-          body
-        )}
+        {label === undefined ? null : <WorkstreamLabel title={label} mine={mine} />}
+        <Holdable message={message} onReply={() => openThread(message.id)}>
+          <MessageBody
+            message={message}
+            time={time}
+            receipt={receipt?.messageId === message.id ? { seen: receipt.seen } : undefined}
+            highlightAt={highlights.get(message.id) ?? 0}
+            onAnswered={onAnswered}
+          />
+        </Holdable>
+        {thread ? (
+          <ThreadFold summary={thread} mine={mine} waiting={waiting(message)} onPress={() => openThread(message.id)} />
+        ) : null}
       </View>
     )
   }

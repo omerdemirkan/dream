@@ -2,6 +2,7 @@
  * Deliver an event to dreamd the way the ProjectDO does, for testing.
  *
  *   node packages/dreamd/scripts/deliver.ts <daemon-url> <daemon-token> message "text"
+ *   node packages/dreamd/scripts/deliver.ts <daemon-url> <daemon-token> reply "text" <message-id> text|question|access "excerpt" [open]
  *   node packages/dreamd/scripts/deliver.ts <daemon-url> <daemon-token> wake "why" "command"
  *   node packages/dreamd/scripts/deliver.ts <daemon-url> <daemon-token> task "why" "brief" [model] [effort]
  *   node packages/dreamd/scripts/deliver.ts <daemon-url> <daemon-token> reset fiveHour|weekly
@@ -20,6 +21,7 @@ import {
   MessageId,
   ReasoningEffort,
   Routes,
+  ThreadKind,
   WakeId
 } from "@dream/domain"
 import { NodeRuntime } from "@effect/platform-node"
@@ -27,7 +29,7 @@ import { Console, DateTime, Effect, Layer, Schema } from "effect"
 import { FetchHttpClient, Headers, HttpClient, HttpClientRequest } from "effect/http"
 import { RpcClient, RpcMiddleware } from "effect/rpc"
 
-const [url, token, kind = "health", text = "", command, model = "haiku", effort = "low"] = process.argv.slice(2)
+const [url, token, kind = "health", text = "", command, model = "haiku", effort = "low", open] = process.argv.slice(2)
 if (url === undefined || token === undefined) {
   console.error("usage: deliver.ts <daemon-url> <daemon-token> message|wake|task|reset|health [text] [command|brief]")
   process.exit(2)
@@ -62,7 +64,19 @@ const program = Effect.gen(function* () {
             id: EventId.make(`evt_${n}`),
             at,
             messageId: MessageId.make(`msg_${n}`),
-            text
+            text,
+            // `reply`: written in the thread on <message-id>, an agent's message of that kind.
+            ...(kind === "reply" && command !== undefined
+              ? {
+                  thread: {
+                    messageId: MessageId.make(command),
+                    from: "agent" as const,
+                    kind: Schema.decodeUnknownSync(ThreadKind)(model),
+                    excerpt: effort,
+                    ...(model === "text" ? {} : { open: open === "open" })
+                  }
+                }
+              : {})
           })
   const result = yield* client.Deliver({ events: [event], timeZone: "America/Los_Angeles" })
   yield* Console.log(JSON.stringify(result))

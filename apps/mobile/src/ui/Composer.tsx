@@ -131,6 +131,8 @@ export function ChatComposer(props: {
   readonly draft?: string | undefined
   /** Writing to one workstream: its tag sits above the field, and clearing it writes to the whole project. */
   readonly scope?: { readonly title: string; readonly onClear: () => void } | undefined
+  /** What the empty field says, when it isn't Chat's ("Reply" in a thread). */
+  readonly placeholder?: string
   readonly inputRef?: Ref<TextInputInstance>
 }) {
   const [text, setText] = useState("")
@@ -195,7 +197,7 @@ export function ChatComposer(props: {
         <View style={{ flex: 1, height: "100%" }}>
           {text ? null : (
             <FieldPlaceholder
-              text={scope ? `Message about ${scope.title}` : "Message Dream"}
+              text={scope ? `Message about ${scope.title}` : (props.placeholder ?? "Message Dream")}
               color={color.t2}
               fontSize={16}
             />
@@ -209,7 +211,7 @@ export function ChatComposer(props: {
             onSubmitEditing={send}
             submitBehavior="submit"
             keyboardAppearance="dark"
-            accessibilityLabel="Message Dream"
+            accessibilityLabel={props.placeholder ?? "Message Dream"}
           />
         </View>
         {dictation.listening ? <Listening heard={dictation.heard} inset={20} radius={28} /> : null}

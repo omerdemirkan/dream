@@ -53,6 +53,7 @@ export const layout = {
       "app-notifications",
       "status",
       "workstreams",
+      "threads",
       "live-activity",
       "waking",
       "hosting",

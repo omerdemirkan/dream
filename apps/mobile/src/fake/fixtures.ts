@@ -774,3 +774,76 @@ export const liftWorkstreams = (
     ]
   }
 }
+
+/**
+ * Lift Log with threads (`threads`): a thread on the Health import update whose last reply came after other
+ * messages (so it also shows where it falls), the rest timer question changed in its thread, a thread on their own
+ * message, and one on the Apple key request from when it was asked.
+ */
+export const liftThreads = (projectId: Project["id"], after: DateTime.Utc): ReadonlyArray<Message> => {
+  const t = (minutes: number) => DateTime.formatIso(DateTime.add(after, { minutes }))
+  const reply = (id: string, iso: string, from: "agent" | "user", body: string, root: string): TextMessage => ({
+    ...text(projectId, id, iso, from, body),
+    replyTo: msg(root)
+  })
+  const sound: QuestionMessage = {
+    _tag: "Question",
+    id: msg("msg_thsound"),
+    projectId,
+    createdAt: at(t(2)),
+    question: "Which sound should the rest timer end with?",
+    options: ["A chime that gets louder", "A soft chime", "Three short buzzes"],
+    why: "You’ll hear it mid-set, so I’d rather not guess.",
+    revisedAt: at(t(5)),
+    state: { _tag: "Open" },
+    notificationId: "7c2e9a41-5b3d-4f6e-8a1c-2d3e4f5a6b7c" as NotificationId
+  }
+  return [
+    reply("msg_thpaid", "2026-11-03T18:12:00Z", "user", "Do I need the paid developer account for this?", "msg_apple"),
+    reply(
+      "msg_thpaidreply",
+      "2026-11-03T18:20:00Z",
+      "agent",
+      "Yes, Apple charges $99 a year for it. Until you have one, I can put Lift Log on your Home Screen as a web app.",
+      "msg_apple"
+    ),
+    text(
+      projectId,
+      "msg_thtimer",
+      t(1),
+      "agent",
+      "The rest timer is next: it counts down on your lock screen, so you don’t need the app open between sets."
+    ),
+    sound,
+    reply(
+      "msg_thdupes",
+      t(3),
+      "user",
+      "Some of my old workouts are in there twice. Can it skip duplicates?",
+      "msg_liftimport"
+    ),
+    text(projectId, "msg_thskip", t(3.5), "user", "Can the timer skip the rest after my last set?"),
+    reply("msg_thlouder", t(4), "user", "Could it start soft and get louder if I don’t stop it?", "msg_thsound"),
+    reply(
+      "msg_thlouderreply",
+      t(5),
+      "agent",
+      "Good idea. It’s the first option now: a chime that builds over about ten seconds.",
+      "msg_thsound"
+    ),
+    reply(
+      "msg_thdupesreply",
+      t(6),
+      "agent",
+      "It does now. Each workout is matched on its start time and exercises, so the 214 came down to 187.",
+      "msg_liftimport"
+    ),
+    reply(
+      "msg_thskipreply",
+      t(7),
+      "agent",
+      "Yes. After the last set of an exercise it waits for you to start the next one.",
+      "msg_thskip"
+    )
+  ]
+}
