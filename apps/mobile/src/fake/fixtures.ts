@@ -222,6 +222,20 @@ const briefMessages: ReadonlyArray<Message> = [
   telegramKey
 ]
 
+/** The domain's option previews, at the sizes of the files bundled for them. */
+const previewSizes: Record<string, Partial<MediaRef>> = {
+  med_optcal: { width: 780, height: 1688 },
+  med_optreq: { width: 780, height: 1688 },
+  med_optrot: { width: 780, height: 1688 },
+  med_optcaldesk: { width: 1440, height: 900 },
+  med_optreqflow: { width: 780, height: 1688, durationSeconds: 6.8 }
+}
+const cabinPreviews = (Fx.cabinDirections.previews ?? []).map((preview) => ({
+  ...preview,
+  media: preview.media.map((m) => ({ ...m, ...previewSizes[m.id] })) as [MediaRef, ...Array<MediaRef>]
+}))
+
+/** Cabin's three directions, with what each looks like (`dream ask --show`): phone screens, a desktop page, a recording. */
 export const cabinPick: QuestionMessage = {
   _tag: "Question",
   id: msg("msg_cabinpick"),
@@ -229,6 +243,7 @@ export const cabinPick: QuestionMessage = {
   createdAt: at("2026-11-04T19:21:00Z"),
   question: "Which of these three feels most like Cabin?",
   options: ["Calendar first", "Requests first", "Rotation"],
+  previews: cabinPreviews,
   why: "Quick throwaway sketches. React fast; nothing here is final.",
   meanwhile: "I’ll keep the booking data model flexible until you pick.",
   state: { _tag: "Open" },
@@ -496,6 +511,14 @@ export const vagueAccess = (projectId: Project["id"], now: DateTime.Utc): Access
   context:
     "Make one at [platform.openai.com/api-keys](https://platform.openai.com/api-keys): tap **Create new secret key**, name it Lift Log, and copy it. OpenAI shows it only once.",
   state: { _tag: "Open" }
+})
+
+/** Options that are sounds (scenario `options-sounds`): which chime ends the rest timer, by ear. */
+export const timerSounds = (projectId: Project["id"], now: DateTime.Utc): QuestionMessage => ({
+  ...Fx.timerSounds,
+  projectId,
+  createdAt: now,
+  notificationId: "7d3e9b2a-4c5f-4e6a-8b7c-0d1e2f3a4b5c" as NotificationId
 })
 
 /** The same decision as `longQuestion`, asked as Dream means it: a short question, with what it takes to decide under it. */

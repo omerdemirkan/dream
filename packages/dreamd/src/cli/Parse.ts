@@ -48,9 +48,45 @@ const mediaTypes: Record<string, MediaContentType> = {
   mp4: "video/mp4"
 }
 
-export const mediaType = (file: string): Result.Result<MediaContentType, string> => {
-  const type = mediaTypes[file.split(".").pop()?.toLowerCase() ?? ""]
-  return type === undefined ? Result.fail(`${file}: attach png, jpg or mp4 files.`) : Result.succeed(type)
+const audioTypes: Record<string, MediaContentType> = {
+  mp3: "audio/mpeg",
+  m4a: "audio/mp4",
+  wav: "audio/wav"
+}
+
+/** A file's content type from its extension. Audio only where `audio` says it can go (an option's preview). */
+export const mediaType = (file: string, audio = false): Result.Result<MediaContentType, string> => {
+  const extension = file.split(".").pop()?.toLowerCase() ?? ""
+  const type = mediaTypes[extension] ?? (audio ? audioTypes[extension] : undefined)
+  if (type !== undefined) return Result.succeed(type)
+  if (audioTypes[extension] !== undefined) {
+    return Result.fail(
+      `${file}: audio plays only as an option's preview (\`dream ask --show\`); attach png, jpg or mp4 here.`
+    )
+  }
+  return Result.fail(`${file}: attach png, jpg or mp4 files${audio ? ", or mp3, m4a or wav" : ""}.`)
+}
+
+/**
+ * `--show "<option>=<files>"`: the option's text, then a file, a glob, or several separated by commas. Split at the
+ * last "=", since an option's text is likelier to hold one than a path is.
+ */
+export const parseShow = (input: string): Result.Result<{ option: string; files: ReadonlyArray<string> }, string> => {
+  const at = input.lastIndexOf("=")
+  const option = at < 0 ? "" : input.slice(0, at).trim()
+  const files =
+    at < 0
+      ? []
+      : input
+          .slice(at + 1)
+          .split(",")
+          .map((file) => file.trim())
+          .filter((file) => file !== "")
+  return option === "" || files.length === 0
+    ? Result.fail(
+        `Can't read --show "${input}"; use --show "<option>=<files>", like --show "Calendar first=shots/a-*.png".`
+      )
+    : Result.succeed({ option, files })
 }
 
 /** `dream mac cp` paths: `mac:<path>` is on the Mac (relative to its home), anything else is here. */
@@ -129,4 +165,17 @@ export const iconImageProblem = (
   if (width < IconMinPixels)
     return `${file} is ${width}×${height}; make it at least ${IconMinPixels}×${IconMinPixels} so it's sharp.`
   return undefined
+}
+
+/**
+ * A file's name as a caption, without the letters and numbers that only order the files: "a-2-the-clash.png" reads
+ * "The clash". Nothing for a name that's only those ("b.mp4").
+ */
+export const captionOf = (file: string): string | undefined => {
+  const name = (file.split("/").pop() ?? "")
+    .replace(/\.[^.]+$/, "")
+    .replace(/^((?:[a-z]|\d+)(?:[-_ .]+|$))+/i, "")
+    .replace(/[-_]+/g, " ")
+    .trim()
+  return name === "" ? undefined : name.charAt(0).toUpperCase() + name.slice(1)
 }

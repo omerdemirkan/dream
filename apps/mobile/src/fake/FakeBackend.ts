@@ -64,6 +64,7 @@ import {
   makeWorld,
   newIntegrationId,
   questionWithContext,
+  timerSounds,
   sentWithAttachments,
   vagueAccess
 } from "./fixtures.ts"
@@ -102,6 +103,7 @@ export const Scenario = [
   "long-question",
   "vague-access",
   "question-context",
+  "options-sounds",
   "unsupported-message",
   "stall-next-write",
   "activity-sent",
@@ -1456,6 +1458,8 @@ export class FakeBackend extends Context.Service<
             return yield* addToLift(vagueAccess)
           case "question-context":
             return yield* addToLift(questionWithContext)
+          case "options-sounds":
+            return yield* addToLift(timerSounds)
           case "unsupported-message": {
             const cabin = Array.from(records.values()).find((r) => r.project.slug === "cabin")
             if (!cabin || cabin.messages.some((m) => m.id === "msg_unsupported")) return

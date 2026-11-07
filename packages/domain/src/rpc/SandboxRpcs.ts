@@ -91,8 +91,9 @@ export class SandboxRpcs extends RpcGroup.make(
     error: Schema.Union([NotFound, InvalidRequest])
   }),
   /**
-   * `dream ask "question" --option "…" … [--why "…"] [--context "…"] [--meanwhile "…"] [--work id]`. Always notifies.
-   * While it's open, its workstream waits on them.
+   * `dream ask "question" --option "…" … [--show "<option>=<files>"] [--why "…"] [--context "…"] [--meanwhile "…"]
+   * [--work id]`. Always notifies. While it's open, its workstream waits on them. `InvalidRequest` when a preview
+   * names no option or breaks `QuestionPreviewLimits` (`questionPreviewsProblem`), or its media isn't uploaded.
    */
   Rpc.make("AskQuestion", {
     payload: {
@@ -102,6 +103,10 @@ export class SandboxRpcs extends RpcGroup.make(
       /** Added after the first release; an older API ignores it. */
       context: Schema.optionalKey(Schema.String),
       meanwhile: Schema.optionalKey(Schema.String),
+      /** What options look or sound like, uploaded first (`CreateMediaUpload`). Added in November 2026. */
+      previews: Schema.optionalKey(
+        Schema.Array(Schema.Struct({ option: Schema.NonEmptyString, media: Schema.NonEmptyArray(MediaId) }))
+      ),
       workstream: work
     },
     success: QuestionMessage,
@@ -347,13 +352,20 @@ export class SandboxRpcs extends RpcGroup.make(
   Rpc.make("ListLinks", { success: ProjectLinks }),
 
   // Media ----------------------------------------------------------------------------
-  /** `dream media upload <file>`: reserve a media id, then PUT the bytes to `upload`. */
+  /**
+   * `dream media upload <file>`: reserve a media id, then PUT the bytes to `upload`. Audio is for `AskQuestion`'s
+   * previews only; `SendMessage` and `UpdateStatus` refuse it.
+   */
   Rpc.make("CreateMediaUpload", {
     payload: {
       filename: Schema.NonEmptyString,
       contentType: MediaContentType,
       sizeBytes: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
-      caption: Schema.optionalKey(Schema.String)
+      caption: Schema.optionalKey(Schema.String),
+      /** What `dream` measured of the file, so the phone can lay it out before it loads. Added in November 2026. */
+      width: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
+      height: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
+      durationSeconds: Schema.optionalKey(Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)))
     },
     success: Schema.Struct({ media: MediaRef, upload: MediaUploadTarget }),
     error: InvalidRequest

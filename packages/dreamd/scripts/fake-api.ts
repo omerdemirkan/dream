@@ -20,6 +20,8 @@ import {
   LinkId,
   HttpRpcSerialization,
   MediaId,
+  type MediaRef,
+  mediaKind,
   MessageId,
   NotFound,
   type ProjectId,
@@ -95,6 +97,13 @@ const Handlers = SandboxRpcs.toLayer(
     const unavailable = (service: string) =>
       Effect.fail(new UpstreamFailure({ service, message: "not available in the fake API" }))
     const message = { projectId, createdAt: start }
+    const uploads = new Map<MediaId, MediaRef>()
+    const fakeRef = (mediaId: MediaId): MediaRef => ({
+      id: mediaId,
+      kind: "image",
+      contentType: "image/png",
+      sizeBytes: 1
+    })
     const clear = <A>(value: A | null | undefined, previous: A | undefined) =>
       value === null ? undefined : value === undefined ? previous : value
     return {
@@ -110,13 +119,24 @@ const Handlers = SandboxRpcs.toLayer(
             ...(payload.workstream === undefined ? {} : { workstream: payload.workstream })
           })
         ),
-      AskQuestion: (payload) =>
-        log("AskQuestion", payload).pipe(
+      AskQuestion: ({ previews, ...payload }) =>
+        log("AskQuestion", { ...payload, ...(previews === undefined ? {} : { previews }) }).pipe(
           Effect.as({
             _tag: "Question" as const,
             ...message,
             id: MessageId.make(id("msg")),
             ...payload,
+            ...(previews === undefined
+              ? {}
+              : {
+                  previews: previews.map(({ option, media }) => ({
+                    option,
+                    media: media.map((mediaId) => uploads.get(mediaId) ?? fakeRef(mediaId)) as [
+                      MediaRef,
+                      ...Array<MediaRef>
+                    ]
+                  }))
+                }),
             state: { _tag: "Open" as const }
           })
         ),
@@ -351,14 +371,11 @@ const Handlers = SandboxRpcs.toLayer(
         Effect.gen(function* () {
           yield* log("CreateMediaUpload", payload)
           const mediaId = MediaId.make(id("med"))
+          const { filename: _, ...fields } = payload
+          const media: MediaRef = { id: mediaId, kind: mediaKind(payload.contentType), ...fields }
+          uploads.set(mediaId, media)
           return {
-            media: {
-              id: mediaId,
-              kind: payload.contentType === "video/mp4" ? ("video" as const) : ("image" as const),
-              contentType: payload.contentType,
-              sizeBytes: payload.sizeBytes,
-              ...(payload.caption === undefined ? {} : { caption: payload.caption })
-            },
+            media,
             upload: {
               url: `http://127.0.0.1:${port}/upload/${mediaId}`,
               method: "PUT" as const,

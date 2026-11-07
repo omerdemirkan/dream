@@ -49,9 +49,19 @@ export type TextMessage = typeof TextMessage.Type
 // Question
 // ---------------------------------------------------------------------------
 
-/** They picked one of the options, or wrote their own ("Something else…", typed or dictated). */
+/**
+ * They picked one of the options, or wrote their own ("Something else…", typed or dictated). On a question with
+ * previews, writing their own is how they say none of the options is it, and what's missing.
+ */
 export const QuestionAnswer = Schema.TaggedUnion({
-  Choice: { option: Schema.String },
+  Choice: {
+    option: Schema.String,
+    /**
+     * What they added to their pick, often what to take from another option ("B, but with A's calendar"). Added in
+     * November 2026: older apps and dreamds ignore it.
+     */
+    note: Schema.optionalKey(Schema.NonEmptyString)
+  },
   Freeform: { text: Schema.NonEmptyString }
 })
 export type QuestionAnswer = typeof QuestionAnswer.Type
@@ -64,6 +74,46 @@ export const QuestionState = Schema.TaggedUnion({
   Withdrawn: { withdrawnAt: Schema.DateTimeUtc }
 })
 export type QuestionState = typeof QuestionState.Type
+
+/** How many previews a question can carry: media per option, and in all. */
+export const QuestionPreviewLimits = { perOption: 8, total: 24 } as const
+
+/**
+ * What one option looks or sounds like, so they can pick from what they see and hear: screenshots at any size
+ * (a phone's, a desktop's), screen recordings, clips, or audio such as voices and jingles, in the order to show them.
+ */
+export const QuestionPreview = Schema.Struct({
+  /** One of the question's `options`, exactly. */
+  option: Schema.NonEmptyString,
+  media: Schema.NonEmptyArray(MediaRef)
+})
+export type QuestionPreview = typeof QuestionPreview.Type
+
+/**
+ * Why `previews` can't go with `options`, or `undefined` if they can: each names one of the options, at most once,
+ * within `QuestionPreviewLimits`.
+ */
+export const questionPreviewsProblem = (
+  options: ReadonlyArray<string>,
+  previews: ReadonlyArray<{ readonly option: string; readonly media: ReadonlyArray<unknown> }>
+): string | undefined => {
+  const seen = new Set<string>()
+  let total = 0
+  for (const preview of previews) {
+    if (!options.includes(preview.option)) {
+      return `"${preview.option}" isn't one of the options (${options.map((o) => `"${o}"`).join(", ")}).`
+    }
+    if (seen.has(preview.option)) return `"${preview.option}" has more than one preview; list its files together.`
+    seen.add(preview.option)
+    if (preview.media.length > QuestionPreviewLimits.perOption) {
+      return `"${preview.option}" has ${preview.media.length} files; an option shows at most ${QuestionPreviewLimits.perOption}.`
+    }
+    total += preview.media.length
+  }
+  return total > QuestionPreviewLimits.total
+    ? `That's ${total} files; a question shows at most ${QuestionPreviewLimits.total}.`
+    : undefined
+}
 
 export const QuestionMessage = Schema.TaggedStruct("Question", {
   ...MessageFields,
@@ -80,6 +130,12 @@ export const QuestionMessage = Schema.TaggedStruct("Question", {
   context: Schema.optionalKey(Schema.String),
   /** What the agent keeps doing while it waits. */
   meanwhile: Schema.optionalKey(Schema.String),
+  /**
+   * What some or all of the options look or sound like (`dream ask --show`), in the order of `options`. The card
+   * shows a thumbnail of each, and they open full screen to compare and pick, with a note if they like. Added in
+   * November 2026: older apps ignore it and show the options as buttons, which answer the same way.
+   */
+  previews: Schema.optionalKey(Schema.Array(QuestionPreview)),
   state: QuestionState
 })
 export type QuestionMessage = typeof QuestionMessage.Type

@@ -7,6 +7,7 @@
  * use these). `?sheet=usage` opens the usage sheet, as tapping the ring in the header does, and
  * `?sheet=notifications` the Notifications sheet, as the bell does (shown once one of its apps has asked to notify
  * them). `?work=<workstream id>` writes to that workstream, as tapping its row on the card does.
+ * `?options=<messageId>&option=<n>` opens a question's option previews full screen at option n.
  */
 import {
   type Message,
@@ -37,6 +38,7 @@ import { samplesFor } from "../../ui/attachmentSamples.ts"
 import { useStagedAttachments } from "../../ui/Attachments.tsx"
 import { ChatComposer } from "../../ui/Composer.tsx"
 import { useOpenMessage, useProject, useRequestId } from "../../ui/hooks.ts"
+import { useOpenOptions } from "../../ui/Options.tsx"
 import { IconButton } from "../../ui/kit.tsx"
 import { PresenceTile, StateLineText, useTickingNow } from "../../ui/Presence.tsx"
 import { RoadmapSheet, StatusCardPin } from "../../ui/StatusCard.tsx"
@@ -61,6 +63,8 @@ export default function ProjectScreen() {
     decline?: string
     sheet?: string
     work?: string
+    options?: string
+    option?: string
     /** Fixtures: `sample` stages sample attachments in the composer. */
     attach?: string
   }>()
@@ -75,6 +79,8 @@ export default function ProjectScreen() {
       decline={params.decline}
       sheet={params.sheet}
       work={params.work}
+      options={params.options}
+      option={params.option}
       attach={params.attach}
     />
   )
@@ -88,6 +94,8 @@ function Project(props: {
   readonly decline: string | undefined
   readonly sheet: string | undefined
   readonly work: string | undefined
+  readonly options: string | undefined
+  readonly option: string | undefined
   readonly attach: string | undefined
 }) {
   const router = useRouter()
@@ -134,6 +142,16 @@ function Project(props: {
     setDecline(Option.some(message))
     router.setParams({ decline: undefined })
   }, [props.decline, state, router, setDecline])
+
+  // `?options=<messageId>&option=<n>`: that question's option previews full screen, at option n (from 0).
+  const openOptions = useOpenOptions()
+  useEffect(() => {
+    const messageId = Option.getOrUndefined(decodeMessageId(props.options))
+    const message = messageId ? state?.messages.find((m) => m.id === messageId) : undefined
+    if (message?._tag !== "Question") return
+    openOptions(message, Number(props.option ?? 0) || 0)
+    router.setParams({ options: undefined, option: undefined })
+  }, [props.options, props.option, state, router, openOptions])
 
   // The roadmap opens over Chat (`?tab=status`) and folds back (`?tab=chat`, or an ask expanding from anywhere,
   // so Back from the expanded view returns to Chat).

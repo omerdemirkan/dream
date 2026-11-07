@@ -359,6 +359,21 @@ describe("dream ask and secrets", () => {
   )
 })
 
+describe("dream ask --show", () => {
+  it.effect("refuses a preview for no option, or files that aren't there, before uploading anything", () =>
+    Effect.gen(function* () {
+      const stray = yield* run(["ask", "Which way?", "--option", "Calendar", "--show", "Rotation=c.png"])
+      assert.include(stray, `--show names "Rotation", which isn't one of the options ("Calendar")`)
+      const none = yield* run(["ask", "Which way?", "--option", "Calendar", "--show", "Calendar=/nonexistent/*.png"])
+      assert.include(none, "No files match /nonexistent/*.png")
+      const twice = yield* run(["ask", "Which way?", "--option", "A", "--show", "A=a.png", "--show", "A=b.png"])
+      assert.include(twice, "more than one preview")
+      const audio = yield* run(["message", "Listen", "--media", "chime.m4a"])
+      assert.include(audio, "only as an option's preview")
+    })
+  )
+})
+
 describe("dream publish's check", () => {
   const loaded = (fields: Partial<Omit<Extract<PageLoad, { _tag: "Loaded" }>, "_tag">>) =>
     PageLoad.cases.Loaded.make({

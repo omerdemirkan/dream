@@ -72,8 +72,15 @@ const notified = (message: { readonly notificationId?: string }) =>
 export const sent = (message: TextMessage): string =>
   `Sent ${message.id}${message.media.length > 0 ? ` with ${message.media.length} attachment(s)` : ""}${notified(message)}.`
 
+const previewed = (message: QuestionMessage): string => {
+  const previews = message.previews ?? []
+  if (previews.length === 0) return ""
+  const files = previews.reduce((n, p) => n + p.media.length, 0)
+  return ` with ${files} preview file(s) for ${previews.length} of ${message.options.length} options`
+}
+
 export const asked = (message: QuestionMessage): string =>
-  `Asked ${message.id}${notified(message)}. Their answer arrives as an event; withdraw it with \`dream ask withdraw ${message.id}\`.`
+  `Asked ${message.id}${previewed(message)}${notified(message)}. Their answer arrives as an event; withdraw it with \`dream ask withdraw ${message.id}\`.`
 
 export const withdrawn = (message: QuestionMessage): string => `Withdrew ${message.id}.`
 

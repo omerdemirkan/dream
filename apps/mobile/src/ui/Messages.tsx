@@ -22,11 +22,13 @@ import {
 } from "./describe.ts"
 import { useAction, useSignInAccess, useToast } from "./actions.ts"
 import { useAskPush } from "./hooks.ts"
-import { GoogleButton, Choices, Icon, SignInButton } from "./kit.tsx"
+import { Button, GoogleButton, Choices, Icon, SignInButton } from "./kit.tsx"
 import { Markdown, MarkdownText } from "./Markdown.tsx"
 import { useDecline } from "./Decline.tsx"
 import { SentAttachments } from "./Attachments.tsx"
 import { MediaTile } from "./Media.tsx"
+import { OptionThumbs, useOpenOptions } from "./Options.tsx"
+import { hasPreviews } from "./optionsLayout.ts"
 import { Receipt } from "./Presence.tsx"
 import { color, gutter, needGlow } from "./theme.ts"
 
@@ -349,6 +351,10 @@ export function ResolvedRow(props: {
   )
 }
 
+/** The note they added to their pick, if any. */
+export const noteOf = (message: QuestionMessage): string | undefined =>
+  message.state._tag === "Answered" && message.state.answer._tag === "Choice" ? message.state.answer.note : undefined
+
 export const answerText = (message: QuestionMessage) =>
   message.state._tag === "Answered"
     ? message.state.answer._tag === "Choice"
@@ -371,8 +377,12 @@ export const QuestionCard = forwardRef<
   const toast = useToast()
   const [picked, setPicked] = useState<string | undefined>(undefined)
   const clamps = useClamps()
+  const openOptions = useOpenOptions()
+  const window = useWindowDimensions()
+  const previews = hasPreviews(m)
   if (m.state._tag === "Answered") {
     const said = m.state.answer._tag === "Choice" ? "You chose" : "You said"
+    const note = noteOf(m)
     return (
       <Card ref={ref} tone="done" onOpen={props.onOpen}>
         <ResolvedRow
@@ -383,6 +393,7 @@ export const QuestionCard = forwardRef<
             <>
               {`${said} · `}
               <Text style={{ color: color.t1, fontWeight: "600" }}>{answerText(m)}</Text>
+              {note ? `\n“${note}”` : null}
             </>
           }
         />
@@ -418,28 +429,40 @@ export const QuestionCard = forwardRef<
         </CardContext>
       ) : null}
       {clamps.clamped ? <ReadMore onOpen={props.onOpen} /> : null}
-      <Choices
-        options={m.options}
-        selected={picked}
-        size="sm"
-        style={{ marginTop: 14 }}
-        onPick={(option) => {
-          setPicked(option)
-          answer.run(
-            { projectId: m.projectId, messageId: m.id, answer: { _tag: "Choice", option } },
-            {
-              onSuccess: () => {
-                askPush()
-                props.onAnswered?.()
-              },
-              onFailure: (message) => {
-                setPicked(undefined)
-                toast(message)
+      {previews ? (
+        <>
+          <OptionThumbs
+            message={m}
+            inner={window.width - 2 * gutter - 30}
+            bleed={gutter + 15}
+            style={{ marginTop: 14 }}
+          />
+          <Button title="Compare full screen" onPress={() => openOptions(m, 0)} style={{ marginTop: 14 }} />
+        </>
+      ) : (
+        <Choices
+          options={m.options}
+          selected={picked}
+          size="sm"
+          style={{ marginTop: 14 }}
+          onPick={(option) => {
+            setPicked(option)
+            answer.run(
+              { projectId: m.projectId, messageId: m.id, answer: { _tag: "Choice", option } },
+              {
+                onSuccess: () => {
+                  askPush()
+                  props.onAnswered?.()
+                },
+                onFailure: (message) => {
+                  setPicked(undefined)
+                  toast(message)
+                }
               }
-            }
-          )
-        }}
-      />
+            )
+          }}
+        />
+      )}
     </Card>
   )
 })

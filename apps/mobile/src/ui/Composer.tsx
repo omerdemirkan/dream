@@ -306,6 +306,10 @@ export function ReasonField(props: {
   readonly onChange: (text: string) => void
   readonly onFocus?: () => void
   readonly sample?: string
+  readonly placeholder?: string
+  /** Grows to a few lines as they write, for a note rather than a reason. */
+  readonly multiline?: boolean
+  readonly autoFocus?: boolean
 }) {
   const value = useRef(props.value)
   value.current = props.value
@@ -314,9 +318,9 @@ export function ReasonField(props: {
     <View
       style={{
         flexDirection: "row",
-        alignItems: "center",
+        alignItems: props.multiline ? "flex-end" : "center",
         gap: 6,
-        height: 50,
+        ...(props.multiline ? { minHeight: 50, paddingVertical: 6 } : { height: 50 }),
         paddingLeft: 16,
         paddingRight: 6,
         borderRadius: 16,
@@ -325,18 +329,28 @@ export function ReasonField(props: {
         borderColor: dictation.listening ? color.needLine : props.value.trim() ? color.line2 : color.line
       }}
     >
-      <View style={{ flex: 1, height: "100%" }}>
-        {props.value ? null : <FieldPlaceholder text="Something else…" color={color.t3} fontSize={16} />}
+      <View
+        style={props.multiline ? { flex: 1, minHeight: 38, justifyContent: "center" } : { flex: 1, height: "100%" }}
+      >
+        {props.value ? null : (
+          <FieldPlaceholder text={props.placeholder ?? "Something else…"} color={color.t3} fontSize={16} />
+        )}
         <TextInput
           value={props.value}
           onChangeText={props.onChange}
           onFocus={props.onFocus}
-          style={{ flex: 1, color: color.t1, fontSize: 16 }}
-          maxLength={500}
-          returnKeyType="done"
-          submitBehavior="blurAndSubmit"
+          autoFocus={props.autoFocus}
+          multiline={props.multiline}
+          style={
+            props.multiline
+              ? { color: color.t1, fontSize: 16, lineHeight: 21, maxHeight: 112, paddingTop: 8, paddingBottom: 8 }
+              : { flex: 1, color: color.t1, fontSize: 16 }
+          }
+          maxLength={props.multiline ? 2000 : 500}
+          returnKeyType={props.multiline ? "default" : "done"}
+          submitBehavior={props.multiline ? "newline" : "blurAndSubmit"}
           keyboardAppearance="dark"
-          accessibilityLabel="Another reason"
+          accessibilityLabel={props.placeholder ?? "Another reason"}
         />
       </View>
       {dictation.listening ? <Listening heard={dictation.heard} inset={16} radius={16} /> : null}

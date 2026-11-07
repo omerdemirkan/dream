@@ -17,7 +17,7 @@ import * as Clipboard from "expo-clipboard"
 import * as DocumentPicker from "expo-document-picker"
 import { File } from "expo-file-system"
 import { type ReactNode, useEffect, useState } from "react"
-import { Linking, Pressable, ScrollView, Text, TextInput, View } from "react-native"
+import { Linking, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native"
 import Animated, {
   cancelAnimation,
   Easing,
@@ -53,7 +53,9 @@ import {
 import { BackPill, Button, Choices, Dot, GoogleButton, Icon, Lab, LinkButton, SignInButton, Tile } from "./kit.tsx"
 import { Markdown, MarkdownText } from "./Markdown.tsx"
 import { inlineLines } from "./markdownParse.ts"
-import { answerText } from "./Messages.tsx"
+import { answerText, noteOf } from "./Messages.tsx"
+import { OptionThumbs, useOpenOptions } from "./Options.tsx"
+import { hasPreviews } from "./optionsLayout.ts"
 import { AllowButtons, AppTile, isNotificationsCard, useOpenAppNotifications } from "./AppNotifications.tsx"
 import { color, gutter } from "./theme.ts"
 
@@ -159,6 +161,8 @@ export function ExpandedQuestion(props: {
   const toast = useToast()
   const [changing, setChanging] = useState(false)
   const [picked, setPicked] = useState<string | undefined>(undefined)
+  const window = useWindowDimensions()
+  const openOptions = useOpenOptions()
   useEffect(() => setChanging(false), [m.state._tag])
   // An answer typed into the notification that didn't send waits in "Something else…".
   const target = { _tag: "Answer", projectId: m.projectId, messageId: m.id } as const
@@ -235,7 +239,11 @@ export function ExpandedQuestion(props: {
                   {answerText(m)}
                 </Text>
               </View>
+              {noteOf(m) ? <Lead style={{ marginTop: 12 }}>{`“${noteOf(m)}”`}</Lead> : null}
             </View>
+            {hasPreviews(m) ? (
+              <OptionThumbs message={m} inner={window.width - 2 * gutter} bleed={gutter} style={{ marginTop: 22 }} />
+            ) : null}
             <Lead style={{ marginTop: 22 }}>
               {m.meanwhile ? `Sent. ${m.meanwhile}` : `Sent. ${props.project?.title ?? "Dream"} takes it from here.`}
             </Lead>
@@ -264,6 +272,17 @@ export function ExpandedQuestion(props: {
             <View style={{ marginTop: m.why ? 16 : 0 }}>
               <Markdown source={m.context} style={{ fontSize: 17, lineHeight: 25 }} />
             </View>
+          ) : null}
+          {hasPreviews(m) ? (
+            <>
+              <OptionThumbs message={m} inner={window.width - 2 * gutter} bleed={gutter} style={{ marginTop: 20 }} />
+              <Button
+                title="Compare full screen"
+                variant="ghost"
+                onPress={() => openOptions(m, 0)}
+                style={{ marginTop: 14 }}
+              />
+            </>
           ) : null}
           {m.meanwhile ? (
             <View

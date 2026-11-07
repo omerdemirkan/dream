@@ -5,12 +5,28 @@
 import { Schema } from "effect"
 import { MediaId } from "./Ids.ts"
 
-export const MediaKind = Schema.Literals(["image", "video"])
+/**
+ * `audio` was added in November 2026 for a question's option previews (`QuestionPreview`), the only place the API
+ * accepts it, since an older app can't decode it: it skips the previews whole, and a status card or message with
+ * audio in it would be one it couldn't show.
+ */
+export const MediaKind = Schema.Literals(["image", "video", "audio"])
 export type MediaKind = typeof MediaKind.Type
 
-/** Content types the agent can upload: png, jpg, or mp4. */
-export const MediaContentType = Schema.Literals(["image/png", "image/jpeg", "video/mp4"])
+/** Content types the agent can upload: png, jpg or mp4, and for option previews mp3, m4a or wav. */
+export const MediaContentType = Schema.Literals([
+  "image/png",
+  "image/jpeg",
+  "video/mp4",
+  "audio/mpeg",
+  "audio/mp4",
+  "audio/wav"
+])
 export type MediaContentType = typeof MediaContentType.Type
+
+/** The kind of media a content type is. */
+export const mediaKind = (contentType: MediaContentType): MediaKind =>
+  contentType.startsWith("video/") ? "video" : contentType.startsWith("audio/") ? "audio" : "image"
 
 /**
  * A stored piece of media. The phone loads the bytes from the API at
@@ -21,6 +37,7 @@ export const MediaRef = Schema.Struct({
   kind: MediaKind,
   contentType: MediaContentType,
   sizeBytes: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  /** Pixels, when the uploader measured them (`dream` does for png, jpg and mp4). */
   width: Schema.optionalKey(Schema.Int),
   height: Schema.optionalKey(Schema.Int),
   durationSeconds: Schema.optionalKey(Schema.Finite),

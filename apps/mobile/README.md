@@ -80,6 +80,7 @@ xcrun simctl launch --terminate-running-process booted build.omer.dream \
 | `…?focus=<messageId>` · `…?land=<messageId>` | Expand a message; land on it in Chat, highlighted |
 | `/new` · `/new?sample=long` · add `dictate=1` | New idea (the page), with a long brain dump, dictating at the cursor (simulated in the Simulator) |
 | `/new?starter=run-club-bot` | New idea filled with a starter's draft, the cursor after it. Ids are in `src/data/ideas.ts` |
+| `/project/<id>?options=<messageId>&option=<n>` | A question's option previews full screen, at option n (from 0): `msg_cabinpick` (Cabin: phone screens, a desktop page, a recording), `msg_timersound` (Lift Log, after `options-sounds`: three sounds) |
 | `/project/<id>?sheet=usage` | The usage sheet over the project (the ring in its header opens it) |
 | `/project/<id>?sheet=notifications` | The Notifications sheet: the project's apps that notify, their controls, what they sent (the bell opens it) |
 | `/project/<id>?tab=chat&attach=sample` · `/new?attach=sample` | Chat's composer, or a new idea, with two photos and a PDF attached (uploading, then ready) |
@@ -98,7 +99,8 @@ Scenarios (`dream://fixtures/<name>?to=/path`, or `-dreamScenario a,b`): `signed
 `paused` (Lift Log waits for a usage reset), `all-clear`, `cabin-resolved`, `withdraw-cabin`, `no-plan`,
 `live-activity`, `live-activity-needs` (start a Live Activity on the phone), `spotify-ask` (Lift Log asks to connect
 Spotify), `spotify-stopped` (Lift Log's Spotify connection stopped working: its card says so and connects again),
-`long-question`, `vague-access`, `question-context` (see the message ids above),
+`long-question`, `vague-access`, `question-context` (see the message ids above), `options-sounds` (Lift Log asks
+which rest-timer sound to use, with the sounds to play),
 `unsupported-message`, `now-two-lines` and `now-three-lines` (Lift Log's now sentence on two lines, and cut at two), `long-chat` (an afternoon of Lift Log messages to read back through: open
 `/project/prj_liftlog?land=msg_long8` and the Status card folds to one line), `stall-next-write` (the next answer, message, new idea, key or decline hangs until the app
 gives up after 25 s; the retry goes through), `archived` (Recipe Scaler and Morning Brief are archived: off Home,
