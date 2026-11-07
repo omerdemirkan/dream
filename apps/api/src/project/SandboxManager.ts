@@ -236,10 +236,9 @@ export class SandboxManager extends Context.Service<
     readonly keepalive: Effect.Effect<void>
     /**
      * dreamd is running a scheduled command, taking a relay's delivery or serving the published app: keep the sandbox
-     * up a while longer. A visit to the app is also when a sandbox that's behind the template is refreshed, since
-     * visits wake it without a delivery.
+     * up a while longer.
      */
-    readonly stayAwake: (reason: "command" | "relay" | "app") => Effect.Effect<void>
+    readonly stayAwake: Effect.Effect<void>
     /**
      * dreamd has nothing left to do (`SandboxRpcs.Sleep`): pause the sandbox now, unless a turn runs, events are on
      * their way or were just handed over, a relay delivery is under way, or a turn ended in the last few minutes.
@@ -780,6 +779,21 @@ export class SandboxManager extends Context.Service<
           Effect.withSpan("SandboxManager.deliver")
         )
 
+      /** If the sandbox is behind the template, the alarm refreshes it now (`refresh` checks, between turns). */
+      const refreshSoon = Effect.gen(function* () {
+        if (!config.sandboxRefresh || (yield* core.sandbox).working) return
+        yield* store.setTimer("sandbox-refresh", yield* Clock.currentTimeMillis)
+        yield* alarm.reschedule
+      })
+
+      /**
+       * Where the gateway sends a visit to the published app. A visit is also when a sandbox that's behind the template
+       * is brought up to date: a project woken only by its app (a podcast feed that apps poll, a page people open) gets
+       * no delivery and no turn, so it would otherwise keep the dreamd it last ran a turn with, along with whatever that
+       * one got wrong. The gateway asks, rather than dreamd, because an old dreamd may be the problem: one from before
+       * API calls took a new connection hung on its first call after a sleep, and so never reported a visit. The
+       * refresh restarts dreamd, which the app runs outside of.
+       */
       const gatewayTarget = Effect.gen(function* () {
         const project = yield* core.project
         // Serving it would wake the sandbox, and with it a turn the archive paused.
@@ -792,6 +806,7 @@ export class SandboxManager extends Context.Service<
         const record = yield* core.sandbox
         if (record.access === undefined) return yield* new NotFound({ entity: "sandbox", id: project.id })
         if (record.rulesDirty) yield* pushRules(record, true)
+        yield* refreshSoon
         return {
           origin: `https://${project.publishedPort}-${record.access.sandboxId}.${record.access.domain}`,
           trafficAccessToken: record.access.trafficAccessToken
@@ -844,18 +859,11 @@ export class SandboxManager extends Context.Service<
         if ((yield* live.watchers) > 0) yield* tellWatching(true)
       })
 
-      /** If the sandbox is behind the template, the alarm refreshes it now (`refresh` checks, between turns). */
-      const refreshSoon = Effect.gen(function* () {
-        if (!config.sandboxRefresh || (yield* core.sandbox).working) return
-        yield* store.setTimer("sandbox-refresh", yield* Clock.currentTimeMillis)
-        yield* alarm.reschedule
-      })
-
       /**
-       * The sandbox stays up until `AwakeTail` from now. A turn's keepalive keeps it up longer, and E2B's own timeout
-       * may already be later, so neither is shortened.
+       * dreamd has work between turns (`StayAwake`): the sandbox stays up until `AwakeTail` from now. A turn's
+       * keepalive keeps it up longer, and E2B's own timeout may already be later, so neither is shortened.
        */
-      const keepUp = timeouts
+      const stayAwake = timeouts
         .withPermits(1)(
           Effect.gen(function* () {
             if (yield* held) return
@@ -871,17 +879,6 @@ export class SandboxManager extends Context.Service<
           })
         )
         .pipe(Effect.catch((error) => Effect.logWarning("couldn't keep the sandbox awake", String(error))))
-
-      /**
-       * dreamd has work between turns (`StayAwake`): keep the sandbox up. A visit to the published app also brings
-       * a sandbox that's behind the template up to date: a project woken only by its app (a podcast feed that apps
-       * poll, a page people open) gets no delivery and no turn, so it would otherwise keep the dreamd it last ran a
-       * turn with, along with whatever that one got wrong (one from before visits ended in `Sleep` held each visit
-       * up for the whole five-minute wake). Only a visit: the refresh restarts dreamd, which would cut off a
-       * scheduled command or a relay's delivery, while the app runs outside dreamd and carries on.
-       */
-      const stayAwake = (reason: "command" | "relay" | "app") =>
-        Effect.andThen(reason === "app" ? refreshSoon : Effect.void, keepUp)
 
       const sleep = (reason: "command" | "relay" | "app", checkedAt: DateTime.Utc) =>
         busy

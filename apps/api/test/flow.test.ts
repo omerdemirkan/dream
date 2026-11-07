@@ -1619,47 +1619,49 @@ describe("sandbox refresh", () => {
     })
   )
 
-  it.live(
-    "a visit to the published app refreshes a sandbox that's behind; a command or a relay's delivery doesn't",
-    () =>
-      Effect.gen(function* () {
-        const cloud = yield* makeCloud()
-        const { sandbox, core, store, dreamd, donors, project } = yield* started(cloud)
-        // The Morning Build (Nov 2026): its podcast feed was all that woke it after a new build went out, so no
-        // delivery came to refresh it, and its old dreamd held every poll of the feed up for five minutes.
-        cloud.world.templateBuilds.set("dream-sandbox", { build: "b2", release: "r2" })
-        yield* forgetLatest(core)
+  it.live("a visit to the published app refreshes a sandbox that's behind, between turns", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { sandbox, core, store, dreamd, donors, project } = yield* started(cloud)
+      yield* dreamd.Publish({ port: 3000 })
+      const clients = Context.get(cloud.workerContext, ProjectClients)
+      /** What the gateway asks the ProjectDO before it forwards a visit. */
+      const visit = Effect.andThen(
+        clients.use(project.id, (client) => client.GatewayTarget()),
+        cloud.alarm(project.id)
+      )
+      // The Morning Build (Nov 2026): its podcast feed was all that woke it after a new build went out, so no
+      // delivery came to refresh it, and its old dreamd, whose first call after a sleep hung, never reported a visit.
+      cloud.world.templateBuilds.set("dream-sandbox", { build: "b2", release: "r2" })
+      yield* forgetLatest(core)
 
-        // A scheduled command and a relay's delivery run inside dreamd, which a refresh restarts: left alone.
-        yield* dreamd.StayAwake({ reason: "command" })
-        yield* dreamd.StayAwake({ reason: "relay" })
-        yield* cloud.alarm(project.id)
-        assert.lengthOf(donors(), 0)
-        assert.strictEqual(sandbox.release, "r1")
+      // dreamd's own reports don't refresh: a command or a relay's delivery runs inside dreamd, which a refresh restarts.
+      yield* dreamd.StayAwake({ reason: "command" })
+      yield* dreamd.StayAwake({ reason: "relay" })
+      yield* cloud.alarm(project.id)
+      assert.lengthOf(donors(), 0)
+      assert.strictEqual(sandbox.release, "r1")
 
-        // Nor during a turn.
-        yield* dreamd.ReportTurn({ state: "started", eventIds: [] })
-        yield* dreamd.StayAwake({ reason: "app" })
-        yield* cloud.alarm(project.id)
-        assert.lengthOf(donors(), 0)
-        // (The refresh the turn's end sets up is left out, to see the visit's.)
-        yield* dreamd.ReportTurn({ state: "finished", eventIds: [] })
-        yield* store.clearTimer("sandbox-refresh")
+      // Nor does a visit during a turn.
+      yield* dreamd.ReportTurn({ state: "started", eventIds: [] })
+      yield* visit
+      assert.lengthOf(donors(), 0)
+      // (The refresh the turn's end sets up is left out, to see the visit's.)
+      yield* dreamd.ReportTurn({ state: "finished", eventIds: [] })
+      yield* store.clearTimer("sandbox-refresh")
 
-        // Someone opens the app between turns: brought up to date, then back to a short tail.
-        yield* dreamd.StayAwake({ reason: "app" })
-        yield* cloud.alarm(project.id)
-        assert.lengthOf(donors(), 1)
-        assert.strictEqual(sandbox.release, "r2")
-        assert.strictEqual((yield* core.sandbox).release, "r2")
-        assert.strictEqual(sandbox.timeoutHistory.at(-1), 90)
+      // Someone opens the app between turns: brought up to date, then back to a short tail.
+      yield* visit
+      assert.lengthOf(donors(), 1)
+      assert.strictEqual(sandbox.release, "r2")
+      assert.strictEqual((yield* core.sandbox).release, "r2")
+      assert.strictEqual(sandbox.timeoutHistory.at(-1), 90)
 
-        // Up to date: the next visit brings over nothing.
-        yield* dreamd.StayAwake({ reason: "app" })
-        yield* cloud.alarm(project.id)
-        assert.lengthOf(donors(), 1)
-        yield* cloud.close
-      })
+      // Up to date: the next visit brings over nothing.
+      yield* visit
+      assert.lengthOf(donors(), 1)
+      yield* cloud.close
+    })
   )
 
   it.live("a failed refresh rolls back, is recorded, isn't retried for a while, and doesn't hold up delivery", () =>
