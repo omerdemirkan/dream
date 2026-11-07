@@ -127,7 +127,12 @@ export class Agent extends Context.Service<
                 Effect.as<QuestionOutcome>({ _tag: "NotSent", reason: `Dream couldn't send it (${error.message})` })
               )
             )
-          )
+          ),
+        firstUsage: (reading) =>
+          Effect.gen(function* () {
+            yield* Ref.update(usage, (previous) => Usage.merge(previous, reading))
+            yield* api.reportUsage(Usage.toSnapshot(provider, yield* Ref.get(usage), yield* DateTime.now))
+          })
       }
 
       /**

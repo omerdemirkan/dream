@@ -12,7 +12,16 @@
  *   `window_minutes` and `resets_at` (epoch seconds), parsed from the
  *   ChatGPT backend's `x-codex-*` headers. A turn that hits a limit ends with
  *   `task_complete.error.codex_error_info: "usage_limit_exceeded"`. The Codex
- *   harness doesn't forward either, so dreamd reads the rollout after each turn.
+ *   harness doesn't forward either, so dreamd reads the rollout after each turn
+ *   (and once after the turn's first model call, for a fresh "before").
+ *
+ * Claude Code puts a window in `unifiedWindows` only when the API's response
+ * headers carry its utilization (`anthropic-ratelimit-unified-5h-utilization`,
+ * `…-7d-…`; checked against Claude Code 2.1.318 with a fake server), and the
+ * API doesn't always send both: every reading from the founder's Max plan so
+ * far had the weekly window alone, the one it named as binding
+ * (`rateLimitType`), even at 4%. So a missing window isn't zero, it's unknown,
+ * and stays so until the API reports it.
  */
 import type { ModelProvider, UsageSnapshot, UsageWindow, UsageWindowName } from "@dream/domain"
 import { DateTime, Effect, FileSystem, Option, Path, Schema } from "effect"
@@ -175,9 +184,16 @@ export const isCodexUsageLimitMessage = (message: string) => /hit your usage lim
 
 /**
  * The latest usage in a Codex rollout, and the limit if a turn that finished
- * after `since` hit one.
+ * after `since` hit one. With `onlySince`, usage recorded before `since` (by an
+ * earlier turn) doesn't count either: what's left is this turn's own reading.
  */
-export const fromCodexRollout = (text: string, since: DateTime.Utc, now: DateTime.Utc): UsageReading => {
+export const fromCodexRollout = (
+  text: string,
+  since: DateTime.Utc,
+  now: DateTime.Utc,
+  options?: { readonly onlySince?: boolean }
+): UsageReading => {
+  const sinceMs = DateTime.toEpochMillis(since)
   let rateLimits: typeof CodexRateLimits.Type | undefined
   let limited = false
   const lines = text.split("\n")
@@ -188,11 +204,9 @@ export const fromCodexRollout = (text: string, since: DateTime.Utc, now: DateTim
     if (Option.isNone(decoded)) continue
     const { payload, timestamp } = decoded.value
     if (payload.type === "token_count") {
+      if (options?.onlySince === true && Date.parse(timestamp) < sinceMs) break
       if (payload.rate_limits !== null) rateLimits = payload.rate_limits
-    } else if (
-      payload.error?.codex_error_info === "usage_limit_exceeded" &&
-      Date.parse(timestamp) >= DateTime.toEpochMillis(since)
-    ) {
+    } else if (payload.error?.codex_error_info === "usage_limit_exceeded" && Date.parse(timestamp) >= sinceMs) {
       limited = true
     }
   }

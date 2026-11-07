@@ -17,6 +17,7 @@ import {
   questionsToolOutput,
   toDreamQuestion
 } from "./PersonChannel.ts"
+import type { UsageReading } from "../Usage.ts"
 
 export type Part = TextStreamPart<ToolSet>
 
@@ -30,6 +31,11 @@ export interface TurnStreams<E> {
 export interface TurnHandlers {
   /** Put a question in front of the person (`dream ask`). */
   readonly ask: (question: DreamQuestion) => Effect.Effect<QuestionOutcome>
+  /**
+   * The turn's first reading of the subscription's usage, as soon as the harness gives one (about a model call in),
+   * so the turn's "before" can be fresh. Called at most once a turn, and never waited for.
+   */
+  readonly firstUsage?: (reading: UsageReading) => Effect.Effect<void>
 }
 
 /** Questions one turn may send; past that the model is told to use `dream ask`, which it can pace itself. */

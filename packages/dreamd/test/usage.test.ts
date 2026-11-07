@@ -34,6 +34,34 @@ describe("Claude Code rate-limit events", () => {
     assert.strictEqual(iso(reading.limit?.until), "2026-11-05T04:00:00.000Z")
   })
 
+  it("reads a window only when the event carries it: the five-hour one is often missing", () => {
+    // What Claude Code 2.1.318 emits when the API's headers have the weekly utilization and not the five-hour one.
+    const raw = {
+      type: "rate_limit_event",
+      rate_limit_info: {
+        status: "allowed",
+        resetsAt: 1794354909,
+        rateLimitType: "seven_day",
+        isUsingOverage: false,
+        unifiedWindows: { seven_day: { utilization: 0.36, resetsAt: 1794354909, status: "allowed" } }
+      }
+    }
+    const reading = Option.getOrThrow(fromClaudeRaw(raw, now))
+    assert.strictEqual(reading.weekly?.usedPercent, 36)
+    assert.isUndefined(reading.fiveHour)
+    const both = {
+      ...raw,
+      rate_limit_info: {
+        ...raw.rate_limit_info,
+        unifiedWindows: {
+          ...raw.rate_limit_info.unifiedWindows,
+          five_hour: { utilization: 0.12, resetsAt: 1794020100, status: "allowed" }
+        }
+      }
+    }
+    assert.strictEqual(Option.getOrThrow(fromClaudeRaw(both, now)).fiveHour?.usedPercent, 12)
+  })
+
   it("ignores other raw parts", () => {
     assert.isTrue(Option.isNone(fromClaudeRaw({ type: "stream_event", event: {} }, now)))
   })
@@ -46,6 +74,15 @@ describe("Codex rollouts", () => {
     assert.strictEqual(reading.weekly?.usedPercent, 12)
     assert.isDefined(reading.fiveHour?.resetsAt)
     assert.isUndefined(reading.limit)
+  })
+
+  it("can leave out usage an earlier turn recorded", () => {
+    const text = fixture("codex-rollout-ok.jsonl")
+    const before = DateTime.makeUnsafe("2026-11-04T23:58:00Z")
+    const after = DateTime.makeUnsafe("2026-11-04T23:59:00Z")
+    assert.strictEqual(fromCodexRollout(text, before, now, { onlySince: true }).weekly?.usedPercent, 12)
+    assert.deepStrictEqual(fromCodexRollout(text, after, now, { onlySince: true }), {})
+    assert.strictEqual(fromCodexRollout(text, after, now).weekly?.usedPercent, 12)
   })
 
   it("finds the limit a turn ended on, and when it resets", () => {

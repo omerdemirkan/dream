@@ -865,6 +865,7 @@ export const AgentHandlers = SandboxRpcs.toLayer(
         Effect.gen(function* () {
           const current = yield* project
           yield* connections.recordUsage(current.ownerId, usage)
+          yield* sandbox.usageReported(usage)
           if (usage.limitedUntil === undefined) return
           const { window, until } = usage.limitedUntil
           if (DateTime.toEpochMillis(until) <= (yield* Clock.currentTimeMillis)) return
