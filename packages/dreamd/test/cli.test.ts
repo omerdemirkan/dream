@@ -26,7 +26,7 @@ import { requestedSecret } from "../src/cli/Secrets.ts"
 import { invalidInvocation } from "../src/cli/Usage.ts"
 import { publishedPorts, requestedTags } from "../src/Servers.ts"
 import { parseSkill } from "../src/harness/Skill.ts"
-import { harnessAuth, harnessEnv } from "../src/harness/HarnessEnv.ts"
+import { agentEnv, harnessAuth, harnessEnv } from "../src/harness/HarnessEnv.ts"
 
 const now = DateTime.makeUnsafe("2026-11-05T10:00:00Z")
 const at = (input: string) => Result.map(parseAt(input, now), DateTime.formatIso)
@@ -105,6 +105,11 @@ describe("the harness environment", () => {
       { HOME: "/home/user" }
     )
     assert.deepStrictEqual(env, { PATH: "/usr/bin", DREAM_SOCKET: "/tmp/dreamd.sock", HOME: "/home/user" })
+  })
+
+  it("keeps Claude Code's subagents and commands in the foreground", () => {
+    const env = agentEnv({ PATH: "/usr/bin" }, { home: "/home/user", socket: "/tmp/dreamd.sock" })
+    assert.strictEqual(env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS, "1")
   })
 
   it("gives each harness a placeholder credential and no refreshable login", () => {
