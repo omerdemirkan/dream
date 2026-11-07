@@ -56,13 +56,15 @@ export const thumbLayout = (
   aspects: ReadonlyArray<number | "audio" | "none">,
   gap = 10
 ): { readonly mode: "row" | "strip"; readonly sizes: ReadonlyArray<ThumbSize> } => {
-  const row =
-    tiles.length <= 3 &&
-    aspects.every((aspect) => aspect === "none" || (typeof aspect === "number" && portrait(aspect)))
+  const row = tiles.length <= 3 && aspects.every((aspect) => typeof aspect !== "number" || portrait(aspect))
   if (row) {
     const width = Math.floor((inner - gap * (tiles.length - 1)) / tiles.length)
-    const tallest = Math.max(...aspects.map((aspect) => (typeof aspect === "number" ? width / aspect : 0)))
-    const height = Math.round(Math.min(Math.max(tallest, width * 1.3), 240))
+    const screens = aspects.filter((aspect): aspect is number => typeof aspect === "number")
+    // Sounds and words alone sit in a short row; with a screen among them, the row is as tall as the screens.
+    const height =
+      screens.length === 0
+        ? 104
+        : Math.round(Math.min(Math.max(Math.max(...screens.map((aspect) => width / aspect)), width * 1.3), 240))
     return { mode: "row", sizes: tiles.map(() => ({ width, height })) }
   }
   const visual = aspects.some((aspect) => typeof aspect === "number")

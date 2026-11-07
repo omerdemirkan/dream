@@ -228,7 +228,7 @@ const previewSizes: Record<string, Partial<MediaRef>> = {
   med_optreq: { width: 780, height: 1688 },
   med_optrot: { width: 780, height: 1688 },
   med_optcaldesk: { width: 1440, height: 900 },
-  med_optreqflow: { width: 780, height: 1688, durationSeconds: 7.7 }
+  med_optreqflow: { width: 780, height: 1688, durationSeconds: 6.8 }
 }
 const cabinPreviews = (Fx.cabinDirections.previews ?? []).map((preview) => ({
   ...preview,

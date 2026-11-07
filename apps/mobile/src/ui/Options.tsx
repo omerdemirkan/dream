@@ -445,6 +445,9 @@ function OptionPage(props: {
     )
   }
   const firstAudio = tile.media.findIndex((media) => media.kind === "audio")
+  // With several, each is a little shorter than the page, so the next one shows below it and says there's more.
+  const several = tile.media.length > 1
+  const fitted = several ? { width: box.width, height: box.height - 64 } : box
   return (
     <ScrollView
       style={{ width: props.width }}
@@ -457,15 +460,15 @@ function OptionPage(props: {
         <View key={media.id} style={{ alignItems: "center" }}>
           <PageMedia
             media={media}
-            box={box}
+            box={fitted}
             active={props.active}
             autoplay={props.listening && i === firstAudio}
             onPlayed={props.onPlayed}
             onZoom={() => props.onZoom(media)}
           />
-          {media.caption && (tile.media.length > 1 || media.kind !== "audio") ? (
+          {several || (media.caption && media.kind !== "audio") ? (
             <Text numberOfLines={1} style={{ fontSize: 13, color: color.t3, marginTop: 9 }}>
-              {media.caption}
+              {[media.caption, several ? `${i + 1} of ${tile.media.length}` : undefined].filter(Boolean).join(" · ")}
             </Text>
           ) : null}
         </View>
@@ -548,26 +551,45 @@ const pill = {
 
 /** A recording, with the system's controls (scrubbing, full screen), paused when they swipe away. */
 function PageVideo(props: { readonly source: Source; readonly size: ThumbSize; readonly active: boolean }) {
+  // Until it's played, it rests on a frame a little way in: a recording's first frame is often a blank page.
   const player = useVideoPlayer(props.source, (p) => {
     p.loop = false
+    p.currentTime = 1
   })
+  const playing = useEvent(player, "playingChange", { isPlaying: false })?.isPlaying ?? false
+  const [started, setStarted] = useState(false)
   useEffect(() => {
     if (!props.active) player.pause()
   }, [props.active, player])
   return (
-    <VideoView
-      player={player}
-      nativeControls
-      allowsVideoFrameAnalysis={false}
-      contentFit="contain"
-      style={{
-        width: props.size.width,
-        height: props.size.height,
-        borderRadius: 18,
-        overflow: "hidden",
-        backgroundColor: color.s1
-      }}
-    />
+    <View style={{ width: props.size.width, height: props.size.height, borderRadius: 18, overflow: "hidden" }}>
+      <VideoView
+        player={player}
+        nativeControls={started}
+        allowsVideoFrameAnalysis={false}
+        contentFit="contain"
+        style={{ width: "100%", height: "100%", backgroundColor: color.s1 }}
+      />
+      {started || playing ? null : (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Play the recording"
+          onPress={() => {
+            setStarted(true)
+            player.currentTime = 0
+            player.play()
+          }}
+          style={[
+            StyleSheet.absoluteFill,
+            { alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.25)" }
+          ]}
+        >
+          <View style={[playDot, { width: 64, height: 64, borderRadius: 32 }]}>
+            <Icon name="play" size={24} color={color.black} />
+          </View>
+        </Pressable>
+      )}
+    </View>
   )
 }
 
@@ -803,7 +825,7 @@ function AnswerSheet(props: {
             onChange={setNote}
             multiline
             autoFocus={!pick}
-            placeholder={pick ? "Add a note, like what to take from another" : "What’s missing"}
+            placeholder={pick ? "Add a note" : "What’s missing"}
             sample={
               pick ? "Yes, but open on A’s calendar so people see what’s free" : "Warmer colours, and fewer steps"
             }

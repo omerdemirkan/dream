@@ -70,7 +70,13 @@ describe("option tiles", () => {
       { width: 150, height: 150 }
     ])
     const sounds = thumbLayout(optionTiles(Fx.timerSounds), 330, ["audio", "audio", "audio"])
-    assert.deepStrictEqual(sounds.sizes[0], { width: 132, height: 104 })
+    assert.deepStrictEqual(sounds, {
+      mode: "row",
+      sizes: Array.from({ length: 3 }, () => ({ width: 103, height: 104 }))
+    })
+    const fourth = { ...tiles[0]!, index: 3, letter: "D", option: "D" }
+    const four = thumbLayout([...tiles, fourth], 330, ["audio", "audio", "audio", "audio"])
+    assert.deepStrictEqual(four.sizes[0], { width: 132, height: 104 })
   })
 
   it("fit media whole at its own shape, measured or assumed", () => {
