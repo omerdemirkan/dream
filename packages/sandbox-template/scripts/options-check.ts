@@ -150,7 +150,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const sandbox = await Sandbox.create(process.argv[2] ?? templateName, {
     ...connection,
     timeoutMs: 10 * 60_000,
-    metadata: devSandboxMetadata("options-check", "options-check")
+    metadata: devSandboxMetadata("options-check")
   })
   try {
     const problems = await check(sandbox)
