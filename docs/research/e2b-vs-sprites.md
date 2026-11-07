@@ -42,7 +42,7 @@ February 2027), or sooner if one of the conditions at the end comes true.
 ## What Dream relies on today (from the code)
 
 Read from `apps/api/src/project/SandboxManager.ts`, `apps/api/src/e2b/*`, `packages/dreamd`,
-`packages/sandbox-template` and `docs/agent-context.md`:
+`packages/sandbox-template` and the system prompt (`docs/prompts/system/`):
 
 - **Lifecycle.** The sandbox is created with `autoPause` + `autoResume` and a 5-minute idle timeout
   (`IdleTimeout`). After each turn it pauses within about 5 minutes. A Deliver POST or gateway request to a port URL
@@ -280,7 +280,7 @@ That component is exactly what E2B provides today.
 | `SandboxCredentials`, `ModelEgress`, connect flows | Connectors per person and host plus harness base-URL rewiring, *or* a Dream egress proxy on Fly Machines; re-verify Claude Code and Codex end to end | 1–3 weeks |
 | `KeyFiles` | fs write API (easy); some keys could become URL-path connectors | 1 day |
 | Gateway | Target `*.sprites.app`, public-URL decision | 1 day |
-| `docs/agent-context.md`, `dream-skill.md` | Machine size, `Host` header, "start servers detached" becomes "register a service", `dream access` placeholders become gateway URLs | 1–2 days |
+| `docs/prompts/system/`, `docs/prompts/skill/` | Machine size, `Host` header, "start servers detached" becomes "register a service", `dream access` placeholders become gateway URLs | 1–2 days |
 | Scripts, tests, QA (`smoke`, `qa`, `harness-check`, `refresh-check`) | Rewrite against Sprites | 3–5 days |
 | Existing projects | Copy project, `~/.dream`, `~/.claude`, `~/.codex` across; servers restart | 1–2 days |
 

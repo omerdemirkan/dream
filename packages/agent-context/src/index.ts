@@ -2,8 +2,8 @@
  * @dream/agent-context — everything the agent reads from Dream:
  * the system prompt, the `dream` skill, and each turn's prompt.
  *
- * The prompt and skill text is canonical in docs/agent-context.md and
- * docs/dream-skill.md; `bun run sync` regenerates ./generated/prompts.ts.
+ * The prompt, skill and task-prompt text is canonical in the sections in
+ * docs/prompts/; `bun run sync-prompts` regenerates ./generated/prompts.ts.
  */
 import { renderAgentEvent, type AgentEvent, type MediaId } from "@dream/domain"
 import { DateTime, Order } from "effect"

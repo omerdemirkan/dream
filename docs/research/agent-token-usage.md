@@ -135,7 +135,7 @@ fresh session needs. Before that allowance, it cuts reads in the three long sess
 
 ### 1. Prompt: say what a step costs (on the branch)
 
-`docs/agent-context.md` now explains the mechanics: every step re-sends the session, the top-level session lives as
+The system prompt (now `docs/prompts/system/step-cost.md`) explains the mechanics: every step re-sends the session, the top-level session lives as
 long as the project, and anything read into it is paid for on every later step. The work goes to subagents. Each
 subagent gets a piece that finishes rather than a whole workstream. A smaller model does the same steps for a
 fraction of the cost, and less effort means fewer, shorter steps. It also says plainly that a subagent still running

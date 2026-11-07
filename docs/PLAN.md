@@ -70,7 +70,7 @@ apps/api               Worker: RPC + HTTP routes, ProjectDO, gateway, APNs, cron
 packages/domain        Effect Schemas + RPC contracts shared by app, Worker and dreamd
 packages/dreamd        sandbox daemon + `dream` CLI (Node, Effect)
 packages/sandbox-template  E2B template build (Node 24, pnpm, Playwright deps, dreamd, harness prerequisites)
-packages/agent-context system prompt + `dream` skill (markdown) — see docs/agent-context.md
+packages/agent-context system prompt + `dream` skill (markdown) — see docs/prompts/
 infra/alchemy.run.ts   Cloudflare resources + E2B template as a custom Alchemy resource
 ```
 
