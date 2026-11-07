@@ -75,6 +75,8 @@ const restart = async (sandbox: Sandbox, harness: "claude-code" | "codex", extra
       `DREAM_DAEMON_TOKEN=${daemonToken}`,
       `DREAM_HARNESS=${harness}`,
       "DREAM_CODEX_BASE_URL=http://127.0.0.1:18788/backend-api/codex",
+      // A new file each time, so dreamd always restarts.
+      `DREAM_CHECK_RUN=${Date.now()}`,
       ...extra,
       ""
     ].join("\n")
@@ -118,6 +120,17 @@ interface CaseResult {
   readonly detail: ReadonlyArray<string>
 }
 
+/** What dreamd logged about the case's turns, to show when it fails. */
+const turnLog = async (sandbox: Sandbox, from: number) =>
+  (
+    await sh(
+      sandbox,
+      `tail -n +${from + 1} ${log} | grep -E "Turn |turn failed|Background|background|limit" | cut -c1-220 | head -20`
+    )
+  ).output
+    .split("\n")
+    .map((line) => `  | ${line}`)
+
 const check = (detail: Array<string>, ok: boolean, what: string) => {
   detail.push(`${ok ? "ok  " : "FAIL"} ${what}`)
   return ok
@@ -152,6 +165,13 @@ const claudeHold = async (sandbox: Sandbox, name: string, message: string, works
       "the turn didn't fail"
     )
   ]
+  if (!results.every(Boolean)) {
+    detail.push(...(await turnLog(sandbox, from.log)))
+    const all = jsonLines(await since(sandbox, fakes.anthropic, model))
+    detail.push(
+      ...all.map((r) => `  > ${r.at} ${r.role} ${r.model} ${r.did}${r.notified === true ? " (notified)" : ""}`)
+    )
+  }
   return { name, ok: results.every(Boolean), detail }
 }
 
@@ -160,9 +180,10 @@ const codexHold = async (sandbox: Sandbox): Promise<CaseResult> => {
   await restart(sandbox, "codex")
   const from = { log: await lineCount(sandbox, log), api: await lineCount(sandbox, fakes.api) }
   const model = await lineCount(sandbox, fakes.responses)
+  // The child forks the root's turn (the default), so it reads `SLEEP` there; a message it gets alone is encrypted.
   const sent = await deliver(
     sandbox,
-    'SPAWN_BG: {"task_name":"research","message":"SLEEP: 30000","reasoning_effort":"low","fork_turns":"none"}'
+    'SPAWN_BG: {"task_name":"research","message":"SLEEP: 30000","reasoning_effort":"low"}'
   )
   if (sent.exitCode !== 0) return { name, ok: false, detail: [`delivery failed: ${sent.output}`] }
   const ended = await turnsEnded(sandbox, from.log, 1, 150)
@@ -181,6 +202,14 @@ const codexHold = async (sandbox: Sandbox): Promise<CaseResult> => {
     ),
     check(detail, handed, "another root turn handed over the child's final answer")
   ]
+  if (!results.every(Boolean)) {
+    detail.push(...(await turnLog(sandbox, from.log)))
+    detail.push(
+      ...jsonLines(await since(sandbox, fakes.responses, model)).map(
+        (r) => `  > ${r.role} ${r.model} ${r.did} ${JSON.stringify(r.outputs).slice(0, 120)}`
+      )
+    )
+  }
   return { name, ok: results.every(Boolean), detail }
 }
 
@@ -231,7 +260,7 @@ const restarted = async (sandbox: Sandbox): Promise<CaseResult> => {
     90_000
   )
   await sh(sandbox, "sleep 5")
-  await restart(sandbox, "claude-code", ["DREAM_CHECK_RESTART=1"])
+  await restart(sandbox, "claude-code")
   const ended = await turnsEnded(sandbox, from, 1, 150)
   const dreamd = await since(sandbox, log, from)
   const requests = jsonLines(await since(sandbox, fakes.anthropic, model)).filter((r) => r.role === "agent")
@@ -257,7 +286,8 @@ const cases: Readonly<Record<string, (sandbox: Sandbox) => Promise<CaseResult>>>
     claudeHold(
       sandbox,
       "subagent",
-      'AGENT: {"description":"research","prompt":"SUBAGENT: RUN: sleep 30","model":"haiku","effort":"low","run_in_background":true}',
+      // Claude Code refuses a bare long `sleep` in the foreground; this waits as long without being one.
+      'AGENT: {"description":"research","prompt":"SUBAGENT: RUN: timeout 30 tail -f /dev/null; true","model":"haiku","effort":"low","run_in_background":true}',
       30
     ),
   command: (sandbox) => claudeHold(sandbox, "command", "RUN_BG: sleep 20", 20),
