@@ -11,6 +11,11 @@
  *   - any other prompt gets a reply listing every `REMEMBER: <word>` the conversation holds, and how many user
  *     messages it has, so a resumed session shows its history.
  *
+ * `AGENT: {…,"run_in_background":true}` starts a background subagent; give it `"prompt":"SUBAGENT: RUN: sleep 30"`
+ * to keep it working past the reply, and `RUN_BG:` does the same for a command. Each logged request says whether it's
+ * Claude Code's own turn for background work that reported back (`notified`) and whether its prompt tells the agent
+ * background work was stopped (`stoppedNote`).
+ *
  * Every response reports usage that says who asked, so a turn's reported tokens show what was counted:
  *
  *   the agent's own requests        input 100, cache write 1,000, cache read 10,000, output 10
@@ -270,6 +275,13 @@ createServer((request, response) => {
         opening: openingOf(last),
         // Every line of the last user message that says what they wrote and where (a thread), for checks.
         wrote: lastText.split("\n").filter((line) => /They (wrote|sent) \(/.test(line)),
+        // Claude Code's own turn for background work that reported back.
+        notified: lastText.includes("<task-notification>"),
+        // A turn prompt telling the agent its background work was stopped (`BackgroundStopped`).
+        stoppedNote:
+          /Dream stopped it|Dream stopped what was still running|Dream restarted during your last turn|which stopped it|stopped with it before it reported back/.test(
+            lastText
+          ),
         remembered,
         // Every `SKILL-MARK: <word>` in the conversation, oldest first: which skill listings and bodies it saw.
         skillMarks: messages.flatMap((m) =>

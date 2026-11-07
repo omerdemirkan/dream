@@ -20,7 +20,11 @@ export type Presence =
   /** Waiting for a usage window to reset. */
   | { readonly _tag: "Paused"; readonly until: DateTime.Utc }
   /** Between turns with its computer still up; `since` is when the last turn ended. */
-  | { readonly _tag: "Awake"; readonly since?: DateTime.Utc | undefined }
+  | {
+      readonly _tag: "Awake"
+      readonly since?: DateTime.Utc | undefined
+      readonly nextWakeAt?: DateTime.Utc | undefined
+    }
   /** Its computer is asleep until something wakes it: them, or `nextWakeAt`. */
   | {
       readonly _tag: "Asleep"
@@ -66,8 +70,9 @@ export const presenceOf = (input: PresenceInput): Presence => {
   }
   if (activity === undefined) return { _tag: "Unknown" }
   const since = activity.state === "idle" ? activity.since : undefined
-  if (activity.state === "idle" && isAfter(activity.awakeUntil, now)) return { _tag: "Awake", since }
-  return { _tag: "Asleep", since, nextWakeAt: isAfter(activity.nextWakeAt, now) ? activity.nextWakeAt : undefined }
+  const nextWakeAt = isAfter(activity.nextWakeAt, now) ? activity.nextWakeAt : undefined
+  if (activity.state === "idle" && isAfter(activity.awakeUntil, now)) return { _tag: "Awake", since, nextWakeAt }
+  return { _tag: "Asleep", since, nextWakeAt }
 }
 
 /** The dot on the project's tile: white pulse working, green awake, grey asleep, a hollow ring paused. */
@@ -156,6 +161,22 @@ const paused = (until: DateTime.Utc, context: LineContext): StateLine => ({
 })
 
 /**
+ * After a turn, the agent is "Done for now": it finished what it was doing, nothing of it is running (a turn lasts
+ * while its background work does), and it picks up again when they write or at its next wake, which the line says.
+ * Whether its computer is still up or asleep is the dot's to show, not the words': both read the same to them, since
+ * a sleeping one wakes in a second. "Asleep" is only said before the agent's first turn has ended.
+ */
+const doneFor = (
+  presence: { readonly since?: DateTime.Utc | undefined; readonly nextWakeAt?: DateTime.Utc | undefined },
+  context: LineContext,
+  fallback: string | undefined
+): StateLine => ({
+  lead: "Done for now",
+  rest: presence.nextWakeAt ? `wakes ${aheadLabel(presence.nextWakeAt, context.now, context.timeZone)}` : fallback,
+  strong: false
+})
+
+/**
  * The second line of a project's row on Home. `undefined` when there's nothing to say about the agent (asleep with
  * nothing scheduled, or an API that doesn't say), and the row keeps its headline.
  */
@@ -174,14 +195,12 @@ export const homeLine = (
   }
   if (context.openAsks > 0) return { lead: "Waiting for you", rest: context.headline, strong: false, need: true }
   if (presence._tag === "Awake") {
-    return {
-      lead: "Done for now",
-      rest: presence.since ? pastLabel(presence.since, now, timeZone) : undefined,
-      strong: false
-    }
+    return doneFor(presence, context, presence.since ? pastLabel(presence.since, now, timeZone) : undefined)
   }
   if (presence._tag === "Asleep" && presence.nextWakeAt) {
-    return { lead: "Asleep", rest: `wakes ${aheadLabel(presence.nextWakeAt, now, timeZone)}`, strong: false }
+    return presence.since
+      ? doneFor(presence, context, undefined)
+      : { lead: "Asleep", rest: `wakes ${aheadLabel(presence.nextWakeAt, now, timeZone)}`, strong: false }
   }
   return undefined
 }
@@ -206,29 +225,25 @@ export const headerLine = (
       : { lead: "Asleep", rest: "waking up", strong: false }
   }
   if (context.openAsks > 0) return { lead: "Waiting for you", strong: false, need: true }
-  switch (presence._tag) {
-    case "Awake": {
-      const last = messages.at(-1)
-      const replied = last !== undefined && last._tag === "Text" && last.from === "agent" ? last.createdAt : undefined
-      return {
-        lead: "Done for now",
-        rest: replied
-          ? `replied ${pastLabel(replied, now, timeZone)}`
-          : presence.since
-            ? pastLabel(presence.since, now, timeZone)
-            : undefined,
-        strong: false
-      }
+  if (presence._tag === "Unknown") return undefined
+  if (presence._tag === "Asleep" && presence.since === undefined) {
+    return {
+      lead: "Asleep",
+      rest: presence.nextWakeAt ? `wakes ${aheadLabel(presence.nextWakeAt, now, timeZone)}` : undefined,
+      strong: false
     }
-    case "Asleep":
-      return {
-        lead: "Asleep",
-        rest: presence.nextWakeAt ? `wakes ${aheadLabel(presence.nextWakeAt, now, timeZone)}` : undefined,
-        strong: false
-      }
-    case "Unknown":
-      return undefined
   }
+  const last = messages.at(-1)
+  const replied = last !== undefined && last._tag === "Text" && last.from === "agent" ? last.createdAt : undefined
+  return doneFor(
+    presence,
+    context,
+    replied
+      ? `replied ${pastLabel(replied, now, timeZone)}`
+      : presence.since
+        ? pastLabel(presence.since, now, timeZone)
+        : undefined
+  )
 }
 
 // ---------------------------------------------------------------------------

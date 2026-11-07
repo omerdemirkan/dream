@@ -277,8 +277,9 @@
   and servers the agent started detached (`nohup … &`, `setsid … &`: Claude Code's Bash tool gives each command
   its own process group, so dreamd's group kill of the bridge doesn't reach them). The Claude Code session resumed
   across 2.1.290 → 2.1.318 with the same session id and full history.
-- Claude Code's `run_in_background` tasks die when the turn ends (the CLI exits after each query), with or without
-  a refresh. The skill now says to start servers detached.
+- Claude Code's `run_in_background` tasks died when the turn ended (the bridge disposed of the CLI at the first
+  `result`), with or without a refresh. Turns now wait for them (Background work in turns, below); a server is
+  still started detached, since it shouldn't hold a turn.
 - Claude Code honors `env.ANTHROPIC_BASE_URL` in ~/.claude/settings.json (dreamd keeps other settings), so a fake
   Messages API can run real Claude Code turns (packages/dreamd/scripts/fake-anthropic.ts).
 - The newest adapters (@ai-sdk/harness 1.0.174, harness-claude-code 1.0.178, harness-codex 1.0.176) still pin
@@ -344,15 +345,15 @@ subscription with real models. No ChatGPT account is connected, so nothing on Co
     `effort` named level or integer, `tools`, …) load in the harness and are picked with `subagent_type`; built-in
     types are claude, Explore, general-purpose, Plan, statusline-setup. Not needed for model/effort choice, so dreamd
     writes none. (The SDK's `agents` option isn't passed through by harness-claude-code.)
-  - `run_in_background` defaults to true. A background subagent still running when the turn's last reply is sent
-    is killed with the CLI (checked: a 40 s subagent never finished, the turn ended after 3 s); with
-    `run_in_background: false` the turn waited 42 s for it. Quick background agents whose completion notice arrives
-    before the final reply are fine.
+  - `run_in_background` defaults to true. Before Dream's bridge patch, a background subagent still running when the
+    turn's last reply was sent was killed with the CLI (a 40 s subagent never finished, the turn ended after 3 s);
+    with `run_in_background: false` the turn waited 42 s for it. Turns now wait (below).
   - `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` (2.1.318, checked against a fake Messages API) takes
     `run_in_background` out of both the `Agent` and `Bash` schemas and the Agent description stops saying subagents
     run in the background; a call that still passes `run_in_background: true` runs in the foreground
-    (`task_started` with `is_backgrounded: false`) and the turn waits for the report. dreamd sets it in `agentEnv`
-    as an interim guard.
+    (`task_started` with `is_backgrounded: false`) and the turn waits for the report. dreamd set it as an interim
+    guard on 2026-11-07 until turns waited. Note that an outer Claude Code session (an operator's) sets it in its own
+    environment, so a local check of background work needs a clean environment (`env -i`).
   - Side requests (no tools) also go to the top-level model, at effort medium.
 - Codex subagents: the `collaboration` namespace (multi-agent v2): `spawn_agent`, `wait_agent`, `send_message`,
   `followup_task`, `interrupt_agent`, `list_agents`. `spawn_agent` params: `task_name` (required; lowercase,
@@ -363,7 +364,7 @@ subscription with real models. No ChatGPT account is connected, so nothing on Co
   "Reasoning effort `ultra` is not supported for model `gpt-6-luna`. Supported reasoning efforts: …", "Unknown model
   `gpt-9` for spawn_agent. Available models: …". Verified: model gpt-6-luna + effort low → the child's requests are
   gpt-6-luna at low. Spawning is asynchronous; the parent collects results with `wait_agent` (timeout_ms 10 s–1 h,
-  default 30 s). Whether a child outlives the parent's turn wasn't checked.
+  default 30 s). A child outlives the parent's turn (checked 2026-11-07, below).
   - Only models whose catalog entry has multi-agent v2 get these tools; gpt-5.5 gets none. A thread keeps the tool
     set it started with: a thread begun on gpt-5.5 and switched to gpt-6.1-sol has no `collaboration` tools
     ("unsupported call"). Production has no Codex projects (2026-11-05), so nothing needs migrating.
@@ -498,3 +499,36 @@ subscription with real models. No ChatGPT account is connected, so nothing on Co
   (release e9d655321f17c1e6), refreshed to this branch's with marked prompt and skill; the next request carried
   the new prompt on both, Claude Code in the same conversation with the note, Codex in a new thread with the
   handoff; both still recalled the first turn's `REMEMBER` word.
+
+## Background work in turns (2026-11-07, fix/background-work-turns; Claude Code 2.1.318, Codex 0.165.0)
+Checked locally through dreamd's real harness (`Harness.layer`, the pinned CLIs, fake-anthropic.ts and
+fake-responses.ts, in a clean environment), then in E2B (`packages/sandbox-template/scripts/background-check.ts`).
+- Claude Code in streaming-input mode keeps its session open after a `result`: when a background subagent or command
+  finishes it emits `task_updated`, `task_notification`, `background_tasks_changed` (the live set, a level signal;
+  `ambient` tasks are watchers, not work), then starts a model turn of its own for the notification (`system`/`init`,
+  the reply, another `result`, with `origin.kind: "task-notification"`). With
+  `CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS=1` it also sends `session_state_changed`: a background *agent* keeps it
+  `running` until its follow-up turn is done ("the bg-agent do-while"), but a background *command* leaves it `idle`
+  right after the `result`, so `idle` alone doesn't say background work is done. With the input closed, the CLI
+  holds its results back and waits for running agents itself (`claude -p` behavior).
+- The adapter's bridge ended the turn at the first `result` answering the prompt and disposed of the query, which
+  stopped the CLI. Dream's patch (`Bridges.ts`, `bridges/claude-code/background.mjs`) holds the turn while the
+  non-ambient live set isn't empty and ends it at a `result` or `idle` with nothing live; a 5 s grace covers the
+  moment between the set emptying and the follow-up turn starting. Measured: a 15 s background subagent held the
+  turn from the model's reply (21.9 s) to its follow-up's end (37.3 s); a steered message mid-hold got its own model
+  turn and the hold went on.
+- A failed background command reports `task_updated` `{status: "failed"}` without `error`; the adapter would end the
+  turn on a failure that carries an `error` string, so the patch drops it for background tasks.
+- Claude Code's main transcript records each launch's result as `toolUseResult`: an async agent
+  `{status: "async_launched", agentId, description}`, a background command `{backgroundTaskId}`, a Monitor
+  `{taskId, timeoutMs}` (Monitor deadlines are capped at 30 min unless persistent), and each completion as a user
+  entry with `origin.kind: "task-notification"` and `<task-id>…</task-id>`. That's how dreamd finds what an earlier
+  turn left running (`Background.strandedInTranscript`).
+- Codex: a `spawn_agent` child keeps running in the app-server after the root's turn completes. Codex never starts a
+  root turn for it, also with `features.multi_agent_v2.wait_agent_enabled = false`. The app-server reports children
+  on the root's thread as `subAgentActivity` items (`kind: "started"`, then `"completed"`, with `agentThreadId` and
+  `agentPath`), even while the root is idle; the child's own thread has its `turn/started`, `turn/completed` and
+  `agentMessage` items. Its final answer (`agent_message`, "Message Type: FINAL_ANSWER … Sender: /root/<name>") is
+  delivered into the root's input by `wait_agent`, or at the start of a later root turn, not the one that starts
+  right after the child completes (not even 1.5 s later). Dream's patch hands the answers over in the follow-up root
+  turn's input itself, so the model may see an answer twice.

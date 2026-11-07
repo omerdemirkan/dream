@@ -105,13 +105,26 @@ describe("presence through one message (A+B+C)", () => {
     assert.strictEqual(line(homeLine(p, context(now, messages))), "Done for now · 2:09 PM")
   })
 
-  it("goes grey when its computer sleeps, and keeps the headline on Home when nothing's scheduled", () => {
+  it("goes grey when its computer sleeps, still Done for now, and keeps the headline on Home", () => {
     const now = at("14:20")
     const p = presence(done, now)
+    const messages = [update, askSeen, reply]
     assert.strictEqual(dotOf(p), "asleep")
-    assert.deepStrictEqual(chatRowOf(p, [update, askSeen, reply], now), { _tag: "Done" })
-    assert.isUndefined(homeLine(p, context(now, [])))
-    assert.strictEqual(line(headerLine(p, context(now, []))), "Asleep")
+    assert.deepStrictEqual(chatRowOf(p, messages, now), { _tag: "Done" })
+    assert.isUndefined(homeLine(p, context(now, messages)))
+    // The header says what Chat says: the words don't change when the computer sleeps.
+    assert.strictEqual(line(headerLine(p, context(now, messages))), "Done for now · replied 2:09 PM")
+    assert.strictEqual(line(headerLine(p, context(now, []))), "Done for now · 2:09 PM")
+  })
+
+  it("says when it wakes next, awake or asleep, and Asleep only before its first turn ended", () => {
+    const wake = at("06:55", "05")
+    const awake = presence({ ...done, nextWakeAt: wake }, at("14:10"))
+    assert.strictEqual(line(headerLine(awake, context(at("14:10"), [reply]))), "Done for now · wakes 6:55 AM")
+    const later = presence({ ...done, nextWakeAt: wake }, at("15:00"))
+    assert.strictEqual(line(headerLine(later, context(at("15:00"), [reply]))), "Done for now · wakes 6:55 AM")
+    const fresh = presence({ state: "idle", nextWakeAt: wake }, at("15:00"))
+    assert.strictEqual(line(headerLine(fresh, context(at("15:00"), []))), "Asleep · wakes 6:55 AM")
   })
 
   it("a new idea's first half-minute: Seen, starting, and permission to leave", () => {
@@ -126,7 +139,7 @@ describe("Home (B)", () => {
 
   it("says asleep until the next wake, paused until the reset, and waiting while something's open", () => {
     const brief = presence({ ...asleep, nextWakeAt: at("06:55", "05") }, now)
-    assert.strictEqual(line(homeLine(brief, context(now, []))), "Asleep · wakes 6:55 AM")
+    assert.strictEqual(line(homeLine(brief, context(now, []))), "Done for now · wakes 6:55 AM")
 
     const recipe = presence(asleep, now, { pausedUntil: at("16:00") })
     assert.strictEqual(dotOf(recipe), "paused")

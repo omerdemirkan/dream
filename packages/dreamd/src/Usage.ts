@@ -254,16 +254,16 @@ export const findCodexRollout = Effect.fn("Usage.findCodexRollout")(function* (c
   return Option.map(Option.fromNullishOr(match), (file) => path.join(sessions, file))
 })
 
-/** The last part of a file, from a line boundary. */
-export const readTail = Effect.fn("Usage.readTail")(function* (file: string) {
+/** The last `length` bytes of a file (`tailBytes` by default), from a line boundary. */
+export const readTail = Effect.fn("Usage.readTail")(function* (file: string, length: number = tailBytes) {
   const fs = yield* FileSystem.FileSystem
   const size = Number((yield* fs.stat(file)).size)
-  if (size <= tailBytes) return yield* fs.readFileString(file)
+  if (size <= length) return yield* fs.readFileString(file)
   const bytes = yield* Effect.scoped(
     Effect.gen(function* () {
       const handle = yield* fs.open(file, { flag: "r" })
-      yield* handle.seek(BigInt(size - tailBytes), "start")
-      const buffer = new Uint8Array(tailBytes)
+      yield* handle.seek(BigInt(size - length), "start")
+      const buffer = new Uint8Array(length)
       const read = yield* handle.read(buffer)
       return buffer.subarray(0, read)
     })

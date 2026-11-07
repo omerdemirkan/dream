@@ -5,7 +5,7 @@ import { TestClock } from "effect/testing"
 import { Api, type Report } from "../src/Api.ts"
 import type { Part } from "../src/harness/Turn.ts"
 import { check, width } from "../src/progress/Line.ts"
-import { derive, liveness } from "../src/progress/Derive.ts"
+import { derive, fitted, liveness } from "../src/progress/Derive.ts"
 import { fromImperative, fromSentence, gerund, presentable } from "../src/progress/Phrase.ts"
 import { Progress, triggerOf } from "../src/progress/Progress.ts"
 import * as Steps from "../src/progress/Steps.ts"
@@ -258,11 +258,22 @@ describe("phrases, without a model", () => {
       "Running a quick web search for them",
       "Checking that the router sits",
       "Fixing src/realtime/session",
-      "Setting VT_OPENAI_BASE"
+      "Setting VT_OPENAI_BASE",
+      "Fetching https",
+      "Opening www and the docs"
     ]) {
       assert.isFalse(presentable(phrase), phrase)
     }
     assert.isTrue(presentable("Checking the sūrah card's Arabic verses"))
+  })
+
+  it("keeps a URL whole, so a line never ends at its scheme", () => {
+    const thought = fromSentence("I'm fetching https://ankiweb.net/shared/info to check the API.")
+    assert.strictEqual(thought, "Fetching https://ankiweb.net/shared/info")
+    assert.strictEqual(fitted(thought!), undefined)
+    assert.strictEqual(fitted(fromImperative("Fetch https://docs.ankiweb.net/sync")!), undefined)
+    assert.strictEqual(fitted("Fetching https"), undefined)
+    assert.strictEqual(fromSentence("I'm checking the sync API: what it needs to log in."), "Checking the sync API")
   })
 })
 
@@ -476,5 +487,32 @@ describe("the recorded turns", () => {
     assert.strictEqual(summary.voice, 1)
     assert.isAtLeast(summary.coverage, 0.8)
     assert.isAtMost(summary.changesPer10Min, 6)
+  })
+})
+
+describe("a turn held for background work", () => {
+  const hold = (holding: boolean, ...types: ReadonlyArray<string>): Part =>
+    ({
+      type: "raw",
+      rawValue: {
+        type: "dream_background",
+        holding,
+        live: types.map((type, i) => ({ id: `t${i}`, type, description: "x" }))
+      }
+    }) as Part
+
+  it("says what it waits on, as one long step, until the hold ends", () => {
+    const held = fold([
+      [0, call("a1", "Agent", { description: "Check CarPlay support", prompt: "…" })],
+      [60_000, hold(true, "local_agent", "local_agent")]
+    ])
+    const now = 5 * 60_000
+    const current = Steps.current(held, now)
+    assert.strictEqual(derive({ steps: current, now })?.line, "Waiting for 2 helpers to report back")
+    assert.strictEqual(liveness(current, now).waitingSince, 60_000)
+    const released = Steps.observe(held, hold(false, "local_agent"), 6 * 60_000)
+    assert.isUndefined(liveness(Steps.current(released, 6 * 60_000), 6 * 60_000).waitingSince)
+    assert.strictEqual(Steps.holdPhrase(["local_bash"]), "Waiting for a command to finish")
+    assert.strictEqual(Steps.holdPhrase(["local_agent", "monitor"]), "Waiting for background work to finish")
   })
 })

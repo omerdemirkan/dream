@@ -402,12 +402,45 @@ const commonName: Readonly<Record<string, string>> = {
 
 const helperStep = (step: NewStep): NewStep => ({ ...step, helper: true })
 
+/** The step a turn held for background work shows (`harness/Background.ts`), running until the hold ends. */
+const holdId = "dream-background-hold"
+
+/** What a held turn waits on, as a phrase: "Waiting for 2 helpers to report back". */
+export const holdPhrase = (types: ReadonlyArray<string | undefined>): string => {
+  const helpers = types.filter((type) => type === "local_agent" || type === "subagent").length
+  const commands = types.filter((type) => type === "local_bash").length
+  if (helpers === types.length) {
+    return helpers === 1 ? "Waiting for a helper to report back" : `Waiting for ${helpers} helpers to report back`
+  }
+  if (commands === types.length) {
+    return commands === 1 ? "Waiting for a command to finish" : `Waiting for ${commands} commands to finish`
+  }
+  return "Waiting for background work to finish"
+}
+
+/** The bridges' report on background work: while the turn is held for it, that's what it's doing. */
+const observeHold = (state: StepsState, record: Record<string, unknown>, now: number): StepsState => {
+  const live = Array.isArray(record.live) ? record.live.map((task) => str(parseInput(task), "type")) : []
+  const open = state.steps.some((step) => step.toolCallId === holdId && step.running)
+  if (record.holding === true && live.length > 0) {
+    if (open) return state
+    return push(
+      state,
+      withPhrase({ kind: "command", text: "waiting for background work to report back" }, holdPhrase(live), 3),
+      now,
+      holdId
+    )
+  }
+  return open ? settle(state, holdId, false, now) : state
+}
+
 /**
  * A raw harness message: a subagent's own messages (Claude Code forwards their tool calls, and their thinking and
  * text with `forwardSubagentText`), and its progress summaries (`agentProgressSummaries`, written by Claude Code).
  */
 const observeRaw = (state: StepsState, raw: unknown, now: number): StepsState => {
   const record = parseInput(raw)
+  if (record.type === "dream_background") return observeHold(state, record, now)
   if (record.type === "system" && record.subtype === "task_progress") {
     const summary = str(record, "summary") ?? str(record, "description")
     if (summary === undefined) return state

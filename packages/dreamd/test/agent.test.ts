@@ -20,6 +20,7 @@ import { Progress } from "../src/progress/Progress.ts"
 import { Summarizer } from "../src/progress/Summarizer.ts"
 import { Api, type Report } from "../src/Api.ts"
 import { Attachments } from "../src/Attachments.ts"
+import type * as Background from "../src/harness/Background.ts"
 import { Harness, type HarnessError, type TurnResult, TurnOutcome } from "../src/harness/Harness.ts"
 import type { TurnHandlers } from "../src/harness/Turn.ts"
 import { Inbox } from "../src/Inbox.ts"
@@ -38,6 +39,8 @@ const setup = (
     readonly published?: Layer.Layer<Published>
     /** The real attachment copier against this API, rooted at `dir`; none by default. */
     readonly attachments?: { readonly apiUrl: string; readonly dir: string }
+    /** Background work the harness found stopped when dreamd started. */
+    readonly stopped?: Background.Stopped
   } = {}
 ) =>
   Effect.gen(function* () {
@@ -52,7 +55,8 @@ const setup = (
           Harness.layerTest({
             turns,
             log,
-            ...(options.steerable === undefined ? {} : { steerable: options.steerable })
+            ...(options.steerable === undefined ? {} : { steerable: options.steerable }),
+            ...(options.stopped === undefined ? {} : { stopped: options.stopped })
           }),
           Api.layerTest(reports),
           Outreach.layer,
@@ -461,5 +465,58 @@ describe("Agent with attachments", () => {
         assert.strictEqual(api.asked.filter((line) => line.includes("med_photo")).length, before)
       }).pipe(Effect.scoped),
     20_000
+  )
+})
+
+describe("Agent, when background work stops before it reports back", () => {
+  const research: Background.Task = { id: "a1", kind: "subagent", description: "Check CarPlay support" }
+
+  it.effect("wakes the agent with what stopped, and the next turn's prompt says so", () =>
+    Effect.gen(function* () {
+      const { turns, inbox, logged, idle } = yield* setup()
+      yield* Queue.offer(turns, () =>
+        Effect.succeed({ ...completed(), backgroundStopped: { reason: "ended", tasks: [research] } })
+      )
+      yield* Queue.offer(turns, () => Effect.succeed(completed()))
+      yield* inbox.deliver([userMessage(1, "Plan the app")])
+      const [, second] = yield* logged(2)
+      assert.include(second, "Your last turn ended another way while background work was still running")
+      assert.include(second, "- subagent: Check CarPlay support")
+      yield* idle
+      assert.strictEqual((yield* inbox.state).entries.length, 0)
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect("tells the agent at startup about work that stopped before dreamd started", () =>
+    Effect.gen(function* () {
+      const { turns, logged } = yield* setup({ stopped: { reason: "earlier", tasks: [research] } })
+      yield* Queue.offer(turns, () => Effect.succeed(completed()))
+      const [first] = yield* logged(1)
+      assert.include(first, "When your last turn ended, the background work you'd started was stopped with it")
+      assert.include(first, "- subagent: Check CarPlay support")
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect("holds the news when a turn started by it is stopped past a limit again, for the next turn", () =>
+    Effect.gen(function* () {
+      const { turns, inbox, logged, idle, log } = yield* setup()
+      const server: Background.Task = { id: "b1", kind: "command", description: "Start the dev server" }
+      const limited = { ...completed(), backgroundStopped: { reason: "quiet", tasks: [server], minutes: 45 } } as const
+      yield* Queue.offer(turns, () => Effect.succeed(limited))
+      yield* Queue.offer(turns, () => Effect.succeed(limited))
+      yield* Queue.offer(turns, () => Effect.succeed(completed()))
+      yield* inbox.deliver([userMessage(1, "Show me the app")])
+      yield* logged(2)
+      yield* idle
+      // The second stop isn't a wake of its own.
+      yield* TestClock.adjust(Duration.minutes(5))
+      assert.strictEqual((yield* Ref.get(log)).length, 2)
+      assert.strictEqual((yield* inbox.state).entries.length, 0)
+      yield* inbox.deliver([userMessage(2, "Any news?")])
+      const [, , third] = yield* logged(3)
+      assert.include(third, "> Any news?")
+      assert.include(third, "showed no sign of progress, so Dream stopped it")
+      assert.include(third, "- command: Start the dev server")
+    }).pipe(Effect.scoped)
   )
 })
