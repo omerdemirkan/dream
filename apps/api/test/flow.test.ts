@@ -1517,6 +1517,12 @@ describe("machine size", () => {
       const dreamd = yield* cloud.sandbox(env.DREAM_PROJECT_TOKEN)
       assert.deepStrictEqual(yield* dreamd.GetMachine(), { size: "standard", cpus: 2, memoryGb: 4 })
       old.files.set("/home/user/project/app.ts", "Bun.serve({ port: 3000 })")
+      // A published app and a wake-up, which have to keep working on the other side.
+      yield* dreamd.Publish({ port: 3000 })
+      const wake = yield* dreamd.ScheduleWake({
+        when: { _tag: "At", at: DateTime.add(yield* DateTime.now, { seconds: 2 }) },
+        why: "Look at the app again"
+      })
 
       // Asked during a turn: nothing moves until the turn is over.
       yield* dreamd.ReportTurn({ state: "started", eventIds: [] })
@@ -1546,6 +1552,18 @@ describe("machine size", () => {
       assert.strictEqual(last.sandboxId, moved.access.sandboxId)
       const event = (last.events as ReadonlyArray<AgentEvent>).find((e) => e._tag === "MachineMoved")
       assert.isTrue(event?._tag === "MachineMoved" && event.to === "large" && event.failure === undefined)
+
+      // The published app is served from the new sandbox, and the wake-up fires there.
+      const clients = Context.get(cloud.workerContext, ProjectClients)
+      const target = yield* clients.use(project.id, (client) => client.GatewayTarget())
+      assert.isTrue(target.origin.includes(moved.access.sandboxId), target.origin)
+      assert.strictEqual(target.trafficAccessToken, moved.access.trafficAccessToken)
+      yield* Effect.sleep("2100 millis")
+      yield* cloud.alarm(project.id)
+      const due = cloud.world.delivered.at(-1)!
+      assert.strictEqual(due.sandboxId, moved.access.sandboxId)
+      const fired = (due.events as ReadonlyArray<AgentEvent>).find((e) => e._tag === "WakeDue")
+      assert.isTrue(fired?._tag === "WakeDue" && fired.wakeId === wake.id)
       yield* cloud.close
     })
   )
