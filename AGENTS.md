@@ -169,6 +169,9 @@ the other workstreams to agree first.
   The top-level agent's model and effort come from `src/harness/Fleet.ts` (each provider's flagship, effort high;
   the agent picks each subagent's model and effort itself), unless the operator overrides them for a QA run
   (`DREAM_AGENT_MODEL`, `DREAM_CODEX_AGENT_MODEL`, `DREAM_AGENT_EFFORT` Worker secrets).
+  A changed prompt or skill reaches a running project on its next turn (`src/harness/Session.ts`): Claude Code's
+  session goes on with the new prompt (its bridge is patched to render it on every request) and a note; Codex gets
+  a new thread with a handoff, since a thread keeps its instructions. `scripts/prompt-refresh-check.ts` checks both.
   E2B pauses a sandbox when its timeout runs out, whatever runs in it: a wake gets five minutes, and the end of a
   turn 90 seconds (`TurnTail` in `SandboxManager.ts`; it resumes in under a second). So between turns dreamd asks
   the ProjectDO to keep it up (`StayAwake`, about once a minute, two minutes each) while a scheduled `--run` command
