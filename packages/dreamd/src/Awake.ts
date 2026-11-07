@@ -200,6 +200,7 @@ export class Awake extends Context.Service<
   static readonly layer = Layer.effect(
     Awake,
     Effect.gen(function* () {
+      const scope = yield* Effect.scope
       const api = yield* Api
       const agent = yield* Agent
       const commands = yield* Commands
@@ -296,9 +297,12 @@ export class Awake extends Context.Service<
             if (verdict === "now") {
               yield* Ref.set(pending, Option.none())
               yield* Effect.logInfo("Nothing left to do; asking to sleep", { woke: woke.value })
-              return yield* api
+              // Not waited for: the sandbox is usually paused before the answer comes, and a look stuck on it would
+              // hold up the next wake's looks until it gave up.
+              yield* api
                 .sleep(woke.value, DateTime.makeUnsafe(nowMs))
-                .pipe(reported(sleepFailing, "put the sandbox to sleep"))
+                .pipe(reported(sleepFailing, "put the sandbox to sleep"), Effect.forkIn(scope))
+              return
             }
           }
         } else {

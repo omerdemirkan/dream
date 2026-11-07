@@ -84,7 +84,10 @@ export class Api extends Context.Service<
     readonly reportTask: (report: TaskReport) => Effect.Effect<void>
     /** Once, with no retries: the caller asks again a minute later. A Worker older than `StayAwake` fails it. */
     readonly stayAwake: (reason: AwakeReason) => Effect.Effect<void, ApiError>
-    /** Once, with no retries. A Worker older than `Sleep` fails it, and the sandbox sleeps on its timeout. */
+    /**
+     * Once, with no retries. A Worker older than `Sleep` fails it, and the sandbox sleeps on its timeout. No answer
+     * is the usual outcome (the sandbox is paused first), and succeeds.
+     */
     readonly sleep: (reason: SleepReason, checkedAt: DateTime.Utc) => Effect.Effect<void, ApiError>
     /** `dream ask` on the agent's behalf. */
     readonly askQuestion: (question: DreamQuestion) => Effect.Effect<MessageId, ApiError>
@@ -128,7 +131,14 @@ export class Api extends Context.Service<
           ),
         sleep: (reason, checkedAt) =>
           client.Sleep({ reason, checkedAt }).pipe(
-            Effect.timeout("30 seconds"),
+            // The API pauses the sandbox before it answers, so this usually gets no answer: the call sits frozen
+            // with everything else and gives up some seconds after the next wake. That's success.
+            Effect.timeoutOption("15 seconds"),
+            Effect.flatMap((answered) =>
+              answered._tag === "None"
+                ? Effect.logDebug("No answer to Sleep; the sandbox was paused first")
+                : Effect.void
+            ),
             Effect.catchCause((cause) =>
               Effect.fail(new ApiError({ message: Cause.pretty(cause).split("\n")[0] ?? "failed" }))
             )

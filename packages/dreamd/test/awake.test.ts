@@ -414,6 +414,31 @@ describe("going back to sleep", () => {
     }).pipe(Effect.scoped)
   )
 
+  it.effect("doesn't wait for Sleep's answer, which a paused sandbox never gets", () =>
+    Effect.gen(function* () {
+      const calls = yield* Ref.make(0)
+      const awake = yield* Ref.make(0)
+      const hanging = Layer.succeed(Api, {
+        ...Context.get(yield* Layer.build(Api.layerTest(yield* Ref.make<ReadonlyArray<Report>>([]))), Api),
+        stayAwake: () => Ref.update(awake, (n) => n + 1),
+        sleep: () => Ref.update(calls, (n) => n + 1).pipe(Effect.andThen(Effect.never))
+      })
+      const { runCommand, seconds, busy } = yield* setup({ api: hanging })
+      yield* runCommand(1)
+      yield* seconds(10)
+      assert.strictEqual(yield* Ref.get(calls), 1)
+      // The next wake's work is looked at right away, not after the first ask gives up.
+      const before = yield* Ref.get(awake)
+      yield* Ref.set(busy, true)
+      yield* seconds(61)
+      assert.isAbove(yield* Ref.get(awake), before)
+      yield* Ref.set(busy, false)
+      yield* runCommand(1)
+      yield* seconds(10)
+      assert.strictEqual(yield* Ref.get(calls), 2)
+    }).pipe(Effect.scoped)
+  )
+
   it.effect("carries on when the API doesn't know Sleep", () =>
     Effect.gen(function* () {
       const calls = yield* Ref.make(0)
