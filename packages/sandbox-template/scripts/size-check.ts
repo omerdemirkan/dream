@@ -54,6 +54,17 @@ const steps: ReadonlyArray<readonly [string, string]> = [
   ]
 ]
 
+/** envd connections through the dev proxy sometimes drop; a quick command is worth one more try. */
+const retried = async <A>(attempt: () => Promise<A>): Promise<A> => {
+  try {
+    return await attempt()
+  } catch (error) {
+    if (!String(error).includes("fetch failed")) throw error
+    await new Promise((resolve) => setTimeout(resolve, 2_000))
+    return attempt()
+  }
+}
+
 const main = async () => {
   const created = Date.now()
   const sandbox = await Sandbox.create(template, {
@@ -68,7 +79,7 @@ const main = async () => {
     )
     for (let round = 1; round <= rounds; round++) {
       for (const [name, command] of steps) {
-        await sandbox.commands.run(sampler)
+        await retried(() => sandbox.commands.run(sampler))
         const started = Date.now()
         const result = await sandbox.commands
           .run(command, { timeoutMs: 15 * 60_000 })
@@ -78,8 +89,8 @@ const main = async () => {
             return `failed (${error.result?.exitCode ?? "?"}): ${tail.slice(0, 200)}`
           })
         const seconds = ((Date.now() - started) / 1000).toFixed(1)
-        const peak = await sandbox.commands.run(
-          "kill $(cat /tmp/sample.pid) 2>/dev/null; sort -n /tmp/mem.log | tail -1"
+        const peak = await retried(() =>
+          sandbox.commands.run("kill $(cat /tmp/sample.pid) 2>/dev/null; sort -n /tmp/mem.log | tail -1")
         )
         console.log(`  ${round}. ${name}: ${seconds} s, peak ${peak.stdout.trim()} MB used, ${result}`)
       }

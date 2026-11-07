@@ -247,8 +247,10 @@ const scenarios: Record<string, (args: ReadonlyArray<string>) => Promise<boolean
     const n = Number(times ?? 3)
     const { sandbox, daemonToken, traffic, domain } = await setup(apiUrl!)
     try {
+      // Asleep before the first check, as between a schedule's runs (rather than waiting out the first wake).
+      await sleep(10_000)
+      await Sandbox.pause(sandbox.sandboxId, connection)
       for (let i = 1; i <= n; i++) {
-        // Asleep before each check, as between a schedule's runs.
         await until(async () => (await state(sandbox.sandboxId)) === "paused", 6 * 60_000, 2000)
         if (i > 1) await sleep(Math.max(0, 5 * 60_000 - 30_000))
         say(`check ${i}: ${deliverWake(sandbox, daemonToken, traffic, domain, "curl -fsS localhost:3000 > /dev/null")}`)
@@ -256,6 +258,10 @@ const scenarios: Record<string, (args: ReadonlyArray<string>) => Promise<boolean
       }
       await until(async () => (await state(sandbox.sandboxId)) === "paused", 6 * 60_000, 2000)
       await sleep(5_000)
+      say(
+        `dreamd:\n${await run(sandbox, "grep -h 'Scheduled command\\|asking to sleep\\|Nothing left\\|Couldn' ~/.dream/logs/dreamd.log | cut -c1-160")}`
+      )
+      await Sandbox.pause(sandbox.sandboxId, connection).catch(() => undefined)
       const runs = await billedRuns(sandbox.sandboxId)
       for (const run of runs) say(`billed run from ${run.startedAt.slice(11, 19)}: ${run.seconds.toFixed(1)} s`)
       // The first run is the setup; each check after it should be seconds, not five minutes.
@@ -270,7 +276,8 @@ const scenarios: Record<string, (args: ReadonlyArray<string>) => Promise<boolean
     const { sandbox, traffic, domain } = await setup(apiUrl!, { publishedPort: appPort })
     try {
       // Asleep first, so the visit wakes it like a real one (with E2B's five minutes).
-      await until(async () => (await state(sandbox.sandboxId)) === "paused", 6 * 60_000, 2000)
+      await sleep(10_000)
+      await Sandbox.pause(sandbox.sandboxId, connection)
       const url = `https://${appPort}-${sandbox.sandboxId}.${domain}/`
       let last = 0
       for (let i = 0; i < 4; i++) {

@@ -21,8 +21,9 @@ import {
   type TurnUsage,
   type UsageSnapshot
 } from "@dream/domain"
+import { NodeHttpClient } from "@effect/platform-node"
 import { Cause, Context, Data, type DateTime, Effect, Layer, Redacted, Ref, Schedule } from "effect"
-import { FetchHttpClient, Headers } from "effect/http"
+import { Headers } from "effect/http"
 import { RpcClient, RpcMiddleware } from "effect/rpc"
 import { DreamdConfig } from "./Config.ts"
 import type { DreamQuestion } from "./harness/PersonChannel.ts"
@@ -56,8 +57,11 @@ export const layerClient = Layer.unwrap(
     const config = yield* DreamdConfig
     const bearer = `Bearer ${Redacted.value(config.projectToken)}`
     return Layer.mergeAll(
+      // A new connection per call. A paused sandbox's open connections are dead when it wakes, but its timers
+      // only count awake time, so a pool would hand the first call after a long sleep a dead socket that hangs
+      // for half a minute (seen on a scheduled check's Sleep), keeping the sandbox up that long.
       RpcClient.layerProtocolHttp({ url: `${config.apiUrl}${Routes.sandbox}` }).pipe(
-        Layer.provide([FetchHttpClient.layer, HttpRpcSerialization])
+        Layer.provide([NodeHttpClient.layerNodeHttpOptions({ keepAlive: false }), HttpRpcSerialization])
       ),
       RpcMiddleware.layerClient(SandboxAuth, ({ request, next }) =>
         next({ ...request, headers: Headers.set(request.headers, "authorization", bearer) })
