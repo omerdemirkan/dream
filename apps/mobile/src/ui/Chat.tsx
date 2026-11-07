@@ -238,19 +238,19 @@ export function Holdable(props: {
   )
 }
 
-/** The little curve from a message down to its thread's line, on the side the message sits. */
-function Curve(props: { readonly mine: boolean }) {
+/** The little curve from the agent's message down to its thread's line. */
+function Curve() {
   return (
     <View
       style={{
         width: 14,
         height: 20,
         marginTop: -6,
+        marginLeft: 10,
         borderColor: color.line2,
         borderBottomWidth: 1.5,
-        ...(props.mine
-          ? { borderRightWidth: 1.5, borderBottomRightRadius: 10, marginRight: 10 }
-          : { borderLeftWidth: 1.5, borderBottomLeftRadius: 10, marginLeft: 10 })
+        borderLeftWidth: 1.5,
+        borderBottomLeftRadius: 10
       }}
     />
   )
@@ -273,7 +273,7 @@ export function ThreadFold(props: {
         marginTop: -6
       }}
     >
-      <Curve mine={props.mine} />
+      {props.mine ? null : <Curve />}
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`${line.count}. ${line.latest}`}
@@ -473,8 +473,15 @@ export function ChatTab(props: {
     window: () => ({ top: offset.current + props.topInset, bottom: offset.current + viewport.current })
   })
 
-  const onContentSizeChange = () => {
+  const onContentSizeChange = (_: number, height: number) => {
     checkSeen()
+    // Messages that don't fill the screen can't be scrolled back through, so the earlier ones load now. Replies fold
+    // into their threads, so a page of messages can make a short Chat.
+    if (viewport.current > 0 && height < viewport.current && state.hasEarlierMessages && !loadingEarlier.current) {
+      loadingEarlier.current = true
+      loadEarlier(projectId)
+      setTimeout(() => (loadingEarlier.current = false), 1500)
+    }
     if (wanted) return
     if (!landed.current || nearBottom.current) {
       scroll.current?.scrollToEnd({ animated: landed.current })
