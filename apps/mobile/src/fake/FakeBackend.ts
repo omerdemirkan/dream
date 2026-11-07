@@ -196,7 +196,7 @@ type ActivityStage = "sent" | "starting" | "working" | "done"
 type AppHandlers = Rpc.ToHandler<RpcGroup.Rpcs<typeof AppRpcs>>
 
 /** How many recent messages a snapshot carries; the rest come from `ListMessages`. */
-const snapshotSize = 6
+const snapshotSize = 10
 
 export class FakeBackend extends Context.Service<
   FakeBackend,
