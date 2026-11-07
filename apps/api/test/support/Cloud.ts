@@ -80,6 +80,8 @@ export const makeCloud = (
     readonly databasePath?: string
     /** A deployment that doesn't send email (no `send_email` binding). */
     readonly noEmail?: boolean
+    /** A real sender in place of the recording fake (scripts/desktop-check.ts). */
+    readonly email?: SendEmailBinding
   } = {}
 ) =>
   Effect.gen(function* () {
@@ -182,7 +184,7 @@ export const makeCloud = (
 
     const worker = workerLayer(
       {
-        email: options.noEmail === true ? undefined : email,
+        email: options.noEmail === true ? undefined : (options.email ?? email),
         d1,
         r2: options.media,
         updates: options.updates,

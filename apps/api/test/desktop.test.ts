@@ -26,12 +26,16 @@ class Browser {
     this.cloud = cloud
   }
 
-  request(path: string, init: { method?: string; form?: Record<string, string>; origin?: string | null } = {}) {
+  request(
+    path: string,
+    init: { method?: string; form?: Record<string, string>; origin?: string | null; fetchSite?: string } = {}
+  ) {
     const headers = new Headers()
     if (this.jar.size > 0) headers.set("cookie", [...this.jar].map(([k, v]) => `${k}=${v}`).join("; "))
     const method = init.method ?? (init.form === undefined ? "GET" : "POST")
     if (method === "POST" && init.origin !== null) headers.set("origin", init.origin ?? origin)
     if (init.form !== undefined) headers.set("content-type", "application/x-www-form-urlencoded")
+    if (init.fetchSite !== undefined) headers.set("sec-fetch-site", init.fetchSite)
     const raw = new Request(`${origin}${path}`, {
       method,
       headers,
@@ -170,7 +174,7 @@ describe("finishing access on a computer", () => {
       assert.notInclude(landing.body, token)
       assert.include(landing.body, "Continue")
       assert.match(landing.headers.get("content-security-policy")!, /script-src 'nonce-[^']+'.*form-action 'self'/)
-      assert.strictEqual(landing.headers.get("referrer-policy"), "no-referrer")
+      assert.strictEqual(landing.headers.get("referrer-policy"), "same-origin")
       assert.strictEqual(opened.status, 303)
       const linkId = opened.location.replace("/desktop/", "")
       assert.match(linkId, /^dsk_[A-Za-z0-9]{22}$/)
@@ -212,6 +216,20 @@ describe("finishing access on a computer", () => {
       assert.strictEqual(forged.status, 403)
       const noOrigin = yield* laptop.request(opened.location, { form: { key: stripeKey }, origin: null })
       assert.strictEqual(noOrigin.status, 403)
+      const nullCrossSite = yield* laptop.request(opened.location, {
+        form: { key: stripeKey },
+        origin: "null",
+        fetchSite: "cross-site"
+      })
+      assert.strictEqual(nullCrossSite.status, 403)
+      // A browser that sends `Origin: null` on its own page's post still says it's same-origin.
+      const nullSameSite = yield* laptop.request(opened.location, {
+        form: { key: "" },
+        origin: "null",
+        fetchSite: "same-origin"
+      })
+      assert.strictEqual(nullSameSite.status, 400)
+      assert.include(nullSameSite.body, "Paste the key first.")
 
       const saved = yield* laptop.request(opened.location, { form: { key: `  ${stripeKey}\n` } })
       assert.strictEqual(saved.status, 200)

@@ -56,6 +56,13 @@ textarea:focus{outline:none;border-color:rgba(255,179,92,.6)}
 @media (min-width:700px){body{font-size:17px}main{max-width:560px;padding:40px 40px 34px}h1{font-size:28px}}
 `
 
+/**
+ * Every desktop page: `same-origin` referrers, so a browser names this page as the origin of its own form posts
+ * (with `no-referrer` it sends `Origin: null`) and still sends nothing to other sites, such as a context link.
+ */
+const desktopPage = (...[title, body, status, options]: Parameters<typeof page>) =>
+  page(title, body, status, { ...options, headers: { ...options?.headers, "referrer-policy": "same-origin" } })
+
 /** A key's form fields: the ids and names the Worker reads back. */
 const KeyForm = Schema.Struct({ key: Schema.RedactedFromValue(Schema.String) })
 const AppleForm = Schema.Struct({
@@ -89,7 +96,7 @@ export const contextHtml = (markdown: string): string =>
 const minutes = (duration: Duration.Duration) => Duration.toMinutes(duration)
 
 const notice = (title: string, heading: string, text: string, status: number) =>
-  page(title, `<div class="mark">!</div><h1>${escape(heading)}</h1><p>${escape(text)}</p>`, status, { css })
+  desktopPage(title, `<div class="mark">!</div><h1>${escape(heading)}</h1><p>${escape(text)}</p>`, status, { css })
 
 const sendAgain = "Send a new one from the request in Dream on your phone."
 
@@ -143,7 +150,7 @@ const unusable = (error: DesktopLinkUnusable) => {
 }
 
 const done = (heading: string, text: string) =>
-  page("Done", `<div class="mark">✓</div><h1>${escape(heading)}</h1><p>${escape(text)}</p>`, 200, { css })
+  desktopPage("Done", `<div class="mark">✓</div><h1>${escape(heading)}</h1><p>${escape(text)}</p>`, 200, { css })
 
 const connected = (message: AccessMessage) =>
   done(
@@ -208,14 +215,18 @@ const requestPage = (session: DesktopSession, account: string | undefined, error
       break
   }
   const footer = account === undefined ? "" : `<p class="account">For ${escape(account)}’s Dream</p>`
-  return page(heading.title, intro + body + footer, error === undefined ? 200 : 400, { css, script })
+  return desktopPage(heading.title, intro + body + footer, error === undefined ? 200 : 400, { css, script })
 }
 
 /** POSTs must come from these pages. */
 const sameOrigin = Effect.gen(function* () {
   const config = yield* ApiConfig
   const request = yield* HttpServerRequest.HttpServerRequest
-  return request.headers.origin === config.apiUrl
+  const origin = request.headers.origin
+  // Browsers send the page's origin on same-origin form posts (the pages' referrer policy allows it); one that
+  // sends `null` or none still says where the post came from in Sec-Fetch-Site.
+  if (origin !== undefined && origin !== "null") return origin === config.apiUrl
+  return request.headers["sec-fetch-site"] === "same-origin"
 })
 
 const forbidden = () =>
@@ -223,7 +234,7 @@ const forbidden = () =>
 
 /** `GET Routes.desktop` */
 export const showDesktopLanding = Effect.sync(() =>
-  page(
+  desktopPage(
     "Finish on this computer",
     `<div class="mark">D</div><h1>Finish on this computer</h1>` +
       `<p id="lead">Continue to see the request from Dream and finish it here.</p>` +
@@ -373,7 +384,7 @@ export const desktopSignInResult = (
       yield* desktop.signedIn(linkId)
       return done(`${result.service} is connected`, "Your phone shows it’s connected. You can close this page.")
     }
-    return page(
+    return desktopPage(
       "Sign-in didn’t finish",
       `<div class="mark">!</div><h1>The sign-in didn’t finish</h1>` +
         `<p>${escape(result.error === "cancelled" ? "It was cancelled." : `${result.service} said: ${result.error}.`)}</p>` +
