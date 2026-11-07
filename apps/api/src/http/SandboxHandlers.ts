@@ -9,6 +9,7 @@ import {
   CurrentProject,
   InvalidRequest,
   MediaRef,
+  mediaKind,
   NotFound,
   SandboxAuth,
   SandboxRpcs,
@@ -138,7 +139,7 @@ export const WorkerSandboxHandlers = SandboxRpcs.toLayer(
         }),
       RemoveLink: ({ linkId }) => Effect.flatMap(current, ({ projectId }) => appLinks.removeByAgent(projectId, linkId)),
       ListLinks: () => Effect.flatMap(current, ({ projectId }) => appLinks.listForAgent(projectId)),
-      CreateMediaUpload: ({ filename, contentType, sizeBytes, caption }) =>
+      CreateMediaUpload: ({ filename, contentType, sizeBytes, caption, width, height, durationSeconds }) =>
         Effect.gen(function* () {
           const { projectId, userId } = yield* current
           if (Option.isNone(media.bucket)) {
@@ -155,9 +156,11 @@ export const WorkerSandboxHandlers = SandboxRpcs.toLayer(
           const id = yield* newMediaId()
           const ref = MediaRef.make({
             id,
-            kind: contentType === "video/mp4" ? "video" : "image",
+            kind: mediaKind(contentType),
             contentType,
             sizeBytes,
+            ...(width === undefined || height === undefined ? {} : { width, height }),
+            ...(durationSeconds === undefined || mediaKind(contentType) === "image" ? {} : { durationSeconds }),
             ...(caption === undefined ? {} : { caption })
           })
           yield* projects.insertMedia({ ref, projectId, userId, objectKey: `projects/${projectId}/media/${id}` })

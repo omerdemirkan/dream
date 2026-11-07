@@ -193,7 +193,7 @@ const quote = (text: string): string =>
 
 const renderAnswer = (answer: QuestionAnswer): string =>
   QuestionAnswer.match(answer, {
-    Choice: ({ option }) => `"${option}"`,
+    Choice: ({ option, note }) => (note === undefined ? `"${option}"` : `"${option}", adding:\n${quote(note)}`),
     Freeform: ({ text }) => `in their own words:\n${quote(text)}`
   })
 

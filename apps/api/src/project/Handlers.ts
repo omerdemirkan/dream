@@ -17,6 +17,8 @@ import {
   ProjectLiveRpcs,
   type QuestionAnswer,
   QuestionMessage,
+  type QuestionPreview,
+  questionPreviewsProblem,
   QuestionState,
   SandboxAuth,
   SandboxRpcs,
@@ -53,7 +55,9 @@ import { type SandboxRecord, Singletons, Store } from "./Store.ts"
 const notFound = (entity: string, id: string) => new NotFound({ entity, id })
 
 const sameAnswer = (a: QuestionAnswer, b: QuestionAnswer) =>
-  a._tag === "Choice" ? b._tag === "Choice" && a.option === b.option : b._tag === "Freeform" && a.text === b.text
+  a._tag === "Choice"
+    ? b._tag === "Choice" && a.option === b.option && a.note === b.note
+    : b._tag === "Freeform" && a.text === b.text
 
 /** The next time a wake is due after `fromMs`, or none for a fired one-off / unparseable cron. */
 export const nextWakeAt = (when: WakeWhen, defaultTimeZone: string, fromMs: number): Option.Option<number> => {
@@ -517,7 +521,11 @@ export const AgentHandlers = SandboxRpcs.toLayer(
 
     const project = core.project.pipe(Effect.orDie)
 
-    const resolveMedia = (ids: ReadonlyArray<MediaId>) =>
+    /**
+     * This project's uploads, by id. Audio is for a question's previews only (`allowAudio`): an app from before it
+     * can't decode it, and a message or status card it can't read is one it can't show.
+     */
+    const resolveMedia = (ids: ReadonlyArray<MediaId>, allowAudio = false) =>
       Effect.gen(function* () {
         const current = yield* project
         const refs: Array<MediaRef> = []
@@ -530,6 +538,11 @@ export const AgentHandlers = SandboxRpcs.toLayer(
           }
           if (row.value.uploaded_at === null) {
             return yield* new InvalidRequest({ message: `Media ${id} hasn't finished uploading.` })
+          }
+          if (row.value.ref_json.kind === "audio" && !allowAudio) {
+            return yield* new InvalidRequest({
+              message: "Audio plays only as an option's preview (`dream ask --show`), not in a message or the status card."
+            })
           }
           refs.push(row.value.ref_json)
         }
@@ -678,10 +691,20 @@ export const AgentHandlers = SandboxRpcs.toLayer(
           return message
         }),
 
-      AskQuestion: ({ question, options, why, context, meanwhile, workstream }) =>
+      AskQuestion: ({ question, options, why, context, meanwhile, previews, workstream }) =>
         Effect.gen(function* () {
           const current = yield* project
           const label = yield* labelFor(workstream)
+          const problem = previews === undefined ? undefined : questionPreviewsProblem(options, previews)
+          if (problem !== undefined) return yield* new InvalidRequest({ message: problem })
+          // In the order of the options, whatever order the flags came in.
+          const resolved: Array<QuestionPreview> = []
+          for (const option of options) {
+            const preview = previews?.find((p) => p.option === option)
+            if (preview === undefined) continue
+            const [first, ...rest] = yield* resolveMedia(preview.media, true)
+            if (first !== undefined) resolved.push({ option, media: [first, ...rest] })
+          }
           const notificationId = yield* newNotificationId()
           const message = QuestionMessage.make({
             id: yield* newMessageId(),
@@ -693,6 +716,7 @@ export const AgentHandlers = SandboxRpcs.toLayer(
             ...(why === undefined ? {} : { why }),
             ...(context === undefined || context.trim() === "" ? {} : { context }),
             ...(meanwhile === undefined ? {} : { meanwhile }),
+            ...(resolved.length === 0 ? {} : { previews: resolved }),
             state: QuestionState.cases.Open.make({}),
             ...label
           })

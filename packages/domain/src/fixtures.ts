@@ -203,6 +203,67 @@ export const cabinQuestion: QuestionMessage = {
   notificationId: "0b6a2d1e-3c4f-4e5a-8b7c-9d0e1f2a3b4c" as NotificationId
 }
 
+const preview = (
+  id: string,
+  caption: string,
+  contentType: MediaRef["contentType"],
+  size: { width?: number; height?: number; durationSeconds?: number }
+): MediaRef => ({
+  id: id as MediaId,
+  kind: contentType.startsWith("video/") ? "video" : contentType.startsWith("audio/") ? "audio" : "image",
+  contentType,
+  sizeBytes: 200_000,
+  ...size,
+  caption
+})
+
+/** Option previews (`dream ask --show`): Cabin's three directions, as phone screens, a desktop page and a recording. */
+export const cabinDirections: QuestionMessage = {
+  _tag: "Question",
+  id: "msg_cabindirs" as MessageId,
+  projectId: ids.cabin,
+  createdAt: at("2026-11-04T19:21:00Z"),
+  question: "How should a weekend get booked?",
+  options: ["Calendar first", "Requests first", "Rotation"],
+  why: "This shapes the whole site, and it’s quicker to see than to describe.",
+  previews: [
+    {
+      option: "Calendar first",
+      media: [
+        preview("med_optcal", "Opening the site", "image/jpeg", { width: 1170, height: 2532 }),
+        preview("med_optcaldesk", "On a laptop", "image/jpeg", { width: 2880, height: 1800 })
+      ]
+    },
+    {
+      option: "Requests first",
+      media: [
+        preview("med_optreq", "Opening the site", "image/jpeg", { width: 1170, height: 2532 }),
+        preview("med_optreqflow", "Asking for a weekend", "video/mp4", { width: 780, height: 1688, durationSeconds: 9 })
+      ]
+    },
+    { option: "Rotation", media: [preview("med_optrot", "Opening the site", "image/jpeg", { width: 1170, height: 2532 })] }
+  ],
+  state: { _tag: "Open" },
+  notificationId: "5c2e8a1f-6b3d-4f7e-a9c0-1d2e3f4a5b6c" as NotificationId
+}
+
+/** Option previews that are sounds: which chime the rest timer ends with. */
+export const timerSounds: QuestionMessage = {
+  _tag: "Question",
+  id: "msg_timersound" as MessageId,
+  projectId: ids.lift,
+  createdAt: at("2026-11-04T21:40:00Z"),
+  question: "Which sound should the rest timer end with?",
+  options: ["Soft chime", "Three short buzzes", "Rising tone"],
+  why: "You’ll hear it mid-set, so I’d rather you choose by ear.",
+  previews: [
+    { option: "Soft chime", media: [preview("med_sndchime", "Soft chime", "audio/mp4", { durationSeconds: 1.6 })] },
+    { option: "Three short buzzes", media: [preview("med_sndbuzz", "Three short buzzes", "audio/mp4", { durationSeconds: 1.2 })] },
+    { option: "Rising tone", media: [preview("med_sndrise", "Rising tone", "audio/mp4", { durationSeconds: 2 })] }
+  ],
+  state: { _tag: "Open" }
+}
+
 export const recipeQuestion: QuestionMessage = {
   _tag: "Question",
   id: "msg_recipewho" as MessageId,
