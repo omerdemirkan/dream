@@ -23,6 +23,7 @@ import {
   type MediaRef,
   mediaKind,
   MessageId,
+  type QuestionMessage,
   NotFound,
   type ProjectId,
   type Relay,
@@ -104,6 +105,7 @@ const Handlers = SandboxRpcs.toLayer(
       contentType: "image/png",
       sizeBytes: 1
     })
+    const asked = new Map<MessageId, QuestionMessage>()
     const clear = <A>(value: A | null | undefined, previous: A | undefined) =>
       value === null ? undefined : value === undefined ? previous : value
     return {
@@ -116,12 +118,13 @@ const Handlers = SandboxRpcs.toLayer(
             from: "agent" as const,
             text: payload.text,
             media: [],
-            ...(payload.workstream === undefined ? {} : { workstream: payload.workstream })
+            ...(payload.workstream === undefined ? {} : { workstream: payload.workstream }),
+            ...(payload.replyTo === undefined ? {} : { replyTo: payload.replyTo })
           })
         ),
       AskQuestion: ({ previews, ...payload }) =>
         log("AskQuestion", { ...payload, ...(previews === undefined ? {} : { previews }) }).pipe(
-          Effect.as({
+          Effect.as<QuestionMessage>({
             _tag: "Question" as const,
             ...message,
             id: MessageId.make(id("msg")),
@@ -138,6 +141,30 @@ const Handlers = SandboxRpcs.toLayer(
                   }))
                 }),
             state: { _tag: "Open" as const }
+          }),
+          Effect.tap((question) => Effect.sync(() => asked.set(question.id, question)))
+        ),
+      ReviseQuestion: ({ messageId, previews: _, why, context, meanwhile, ...change }) =>
+        log("ReviseQuestion", { messageId, ...change }).pipe(
+          Effect.andThen(Effect.sync(() => asked.get(messageId))),
+          Effect.flatMap((question) => {
+            if (question === undefined) return Effect.fail(new NotFound({ entity: "question", id: messageId }))
+            const { why: w, context: c, meanwhile: m, ...rest } = question
+            const nextWhy = clear(why, w)
+            const nextContext = clear(context, c)
+            const nextMeanwhile = clear(meanwhile, m)
+            return Effect.map(DateTime.now, (revisedAt) => {
+              const revised: QuestionMessage = {
+                ...rest,
+                ...change,
+                ...(nextWhy === undefined ? {} : { why: nextWhy }),
+                ...(nextContext === undefined ? {} : { context: nextContext }),
+                ...(nextMeanwhile === undefined ? {} : { meanwhile: nextMeanwhile }),
+                revisedAt
+              }
+              asked.set(messageId, revised)
+              return revised
+            })
           })
         ),
       WithdrawQuestion: (payload) =>

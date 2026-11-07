@@ -16,6 +16,7 @@ import type {
   MachineInfo,
   MacStatus,
   MediaRef,
+  MessageId,
   QuestionMessage,
   Relay,
   SandboxSize,
@@ -192,6 +193,21 @@ export const unlabeled = (asked: WorkstreamId | undefined, message: { readonly w
   asked !== undefined && message.workstream === undefined
     ? " It went without a workstream label: this Dream's API predates workstreams."
     : ""
+
+/** Where a `--reply-to` went: in the thread, or, against an API from before threads, to Chat on its own. */
+export const threaded = (
+  asked: MessageId | undefined,
+  message: { readonly replyTo?: MessageId; readonly workstream?: WorkstreamId }
+): string =>
+  asked === undefined
+    ? ""
+    : message.replyTo === undefined
+      ? " It went to Chat on its own, not in a thread: this Dream's API predates threads."
+      : ` It's in the thread on ${message.replyTo}${message.workstream === undefined ? "" : `, in ${message.workstream}`}.`
+
+export const revised = (message: QuestionMessage): string =>
+  `Changed ${message.id} in place: the card shows "Changed", with ${message.options.length} option(s)${previewed(message)}. ` +
+  "It didn't notify them again; if they asked for the change in its thread, say there that it's done."
 
 /** The workstreams, and exactly what the card shows of them. */
 export const workstreams = (report: Workstreams, now: DateTime.Utc): string => {
