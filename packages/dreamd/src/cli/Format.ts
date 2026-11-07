@@ -6,6 +6,9 @@
 import type {
   AccessMessage,
   AppLink,
+  AppNotification,
+  AppNotifications,
+  AppSender,
   ProjectLink,
   ProjectLinks,
   BrowserSession,
@@ -24,6 +27,7 @@ import type {
 } from "@dream/domain"
 import {
   AgentLinksPerProject,
+  AppNotificationLimits,
   accessHeading,
   describeLinkTile,
   linkHost,
@@ -84,6 +88,8 @@ const accessLabel = (message: AccessMessage): string => {
       return `${message.request.service ?? message.request.provider}${
         message.request.scopes.length === 0 ? "" : ` (${message.request.scopes.join(", ")})`
       }`
+    case "Notifications":
+      return `notifications from ${message.request.name}`
   }
 }
 
@@ -403,3 +409,109 @@ export const relayAdded = (item: Relay, now: DateTime.Utc): string =>
     `Added ${relay(item, now)}`,
     `Each event is POSTed as JSON (id, relay, source, type, at, data) to ${relayTarget(item)}, signed with the key in ${RelayKeyPath}. Answer 2xx once it's handled; anything else is retried.`
   ].join("\n")
+
+// ---------------------------------------------------------------------------
+// Notifications from the project's apps
+// ---------------------------------------------------------------------------
+
+const tapsTo = (url: string | undefined) =>
+  url === undefined ? "a tap opens it in the project's Notifications sheet" : `a tap opens ${url}`
+
+export const appSetUp = (app: AppSender, card: AccessMessage): string => {
+  const reads = `Its card reads "Let ${app.name} notify you", then "${card.why}" and "${app.often}".`
+  switch (app.state._tag) {
+    case "Waiting":
+      return (
+        `${app.name} (${app.id}) is waiting for them to allow it: card ${card.id}` +
+        `${card.notificationId === undefined ? "" : `, notification ${card.notificationId}`}. ` +
+        `Nothing it sends reaches them until they do, and their answer arrives as an event.\n${reads}`
+      )
+    case "Allowed":
+      return `They already allow ${app.name} (${app.id}); its name, tile and page are updated, and ${tapsTo(app.url)}.`
+    case "Declined":
+      return `They declined ${app.name} (${app.id}).`
+  }
+}
+
+const limitWords = (held: AppNotification["held"]) =>
+  held === "hour"
+    ? `its limit of ${AppNotificationLimits.perAppHour} an hour`
+    : held === "day"
+      ? `its limit of ${AppNotificationLimits.perAppDay} a day`
+      : `this project's limit of ${AppNotificationLimits.perProjectDay} a day across its apps`
+
+/** What happened to one, in a sentence: leads with whether it reached them. */
+const outcomeWords = (n: AppNotification): string => {
+  switch (n.outcome) {
+    case "sent":
+      return `sent to their phone as ${n.app}; ${tapsTo(n.url)}`
+    case "quiet":
+      return `delivered quietly (Notification Center, no sound); ${tapsTo(n.url)}`
+    case "held":
+      return `held: ${n.app} is over ${limitWords(n.held)}, so it's in the app's history without reaching their phone`
+    case "muted":
+      return `not delivered: they've turned ${n.app} off or muted it; it's in the app's history`
+    case "duplicate":
+      return `not sent: the same title and text went out within the last ${AppNotificationLimits.repeatHours} hours`
+    case "waiting":
+      return `not sent: they haven't allowed ${n.app} yet; its card is waiting in Chat`
+    case "declined":
+      return `not sent: they declined notifications from ${n.app}`
+  }
+}
+
+export const appNotified = (n: AppNotification, dryRun: boolean): string => {
+  const words = outcomeWords(n)
+  const head = n.title ?? n.text.split("\n")[0]!
+  if (dryRun) return `Dry run, nothing sent or kept. It would be ${words}.`
+  const reached = n.outcome === "sent" || n.outcome === "quiet"
+  return `${words.charAt(0).toUpperCase()}${words.slice(1)}.${reached ? ` "${head}" (${n.id}).` : ""}`
+}
+
+const senderLine = (app: AppSender, now: DateTime.Utc): string => {
+  const state =
+    app.state._tag === "Waiting"
+      ? "waiting for them to allow it"
+      : app.state._tag === "Declined"
+        ? `declined${app.state.reason === undefined ? "" : ` ("${app.state.reason}")`}`
+        : app.delivery === "immediate"
+          ? "allowed"
+          : app.delivery === "quiet"
+            ? "allowed, quietly (no sound)"
+            : "turned off by them"
+  const muted =
+    app.mutedUntil !== undefined && DateTime.toEpochMillis(app.mutedUntil) > DateTime.toEpochMillis(now)
+      ? `, muted until ${time(app.mutedUntil, now)}`
+      : ""
+  return `${app.id} "${app.name}": ${state}${muted}. ${tapsTo(app.url).replace(/^a/, "A")}.`
+}
+
+export const appNotifications = (list: AppNotifications, now: DateTime.Utc): string => {
+  if (list.apps.length === 0) return "No app is set up to notify them. `dream notify setup <app>` readies one."
+  return list.apps
+    .map((app) => {
+      const sent = list.notifications.filter((n) => n.app === app.id)
+      const lines = sent.slice(0, 20).map((n) => {
+        const notes = [
+          n.outcome === "held" ? `held (${n.held})` : n.outcome,
+          ...(n.replacedAt === undefined ? [] : ["replaced"]),
+          ...(n.openedAt === undefined ? [] : ["opened"]),
+          ...(n.withdrawnAt === undefined ? [] : ["withdrawn"])
+        ].join(", ")
+        return `  ${time(n.sentAt, now)} ${n.id} [${notes}] "${n.title ?? n.text.split("\n")[0]}"`
+      })
+      const reached = sent.filter((n) => n.outcome === "sent" || n.outcome === "quiet")
+      const opened = reached.filter((n) => n.openedAt !== undefined).length
+      const summary =
+        sent.length === 0
+          ? "  Nothing sent in the last 30 days."
+          : `  ${reached.length} reached their phone in the last 30 days; they opened ${opened}.`
+      return [
+        senderLine(app, now),
+        summary,
+        ...lines,
+        ...(sent.length > 20 ? [`  … ${sent.length - 20} more`] : [])
+      ].join("\n")
+    })
+    .join("\n")
+}

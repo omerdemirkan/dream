@@ -29,10 +29,16 @@ export type PushResult = "sent" | "unregistered"
 export interface AlertPush {
   readonly id: string
   readonly title: string
+  /** A bold line under the title (an app notification's headline). */
+  readonly subtitle?: string | undefined
   readonly body: string
   readonly category: NotificationCategory
   readonly threadId: string
   readonly data: PushData
+  /** A newer alert with the same collapse id replaces the older one on the lock screen (at most 64 bytes). */
+  readonly collapseId?: string | undefined
+  /** `passive`: delivered to Notification Center without a sound or lighting the screen. */
+  readonly passive?: boolean | undefined
 }
 
 export type LiveActivityPush =
@@ -52,6 +58,22 @@ let providerToken: { readonly token: string; readonly issuedAtMs: number; readon
 const encodeContent = Schema.encodeSync(Schema.toCodecJson(LiveActivityContent))
 const encodeAttributes = Schema.encodeSync(Schema.toCodecJson(LiveActivityAttributes))
 const encodePushData = Schema.encodeSync(Schema.toCodecJson(PushData))
+
+/** The JSON body APNs gets for an alert: `aps`, and Dream's data under `PushDataKey`. */
+export const alertPayload = (push: AlertPush): object => ({
+  aps: {
+    alert: {
+      title: push.title,
+      ...(push.subtitle === undefined ? {} : { subtitle: push.subtitle }),
+      body: push.body
+    },
+    ...(push.passive === true ? { "interruption-level": "passive" } : { sound: "default" }),
+    "thread-id": push.threadId,
+    category: push.category,
+    "mutable-content": 1
+  },
+  [PushDataKey]: encodePushData(push.data)
+})
 
 export class Apns extends Context.Service<
   Apns,
@@ -135,20 +157,12 @@ export class Apns extends Context.Service<
       })
 
       const alert = (deviceToken: string, push: AlertPush) =>
-        send(
-          deviceToken,
-          {
-            aps: {
-              alert: { title: push.title, body: push.body },
-              sound: "default",
-              "thread-id": push.threadId,
-              category: push.category,
-              "mutable-content": 1
-            },
-            [PushDataKey]: encodePushData(push.data)
-          },
-          { pushType: "alert", priority: 10, id: push.id }
-        )
+        send(deviceToken, alertPayload(push), {
+          pushType: "alert",
+          priority: push.passive === true ? 5 : 10,
+          id: push.id,
+          collapseId: push.collapseId
+        })
 
       const silent = (deviceToken: string, data: PushData) =>
         send(

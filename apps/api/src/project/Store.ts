@@ -7,6 +7,9 @@
 import {
   type AccessMessage,
   AgentEvent,
+  AppId,
+  AppNotification,
+  AppSender,
   EventId,
   type IntegrationId,
   LiveActivityAttributes,
@@ -24,7 +27,7 @@ import {
   Wake,
   WakeId
 } from "@dream/domain"
-import { Context, Effect, Layer, Option, Schema } from "effect"
+import { Context, DateTime, Effect, Layer, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import * as Migrator from "effect/sql/Migrator"
 import { SandboxAccess } from "../e2b/E2B.ts"
@@ -215,6 +218,18 @@ export const migrations = Migrator.fromRecord({
   "0004_relays": Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     yield* sql`CREATE TABLE relays (id TEXT PRIMARY KEY, created_at TEXT NOT NULL, json TEXT NOT NULL)`
+  }),
+  "0005_app_notifications": Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    yield* sql`CREATE TABLE app_senders (id TEXT PRIMARY KEY, message_id TEXT NOT NULL, json TEXT NOT NULL)`
+    yield* sql`CREATE TABLE app_notifications (
+      seq INTEGER PRIMARY KEY AUTOINCREMENT,
+      id TEXT NOT NULL UNIQUE,
+      app_id TEXT NOT NULL,
+      sent_at_ms INTEGER NOT NULL,
+      json TEXT NOT NULL
+    )`
+    yield* sql`CREATE INDEX app_notifications_app ON app_notifications (app_id, sent_at_ms)`
   })
 })
 
@@ -272,6 +287,21 @@ export class Store extends Context.Service<
     readonly markDelivered: (ids: ReadonlyArray<EventId>, at: string) => Effect.Effect<void>
     /** Events by id, delivered or not, in inbox order. Unknown ids are left out. */
     readonly events: (ids: ReadonlyArray<EventId>) => Effect.Effect<ReadonlyArray<AgentEvent>>
+
+    readonly putAppSender: (sender: AppSender) => Effect.Effect<void>
+    /** Oldest first. */
+    readonly appSenders: Effect.Effect<ReadonlyArray<AppSender>>
+    readonly appSender: (id: AppId) => Effect.Effect<Option.Option<AppSender>>
+    readonly appSenderFor: (messageId: MessageId) => Effect.Effect<Option.Option<AppSender>>
+    readonly putAppNotification: (notification: AppNotification) => Effect.Effect<void>
+    readonly appNotification: (id: NotificationId) => Effect.Effect<Option.Option<AppNotification>>
+    /** Newest first, sent at or after `sinceMs`, for one app or all of them. */
+    readonly appNotifications: (
+      app: AppId | undefined,
+      sinceMs: number
+    ) => Effect.Effect<ReadonlyArray<AppNotification>>
+    /** Drops an app's notifications sent before `beforeMs`, and all but its newest `keep`. */
+    readonly pruneAppNotifications: (app: AppId, beforeMs: number, keep: number) => Effect.Effect<void>
 
     readonly putRelay: (record: RelayRecord) => Effect.Effect<void>
     /** Oldest first. */
@@ -440,6 +470,61 @@ export class Store extends Context.Service<
               Effect.map((rows) => rows.map((row) => Schema.decodeUnknownSync(jsonCodec(AgentEvent))(row.json)))
             )
 
+      const putAppSender = (sender: AppSender) =>
+        exec(sql`
+          INSERT INTO app_senders (id, message_id, json) VALUES (${sender.id}, ${sender.messageId}, ${encodeJson(AppSender, sender)})
+          ON CONFLICT (id) DO UPDATE SET message_id = excluded.message_id, json = excluded.json`)
+
+      const decodeSenders = (rows: ReadonlyArray<{ readonly json: string }>) =>
+        rows.map((row) => decodeJson(AppSender, row.json))
+
+      const appSenders = sql`SELECT json FROM app_senders ORDER BY rowid`.pipe(
+        decodeRows(JsonRow),
+        Effect.map(decodeSenders)
+      )
+
+      const appSender = (id: AppId) =>
+        sql`SELECT json FROM app_senders WHERE id = ${id}`.pipe(
+          decodeRows(JsonRow),
+          Effect.map((rows) => Option.fromNullishOr(decodeSenders(rows)[0]))
+        )
+
+      const appSenderFor = (messageId: MessageId) =>
+        sql`SELECT json FROM app_senders WHERE message_id = ${messageId}`.pipe(
+          decodeRows(JsonRow),
+          Effect.map((rows) => Option.fromNullishOr(decodeSenders(rows)[0]))
+        )
+
+      const putAppNotification = (notification: AppNotification) =>
+        exec(sql`
+          INSERT INTO app_notifications (id, app_id, sent_at_ms, json)
+          VALUES (${notification.id}, ${notification.app}, ${DateTime.toEpochMillis(notification.sentAt)},
+            ${encodeJson(AppNotification, notification)})
+          ON CONFLICT (id) DO UPDATE SET json = excluded.json`)
+
+      const appNotification = (id: NotificationId) =>
+        sql`SELECT json FROM app_notifications WHERE id = ${id}`.pipe(
+          decodeRows(JsonRow),
+          Effect.map((rows) => Option.fromNullishOr(rows.map((row) => decodeJson(AppNotification, row.json))[0]))
+        )
+
+      const appNotifications = (app: AppId | undefined, sinceMs: number) =>
+        (app === undefined
+          ? sql`SELECT json FROM app_notifications WHERE sent_at_ms >= ${sinceMs} ORDER BY seq DESC`
+          : sql`SELECT json FROM app_notifications WHERE app_id = ${app} AND sent_at_ms >= ${sinceMs} ORDER BY seq DESC`
+        ).pipe(
+          decodeRows(JsonRow),
+          Effect.map((rows) => rows.map((row) => decodeJson(AppNotification, row.json)))
+        )
+
+      const pruneAppNotifications = (app: AppId, beforeMs: number, keep: number) =>
+        Effect.gen(function* () {
+          yield* exec(sql`DELETE FROM app_notifications WHERE app_id = ${app} AND sent_at_ms < ${beforeMs}`)
+          yield* exec(sql`
+            DELETE FROM app_notifications WHERE app_id = ${app} AND seq NOT IN (
+              SELECT seq FROM app_notifications WHERE app_id = ${app} ORDER BY seq DESC LIMIT ${keep})`)
+        })
+
       const putRelay = (record: RelayRecord) =>
         exec(sql`
           INSERT INTO relays (id, created_at, json) VALUES (${record.id}, ${encodeJson(Schema.DateTimeUtc, record.createdAt)},
@@ -500,7 +585,9 @@ export class Store extends Context.Service<
           "mac",
           "usage_pause",
           "owner_archived",
-          "relays"
+          "relays",
+          "app_senders",
+          "app_notifications"
         ],
         clearSingleton,
         { discard: true }
@@ -550,6 +637,14 @@ export class Store extends Context.Service<
         pendingEvents,
         markDelivered,
         events,
+        putAppSender,
+        appSenders,
+        appSender,
+        appSenderFor,
+        putAppNotification,
+        appNotification,
+        appNotifications,
+        pruneAppNotifications,
         putRelay,
         relays,
         deleteRelay,

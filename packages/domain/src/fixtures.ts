@@ -5,8 +5,10 @@
  */
 import { DateTime } from "effect"
 import type { AgentEvent } from "./AgentEvent.ts"
+import type { AppNotification, AppSender } from "./AppNotifications.ts"
 import type { Integration } from "./Connections.ts"
 import type {
+  AppId,
   IntegrationId,
   LinkId,
   MediaId,
@@ -359,6 +361,72 @@ export const links: ReadonlyArray<AppLink> = [
     createdAt: at("2026-11-01T08:00:00Z"),
     updatedAt: at("2026-11-01T08:00:00Z"),
     openedAt: at("2026-11-02T07:40:00Z")
+  }
+]
+
+/** Morning Brief's digest notifies them itself (`dream notify setup morning-brief`), and they allowed it. */
+export const morningBriefNotificationsCard: AccessMessage = {
+  _tag: "Access",
+  id: "msg_briefnotify" as MessageId,
+  projectId: ids.brief,
+  createdAt: at("2026-10-21T17:00:00Z"),
+  notificationId: "2f0b8a52-3f7e-4d0c-9a51-6c1f4b9e7d21" as NotificationId,
+  request: {
+    _tag: "Notifications",
+    app: "morning-brief" as AppId,
+    name: "Morning Brief",
+    often: "Once a day, at 7",
+    icon: { _tag: "Symbol", name: "sun.horizon.fill" },
+    color: "orange"
+  },
+  why: "When today’s digest is ready",
+  state: { _tag: "Allowed", allowedAt: at("2026-10-21T17:04:00Z") }
+}
+
+export const morningBriefApp: AppSender = {
+  id: "morning-brief" as AppId,
+  name: "Morning Brief",
+  icon: { _tag: "Symbol", name: "sun.horizon.fill" },
+  color: "orange",
+  url: "https://morning-brief-k3x9q2.dream.example/",
+  why: "When today’s digest is ready",
+  often: "Once a day, at 7",
+  messageId: morningBriefNotificationsCard.id,
+  state: { _tag: "Allowed", allowedAt: at("2026-10-21T17:04:00Z") },
+  delivery: "immediate",
+  createdAt: at("2026-10-21T17:00:00Z")
+}
+
+export const morningBriefAppNotifications: ReadonlyArray<AppNotification> = [
+  {
+    id: "7c1e2d9a-41b6-4f3e-8a0d-2b5c9e6f1a01" as NotificationId,
+    app: morningBriefApp.id,
+    title: "Today’s digest: 6 newsletters, 5 minutes",
+    text: "Stratechery on Apple’s chip plans, Money Stuff on the bond rally, and a short one from Platformer.",
+    url: "https://morning-brief-k3x9q2.dream.example/digest/2026-11-04",
+    key: "digest",
+    outcome: "sent",
+    sentAt: at("2026-11-04T15:00:00Z"),
+    openedAt: at("2026-11-04T15:12:00Z")
+  },
+  {
+    id: "7c1e2d9a-41b6-4f3e-8a0d-2b5c9e6f1a02" as NotificationId,
+    app: morningBriefApp.id,
+    title: "Today’s digest: 4 newsletters, 3 minutes",
+    text: "A quiet day: Money Stuff, Matt Levine’s mailbag, and two short ones.",
+    url: "https://morning-brief-k3x9q2.dream.example/digest/2026-11-03",
+    key: "digest",
+    outcome: "sent",
+    sentAt: at("2026-11-03T15:00:00Z"),
+    replacedAt: at("2026-11-04T15:00:00Z")
+  },
+  {
+    id: "7c1e2d9a-41b6-4f3e-8a0d-2b5c9e6f1a03" as NotificationId,
+    app: morningBriefApp.id,
+    title: "Gmail stopped answering",
+    text: "Today’s digest is late; it will try again at 8.",
+    outcome: "quiet",
+    sentAt: at("2026-11-02T15:00:00Z")
   }
 ]
 

@@ -3,7 +3,13 @@
  * eyebrow and title as the card in Chat; more room, more context, and the
  * fastest ways to answer. "Something else…" (typed or dictated) lives only here.
  */
-import { type AccessMessage, accessHeading, type Project, type QuestionMessage } from "@dream/domain"
+import {
+  type AccessMessage,
+  type AccessRequest,
+  accessHeading,
+  type Project,
+  type QuestionMessage
+} from "@dream/domain"
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
 import { Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
@@ -48,6 +54,7 @@ import { BackPill, Button, Choices, Dot, GoogleButton, Icon, Lab, LinkButton, Si
 import { Markdown, MarkdownText } from "./Markdown.tsx"
 import { inlineLines } from "./markdownParse.ts"
 import { answerText } from "./Messages.tsx"
+import { AllowButtons, AppTile, isNotificationsCard, useOpenAppNotifications } from "./AppNotifications.tsx"
 import { color, gutter } from "./theme.ts"
 
 // ---------------------------------------------------------------------------
@@ -603,11 +610,80 @@ function NotNow(props: { readonly message: AccessMessage; readonly onBack: () =>
   )
 }
 
-export function ExpandedAccess(props: {
+type NotificationsRequest = Extract<AccessRequest, { readonly _tag: "Notifications" }>
+
+type ExpandedAccessProps = {
   readonly message: AccessMessage
   readonly project: Pick<Project, "title" | "icon"> | undefined
   readonly onBack: () => void
-}) {
+}
+
+export function ExpandedAccess(props: ExpandedAccessProps) {
+  return isNotificationsCard(props.message) ? (
+    <ExpandedNotifications {...props} message={props.message} />
+  ) : (
+    <ExpandedConnect {...props} />
+  )
+}
+
+/** An app asking to notify them: what it will say and how often, and Allow; once allowed, the way to its controls. */
+function ExpandedNotifications(
+  props: ExpandedAccessProps & { readonly message: AccessMessage & { readonly request: NotificationsRequest } }
+) {
+  const m = props.message
+  const app = m.request
+  const openSheet = useOpenAppNotifications()
+  const heading = accessHeading(m)
+  const allowed = m.state._tag === "Allowed"
+  const open = m.state._tag === "Open"
+  return (
+    <Shell
+      project={props.project}
+      onBack={props.onBack}
+      eyebrow={
+        <Eyebrow
+          text={open ? "Notifications" : allowed ? "Notifications · allowed" : "Notifications · not allowed"}
+          need={open}
+        />
+      }
+      title={heading.title}
+      titleSize={30}
+      body={
+        <>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 14 }}>
+            <AppTile app={app} size={48} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 17, fontWeight: "600", color: color.t1 }}>{app.name}</Text>
+              <Text style={{ fontSize: 14, color: color.t3, marginTop: 1 }}>{app.often}</Text>
+            </View>
+          </View>
+          <Lead style={{ color: color.t1 }}>{m.why}</Lead>
+          <Lead style={{ marginTop: 14 }}>
+            {`Its notifications come from ${app.name} itself, not from Dream’s messages, and tapping one opens ${app.name}. You can make it quiet, mute it for a day or turn it off whenever you like.`}
+          </Lead>
+        </>
+      }
+      bottom={
+        allowed ? (
+          <>
+            <Button
+              title="Notification settings"
+              onPress={() => {
+                props.onBack()
+                openSheet(m.projectId)
+              }}
+            />
+            <LinkButton title="Back to chat" onPress={props.onBack} />
+          </>
+        ) : (
+          <AllowButtons message={m} declinable={open} size="lg" />
+        )
+      }
+    />
+  )
+}
+
+function ExpandedConnect(props: ExpandedAccessProps) {
   const m = props.message
   const oauth = isOAuth(m.request)
   const keyFile = isKeyFile(m.request)

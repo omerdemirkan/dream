@@ -10,7 +10,10 @@
  */
 import { createServer } from "node:http"
 import {
+  type AccessMessage,
   type AppLink,
+  type AppNotification,
+  type AppSender,
   CurrentProject,
   InvalidRequest,
   LinkId,
@@ -51,6 +54,8 @@ const encode = <S extends Schema.Codec<unknown, unknown, never, never>>(schema: 
 const Handlers = SandboxRpcs.toLayer(
   Effect.gen(function* () {
     const start = yield* DateTime.now
+    const apps = yield* Ref.make<ReadonlyArray<AppSender>>([])
+    const sentByApps = yield* Ref.make<ReadonlyArray<AppNotification>>([])
     const status = yield* Ref.make<StatusCard>({
       phase: "new",
       phaseSince: start,
@@ -175,6 +180,81 @@ const Handlers = SandboxRpcs.toLayer(
           Effect.andThen(Effect.fail(new NotFound({ entity: "message", id: payload.messageId })))
         ),
       WithdrawNotification: (payload) => log("WithdrawNotification", payload),
+      // Apps that notify: allowed as soon as they're set up, since nobody is here to tap Allow.
+      SetUpAppNotifications: (payload) =>
+        log("SetUpAppNotifications", payload).pipe(
+          Effect.andThen(
+            Effect.gen(function* () {
+              const now = yield* DateTime.now
+              const card: AccessMessage = {
+                _tag: "Access",
+                id: MessageId.make(id("msg")),
+                projectId,
+                createdAt: now,
+                request: {
+                  _tag: "Notifications",
+                  app: payload.app,
+                  name: payload.name,
+                  often: payload.often,
+                  ...(payload.icon === undefined ? {} : { icon: payload.icon }),
+                  ...(payload.color === undefined ? {} : { color: payload.color })
+                },
+                why: payload.why,
+                state: { _tag: "Allowed", allowedAt: now }
+              }
+              const app: AppSender = {
+                id: payload.app,
+                name: payload.name,
+                ...(payload.icon === undefined ? {} : { icon: payload.icon }),
+                color: payload.color ?? "blue",
+                ...(payload.url === undefined ? {} : { url: payload.url }),
+                why: payload.why,
+                often: payload.often,
+                messageId: card.id,
+                state: { _tag: "Allowed", allowedAt: now },
+                delivery: "immediate",
+                createdAt: now
+              }
+              yield* Ref.update(apps, (list) => [...list.filter((a) => a.id !== app.id), app])
+              return { app, card }
+            })
+          )
+        ),
+      SendAppNotification: (payload) =>
+        log("SendAppNotification", payload).pipe(
+          Effect.andThen(
+            Effect.gen(function* () {
+              const app = (yield* Ref.get(apps)).find((a) => a.id === payload.app)
+              if (app === undefined) {
+                return yield* new InvalidRequest({ message: `No app "${payload.app}" is set up to notify them.` })
+              }
+              const notification: AppNotification = {
+                id: crypto.randomUUID() as AppNotification["id"],
+                app: app.id,
+                ...(payload.title === undefined ? {} : { title: payload.title }),
+                text: payload.text,
+                ...(payload.url === undefined ? {} : { url: payload.url }),
+                ...(payload.key === undefined ? {} : { key: payload.key }),
+                outcome: payload.quiet ? "quiet" : "sent",
+                sentAt: yield* DateTime.now
+              }
+              if (!payload.dryRun) yield* Ref.update(sentByApps, (list) => [notification, ...list])
+              return notification
+            })
+          )
+        ),
+      ListAppNotifications: (payload) =>
+        log("ListAppNotifications", payload).pipe(
+          Effect.andThen(
+            Effect.gen(function* () {
+              const keep = (app: string) => payload.app === undefined || app === payload.app
+              return {
+                apps: (yield* Ref.get(apps)).filter((a) => keep(a.id)),
+                notifications: (yield* Ref.get(sentByApps)).filter((n) => keep(n.app))
+              }
+            })
+          )
+        ),
       GetStatus: () => log("GetStatus", {}).pipe(Effect.andThen(Ref.get(status))),
       UpdateStatus: (payload) =>
         log("UpdateStatus", encode(SandboxRpcs.requests.get("UpdateStatus")!.payloadSchema, payload)).pipe(

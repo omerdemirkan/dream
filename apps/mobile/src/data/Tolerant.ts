@@ -14,7 +14,9 @@
  * clients use them. What they decode has the domain's types, so nothing else in the app changes.
  */
 import {
+  AppNotification,
   AppRpcs,
+  AppSender,
   Integration,
   Message,
   MessageId,
@@ -110,7 +112,9 @@ const tolerantSuccess: Partial<Record<RpcGroup.Rpcs<typeof AppRpcs>["_tag"], Sch
   ListMessages: Schema.Struct({ messages, hasEarlier: Schema.Boolean }),
   ListOpenAsks: lenientArray(OpenAsk),
   ListProjects: lenientArray(TolerantSummary),
-  ListIntegrations: lenientArray(Integration)
+  ListIntegrations: lenientArray(Integration),
+  // An app or notification in a shape a later API added is left out, rather than the whole sheet.
+  GetAppNotifications: Schema.Struct({ apps: lenientArray(AppSender), notifications: lenientArray(AppNotification) })
 }
 
 /**

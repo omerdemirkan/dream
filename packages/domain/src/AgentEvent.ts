@@ -5,8 +5,9 @@
  * plain-text rendering of the events that woke it (see `renderAgentEvent`).
  */
 import { DateTime, Schema } from "effect"
+import { AppNotificationLimits } from "./AppNotifications.ts"
 import { IntegrationAccess } from "./Connections.ts"
-import { EventId, LinkId, MessageId, WakeId } from "./Ids.ts"
+import { AppId, EventId, LinkId, MessageId, WakeId } from "./Ids.ts"
 import { QuestionAnswer } from "./Message.ts"
 import { UsageWindowName } from "./Usage.ts"
 import { WorkstreamRef } from "./Workstream.ts"
@@ -110,6 +111,28 @@ export const AgentEvent = Schema.TaggedUnion({
     previousTitle: Schema.optionalKey(Schema.String),
     /** `icon`: the new tile in words, e.g. "the SF Symbol dumbbell on a red tile". */
     tile: Schema.optionalKey(Schema.String)
+  },
+  /**
+   * They decided about one of the project's apps that notify (`dream notify setup`): allowed or declined its card,
+   * or changed how it reaches them. Their choice stays theirs. Added in November 2026; only projects whose agent set
+   * up an app (so a dreamd that knows it) get it.
+   */
+  AppNotificationsChanged: {
+    ...EventFields,
+    app: AppId,
+    name: Schema.String,
+    change: Schema.Literals(["allowed", "declined", "immediate", "quiet", "off", "muted"]),
+    /** `declined`: why, if they said. */
+    reason: Schema.optionalKey(Schema.String),
+    /** `muted`: until when. */
+    until: Schema.optionalKey(Schema.DateTimeUtc)
+  },
+  /** One of the project's apps went over a limit, so Dream is holding back what it sends. At most once a day an app. */
+  AppNotificationsHeld: {
+    ...EventFields,
+    app: AppId,
+    name: Schema.String,
+    limit: Schema.Literals(["hour", "day", "project"])
   }
 })
 export type AgentEvent = typeof AgentEvent.Type
@@ -260,7 +283,41 @@ export const renderAgentEvent = (event: AgentEvent, options: RenderOptions = {})
           ? `They changed the icon of your app link "${title}" (${linkId}, ${url}) to ${tile ?? "one of their own"}. ` +
             "The icon is theirs now."
           : `They removed your app link "${title}" (${url}) from their Home. It stays off: Dream won't take a new ` +
-            "link to that URL from this project, though they can put it back themselves."
+            "link to that URL from this project, though they can put it back themselves.",
+    AppNotificationsChanged: ({ app, name, change, reason, until }) => {
+      const who = `${name} (${app})`
+      switch (change) {
+        case "allowed":
+          return `They allowed ${who} to notify them. What it sends with \`dream notify --app ${app}\` reaches their phone now.`
+        case "declined":
+          return (
+            `They declined notifications from ${who}` +
+            (reason === undefined ? "." : `, and said why:\n${quote(reason)}\n`) +
+            " Nothing it sends reaches them. They can still allow it from its card, and `dream notify setup` asks " +
+            "again, which is worth it only with something different to offer."
+          )
+        case "immediate":
+          return `They set ${who} to notify them as usual again, with a sound.`
+        case "quiet":
+          return `They set ${who} to notify them quietly: its notifications go to Notification Center without a sound.`
+        case "off":
+          return (
+            `They turned off notifications from ${who}. Nothing it sends reaches them until they turn it back on; ` +
+            "Dream keeps what it sends in its history."
+          )
+        case "muted":
+          return `They muted ${who}${until === undefined ? "" : ` until ${formatEventTime(until, options)}`}.`
+      }
+    },
+    AppNotificationsHeld: ({ app, name, limit }) =>
+      `${name} (${app}) went over Dream's limit of ` +
+      (limit === "hour"
+        ? `${AppNotificationLimits.perAppHour} notifications an hour`
+        : limit === "day"
+          ? `${AppNotificationLimits.perAppDay} notifications a day`
+          : `${AppNotificationLimits.perProjectDay} notifications a day across this project's apps`) +
+      ", so what it sends past that stays in its history without reaching their phone. You hear this once a day " +
+      "at most. Check whether it sends more than it should."
   })
   return `[${time}] ${body}`
 }

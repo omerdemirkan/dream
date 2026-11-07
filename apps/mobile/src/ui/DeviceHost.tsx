@@ -6,12 +6,13 @@
  */
 import { NotificationId, ProjectId, RequestId } from "@dream/domain"
 import { useAtomMount, useAtomSet, useAtomValue } from "@effect/atom-react"
-import { Effect, Option, Schema } from "effect"
+import { DateTime, Effect, Option, Schema } from "effect"
 import * as Notifications from "expo-notifications"
 import { useRouter } from "expo-router"
 import { useEffect, useRef } from "react"
 import { AppState } from "react-native"
 import { DreamNative } from "../../modules/dream-native/index.ts"
+import { startOfTomorrow } from "../data/appNotifications.ts"
 import { showsWhileOpen } from "../data/notificationPresentation.ts"
 import { randomUuid } from "../data/Session.ts"
 import * as Push from "../platform/push.ts"
@@ -19,14 +20,17 @@ import { viewingProject } from "../platform/viewing.ts"
 import {
   cleanUpNotificationsFn,
   fixturePushesAtom,
+  openedAppNotificationFn,
   reconnectProjectsFn,
   refreshHomeFn,
   registerDeviceFn,
   registerLiveActivityFn,
-  replyFn
+  replyFn,
+  updateAppNotificationsFn
 } from "../state/atoms.ts"
 import { askPushAtom, landingAtom } from "../state/ui.ts"
 import { useAction, useToast } from "./actions.ts"
+import { useOpenAppPage } from "./AppNotifications.tsx"
 import { useOpenMessage } from "./hooks.ts"
 
 Notifications.setNotificationHandler({
@@ -52,6 +56,9 @@ export function DeviceHost() {
   const reconnect = useAtomSet(reconnectProjectsFn)
   // Replies typed into a notification: retried, and if they still fail, kept as a draft where they belong.
   const reply = useAction(replyFn).run
+  const updateApp = useAction(updateAppNotificationsFn).run
+  const opened = useAtomSet(openedAppNotificationFn)
+  const openPage = useOpenAppPage()
   const toast = useToast()
   const tokens = useRef<{ apnsToken?: string; pushToStartToken?: string }>({})
   useAtomMount(fixturePushesAtom)
@@ -111,6 +118,28 @@ export function DeviceHost() {
     if (handled.current === key) return
     handled.current = key
     const data = Push.pushDataOf(lastResponse.notification)
+    if (Option.isSome(data) && data.value._tag === "OpenApp") {
+      const { projectId, app, notificationId, url } = data.value
+      const name = lastResponse.notification.request.content.title ?? "This app"
+      const onFailure = () => toast(`Couldn’t change ${name}’s notifications. Try again from its project.`)
+      if (lastResponse.actionIdentifier === Push.MuteTodayAction) {
+        updateApp(
+          { projectId, app, mutedUntil: startOfTomorrow(DateTime.nowUnsafe()) },
+          { onSuccess: () => toast(`${name} is muted for today`), onFailure }
+        )
+      } else if (lastResponse.actionIdentifier === Push.TurnOffAction) {
+        updateApp(
+          { projectId, app, delivery: "off" },
+          { onSuccess: () => toast(`${name}’s notifications are off`), onFailure }
+        )
+      } else if (url !== undefined) {
+        openPage({ projectId, notificationId, url })
+      } else {
+        opened({ projectId, notificationId })
+        router.push({ pathname: "/project/[id]", params: { id: projectId, sheet: "notifications" } })
+      }
+      return
+    }
     if (Option.isNone(data) || data.value._tag !== "OpenMessage") return
     const { projectId, messageId } = data.value
     const category = lastResponse.notification.request.content.categoryIdentifier
@@ -148,7 +177,7 @@ export function DeviceHost() {
       setLanding(Option.some({ projectId, messageId, highlight: true, at: Date.now() }))
       router.push({ pathname: "/project/[id]", params: { id: projectId, tab: "chat" } })
     }
-  }, [lastResponse, reply, toast, open, router, setLanding])
+  }, [lastResponse, reply, toast, open, router, setLanding, updateApp, openPage, opened])
 
   // Pushes that arrive while the app is open: withdrawals, and news for Home's rows.
   useEffect(() => {

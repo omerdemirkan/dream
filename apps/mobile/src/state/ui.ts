@@ -54,6 +54,9 @@ export const toastAtom = Atom.make<Option.Option<Toast>>(Option.none()).pipe(Ato
 /** Bumped when a moment calls for asking to send notifications (a first idea, a first answer). */
 export const askPushAtom = Atom.make(0).pipe(Atom.keepAlive)
 
+/** The project whose Notifications sheet is up (its apps that notify, and what they sent). */
+export const appNotificationsSheetAtom = Atom.make<Option.Option<ProjectId>>(Option.none()).pipe(Atom.keepAlive)
+
 /** The access request whose decline sheet is up ("Why not?"). */
 export const declineAtom = Atom.make<Option.Option<AccessMessage>>(Option.none()).pipe(Atom.keepAlive)
 

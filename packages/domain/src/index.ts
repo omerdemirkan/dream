@@ -3,6 +3,7 @@
  * Worker / ProjectDO, and the sandbox (dreamd and the `dream` CLI).
  */
 export * from "./AgentEvent.ts"
+export * from "./AppNotifications.ts"
 export * from "./Auth.ts"
 export * from "./Connections.ts"
 export * from "./Errors.ts"

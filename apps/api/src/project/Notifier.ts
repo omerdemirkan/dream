@@ -4,6 +4,8 @@
  * that withdraw stale ones; and the Live Activity.
  */
 import {
+  type AppNotification,
+  type AppSender,
   askHeadline,
   InvalidRequest,
   type LiveActivityContent,
@@ -15,6 +17,7 @@ import {
 } from "@dream/domain"
 import { Context, DateTime, Effect, Layer, Option } from "effect"
 import { Projects } from "../db/Projects.ts"
+import { toHex, utf8 } from "../lib/Bytes.ts"
 import { Users } from "../db/Users.ts"
 import { Apns, type PushResult } from "../push/Apns.ts"
 import { Core } from "./Core.ts"
@@ -34,11 +37,16 @@ export const notificationText = (markdown: string): string => {
 
 const DismissAfterEndSeconds = 60 * 60
 
+const sha256Hex = (text: string): Effect.Effect<string> =>
+  Effect.promise(async () => toHex(new Uint8Array(await crypto.subtle.digest("SHA-256", utf8(text)))))
+
 export class Notifier extends Context.Service<
   Notifier,
   {
     /** Sends an alert about `message` to every device, as notification `id`. */
     readonly notify: (message: Message, id: NotificationId, category: NotificationCategory) => Effect.Effect<void>
+    /** Sends one of the project's apps' notifications to every device, titled with the app's name. */
+    readonly alertApp: (sender: AppSender, notification: AppNotification) => Effect.Effect<void>
     readonly withdraw: (ids: ReadonlyArray<NotificationId>) => Effect.Effect<void>
     /** Withdraws every notification sent for a message (answered, withdrawn, connected, declined). */
     readonly withdrawFor: (message: Message) => Effect.Effect<void>
@@ -103,6 +111,43 @@ export class Notifier extends Context.Service<
                 projectId: project.id,
                 messageId: message.id,
                 notificationId: id
+              })
+            })
+            .pipe(
+              Effect.flatMap(forget(token, "apns")),
+              Effect.catch((error) => Effect.logWarning("APNs alert failed", error.message))
+            )
+        }
+      })
+
+      const alertApp = Effect.fn("Notifier.alertApp")(function* (sender: AppSender, notification: AppNotification) {
+        const project = yield* core.project.pipe(Effect.orDie)
+        const { id, sentAt } = notification
+        yield* store.putNotification({ id, sentAt })
+        yield* projects.recordNotification({ id, userId: project.ownerId, projectId: project.id, sentAt })
+        // A newer one about the same thing replaces it on the lock screen; the id stays within APNs's 64 bytes.
+        const collapseId =
+          notification.key === undefined
+            ? undefined
+            : (yield* sha256Hex(`${project.id}/${sender.id}/${notification.key}`)).slice(0, 40)
+        for (const device of yield* devices) {
+          if (device.apnsToken === undefined) continue
+          const token = device.apnsToken
+          yield* apns
+            .alert(token, {
+              id,
+              title: sender.name,
+              subtitle: notification.title,
+              body: notification.text,
+              category: "app",
+              threadId: `${project.id}/${sender.id}`,
+              collapseId,
+              passive: notification.outcome === "quiet",
+              data: PushData.cases.OpenApp.make({
+                projectId: project.id,
+                app: sender.id,
+                notificationId: id,
+                ...(notification.url === undefined ? {} : { url: notification.url })
               })
             })
             .pipe(
@@ -256,7 +301,17 @@ export class Notifier extends Context.Service<
         yield* pushToActivities(record.value, visible, visible.needsYou !== undefined)
       })
 
-      return Notifier.of({ notify, withdraw, withdrawFor, startLive, updateLive, endLive, registerLive, asksChanged })
+      return Notifier.of({
+        notify,
+        alertApp,
+        withdraw,
+        withdrawFor,
+        startLive,
+        updateLive,
+        endLive,
+        registerLive,
+        asksChanged
+      })
     })
   )
 }

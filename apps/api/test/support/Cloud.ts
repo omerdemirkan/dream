@@ -239,5 +239,23 @@ export const makeCloud = (
 
     const close = Scope.close(scope, Exit.void)
 
-    return { world, db, d1, phone, session, sandbox, live, alarm, project, relay, discord, feed, workerContext, close }
+    return {
+      world,
+      db,
+      d1,
+      phone,
+      session,
+      sandbox,
+      live,
+      alarm,
+      project,
+      relay,
+      discord,
+      feed,
+      workerContext,
+      /** The Worker's HTTP handlers, for serving a real dreamd (`scripts/notify-standin.ts`). */
+      appHandler,
+      sandboxHandler,
+      close
+    }
   })

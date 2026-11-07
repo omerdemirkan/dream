@@ -129,6 +129,7 @@ export const askLine = (ask: AskMessage, status: StatusCard): string => {
   if (pinned) return needLine(pinned.what)
   if (ask._tag === "Question") return plainText(ask.question)
   const service = accessLabel(ask.request)
+  if (ask.request._tag === "Notifications") return `${service} asks to notify you`
   return ask.request._tag === "Apple"
     ? "Needs your App Store Connect key"
     : ask.request._tag === "Key" || ask.request._tag === "File"

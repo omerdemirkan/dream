@@ -106,6 +106,9 @@ export const WorkerSandboxHandlers = SandboxRpcs.toLayer(
             .map(toIntegration)
         }),
       WithdrawNotification: (payload) => forward((c) => c.WithdrawNotification(payload)),
+      SetUpAppNotifications: (payload) => forwardUnlessLeaking(payload, (c) => c.SetUpAppNotifications(payload)),
+      SendAppNotification: (payload) => forwardUnlessLeaking(payload, (c) => c.SendAppNotification(payload)),
+      ListAppNotifications: (payload) => forward((c) => c.ListAppNotifications(payload)),
       GetStatus: () => forward((c) => c.GetStatus()),
       UpdateStatus: (payload) => forwardUnlessLeaking(payload, (c) => c.UpdateStatus(payload)),
       ListWorkstreams: () => forward((c) => c.ListWorkstreams()),

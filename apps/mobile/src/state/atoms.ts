@@ -7,6 +7,8 @@
  */
 import {
   type AccessMessage,
+  type AppDelivery,
+  type AppId,
   type AppLink,
   type LinkColor,
   type LinkIcon,
@@ -25,7 +27,7 @@ import {
 } from "@dream/domain"
 import * as Application from "expo-application"
 import { getCalendars } from "expo-localization"
-import { Effect, Option, Redacted, Schema, Stream } from "effect"
+import { type DateTime, Effect, Option, Redacted, Schema, Stream } from "effect"
 import { Atom } from "effect/reactivity"
 import { AppClient } from "../data/AppClient.ts"
 import { type AnswerInput, Answers, asksChanged } from "../data/Answers.ts"
@@ -318,7 +320,7 @@ interface AccessRef {
   readonly messageId: MessageId
 }
 
-const accessChanged = { reactivityKeys: [...asksChanged, "integrations"] }
+const accessChanged = { reactivityKeys: [...asksChanged, "integrations", "app-notifications"] }
 
 export const startGoogleAccessFn = appRuntime.fn(
   Effect.fn(function* (input: AccessRef) {
@@ -364,6 +366,49 @@ export const declineAccessFn = appRuntime.fn(
     return yield* receivedAccess(yield* app.DeclineAccess(input).pipe(withWriteTimeout))
   }),
   accessChanged
+)
+
+// ---------------------------------------------------------------------------
+// Notifications from a project's apps
+// ---------------------------------------------------------------------------
+
+/** A project's apps that notify, and what they sent: the Notifications sheet, fetched when it opens. */
+export const appNotificationsAtom = Atom.family((projectId: ProjectId) =>
+  appRuntime
+    .atom(AppClient.use((app) => app.GetAppNotifications({ projectId })))
+    .pipe(Atom.withReactivity(["app-notifications"]))
+)
+
+/** "Allow" on an app's card, or in the sheet for one they declined. */
+export const allowAppNotificationsFn = appRuntime.fn(
+  Effect.fn(function* (input: AccessRef) {
+    const app = yield* AppClient
+    return yield* receivedAccess(yield* app.AllowAppNotifications(input).pipe(withWriteTimeout))
+  }),
+  accessChanged
+)
+
+/** Immediately, Quietly or Off, and Mute until a time (`null` unmutes), for one app. */
+export const updateAppNotificationsFn = appRuntime.fn(
+  Effect.fn(function* (input: {
+    readonly projectId: ProjectId
+    readonly app: AppId
+    readonly delivery?: AppDelivery
+    readonly mutedUntil?: DateTime.Utc | null
+  }) {
+    const app = yield* AppClient
+    return yield* app.UpdateAppNotifications(input).pipe(withWriteTimeout)
+  }),
+  { reactivityKeys: ["app-notifications"] }
+)
+
+/** They opened one of an app's notifications; nothing to report if that doesn't reach Dream. */
+export const openedAppNotificationFn = appRuntime.fn(
+  Effect.fn(function* (input: { readonly projectId: ProjectId; readonly notificationId: NotificationId }) {
+    const app = yield* AppClient
+    yield* app.OpenedAppNotification(input).pipe(Effect.ignore)
+  }),
+  { reactivityKeys: ["app-notifications"] }
 )
 
 /** A new key for a pasted or file key, from Settings. Sending the same key again changes nothing. */

@@ -129,6 +129,7 @@ export const reachesPerson: ReadonlySet<string> = new Set([
   "SendMessage",
   "AskQuestion",
   "RequestAccess",
+  "SetUpAppNotifications",
   "UpdateStatus",
   "StartLiveActivity",
   "UpdateLiveActivity",

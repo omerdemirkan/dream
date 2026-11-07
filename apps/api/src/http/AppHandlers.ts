@@ -336,6 +336,33 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
       DeclineAccess: ({ projectId, messageId, reason }) =>
         Effect.flatMap(me, (userId) => access.decline(userId, projectId, messageId, reason?.trim() || undefined)),
 
+      GetAppNotifications: ({ projectId }) =>
+        Effect.gen(function* () {
+          yield* owned(projectId)
+          return yield* clients.use(projectId, (client) => client.GetAppNotifications())
+        }),
+      AllowAppNotifications: ({ projectId, messageId }) =>
+        Effect.gen(function* () {
+          yield* owned(projectId)
+          return yield* clients.use(projectId, (client) => client.AllowAppNotifications({ messageId }))
+        }),
+      UpdateAppNotifications: ({ projectId, app, delivery, mutedUntil }) =>
+        Effect.gen(function* () {
+          yield* owned(projectId)
+          return yield* clients.use(projectId, (client) =>
+            client.UpdateAppNotifications({
+              app,
+              ...(delivery === undefined ? {} : { delivery }),
+              ...(mutedUntil === undefined ? {} : { mutedUntil })
+            })
+          )
+        }),
+      OpenedAppNotification: ({ projectId, notificationId }) =>
+        Effect.gen(function* () {
+          yield* owned(projectId)
+          return yield* clients.use(projectId, (client) => client.OpenedAppNotification({ notificationId }))
+        }),
+
       ListIntegrations: () => Effect.flatMap(me, access.list),
       ReplaceKey: ({ integrationId, key }) =>
         Effect.flatMap(me, (userId) => access.replaceKey(userId, integrationId, Redacted.value(key))),

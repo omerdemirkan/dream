@@ -4,10 +4,12 @@
  */
 import { Schema } from "effect"
 import { Rpc, RpcGroup } from "effect/rpc"
+import { AppDelivery, AppNotifications, AppSender } from "../AppNotifications.ts"
 import { AppAuth } from "../Auth.ts"
 import { ConnectLink, ConnectLinkProvider, Integration, ModelConnectFlow, ModelConnection } from "../Connections.ts"
 import { InvalidRequest, NoModelConnection, NotFound, NotInvited, Unauthorized, UpstreamFailure } from "../Errors.ts"
 import {
+  AppId,
   DeviceId,
   IntegrationId,
   LinkId,
@@ -345,6 +347,42 @@ export class AuthedAppRpcs extends RpcGroup.make(
     payload: { ...ProjectMessage, reason: Schema.optionalKey(DeclineReason) },
     success: AccessMessage,
     error: Schema.Union([NotFound, InvalidRequest])
+  }),
+
+  // Notifications from a project's apps ---------------------------------------
+  /** A project's apps that notify, with their controls, and the last 30 days of what they sent. */
+  Rpc.make("GetAppNotifications", {
+    payload: { projectId: ProjectId },
+    success: AppNotifications,
+    error: NotFound
+  }),
+  /**
+   * "Allow" on a `Notifications` card (open, or declined earlier). Allowing an allowed one returns it unchanged.
+   * "Not now" is `DeclineAccess`.
+   */
+  Rpc.make("AllowAppNotifications", {
+    payload: ProjectMessage,
+    success: AccessMessage,
+    error: Schema.Union([NotFound, InvalidRequest])
+  }),
+  /**
+   * How one app's notifications reach them: Immediately, Quietly or Off, and Mute until a time (`null` unmutes).
+   * From the Notifications sheet and the notification's own actions. `InvalidRequest` for an app they haven't allowed.
+   */
+  Rpc.make("UpdateAppNotifications", {
+    payload: {
+      projectId: ProjectId,
+      app: AppId,
+      delivery: Schema.optionalKey(AppDelivery),
+      mutedUntil: Schema.optionalKey(Schema.NullOr(Schema.DateTimeUtc))
+    },
+    success: AppSender,
+    error: Schema.Union([NotFound, InvalidRequest])
+  }),
+  /** They opened an app's notification, from the lock screen or the history, so the agent can see what gets read. */
+  Rpc.make("OpenedAppNotification", {
+    payload: { projectId: ProjectId, notificationId: NotificationId },
+    error: NotFound
   }),
 
   // Settings -----------------------------------------------------------------

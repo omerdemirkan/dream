@@ -6,7 +6,7 @@
  * puts a `PushData` value the app decodes to route the tap or clean up.
  */
 import { Schema } from "effect"
-import { MessageId, NotificationId, ProjectId } from "./Ids.ts"
+import { AppId, MessageId, NotificationId, ProjectId } from "./Ids.ts"
 
 /**
  * Top-level key for Dream's data in the APNs payload.
@@ -15,12 +15,24 @@ import { MessageId, NotificationId, ProjectId } from "./Ids.ts"
  */
 export const PushDataKey = "dream"
 
-export const NotificationCategory = Schema.Literals(["message", "question", "access"])
+/** `app`: from one of the project's apps (`dream notify`), with Mute and Turn off actions. Added in November 2026. */
+export const NotificationCategory = Schema.Literals(["message", "question", "access", "app"])
 export type NotificationCategory = typeof NotificationCategory.Type
 
 export const PushData = Schema.TaggedUnion({
   /** A visible notification about a message. Tapping it opens that message (expanded for questions and access). */
   OpenMessage: { projectId: ProjectId, messageId: MessageId, notificationId: NotificationId },
+  /**
+   * A notification from one of the project's apps. Tapping it opens `url` (on the project's published URL) full
+   * screen inside Dream, or without one the project's Notifications sheet. Added in November 2026: older apps don't
+   * decode it, so a tap just opens Dream.
+   */
+  OpenApp: {
+    projectId: ProjectId,
+    app: AppId,
+    notificationId: NotificationId,
+    url: Schema.optionalKey(Schema.String)
+  },
   /**
    * A silent push (`content-available: 1`) listing delivered notifications to
    * remove. Best effort: the app also asks `FilterStaleNotifications` when opened.

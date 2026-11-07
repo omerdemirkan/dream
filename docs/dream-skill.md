@@ -1,6 +1,6 @@
 ---
 name: dream
-description: Reaching the person and Dream from this sandbox — messages, questions, access to services, the Status card, workstreams, wake-ups, relays, publishing, app links on their Home, a browser, a Mac, and usage. Read it when you need any of these.
+description: Reaching the person and Dream from this sandbox — messages, questions, access to services, notifications from your apps, the Status card, workstreams, wake-ups, relays, publishing, app links on their Home, a browser, a Mac, and usage. Read it when you need any of these.
 ---
 
 # `dream`
@@ -83,7 +83,37 @@ this sandbox, including the apps you build. `dream <command> --help` lists every
   - When something this project asked for goes away, because they removed it in Settings or its provider stopped
     accepting it, you get an event, and your card for it says so; they can connect it again from that card. If it
     stopped working and they connect it again from another project, you get an event saying it's back.
-- `dream notify withdraw <id>` removes a notification that no longer applies. An answered question withdraws its own.
+- `dream notify withdraw <id>` removes a notification that no longer applies, yours or one of your apps'. An answered
+  question withdraws its own.
+
+## Notifications from your apps
+
+An app you build can notify them as itself, with no turn of yours involved, usually from a scheduled job
+(`dream wake --cron … --run "curl -fsS http://localhost:<port>/tasks/…"`).
+
+- `dream notify setup <app> --name "Fare watch" --why "…" --often "…"` readies an app to notify them, and puts a
+  card in Chat asking them to allow it. The card reads "Let Fare watch notify you", then `--why`, what it will tell
+  them, and `--often`, how often ("A few times a week at most"). Nothing from the app reaches them until they allow
+  it, and their answer arrives as an event; a decline may say why.
+  - `--icon` (an SF Symbol or one emoji) and `--color` draw its tile, as for `dream link`.
+  - `--url` is where a tap goes by default: a page of your published URL, opened full screen inside Dream. Without
+    one, a tap opens the notification in the project.
+  - Running it again for the same app updates its card, or asks again if they declined.
+- `dream notify --app <app> "…"` sends one, from any process here.
+  - The text is plain, and the lock screen shows about four lines of it. `--title` adds a bold headline above it,
+    and `--url` sends a tap to the page about this one.
+  - `--key` names what it's about. A newer one with the same key replaces the older on their lock screen instead of
+    stacking, so a price that keeps moving stays one notification.
+  - `--quiet` puts it in Notification Center without a sound, for what's worth finding but not worth an
+    interruption. `--dry-run` prints what would happen without sending.
+  - It prints what happened, and exits 0 whenever the app did its part, including when Dream held it back (their
+    settings, a limit, a repeat). It fails only when the call is wrong: an app that isn't set up, a URL off your
+    published one, or text that contains one of the project's file keys.
+- They can make an app quiet, turn it off or mute it for a day, from the notification itself or the project, and you
+  get an event when they do. Dream holds back anything past 6 an hour or 24 a day from one app (48 a day across the
+  project); those stay in its history, and you hear about it once that day.
+- `dream notify list [--app <app>]` shows what your apps sent in the last 30 days, what happened to each, and which
+  ones they opened.
 
 ## Status
 
