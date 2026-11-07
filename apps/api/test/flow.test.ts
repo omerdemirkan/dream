@@ -861,6 +861,58 @@ describe("a project, end to end", () => {
     })
   )
 
+  it.live("a scheduled task fires with its brief, and its run is recorded on the wake and in the ledger", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project } = yield* setup(cloud)
+      yield* cloud.alarm(project.id)
+      const dreamd = yield* cloud.sandbox(envFileOf(cloud, project.id).env.DREAM_PROJECT_TOKEN)
+      const at = DateTime.add(yield* DateTime.now, { milliseconds: 300 })
+      const task = { brief: "Write and publish this week's episode.", model: "sonnet", effort: "medium" as const }
+      const both = yield* Effect.flip(
+        dreamd.ScheduleWake({ when: { _tag: "At", at }, why: "Episode", run: "node x.js", task })
+      )
+      assert.strictEqual(both._tag, "InvalidRequest")
+      const wake = yield* dreamd.ScheduleWake({ when: { _tag: "At", at }, why: "Monday episode", task })
+      assert.deepStrictEqual(wake.task, task)
+
+      yield* Effect.sleep("400 millis")
+      yield* cloud.alarm(project.id)
+      const event: any = cloud.world.delivered.at(-1)!.events[0]
+      assert.strictEqual(event._tag, "WakeDue")
+      assert.deepStrictEqual(event.task, task)
+      assert.isUndefined(event.run)
+      // Like a command, a task starts no turn of the agent's: the phone doesn't say it's starting.
+      assert.strictEqual((yield* cloud.phone.ListProjects())[0]?.activity?.state, "idle")
+
+      const startedAt = yield* DateTime.now
+      yield* dreamd.ReportTask({
+        wakeId: wake.id,
+        startedAt,
+        endedAt: DateTime.add(startedAt, { minutes: 4 }),
+        outcome: "succeeded",
+        summary: "Published episode 12 with six stories.",
+        usage: { tokens: { input: 10, cacheRead: 900_000, cacheWrite: 40_000, output: 9_000 }, costUsd: 0.4 },
+        before: { provider: "claude", weekly: { usedPercent: 40 }, observedAt: startedAt },
+        after: { provider: "claude", weekly: { usedPercent: 41 }, observedAt: startedAt }
+      })
+      const [listed] = yield* dreamd.ListWakes()
+      assert.strictEqual(listed?.lastRun?.outcome, "succeeded")
+      assert.strictEqual(listed?.lastRun?.summary, "Published episode 12 with six stories.")
+      assert.strictEqual(listed?.lastRun?.usage?.costUsd, 0.4)
+      const rows = cloud.db.prepare("SELECT * FROM turn_usage").all() as Array<any>
+      assert.strictEqual(rows.length, 1)
+      assert.strictEqual(rows[0].wake_id, wake.id)
+      assert.strictEqual(rows[0].project_id, project.id)
+      assert.strictEqual(rows[0].cost_usd, 0.4)
+      assert.deepStrictEqual([rows[0].weekly_before_percent, rows[0].weekly_after_percent], [40, 41])
+      // It counts for the project like a turn.
+      const sheet = yield* cloud.phone.GetProjectUsage({ projectId: project.id })
+      assert.strictEqual(sheet.week.cacheReadTokens, 900_000)
+      yield* cloud.close
+    })
+  )
+
   it.live("a usage limit holds delivery until the reset, then wakes the agent", () =>
     Effect.gen(function* () {
       const cloud = yield* makeCloud()

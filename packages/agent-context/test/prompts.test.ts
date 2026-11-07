@@ -5,7 +5,14 @@ import { DateTime } from "effect"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { extractPrompts } from "../src/extract.ts"
-import { dreamSkill, renderSteerPrompt, renderTurnPrompt, systemPrompt } from "../src/index.ts"
+import {
+  dreamSkill,
+  renderSteerPrompt,
+  renderTaskPrompt,
+  renderTurnPrompt,
+  systemPrompt,
+  taskPrompt
+} from "../src/index.ts"
 
 const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf8")
 
@@ -13,10 +20,12 @@ describe("prompts", () => {
   it("match the docs (run `bun run --filter @dream/agent-context sync` if this fails)", () => {
     const expected = extractPrompts({
       agentContext: read("../../../docs/agent-context.md"),
-      dreamSkill: read("../../../docs/dream-skill.md")
+      dreamSkill: read("../../../docs/dream-skill.md"),
+      taskContext: read("../../../docs/task-context.md")
     })
     assert.strictEqual(systemPrompt, expected.systemPrompt)
     assert.strictEqual(dreamSkill, expected.dreamSkill)
+    assert.strictEqual(taskPrompt, expected.taskPrompt)
   })
 
   it("keep the system prompt body only, and the skill's frontmatter", () => {
@@ -114,5 +123,26 @@ This arrived while you were working:
 > Can the charts show estimated 1RM, not just the weight?
 `
     )
+  })
+})
+
+describe("renderTaskPrompt", () => {
+  it("gives the time where they are, then the agent's brief", () => {
+    const prompt = renderTaskPrompt({
+      why: "Monday episode",
+      brief: "Write and publish this week's episode.\n",
+      now: DateTime.makeUnsafe("2026-11-09T13:15:00Z"),
+      timeZone: "America/Los_Angeles"
+    })
+    assert.strictEqual(
+      prompt,
+      `It's Monday, November 9, 2026 at 5:15 AM where they are (America/Los_Angeles).
+
+The agent scheduled this job ("Monday episode"). Its brief:
+
+Write and publish this week's episode.
+`
+    )
+    assert.isTrue(taskPrompt.startsWith("You're running one job for a project in Dream"))
   })
 })

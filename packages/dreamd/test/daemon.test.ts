@@ -21,6 +21,7 @@ import { PageCheck, PageCheckError, PageLoad } from "../src/cli/PageCheck.ts"
 import { DreamdConfig } from "../src/Config.ts"
 import { layerWith } from "../src/Daemon.ts"
 import { Harness, type HarnessError, type TurnResult, TurnOutcome } from "../src/harness/Harness.ts"
+import { Tasks } from "../src/Tasks.ts"
 import { RelayForwarder } from "../src/Relays.ts"
 import { Shutdown } from "../src/Shutdown.ts"
 import { configRecord, daemonClient, fakeApi, freePort, noPageChecks, tempDir, userMessage } from "./support.ts"
@@ -68,6 +69,7 @@ const setup = Effect.gen(function* () {
     layerWith(
       Layer.mergeAll(
         Harness.layerTest({ turns, log }),
+        Tasks.layerNone,
         Shutdown.layerTest(),
         noPageChecks,
         AppTraffic.layerNone,
@@ -143,6 +145,41 @@ describe("dreamd", () => {
       assert.include(
         calls.find((call) => call.startsWith("SendMessage")),
         '"notify":true'
+      )
+    }).pipe(Effect.scoped)
+  )
+
+  it.live("schedules a task with its brief, model and effort, and refuses one without them", () =>
+    Effect.gen(function* () {
+      const { cli, waitFor } = yield* setup
+      yield* cli(
+        "wake",
+        "--cron",
+        "15 5 * * 1",
+        "--task",
+        "Write and publish this week's episode.",
+        "--model",
+        "sonnet",
+        "--effort",
+        "medium",
+        "Monday episode"
+      )
+      const calls = yield* waitFor((calls) => calls.some((call) => call.startsWith("ScheduleWake")))
+      assert.include(
+        calls.find((call) => call.startsWith("ScheduleWake")),
+        '"task":{"brief":"Write and publish this week\'s episode.","model":"sonnet","effort":"medium"}'
+      )
+      const refused = (...args: Array<string>) =>
+        cli(...args).pipe(
+          Effect.flip,
+          Effect.map((error) => error.message)
+        )
+      assert.include(yield* refused("wake", "--at", "2h", "--task", "x", "Episode"), "--model and --effort")
+      assert.include(yield* refused("wake", "--at", "2h", "--model", "sonnet", "Episode"), "go with --task")
+      assert.include(yield* refused("wake", "--at", "2h", "--run", "x", "--task", "y", "Episode"), "not both")
+      assert.include(
+        yield* refused("wake", "--task", "x", "--model", "sonnet", "--effort", "low", "Now"),
+        "--at or --cron"
       )
     }).pipe(Effect.scoped)
   )

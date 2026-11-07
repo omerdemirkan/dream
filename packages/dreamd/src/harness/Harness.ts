@@ -13,7 +13,7 @@ import type { HarnessAgentSession } from "@ai-sdk/harness/agent"
 import { createClaudeCode } from "@ai-sdk/harness-claude-code"
 import { createCodex } from "@ai-sdk/harness-codex"
 import { systemPrompt } from "@dream/agent-context"
-import { Harness as HarnessName, type TurnUsage } from "@dream/domain"
+import { Harness as HarnessName, type ReasoningEffort, type TurnUsage } from "@dream/domain"
 import {
   Cause,
   Context,
@@ -156,6 +156,29 @@ const writeClaudeSettings = (file: string) => {
   )
 }
 
+/**
+ * The harness adapter on Dream's pinned CLI, authenticated with the placeholder credential that egress replaces,
+ * at `effort`. Shared by the agent's session and scheduled tasks' (`Tasks.ts`).
+ */
+export const makeAdapter = (
+  name: HarnessName,
+  config: { readonly codexBaseUrl: Option.Option<string> },
+  effort: ReasoningEffort
+) => {
+  const auth = {
+    ...harnessAuth(name),
+    ...(name === "codex"
+      ? Option.match(config.codexBaseUrl, { onNone: () => ({}), onSome: (url) => ({ OPENAI_BASE_URL: url }) })
+      : {})
+  }
+  return name === "claude-code"
+    ? withPinnedCli("claude-code", createClaudeCode({ auth, effort }))
+    : withPinnedCli(
+        "codex",
+        createCodex({ auth, reasoningEffort: effort, codexConfig: { model_context_window: codexContextWindow } })
+      )
+}
+
 /** How long detaching from the session may take. */
 const detachTimeout = Duration.seconds(5)
 
@@ -179,28 +202,12 @@ const make = Effect.gen(function* () {
   )
   const name = config.harness
   if (name === "claude-code") yield* provide(writeClaudeSettings(path.join(config.home, ".claude", "settings.json")))
-  const auth = {
-    ...harnessAuth(name),
-    ...(name === "codex"
-      ? Option.match(config.codexBaseUrl, { onNone: () => ({}), onSome: (url) => ({ OPENAI_BASE_URL: url }) })
-      : {})
-  }
   const env = agentEnv(process.env, config)
   const { model, effort } = topLevel(name, config)
   yield* Effect.logInfo(`The agent runs on ${name}, model ${model}, effort ${effort}`)
 
   const agent = new HarnessAgent({
-    harness:
-      name === "claude-code"
-        ? withPinnedCli("claude-code", createClaudeCode({ auth, effort }))
-        : withPinnedCli(
-            "codex",
-            createCodex({
-              auth,
-              reasoningEffort: effort,
-              codexConfig: { model_context_window: codexContextWindow }
-            })
-          ),
+    harness: makeAdapter(name, config, effort),
     instructions: systemPrompt,
     skills: [skill],
     sandboxConfig: { workDir: "." },

@@ -112,7 +112,13 @@ export const DaemonServer = Layer.unwrap(
 // ---------------------------------------------------------------------------
 
 /** Calls only dreamd makes. */
-export const dreamdOnly: ReadonlySet<string> = new Set(["ReportTurn", "ReportUsage", "StayAwake", "Sleep"])
+export const dreamdOnly: ReadonlySet<string> = new Set([
+  "ReportTurn",
+  "ReportUsage",
+  "ReportTask",
+  "StayAwake",
+  "Sleep"
+])
 
 const RequestLine = Schema.fromJsonString(Schema.Struct({ _tag: Schema.Literal("Request"), tag: Schema.String }))
 const decodeRequestLine = Schema.decodeUnknownOption(RequestLine)

@@ -1,6 +1,6 @@
 /**
  * The per-turn model usage ledger (D1 `turn_usage`): each turn's tokens and the subscription windows before and
- * after it. Written by the ProjectDO when a turn finishes; read to estimate each project's share of a window
+ * after it, and each scheduled task's run (`wake_id`) the same way. Written by the ProjectDO when a turn or task finishes; read to estimate each project's share of a window
  * (`usage/Shares.ts`).
  */
 import {
@@ -10,7 +10,8 @@ import {
   type UsageSnapshot,
   type UsageWindow,
   type UsageWindowName,
-  UserId
+  UserId,
+  type WakeId
 } from "@dream/domain"
 import { Context, DateTime, Effect, Layer, Schema } from "effect"
 import { SqlClient } from "effect/sql"
@@ -57,6 +58,8 @@ export interface NewTurnUsage {
   readonly usage?: TurnUsage | undefined
   readonly before?: UsageSnapshot | undefined
   readonly after?: UsageSnapshot | undefined
+  /** A scheduled task's run (`dream wake --task`) rather than a turn of the project's own session. */
+  readonly wakeId?: WakeId | undefined
 }
 
 const ms = (at: DateTime.Utc | null): number | undefined => (at === null ? undefined : DateTime.toEpochMillis(at))
@@ -146,14 +149,14 @@ export class TurnUsageLog extends Context.Service<
             input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, cost_usd, subagents,
             before_observed_at, five_hour_before_percent, five_hour_before_resets_at, weekly_before_percent,
             weekly_before_resets_at, after_observed_at, five_hour_after_percent, five_hour_after_resets_at,
-            weekly_after_percent, weekly_after_resets_at, created_at)
+            weekly_after_percent, weekly_after_resets_at, wake_id, created_at)
           VALUES (${turn.id}, ${turn.userId}, ${turn.projectId}, ${turn.provider},
             ${DateTime.formatIso(turn.startedAt)}, ${DateTime.formatIso(turn.endedAt)},
             ${orNull(tokens?.input)}, ${orNull(tokens?.cacheRead)}, ${orNull(tokens?.cacheWrite)},
             ${orNull(tokens?.output)}, ${orNull(turn.usage?.costUsd)}, ${orNull(turn.usage?.subagents)},
             ${isoOrNull(turn.before?.observedAt)}, ${fiveBefore}, ${fiveBeforeResets}, ${weekBefore},
             ${weekBeforeResets}, ${isoOrNull(turn.after?.observedAt)}, ${fiveAfter}, ${fiveAfterResets},
-            ${weekAfter}, ${weekAfterResets}, ${now})
+            ${weekAfter}, ${weekAfterResets}, ${orNull(turn.wakeId)}, ${now})
           ON CONFLICT (id) DO NOTHING`)
       })
 

@@ -184,6 +184,18 @@ are active, the Status card shows a row for each in place of `--now`.
   - Once the command is done, and nothing else needs the sandbox, it goes back to sleep within seconds. So a quick
     check costs seconds of machine time, and checking every few minutes is fine. A wake-up without a command starts a
     turn, which sends the model your whole session before it does anything, so on a schedule it adds up.
+- `dream wake --cron "<expr>" --task "<brief>" --model <model> --effort <effort> "why"` (or `--at`) runs a task in
+  a session of its own when it fires, instead of waking you: a new conversation on the model and effort you give,
+  named as your subagents' are, that starts from the brief.
+  - It knows only the brief and what it finds in the project's files, so the brief carries what the job needs:
+    what to do, where things are, how to tell it went right, and whether to tell the person. `--task -` reads the
+    brief from stdin.
+  - It has the project's files and `dream`. It doesn't wake you when it succeeds. It wakes you with `dream wake`
+    when it can't do the job, and you're woken with its last words if it fails outright: an error, half an hour
+    without finishing, or a usage limit.
+  - Its last message is its report, which `dream wake list` shows under the wake with how the run went.
+  - Its tokens count for this project like a turn's, but it starts small instead of re-sending your session, so a
+    weekly episode or a morning digest written by a model costs what writing it takes.
 - `dream wake "why"` wakes you now. An app can call it, from an error handler say, whenever it's running, which is
   only while the sandbox is awake.
 - `dream wake list` and `dream wake cancel <id>` show and remove scheduled wake-ups.

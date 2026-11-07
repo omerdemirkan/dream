@@ -14,6 +14,7 @@ import { Deferred, Duration, Effect, Fiber, Layer, Queue, Ref, Schedule } from "
 import { DreamdConfig } from "../src/Config.ts"
 import { layerWith, main } from "../src/Daemon.ts"
 import { Harness, type HarnessError, type TurnResult, TurnOutcome } from "../src/harness/Harness.ts"
+import { Tasks } from "../src/Tasks.ts"
 import { makeSpawned, stopAll } from "../src/harness/LocalSandbox.ts"
 import { RelayForwarder } from "../src/Relays.ts"
 import { Shutdown } from "../src/Shutdown.ts"
@@ -35,6 +36,8 @@ const dreamd = (dir: string, envFile: string, apiPort: number, turns: Queue.Queu
         layerWith(
           Layer.mergeAll(
             Harness.layerTest({ turns, log }),
+            Tasks.layerNone,
+            Tasks.layerNone,
             Shutdown.layerTest({ grace: "300 millis" }),
             noPageChecks,
             AppTraffic.layerNone,

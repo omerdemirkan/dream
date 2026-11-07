@@ -35,6 +35,7 @@ import {
   type NotificationId,
   ProjectPhase,
   QuestionMessage,
+  ReasoningEffort,
   DiscordDefaultEvents,
   DiscordDefaultIntents,
   type IntegrationId,
@@ -1128,6 +1129,21 @@ const wake = Command.make(
       Flag.withDescription("A command to run when it fires; you're only woken if it fails."),
       Flag.optional
     ),
+    task: Flag.String("task").pipe(
+      Flag.withDescription(
+        'A task to run in a session of its own when it fires, from this brief alone: "-" reads it from stdin. ' +
+          "Needs --model and --effort. You're only woken if it fails, or if it wakes you."
+      ),
+      Flag.optional
+    ),
+    model: Flag.String("model").pipe(
+      Flag.withDescription("The task's model, named as your subagents' are."),
+      Flag.optional
+    ),
+    effort: Flag.Literals("effort", ReasoningEffort.literals).pipe(
+      Flag.withDescription("The task's reasoning effort."),
+      Flag.optional
+    ),
     json
   },
   (input) =>
@@ -1137,8 +1153,13 @@ const wake = Command.make(
       if (why === undefined || why.trim().length === 0) {
         return yield* fail('Say why: `dream wake "why"`, or `dream wake --at 2h "why"`.')
       }
+      if (Option.isSome(input.run) && Option.isSome(input.task)) return yield* fail("Use --run or --task, not both.")
+      if (Option.isNone(input.task) && (Option.isSome(input.model) || Option.isSome(input.effort))) {
+        return yield* fail("--model and --effort go with --task.")
+      }
       if (Option.isNone(input.at) && Option.isNone(input.cron)) {
         if (Option.isSome(input.run)) return yield* fail("--run needs --at or --cron.")
+        if (Option.isSome(input.task)) return yield* fail("--task needs --at or --cron.")
         yield* userFacing(dream.WakeNow({ why }))
         return yield* Console.log("Woke the agent.")
       }
@@ -1151,8 +1172,21 @@ const wake = Command.make(
               timeZone: Option.getOrUndefined(input.timeZone)
             })
           )
+      const taskText = input.task
+      const task = Option.isNone(taskText)
+        ? undefined
+        : yield* Effect.gen(function* () {
+            if (Option.isNone(input.model) || Option.isNone(input.effort)) {
+              return yield* fail(
+                "A task needs --model and --effort: the model and reasoning effort its session runs on."
+              )
+            }
+            const brief = (yield* readText(taskText.value)).trim()
+            if (brief.length === 0) return yield* fail("The task's brief is empty.")
+            return { brief, model: input.model.value, effort: input.effort.value }
+          })
       const scheduled = yield* userFacing(
-        dream.ScheduleWake(defined({ when, why, run: Option.getOrUndefined(input.run) }))
+        dream.ScheduleWake(defined({ when, why, run: Option.getOrUndefined(input.run), task }))
       )
       yield* show(input.json, Wake, scheduled, Format.scheduled(scheduled, yield* now))
     })
@@ -1162,7 +1196,11 @@ const wake = Command.make(
   ),
   Command.withExamples([
     { command: 'dream wake --at 2h "Check the deploy"' },
-    { command: 'dream wake --cron "0 7 * * *" "Send the morning summary"' }
+    { command: 'dream wake --cron "0 7 * * *" "Send the morning summary"' },
+    {
+      command:
+        'dream wake --cron "15 5 * * 1" --task - --model sonnet --effort medium "Monday episode" < episode-brief.md'
+    }
   ]),
   Command.withSubcommands([wakeList, wakeCancel])
 )

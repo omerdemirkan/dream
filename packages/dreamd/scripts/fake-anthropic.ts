@@ -19,10 +19,18 @@
  *
  * Point Claude Code at it with ANTHROPIC_BASE_URL=http://127.0.0.1:<port> (in dreamd's sandbox, through the `env`
  * of ~/.claude/settings.json). It prints one JSON line per request, with the model and effort asked for, never the
- * Authorization header.
+ * Authorization header. `persona` says which of Dream's system prompts the request carries ("agent" or "task").
  * Node built-ins only, so it runs from anywhere.
  */
 import { createServer } from "node:http"
+
+/** Which of Dream's system prompts the request carries, by its opening words: the agent's, or a scheduled task's. */
+const personaOf = (raw: string): "agent" | "task" | undefined =>
+  raw.includes("You're running one job for a project in Dream")
+    ? "task"
+    : raw.includes("You're the agent behind one project in Dream")
+      ? "agent"
+      : undefined
 
 const port = Number(process.argv[2] ?? 18789)
 
@@ -108,6 +116,7 @@ createServer((request, response) => {
   request.on("data", (chunk: Buffer) => chunks.push(chunk))
   request.on("end", () => {
     const path = (request.url ?? "").split("?")[0] ?? ""
+    let raw = ""
     let body: {
       model?: string
       messages?: ReadonlyArray<Message>
@@ -116,7 +125,8 @@ createServer((request, response) => {
       output_config?: { effort?: string }
     } = {}
     try {
-      body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}")
+      raw = Buffer.concat(chunks).toString("utf8")
+      body = JSON.parse(raw || "{}")
     } catch {
       // Not JSON; answered below by path.
     }
@@ -163,6 +173,7 @@ createServer((request, response) => {
         client: request.headers["user-agent"],
         model,
         effort: body.output_config?.effort,
+        persona: personaOf(raw),
         messages: messages.length,
         roles: messages.map((m) => m.role[0]).join(""),
         tools: body.tools?.length ?? 0,

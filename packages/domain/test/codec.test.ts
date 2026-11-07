@@ -10,6 +10,8 @@ import {
   type AgentActivity,
   accessHostProblem,
   AgentEvent,
+  EventId,
+  WakeId,
   keyFileNameFor,
   keyFileNameProblem,
   renderAgentEvent,
@@ -197,6 +199,29 @@ describe("JSON codecs", () => {
       sandboxKeyPath("telegram-bot-token"),
       Fixtures.telegramKeyFile.access._tag === "File" ? Fixtures.telegramKeyFile.access.path : ""
     )
+  })
+
+  it("carries a scheduled task on its wake, and tells the agent why it failed", () => {
+    const at = DateTime.makeUnsafe("2026-11-09T13:15:00Z")
+    const task = { brief: "Write and publish this week's episode.", model: "sonnet", effort: "medium" as const }
+    const due = AgentEvent.cases.WakeDue.make({
+      id: EventId.make("evt_task"),
+      at,
+      wakeId: WakeId.make("wak_task"),
+      why: "Monday episode",
+      task
+    })
+    const failed = AgentEvent.cases.WakeDue.make({
+      ...due,
+      task: { ...task, result: { reason: "it didn't finish within 30m", report: "Wrote the script; TTS hung." } }
+    })
+    for (const event of [due, failed]) assert.deepStrictEqual(roundTrip(AgentEvent, event).decoded, event)
+    assert.include(renderAgentEvent(failed), "Its task ran in a session of its own (sonnet, effort medium) and failed")
+    assert.include(renderAgentEvent(failed), "it didn't finish within 30m.")
+    assert.include(renderAgentEvent(failed), "> Wrote the script; TTS hung.")
+    // A wake from before tasks reads as it did.
+    const { task: _, ...plain } = due
+    assert.isFalse(renderAgentEvent(AgentEvent.cases.WakeDue.make(plain)).includes("session of its own"))
   })
 
   it("carries why they declined an access request, and reads declines from older apps without one", () => {

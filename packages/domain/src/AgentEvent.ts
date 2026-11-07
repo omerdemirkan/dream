@@ -10,6 +10,7 @@ import { IntegrationAccess } from "./Connections.ts"
 import { AppId, EventId, LinkId, MessageId, WakeId } from "./Ids.ts"
 import { QuestionAnswer } from "./Message.ts"
 import { UsageWindowName } from "./Usage.ts"
+import { TaskFailure, WakeTask } from "./Wake.ts"
 import { WorkstreamRef } from "./Workstream.ts"
 
 const EventFields = {
@@ -74,12 +75,16 @@ export const AgentEvent = Schema.TaggedUnion({
      */
     failure: Schema.optionalKey(Schema.String)
   },
-  /** A wake the agent scheduled came due. With `run`, the agent only sees it if the command failed. */
+  /**
+   * A wake the agent scheduled came due. With `run` or `task`, the agent only sees it if the command or the task
+   * failed. dreamd builds that don't know `task` take it for a plain wake and start a turn.
+   */
   WakeDue: {
     ...EventFields,
     wakeId: WakeId,
     why: Schema.String,
-    run: Schema.optionalKey(Schema.Struct({ command: Schema.String, result: Schema.optionalKey(RunResult) }))
+    run: Schema.optionalKey(Schema.Struct({ command: Schema.String, result: Schema.optionalKey(RunResult) })),
+    task: Schema.optionalKey(Schema.Struct({ ...WakeTask.fields, result: Schema.optionalKey(TaskFailure) }))
   },
   /** `dream wake "why"` from anywhere in the sandbox, typically an app's error handler. */
   Alert: { ...EventFields, reason: Schema.String },
@@ -261,8 +266,14 @@ export const renderAgentEvent = (event: AgentEvent, options: RenderOptions = {})
         : `They declined your access request ${messageId}, and said why:\n${quote(reason)}\n` +
           "Take that into account: find a way that doesn't need it, ask differently, or wait, whichever fits.",
     AccessRemoved: ({ label, access, failure }) => renderRemoved(label, access, failure),
-    WakeDue: ({ wakeId, why, run }) => {
+    WakeDue: ({ wakeId, why, run, task }) => {
       const head = `A wake-up you scheduled came due (${wakeId}): "${why}".`
+      if (task !== undefined) {
+        const ran = `${head} Its task ran in a session of its own (${task.model}, effort ${task.effort})`
+        if (task.result === undefined) return `${ran}.`
+        const report = task.result.report === undefined ? "" : ` What it said last:\n${quote(task.result.report)}`
+        return `${ran} and failed: ${task.result.reason}.${report}`
+      }
       if (run === undefined) return head
       if (run.result === undefined) return `${head} Its command was \`${run.command}\`.`
       return (

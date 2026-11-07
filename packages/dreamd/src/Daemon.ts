@@ -21,6 +21,7 @@ import { PageCheck } from "./cli/PageCheck.ts"
 import { Commands } from "./Commands.ts"
 import { DreamdConfig } from "./Config.ts"
 import { Harness } from "./harness/Harness.ts"
+import { Tasks } from "./Tasks.ts"
 import { Inbox } from "./Inbox.ts"
 import { Outreach } from "./Outreach.ts"
 import { Published } from "./Published.ts"
@@ -99,7 +100,7 @@ export const main = Effect.gen(function* () {
 
 /** Everything `main` needs, given the harness, how to shut down, the config and the platform. */
 export const layerWith = <E, R>(
-  base: Layer.Layer<Harness | Shutdown | PageCheck | AppTraffic | RelayForwarder, E, R>
+  base: Layer.Layer<Harness | Tasks | Shutdown | PageCheck | AppTraffic | RelayForwarder, E, R>
 ) =>
   Layer.mergeAll(DaemonServer, SocketServer).pipe(
     Layer.provideMerge(Awake.layer),
@@ -112,6 +113,7 @@ export const layerWith = <E, R>(
 export const layerWithoutConfig = layerWith(
   Layer.mergeAll(
     Harness.layer,
+    Tasks.layer,
     Shutdown.layer,
     AppTraffic.layer,
     PageCheck.layer.pipe(Layer.provide(FetchHttpClient.layer)),

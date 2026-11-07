@@ -47,7 +47,7 @@ import { ProjectPhase } from "../Project.ts"
 import { Relay, RelaySource, RelayTarget } from "../Relay.ts"
 import { Milestone, StatusCard } from "../Status.ts"
 import { TurnUsage, UsageSnapshot } from "../Usage.ts"
-import { Wake, WakeWhen } from "../Wake.ts"
+import { TaskReport, Wake, WakeTask, WakeWhen } from "../Wake.ts"
 import { Workstreams, WorkstreamTitle } from "../Workstream.ts"
 
 /** Absent leaves a field as it is; `null` clears it. */
@@ -219,9 +219,17 @@ export class SandboxRpcs extends RpcGroup.make(
   }),
 
   // Waking -----------------------------------------------------------------------
-  /** `dream wake --at <time>|--cron "<expr>" [--run "<command>"] "why"`. */
+  /**
+   * `dream wake --at <time>|--cron "<expr>" [--run "<command>" | --task "<brief>" --model <m> --effort <e>] "why"`.
+   * A wake has a `run` command or a `task`, not both.
+   */
   Rpc.make("ScheduleWake", {
-    payload: { when: WakeWhen, why: Schema.NonEmptyString, run: Schema.optionalKey(Schema.NonEmptyString) },
+    payload: {
+      when: WakeWhen,
+      why: Schema.NonEmptyString,
+      run: Schema.optionalKey(Schema.NonEmptyString),
+      task: Schema.optionalKey(WakeTask)
+    },
     success: Wake,
     error: InvalidRequest
   }),
@@ -391,6 +399,11 @@ export class SandboxRpcs extends RpcGroup.make(
       usage: Schema.optionalKey(TurnUsage)
     }
   }),
+  /**
+   * A scheduled task's session (`dream wake --task`) finished: its outcome, its last words and what it used of the
+   * model, which the ledger counts for the project like a turn.
+   */
+  Rpc.make("ReportTask", { payload: TaskReport.fields }),
   /**
    * Keep the sandbox up: a scheduled `--run` command is running, the published app is in use, or the app is taking
    * a relay's delivery ("relay", added after the first release). dreamd sends it about once a minute while any

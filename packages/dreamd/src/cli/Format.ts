@@ -238,8 +238,21 @@ const when = (wake: Wake, now: DateTime.Utc) =>
     ? time(wake.when.at, now)
     : `cron "${wake.when.expression}"${wake.when.timeZone === undefined ? "" : ` ${wake.when.timeZone}`}${wake.nextAt === undefined ? "" : `, next ${time(wake.nextAt, now)}`}`
 
+const lastRun = (wake: Wake, now: DateTime.Utc) => {
+  const run = wake.lastRun
+  if (run === undefined) return ""
+  const summary = run.summary === undefined ? "" : `: ${run.summary.replace(/\s+/g, " ").slice(0, 160)}`
+  return `\n  last run ${time(run.endedAt, now)} ${run.outcome}${summary}`
+}
+
 export const wake = (wake: Wake, now: DateTime.Utc): string =>
-  `${wake.id}: ${when(wake, now)}: "${wake.why}"${wake.run === undefined ? "" : `, runs \`${wake.run}\``}`
+  `${wake.id}: ${when(wake, now)}: "${wake.why}"` +
+  (wake.run === undefined ? "" : `, runs \`${wake.run}\``) +
+  (wake.task === undefined
+    ? ""
+    : `, runs a task (${wake.task.model}, effort ${wake.task.effort}): ${wake.task.brief.replace(/\s+/g, " ").slice(0, 80)}` +
+      (wake.task.brief.length > 80 ? "…" : "")) +
+  lastRun(wake, now)
 
 export const scheduled = (scheduled: Wake, now: DateTime.Utc): string => `Scheduled ${wake(scheduled, now)}.`
 

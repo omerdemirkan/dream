@@ -443,3 +443,15 @@ subscription with real models. No ChatGPT account is connected, so nothing on Co
 - Within a turn the first event comes with the first model response of a new CLI process; dreamd now reports it at
   once, and the Worker uses it as the turn's "before" when the stored reading is over ten minutes older than the
   turn (`freshBefore`).
+
+## Scheduled tasks in a session of their own (2026-11-07, feat/fresh-session-tasks; Claude Code 2.1.318, Codex 0.165.0)
+- `dream wake --task` runs through `@ai-sdk/harness`'s `HarnessAgent` like the agent's session, with its own
+  adapter instance (the effort is per adapter), `model`, `instructions: taskPrompt` and the `dream` skill, a new
+  `sessionId` and a new local sandbox session in the project directory; `session.destroy()` after the run. Both
+  harnesses work: `scripts/task-check.ts` on a test template (`dream-sandbox-tasks`), against `fake-anthropic.ts`
+  and `fake-responses.ts`, saw the task's requests on claude-sonnet-5-5/medium and gpt-6-luna/low carrying the
+  task prompt and never the agent's, `ReportTask` with tokens (Claude Code also with `costUsd`), no turn of the
+  agent's, and on Claude Code the task's own `dream wake` reaching the Worker as `WakeNow`.
+- Codex tasks report no usage readings (`before`/`after`): dreamd reads Codex's rate limits from the rollout of the
+  agent's thread, and doesn't look for the task's. The Worker then uses the latest stored reading as `after`.
+- Claude Code's `rate_limit_event` can name no window (status only); dreamd ignores those as readings.
