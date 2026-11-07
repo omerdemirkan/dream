@@ -262,6 +262,17 @@ const b64u = (bytes) => Buffer.from(bytes).toString("base64url")
     { headers: { authorization: "Bearer " + jwt } }).catch((e) => report({ ok: false, ...facts, problem: "App Store Connect unreachable: " + e.message }))
   const j = await asc.json().catch(() => ({}))
   const app = j.data?.[0]?.attributes
+  // The latest uploads and whether testers can install them: processing, then each build's TestFlight state.
+  if (asc.ok && app) {
+    const b = await fetch("https://api.appstoreconnect.apple.com/v1/builds?filter[app]=" + j.data[0].id +
+      "&sort=-uploadedDate&limit=4&fields[builds]=version,processingState,expired,uploadedDate,buildBetaDetail" +
+      "&include=buildBetaDetail&fields[buildBetaDetails]=internalBuildState,externalBuildState",
+      { headers: { authorization: "Bearer " + jwt } }).then((r) => r.json()).catch(() => ({}))
+    const beta = new Map((b.included ?? []).map((d) => [d.id, d.attributes]))
+    facts.builds = (b.data ?? []).map((d) => ({ build: d.attributes.version, uploaded: d.attributes.uploadedDate,
+      processing: d.attributes.processingState, expired: d.attributes.expired,
+      ...beta.get(d.relationships?.buildBetaDetail?.data?.id) }))
+  }
   report({ ok: asc.ok && !!app, ...facts, path: out, appStoreConnect: asc.status, app: app?.name,
     problem: asc.ok ? (app ? undefined : "no app record for " + bundleId)
       : "App Store Connect refused it (" + asc.status + "): " + (j.errors?.[0]?.detail ?? "") })
@@ -627,6 +638,10 @@ const main = async () => {
     const facts = `${report.bytes ?? "?"} bytes, mode ${report.mode ?? "?"} in a ${report.dirMode ?? "?"} directory, sha256 ${report.sha256 ?? "?"}…`
     if (!report.ok) throw new Error(`The key isn't usable: ${report.problem ?? "unknown"} (${facts})`)
     log(`Key arrived (${facts}); App Store Connect answered ${report.appStoreConnect} for "${report.app}"`)
+    for (const b of (report.builds as ReadonlyArray<Json> | undefined) ?? [])
+      log(
+        `  build ${b.build}, uploaded ${b.uploaded}: ${b.processing}${b.expired ? ", expired" : ""}; internal testing ${b.internalBuildState ?? "?"}, external ${b.externalBuildState ?? "?"}`
+      )
   } else if (state === "keyed") log("The key is already on the Mac")
 
   if (mode === "check") {
