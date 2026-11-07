@@ -86,6 +86,8 @@ const promptOf = (instructions: string | undefined, input: ReadonlyArray<Item>) 
       .map(marks)
       .filter((found) => found.length > 0),
     userMessages: users.length,
+    // What the last user message opens with, so a check can see what the turn's prompt started with.
+    opening: (users.at(-1) ?? "").trim().slice(0, 80),
     remembered: users.flatMap((text) => [...text.matchAll(/REMEMBER: (\w+)/g)].map((m) => m[1]))
   }
 }

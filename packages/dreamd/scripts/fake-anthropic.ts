@@ -62,6 +62,18 @@ const textOf = (message: Message): string =>
     ? message.content
     : message.content.map((block) => (block.type === "text" ? (block.text ?? "") : "")).join("\n")
 
+/** The start of a user message's own text, past the reminders Claude Code puts in it. */
+const openingOf = (message: Message | undefined): string =>
+  (message === undefined
+    ? []
+    : typeof message.content === "string"
+      ? [message.content]
+      : message.content.map((b) => b.text ?? "")
+  )
+    .map((text) => text.trim())
+    .find((text) => text !== "" && !text.startsWith("<"))
+    ?.slice(0, 80) ?? ""
+
 const sse = (events: ReadonlyArray<Record<string, unknown>>) =>
   events.map((event) => `event: ${String(event.type)}\ndata: ${JSON.stringify(event)}\n\n`).join("")
 
@@ -236,6 +248,8 @@ createServer((request, response) => {
         role,
         usage: usageOf[role],
         userMessages: userTexts.length,
+        // What the last user message opens with, so a check can see what the turn's prompt started with.
+        opening: openingOf(last),
         remembered,
         // Every `SKILL-MARK: <word>` in the conversation, oldest first: which skill listings and bodies it saw.
         skillMarks: messages.flatMap((m) =>

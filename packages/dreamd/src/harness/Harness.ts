@@ -39,6 +39,8 @@ import { codexContextWindow, topLevel } from "./Fleet.ts"
 import { agentEnv, harnessAuth } from "./HarnessEnv.ts"
 import { killAllNow, makeLocalSandboxSession, makeSpawned, stopAll } from "./LocalSandbox.ts"
 import { claudeSettings } from "./PersonChannel.ts"
+import * as Session from "./Session.ts"
+import { SavedSession } from "./Session.ts"
 import * as Skill from "./Skill.ts"
 import { drive, type Part, type TurnHandlers } from "./Turn.ts"
 import * as Tokens from "./TurnUsage.ts"
@@ -85,8 +87,15 @@ export class Harness extends Context.Service<
 >()("@dream/dreamd/Harness") {
   static readonly layer = Layer.effect(
     Harness,
-    Effect.suspend(() => make)
+    Effect.flatMap(Skill.dream, (skill) => make({ instructions: systemPrompt, skill }))
   )
+
+  /** The real harness on other guidance than `@dream/agent-context`'s, for checking how a change reaches it. */
+  static readonly layerWith = (guidance: { readonly instructions: string; readonly skill: Skill.Skill }) =>
+    Layer.effect(
+      Harness,
+      Effect.suspend(() => make(guidance))
+    )
 
   /**
    * A scripted harness: each turn takes the next script from `turns` and
@@ -127,20 +136,6 @@ export class Harness extends Context.Service<
 // ---------------------------------------------------------------------------
 // The real harness
 // ---------------------------------------------------------------------------
-
-const SavedSession = Schema.Struct({
-  harness: HarnessName,
-  sessionId: Schema.String,
-  resumeFrom: Schema.optionalKey(
-    Schema.Struct({
-      type: Schema.Literal("resume-session"),
-      harnessId: Schema.String,
-      specificationVersion: Schema.Literal("harness-v1"),
-      data: Schema.MutableJson
-    })
-  )
-})
-type SavedSession = typeof SavedSession.Type
 
 /** Turn off Claude Code's built-ins that can't work here (see `PersonChannel.ts`), keeping any other settings. */
 const writeClaudeSettings = (file: string) => {
@@ -191,11 +186,16 @@ export const makeAdapter = (
 /** How long detaching from the session may take. */
 const detachTimeout = Duration.seconds(5)
 
-const make = Effect.gen(function* () {
+const make = Effect.fnUntraced(function* ({
+  instructions,
+  skill
+}: {
+  readonly instructions: string
+  readonly skill: Skill.Skill
+}) {
   const config = yield* DreamdConfig
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
-  const skill = yield* Skill.dream
   const provide = <A, E>(effect: Effect.Effect<A, E, FileSystem.FileSystem | Path.Path>) =>
     effect.pipe(Effect.provideService(FileSystem.FileSystem, fs), Effect.provideService(Path.Path, path))
 
@@ -217,7 +217,7 @@ const make = Effect.gen(function* () {
 
   const agent = new HarnessAgent({
     harness: makeAdapter(name, config, effort),
-    instructions: systemPrompt,
+    instructions,
     skills: [skill],
     sandboxConfig: { workDir: "." },
     permissionMode: "allow-all",
@@ -235,6 +235,11 @@ const make = Effect.gen(function* () {
   const state = yield* Ref.make<SavedSession>(
     Option.getOrElse(saved, () => ({ harness: name, sessionId: `dream-${config.projectId}` }))
   )
+  const save = (session: SavedSession) =>
+    Ref.set(state, session).pipe(
+      Effect.andThen(provide(store.write(session))),
+      Effect.catch((error) => Effect.logError("Couldn't save the harness session", { error: String(error) }))
+    )
   const active = yield* Ref.make<Option.Option<HarnessAgentSession>>(Option.none())
 
   const open = Effect.fn("Harness.open")(function* () {
@@ -261,9 +266,8 @@ const make = Effect.gen(function* () {
           yield* Effect.logError("Couldn't resume the harness session; starting a new conversation", {
             error: error.message
           })
-          const fresh = { harness: name, sessionId: `dream-${config.projectId}-${Date.now()}` }
-          yield* Ref.set(state, fresh)
-          yield* provide(store.write(fresh)).pipe(Effect.ignore)
+          const fresh = Session.restart(current, `dream-${config.projectId}-${Date.now()}`)
+          yield* save(fresh)
           return yield* Effect.tryPromise({
             try: () => agent.createSession({ sessionId: fresh.sessionId, sandboxSession }),
             catch: (cause) => new HarnessError({ message: `The ${name} session didn't start: ${String(cause)}`, cause })
@@ -284,10 +288,11 @@ const make = Effect.gen(function* () {
         orElse: () => Effect.fail(`no answer within ${Duration.format(detachTimeout)}`)
       }),
       Effect.flatMap((resumeFrom) =>
-        Schema.decodeUnknownEffect(SavedSession)({ harness: name, sessionId: session.sessionId, resumeFrom })
+        Effect.flatMap(Ref.get(state), (current) =>
+          Schema.decodeUnknownEffect(SavedSession)({ ...current, sessionId: session.sessionId, resumeFrom })
+        )
       ),
-      Effect.tap((next) => Ref.set(state, next)),
-      Effect.flatMap((next) => provide(store.write(next))),
+      Effect.flatMap(save),
       Effect.catch((error) => Effect.logError("Couldn't save the harness session", { error: String(error) }))
     )
 
@@ -316,9 +321,30 @@ const make = Effect.gen(function* () {
       )
     )
 
+  // New guidance (a template refresh restarted dreamd with a new prompt or skill) carries over before the next turn.
+  const guidance = Session.guidanceOf(instructions, skill)
+  const carried = yield* Session.carryOver(yield* Ref.get(state), guidance, {
+    newSessionId: `dream-${config.projectId}-${Date.now()}`,
+    handoff: Effect.flatMap(savedString("threadId"), (threadId) =>
+      provide(Session.codexHandoff(path.join(config.home, ".codex"), threadId))
+    )
+  })
+  if (Option.isSome(carried)) {
+    const next = carried.value
+    yield* Effect.logInfo(
+      next.sessionId === (yield* Ref.get(state)).sessionId
+        ? "The agent's guidance changed; its session goes on with it"
+        : "The agent's guidance changed; starting a new conversation with a handoff from the last",
+      { guidance }
+    )
+    yield* save(next)
+  }
+
   const turn = Effect.fn("Harness.turn")(function* (prompt: string, handlers: TurnHandlers) {
     const startedAt = yield* DateTime.now
-    const resumed = (yield* Ref.get(state)).resumeFrom !== undefined
+    const before = yield* Ref.get(state)
+    const resumed = before.resumeFrom !== undefined
+    const preamble = before.preamble
     const session = yield* open()
     const usage = yield* Ref.make<Usage.UsageReading>({})
     const tally = yield* Ref.make(Tokens.emptyTally)
@@ -386,7 +412,13 @@ const make = Effect.gen(function* () {
       })
     const consume = drive(
       {
-        start: streamOf(() => agent.stream({ session, prompt, abortSignal: controller.signal })),
+        start: streamOf(() =>
+          agent.stream({
+            session,
+            prompt: preamble === undefined ? prompt : `${preamble}\n${prompt}`,
+            abortSignal: controller.signal
+          })
+        ),
         // A tool message ending the input continues the paused turn instead of starting one.
         answer: (results) =>
           streamOf(() =>
@@ -407,6 +439,10 @@ const make = Effect.gen(function* () {
       Effect.ensuring(detach(session)),
       Effect.exit
     )
+    // Once the agent got going, it has read the preamble.
+    if (preamble !== undefined && (yield* Ref.get(progressed))) {
+      yield* save(Session.delivered(yield* Ref.get(state)))
+    }
     if (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)) return yield* Effect.interrupt
 
     if (name === "codex") {
