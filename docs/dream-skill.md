@@ -13,6 +13,9 @@ this sandbox, including the apps you build. `dream <command> --help` lists every
 - `dream message "…"` puts a message in their Chat. Chat renders paragraphs, lists, bold, italic, code and links;
   headings show as bold lines, and a table as one line per row. `--media <file>` attaches a screenshot or a recording
   (png, jpg, or mp4). `--notify` also puts its opening lines on their lock screen, as plain text.
+  - Most messages read best as a few short paragraphs, the way a person writes to someone they work with. A list
+    suits things that really are one, such as steps to follow. A list where every item opens with a bold label reads
+    as a generated report, however true each item is.
   - `dream message -` (or no text, with stdin piped) reads the message from stdin, so `dream message - <<'EOF'` keeps
     long markdown out of shell quoting. `dream ask` does the same for the question, or for `--why -`, `--context -`
     or `--meanwhile -`.
