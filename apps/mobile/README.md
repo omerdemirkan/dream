@@ -82,6 +82,7 @@ xcrun simctl launch --terminate-running-process booted build.omer.dream \
 | `/new?starter=run-club-bot` | New idea filled with a starter's draft, the cursor after it. Ids are in `src/data/ideas.ts` |
 | `/project/<id>?sheet=usage` | The usage sheet over the project (the ring in its header opens it) |
 | `/project/<id>?sheet=notifications` | The Notifications sheet: the project's apps that notify, their controls, what they sent (the bell opens it) |
+| `/project/<id>?tab=chat&attach=sample` · `/new?attach=sample` | Chat's composer, or a new idea, with two photos and a PDF attached (uploading, then ready) |
 | `/connect` · `/settings` | Subscription connect flow; settings, with the plan card at the top |
 
 Message ids: `msg_cabinrule`, `msg_cabinpick`, `msg_gcal` (Cabin), `msg_apple` (Lift Log), `msg_gmail` and
@@ -101,7 +102,8 @@ Spotify), `spotify-stopped` (Lift Log's Spotify connection stopped working: its 
 `unsupported-message`, `now-two-lines` and `now-three-lines` (Lift Log's now sentence on two lines, and cut at two), `long-chat` (an afternoon of Lift Log messages to read back through: open
 `/project/prj_liftlog?land=msg_long8` and the Status card folds to one line), `stall-next-write` (the next answer, message, new idea, key or decline hangs until the app
 gives up after 25 s; the retry goes through), `archived` (Recipe Scaler and Morning Brief are archived: off Home,
-listed under Archived in Settings). `no-projects` is a new person's Home: no projects and no app links, so the words and the drawn arrow lead to the input.
+listed under Archived in Settings). `attachments-sent` adds a message to Lift Log with two photos and a PDF, and the agent's
+reply. `no-projects` is a new person's Home: no projects and no app links, so the words and the drawn arrow lead to the input.
 
 App links (Deck v3 option A, "Dock"): the row of app icons under Home's header. The sample world has four (three
 made by agents, Cabin's still new with its dot, and Train times, which the person added back when the app let them).
