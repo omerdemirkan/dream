@@ -516,6 +516,51 @@ export const questionWithContext = (projectId: Project["id"], now: DateTime.Utc)
   state: { _tag: "Open" }
 })
 
+/** Their attachments in `sentWithAttachments`: two photos (bundled in fixtures) and a PDF. */
+export const sampleSent = {
+  board: {
+    id: "med_attboard" as MediaId,
+    name: "IMG_2041.png",
+    contentType: "image/png",
+    sizeBytes: 412_000,
+    width: 480,
+    height: 640
+  },
+  list: {
+    id: "med_attlist" as MediaId,
+    name: "IMG_2042.png",
+    contentType: "image/png",
+    sizeBytes: 388_000,
+    width: 480,
+    height: 640
+  },
+  log: { id: "med_attlog" as MediaId, name: "lifts-2024.pdf", contentType: "application/pdf", sizeBytes: 86_016 }
+} as const
+
+/** Lift Log: they send last year's log as photos and a PDF, and the agent answers. */
+export const sentWithAttachments = (projectId: Project["id"], now: DateTime.Utc): ReadonlyArray<TextMessage> => [
+  {
+    _tag: "Text",
+    id: msg("msg_attsent"),
+    projectId,
+    createdAt: DateTime.subtract(now, { minutes: 2 }),
+    from: "user",
+    text: "Here’s my old log, two pages and the spreadsheet",
+    media: [],
+    attachments: [sampleSent.board, sampleSent.list, sampleSent.log],
+    seenAt: DateTime.subtract(now, { minutes: 2 })
+  },
+  {
+    _tag: "Text",
+    id: msg("msg_attreply"),
+    projectId,
+    createdAt: now,
+    from: "agent",
+    text: "Got all three. I’ll import 2024 from the PDF and use the pages to fill in March, which the sheet is missing.",
+    media: []
+  }
+]
+
 /**
  * An afternoon of back-and-forth in Lift Log, ending `before` (the Health import update), so Chat is long enough
  * to read back through. `msg_long1` opens it.

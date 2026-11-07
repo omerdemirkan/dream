@@ -18,6 +18,8 @@ import {
   type AgentActivity,
   AppAuth,
   type ArchivedProject,
+  type Attachment,
+  AttachmentLimits,
   AppRpcs,
   CurrentUser,
   type Device,
@@ -25,6 +27,7 @@ import {
   type Integration,
   type IntegrationAccess,
   isOpenAsk,
+  type MediaId,
   type Message,
   type MessageId,
   type ModelConnection,
@@ -38,11 +41,13 @@ import {
   type ProjectId,
   type ProjectSummary,
   type PushData,
+  safeAttachmentName,
   sandboxKeyPath,
   type QuestionMessage,
   type StatusCard,
   type TextMessage,
   Unauthorized,
+  uniqueAttachmentNames,
   type User,
   type WorkstreamId
 } from "@dream/domain"
@@ -59,6 +64,7 @@ import {
   makeWorld,
   newIntegrationId,
   questionWithContext,
+  sentWithAttachments,
   vagueAccess
 } from "./fixtures.ts"
 import {
@@ -123,7 +129,8 @@ export const Scenario = [
   "workstreams-many",
   "workstreams-one",
   "notify-ask",
-  "notify-app"
+  "notify-app",
+  "attachments-sent"
 ] as const
 export type Scenario = (typeof Scenario)[number]
 
@@ -208,6 +215,18 @@ export class FakeBackend extends Context.Service<
         })
       let counter = 0
       const nextId = (prefix: string) => `${prefix}_fake${++counter}`
+      /** Attachments started with `CreateAttachmentUpload`; the fake takes them as uploaded at once. */
+      const uploads = new Map<string, Attachment>()
+      const attached = (ids: ReadonlyArray<MediaId> | undefined) =>
+        Effect.gen(function* () {
+          const found: Array<Attachment> = []
+          for (const id of ids ?? []) {
+            const attachment = uploads.get(id)
+            if (attachment === undefined) return yield* new InvalidRequest({ message: `There's no attachment ${id}.` })
+            found.push(attachment)
+          }
+          return uniqueAttachmentNames(found)
+        })
 
       let user: User
       let records = new Map<ProjectId, ProjectRecord>()
@@ -503,6 +522,30 @@ export class FakeBackend extends Context.Service<
             user: { ...user, email, ...(name ? { name } : {}) }
           }),
         GetMe: () => Effect.sync(() => user),
+        CreateAttachmentUpload: ({ name, contentType, sizeBytes, width, height }) =>
+          Effect.gen(function* () {
+            if (sizeBytes > AttachmentLimits.maxBytes) {
+              return yield* new InvalidRequest({ message: "That file is over 25 MB, the most Dream can take." })
+            }
+            const attachment: Attachment = {
+              id: nextId("med") as MediaId,
+              name: safeAttachmentName(name),
+              contentType,
+              sizeBytes,
+              ...(width === undefined ? {} : { width }),
+              ...(height === undefined ? {} : { height })
+            }
+            uploads.set(attachment.id, attachment)
+            return {
+              attachment,
+              upload: {
+                url: `https://fixtures.invalid/attachments/${attachment.id}`,
+                method: "PUT" as const,
+                headers: { "content-type": contentType },
+                expiresAt: DateTime.add(yield* DateTime.now, { minutes: 15 })
+              }
+            }
+          }),
         RegisterDevice: (payload) =>
           Effect.gen(function* () {
             const device: Device = {
@@ -580,9 +623,10 @@ export class FakeBackend extends Context.Service<
               return summaryOf(record)
             })
           ),
-        CreateProject: ({ idea, harness }) =>
+        CreateProject: ({ idea, harness, attachments: attachmentIds }) =>
           stallable(
             Effect.gen(function* () {
+              const attachments = yield* attached(attachmentIds)
               const now = yield* DateTime.now
               const id = nextId("prj") as ProjectId
               const project: Project = {
@@ -610,6 +654,7 @@ export class FakeBackend extends Context.Service<
                     from: "user",
                     text: idea,
                     media: [],
+                    ...(attachments.length === 0 ? {} : { attachments }),
                     seenAt: now
                   }
                 ],
@@ -742,10 +787,14 @@ export class FakeBackend extends Context.Service<
             const from = Math.max(0, until - (limit ?? 50))
             return { messages: record.messages.slice(from, until).reverse(), hasEarlier: from > 0 }
           }),
-        SendMessage: ({ projectId, text, workstream }) =>
+        SendMessage: ({ projectId, text, workstream, attachments: attachmentIds }) =>
           stallable(
             Effect.gen(function* () {
               const record = yield* find(projectId)
+              const attachments = yield* attached(attachmentIds)
+              if (text.trim().length === 0 && attachments.length === 0) {
+                return yield* new InvalidRequest({ message: "Write something or attach a file first." })
+              }
               // As the ProjectDO does: a workstream the project doesn't have is left off.
               const into = record.status.workstreams?.find((w) => w.id === workstream)?.id
               const message: TextMessage = {
@@ -756,6 +805,7 @@ export class FakeBackend extends Context.Service<
                 from: "user",
                 text,
                 media: [],
+                ...(attachments.length === 0 ? {} : { attachments }),
                 ...(into === undefined ? {} : { workstream: into })
               }
               yield* setMessage(record, message)
@@ -763,7 +813,13 @@ export class FakeBackend extends Context.Service<
               yield* later(
                 taken + 3,
                 Effect.gen(function* () {
-                  yield* agentText(record, "Noted. I’ll fold that in and show you when it’s ready.", into)
+                  yield* agentText(
+                    record,
+                    attachments.length === 0
+                      ? "Noted. I’ll fold that in and show you when it’s ready."
+                      : `Got ${attachments.length === 1 ? "it" : `all ${attachments.length}`}. I’ll work from ${attachments.length === 1 ? "that" : "those"} and show you when it’s ready.`,
+                    into
+                  )
                   yield* endTurn(record)
                 })
               )
@@ -1433,6 +1489,12 @@ export class FakeBackend extends Context.Service<
             const cabin = Array.from(records.values()).find((r) => r.project.slug === "cabin")
             if (!cabin || cabin.messages.some((m) => m.id === "msg_cabinhold")) return
             return yield* setMessage(cabin, cabinHold(cabin.project.id, now))
+          }
+          case "attachments-sent": {
+            const lift = Array.from(records.values()).find((r) => r.project.slug === "lift-log")
+            if (!lift || lift.messages.some((m) => m.id === "msg_attsent")) return
+            for (const message of sentWithAttachments(lift.project.id, now)) yield* setMessage(lift, message)
+            return
           }
           case "long-chat": {
             // Lift Log: an afternoon of messages before the Health import, so Chat has history to read back through.

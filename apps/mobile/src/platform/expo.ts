@@ -7,6 +7,7 @@ import { Effect, Layer, Option } from "effect"
 import { Socket } from "effect/socket"
 import type { Platform } from "../data/AppLayer.ts"
 import { SecureStorage, StorageError } from "../data/SecureStorage.ts"
+import { fileTransfer } from "./attachments.ts"
 
 // Readable after the first unlock, so work done in the background (a silent
 // push, a Live Activity token) can still reach the session.
@@ -40,5 +41,6 @@ const streamingFetch = ((input, init) => expoFetch(input as string, init as neve
 export const expoPlatform: Platform = {
   storage,
   webSocket: Socket.layerWebSocketConstructorGlobal,
-  fetch: streamingFetch
+  fetch: streamingFetch,
+  fileTransfer
 }

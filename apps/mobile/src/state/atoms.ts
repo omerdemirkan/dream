@@ -14,6 +14,7 @@ import {
   type LinkIcon,
   type LinkId,
   type IntegrationId,
+  type MediaId,
   type Message,
   type MessageId,
   type ModelConnectionId,
@@ -197,7 +198,11 @@ export const refreshHomeFn = appRuntime.fn(
 
 /** `requestId` stays the same when they retry the same idea, so a retry can't start a second project. */
 export const createProjectFn = appRuntime.fn(
-  Effect.fn(function* (input: { readonly idea: string; readonly requestId: RequestId }) {
+  Effect.fn(function* (input: {
+    readonly idea: string
+    readonly requestId: RequestId
+    readonly attachments?: ReadonlyArray<MediaId>
+  }) {
     const app = yield* AppClient
     return yield* app.CreateProject(input).pipe(withWriteTimeout)
   }),
@@ -263,6 +268,8 @@ export const sendMessageFn = appRuntime.fn(
     readonly requestId: RequestId
     /** Written into one of the agent's workstreams. */
     readonly workstream?: WorkstreamId
+    /** Uploaded photos and files that go with it. */
+    readonly attachments?: ReadonlyArray<MediaId>
   }) {
     const app = yield* AppClient
     const message = yield* app.SendMessage(input).pipe(withWriteTimeout)

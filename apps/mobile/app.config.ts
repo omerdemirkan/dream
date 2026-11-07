@@ -100,6 +100,14 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     "expo-localization",
     "expo-web-browser",
     [
+      "expo-image-picker",
+      {
+        photosPermission: "Dream lets you attach photos to what you send, so the agent can see them.",
+        cameraPermission: false,
+        microphonePermission: false
+      }
+    ],
+    [
       "expo-speech-recognition",
       {
         microphonePermission: "Dream uses the microphone so you can dictate instead of typing.",

@@ -16,6 +16,7 @@ import { Duration, Effect, Fiber, FileSystem, Layer, Option, Path, Stream } from
 import { FetchHttpClient } from "effect/http"
 import { Agent } from "./Agent.ts"
 import { Api } from "./Api.ts"
+import { Attachments } from "./Attachments.ts"
 import { AppTraffic, Awake } from "./Awake.ts"
 import { PageCheck } from "./cli/PageCheck.ts"
 import { Commands } from "./Commands.ts"
@@ -106,7 +107,15 @@ export const layerWith = <E, R>(
     Layer.provideMerge(Awake.layer),
     Layer.provideMerge(Layer.mergeAll(Agent.layer, Commands.layer)),
     Layer.provideMerge(Published.layer),
-    Layer.provideMerge(Layer.mergeAll(Inbox.layer, Api.layer, Outreach.layer, base))
+    Layer.provideMerge(
+      Layer.mergeAll(
+        Inbox.layer,
+        Api.layer,
+        Outreach.layer,
+        Attachments.layer.pipe(Layer.provide(FetchHttpClient.layer)),
+        base
+      )
+    )
   )
 
 /** Everything `main` needs, given the config and the platform. */

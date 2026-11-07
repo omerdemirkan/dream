@@ -2,7 +2,8 @@
  * Everything the app's data layer needs, for either backend.
  *
  * The platform supplies the keychain, a fetch that can stream response bodies,
- * and the WebSocket constructor; tests supply in-memory and Node versions.
+ * the WebSocket constructor, and a way to upload files; tests supply in-memory
+ * and Node versions.
  */
 import { Layer } from "effect"
 import { FetchHttpClient } from "effect/http"
@@ -12,6 +13,7 @@ import { AppClientFake, LiveProjectsFake } from "../fake/layers.ts"
 import { AppClient } from "./AppClient.ts"
 import { AppConfig, type AppConfigShape } from "./AppConfig.ts"
 import { Answers } from "./Answers.ts"
+import { AttachmentUploads, FileTransfer } from "./AttachmentUploads.ts"
 import { LiveProjects } from "./LiveProjects.ts"
 import { ProjectArchive } from "./ProjectArchive.ts"
 import { ProjectStates } from "./ProjectStates.ts"
@@ -25,12 +27,16 @@ export interface Platform {
   readonly storage: Layer.Layer<SecureStorage>
   readonly webSocket: Layer.Layer<Socket.WebSocketConstructor>
   readonly fetch: typeof globalThis.fetch
+  /** Uploads a local file's bytes; without one, attachments fail with a sentence. */
+  readonly fileTransfer?: Layer.Layer<FileTransfer> | undefined
 }
 
 const backendLayer = (config: AppConfigShape, platform: Platform) =>
   config.backend === "fixtures"
-    ? Layer.mergeAll(AppClientFake, LiveProjectsFake).pipe(Layer.provideMerge(FakeBackend.layer))
-    : LiveProjects.layerSocket.pipe(
+    ? Layer.mergeAll(AppClientFake, LiveProjectsFake, FileTransfer.layerFake).pipe(
+        Layer.provideMerge(FakeBackend.layer)
+      )
+    : Layer.mergeAll(LiveProjects.layerSocket, platform.fileTransfer ?? FileTransfer.layerUnavailable).pipe(
         Layer.provideMerge(AppClient.layerHttp),
         Layer.provide(Layer.mergeAll(platform.webSocket, Layer.succeed(FetchHttpClient.Fetch, platform.fetch)))
       )
@@ -41,7 +47,8 @@ export const makeAppLayer = (config: AppConfigShape, platform: Platform) =>
     ProjectUsages.layer.pipe(Layer.provideMerge(ProjectStates.layer)),
     AccountUsages.layer,
     Replies.layer,
-    ProjectArchive.layer
+    ProjectArchive.layer,
+    AttachmentUploads.layer
   ).pipe(
     Layer.provideMerge(backendLayer(config, platform)),
     Layer.provideMerge(Session.layer),

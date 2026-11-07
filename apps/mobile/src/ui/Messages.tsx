@@ -25,6 +25,7 @@ import { useAskPush } from "./hooks.ts"
 import { GoogleButton, Choices, Icon, SignInButton } from "./kit.tsx"
 import { Markdown, MarkdownText } from "./Markdown.tsx"
 import { useDecline } from "./Decline.tsx"
+import { SentAttachments } from "./Attachments.tsx"
 import { MediaTile } from "./Media.tsx"
 import { Receipt } from "./Presence.tsx"
 import { color, gutter, needGlow } from "./theme.ts"
@@ -39,25 +40,29 @@ export function UserBubble(props: {
   /** On their latest message: "Sent", then "Seen" once Dream began delivering it to the agent's machine. */
   readonly receipt?: { readonly seen: boolean } | undefined
 }) {
+  const attachments = props.message.attachments ?? []
   return (
     <View style={{ alignSelf: "flex-end", alignItems: "flex-end", maxWidth: "82%" }}>
-      <View
-        style={{
-          backgroundColor: color.s2,
-          paddingVertical: 10,
-          paddingHorizontal: 15,
-          borderTopLeftRadius: 20,
-          borderTopRightRadius: 20,
-          borderBottomRightRadius: 6,
-          borderBottomLeftRadius: 20,
-          borderWidth: 1,
-          borderColor: color.line
-        }}
-      >
-        <Text selectable style={{ fontSize: 16, lineHeight: 22.7, letterSpacing: -0.16, color: color.t1 }}>
-          {props.message.text}
-        </Text>
-      </View>
+      {attachments.length > 0 ? <SentAttachments attachments={attachments} /> : null}
+      {props.message.text.trim().length === 0 && attachments.length > 0 ? null : (
+        <View
+          style={{
+            backgroundColor: color.s2,
+            paddingVertical: 10,
+            paddingHorizontal: 15,
+            borderTopLeftRadius: 20,
+            borderTopRightRadius: 20,
+            borderBottomRightRadius: 6,
+            borderBottomLeftRadius: 20,
+            borderWidth: 1,
+            borderColor: color.line
+          }}
+        >
+          <Text selectable style={{ fontSize: 16, lineHeight: 22.7, letterSpacing: -0.16, color: color.t1 }}>
+            {props.message.text}
+          </Text>
+        </View>
+      )}
       {props.receipt ? (
         <Receipt seen={props.receipt.seen} sentAt={props.message.createdAt} showTime={props.time !== undefined} />
       ) : props.time ? (

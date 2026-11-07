@@ -5,6 +5,7 @@
  */
 import {
   AppAuth,
+  AttachmentLimits,
   AuthedAppRpcs,
   CurrentUser,
   type Harness,
@@ -18,7 +19,8 @@ import {
   Routes,
   Unauthorized,
   UpstreamFailure,
-  type UserId
+  type UserId,
+  safeAttachmentName
 } from "@dream/domain"
 import { DateTime, Effect, Layer, Option, Redacted } from "effect"
 import { Headers } from "effect/http"
@@ -26,6 +28,7 @@ import { Tokens } from "../auth/Tokens.ts"
 import { ApiConfig } from "../Config.ts"
 import { ConnectLinks } from "../connect/ConnectLinks.ts"
 import { ModelConnect } from "../connect/ModelConnect.ts"
+import { Attachments } from "../db/Attachments.ts"
 import { Connections, toModelConnection } from "../db/Connections.ts"
 import { Projects, titleFromIdea } from "../db/Projects.ts"
 import { Users } from "../db/Users.ts"
@@ -34,7 +37,7 @@ import { AppLinks, NoHandAddedLinks } from "../links/AppLinks.ts"
 import { Links } from "../db/Links.ts"
 import { Google } from "../integrations/Google.ts"
 import { timingSafeEqual } from "../lib/Bytes.ts"
-import { messageIdFor, newProjectId, projectIdFor } from "../lib/Ids.ts"
+import { messageIdFor, newMediaId, newMessageId, newProjectId, projectIdFor } from "../lib/Ids.ts"
 import { ProjectClients } from "../project/Client.ts"
 import { deleteProject } from "../project/Deletion.ts"
 import { UsageReport } from "../usage/ProjectUsage.ts"
@@ -124,6 +127,7 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
     const appLinks = yield* AppLinks
     const links = yield* Links
     const usageReport = yield* UsageReport
+    const attachments = yield* Attachments
 
     const me = Effect.gen(function* () {
       return (yield* CurrentUser).userId
@@ -207,7 +211,8 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
             Effect.provideService(ProjectClients, clients),
             Effect.provideService(Projects, projects),
             Effect.provideService(MediaStore, mediaStore),
-            Effect.provideService(Links, links)
+            Effect.provideService(Links, links),
+            Effect.provideService(Attachments, attachments)
           )
         }),
 
@@ -220,19 +225,23 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
           return summary.value
         }),
 
-      CreateProject: ({ idea, harness, requestId }) =>
+      CreateProject: ({ idea, harness, requestId, attachments: attachmentIds = [] }) =>
         Effect.gen(function* () {
           const userId = yield* me
           const start = (project: Project) =>
-            clients
-              .use(project.id, (client) => client.Init({ project }))
-              .pipe(
-                Effect.catchDefect((defect) =>
-                  Effect.fail(
-                    new UpstreamFailure({ service: "Dream", message: `the project couldn't start: ${String(defect)}` })
-                  )
+            Effect.gen(function* () {
+              // A retry takes the same attachments again, so a half-started project still starts with them.
+              const attached = yield* attachments.claim(userId, project.id, project.id, attachmentIds)
+              return yield* clients.use(project.id, (client) =>
+                client.Init({ project, ...(attached.length === 0 ? {} : { attachments: attached }) })
+              )
+            }).pipe(
+              Effect.catchDefect((defect) =>
+                Effect.fail(
+                  new UpstreamFailure({ service: "Dream", message: `the project couldn't start: ${String(defect)}` })
                 )
               )
+            )
           const id = requestId === undefined ? yield* newProjectId() : projectIdFor(requestId)
           if (requestId !== undefined) {
             // A retry: hand back what the first attempt created (Init is idempotent, so a half-started one starts now).
@@ -245,6 +254,8 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
             }
           }
           const chosen = yield* harnessFor(userId, harness)
+          // Refuse attachments that aren't theirs before the project exists.
+          yield* attachments.claim(userId, id, id, attachmentIds)
           const { slug, host } = yield* projects.allocateHost(idea, config.domain)
           const now = yield* DateTime.now
           const project: Project = {
@@ -293,16 +304,61 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
           )
         }),
 
-      SendMessage: ({ projectId, text, requestId, workstream }) =>
+      SendMessage: ({ projectId, text, requestId, workstream, attachments: attachmentIds = [] }) =>
         Effect.gen(function* () {
+          const userId = yield* me
           yield* owned(projectId)
+          if (text.trim().length === 0 && attachmentIds.length === 0) {
+            return yield* new InvalidRequest({ message: "Write something or attach a file first." })
+          }
+          const id = requestId === undefined ? yield* newMessageId() : messageIdFor(requestId)
+          const attached = yield* attachments.claim(userId, projectId, id, attachmentIds)
           return yield* clients.use(projectId, (client) =>
             client.SendUserMessage({
               text,
-              ...(requestId === undefined ? {} : { id: messageIdFor(requestId) }),
-              ...(workstream === undefined ? {} : { workstream })
+              id,
+              ...(workstream === undefined ? {} : { workstream }),
+              ...(attached.length === 0 ? {} : { attachments: attached })
             })
           )
+        }),
+
+      CreateAttachmentUpload: ({ name, contentType, sizeBytes, width, height }) =>
+        Effect.gen(function* () {
+          const userId = yield* me
+          if (Option.isNone(mediaStore.bucket)) {
+            return yield* new InvalidRequest({ message: "Attachments aren't switched on yet." })
+          }
+          if (sizeBytes > AttachmentLimits.maxBytes) {
+            return yield* new InvalidRequest({
+              message: `That file is over ${AttachmentLimits.maxBytes / 1024 / 1024} MB, the most Dream can take.`
+            })
+          }
+          const id = yield* newMediaId()
+          const attachment = {
+            id,
+            name: safeAttachmentName(name),
+            contentType: contentType.toLowerCase(),
+            sizeBytes,
+            ...(width === undefined ? {} : { width }),
+            ...(height === undefined ? {} : { height })
+          }
+          yield* attachments.insert({ attachment, userId, objectKey: `users/${userId}/attachments/${id}` })
+          const upload = yield* tokens.attachmentUpload({
+            sub: userId,
+            aid: id,
+            ct: attachment.contentType,
+            size: sizeBytes
+          })
+          return {
+            attachment,
+            upload: {
+              url: `${config.apiUrl}${Routes.attachmentUpload(id)}?token=${encodeURIComponent(upload.token)}`,
+              method: "PUT" as const,
+              headers: { "content-type": attachment.contentType },
+              expiresAt: DateTime.makeUnsafe(upload.expiresAtMs)
+            }
+          }
         }),
 
       AnswerQuestion: ({ projectId, messageId, answer }) =>

@@ -10,6 +10,9 @@
  * While the page is blank, a row of starters sits above the buttons. Tapping one
  * fills the page with its draft, ready to send as it is, with the cursor after
  * it to keep writing. `/new?starter=<idea id>` opens with a draft.
+ *
+ * The paperclip beside the mic attaches photos and files, which wait above the
+ * buttons and go with the idea as part of its first message.
  */
 import { useAtomSet } from "@effect/atom-react"
 import { useLocalSearchParams, useRouter } from "expo-router"
@@ -36,6 +39,8 @@ import { askPushAtom } from "../state/ui.ts"
 import { useAction, useToast } from "../ui/actions.ts"
 import { useRequestId } from "../ui/hooks.ts"
 import { Bars, Icon, IconButton } from "../ui/kit.tsx"
+import { samplesFor } from "../ui/attachmentSamples.ts"
+import { AttachmentTray, useStagedAttachments } from "../ui/Attachments.tsx"
 import { Starters } from "../ui/Starters.tsx"
 import { color, gutter, tracking } from "../ui/theme.ts"
 
@@ -68,7 +73,13 @@ const mmss = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, 
 
 export default function NewIdea() {
   const router = useRouter()
-  const params = useLocalSearchParams<{ dictate?: string; text?: string; sample?: string; starter?: string }>()
+  const params = useLocalSearchParams<{
+    dictate?: string
+    text?: string
+    sample?: string
+    starter?: string
+    attach?: string
+  }>()
   const insets = useSafeAreaInsets()
   const barBottom = Math.max(insets.bottom, 12) + 2
   const [text, setText] = useState(() => {
@@ -92,6 +103,7 @@ export default function NewIdea() {
   /** How far the field is scrolled, so the live text opens at the same place. */
   const scrolled = useRef(0)
   const create = useAction(createProjectFn)
+  const attachments = useStagedAttachments(samplesFor(params.attach))
   const requestId = useRequestId()
   const toast = useToast()
   const askPush = useAtomSet(askPushAtom)
@@ -104,6 +116,7 @@ export default function NewIdea() {
   const seconds = useSeconds(listening)
   const idea = ideaToSend(text, anchor, listening ? dictation.transcript : undefined)
   const has = idea.length > 0
+  const busy = create.busy || attachments.uploading
 
   useEffect(() => {
     if (params.dictate) {
@@ -163,15 +176,20 @@ export default function NewIdea() {
   }
 
   const send = () => {
-    if (!idea || create.busy) return
+    if (!idea || busy) return
     if (listening) {
       // Everything heard so far goes in where it was landing, so a failed send leaves the whole idea on the page.
       refocus.current = false
       setText(placeTake(text, anchor, dictation.transcript).text)
       dictation.cancel()
     }
+    const attached = attachments.ids
     create.run(
-      { idea, requestId: requestId.for(idea) },
+      {
+        idea,
+        requestId: requestId.for(attached.length === 0 ? idea : `${idea}\n${attached.join(",")}`),
+        ...(attached.length === 0 ? {} : { attachments: attached })
+      },
       {
         onSuccess: (project) => {
           requestId.done()
@@ -249,7 +267,8 @@ export default function NewIdea() {
         ) : null}
       </View>
       {/* Just above the buttons, so it rides the keyboard with them. */}
-      {text || listening ? null : <Starters onPick={startFrom} />}
+      {text || listening || attachments.staged.length > 0 ? null : <Starters onPick={startFrom} />}
+      <AttachmentTray staged={attachments.staged} onRemove={attachments.remove} ring={color.bg} inset={16} />
       <View
         style={{
           flexDirection: "row",
@@ -280,6 +299,25 @@ export default function NewIdea() {
             <Icon name="mic" size={22} color={listening ? color.needInk : color.t1} />
           </Pressable>
         ) : null}
+        {listening ? null : (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Attach a photo or file"
+            onPress={attachments.attach}
+            style={({ pressed }) => ({
+              width: 56,
+              height: 56,
+              borderRadius: 28,
+              backgroundColor: pressed ? color.s3 : color.s2,
+              borderWidth: 1,
+              borderColor: color.line2,
+              alignItems: "center",
+              justifyContent: "center"
+            })}
+          >
+            <Icon name="clip" size={22} color={color.t1} />
+          </Pressable>
+        )}
         <View style={{ flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 12 }}>
           {listening ? (
             <>
@@ -298,7 +336,7 @@ export default function NewIdea() {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Send"
-          disabled={!has || create.busy}
+          disabled={!has || busy}
           onPress={send}
           style={{
             width: 56,
@@ -309,7 +347,7 @@ export default function NewIdea() {
             borderColor: has ? color.t1 : color.line2,
             alignItems: "center",
             justifyContent: "center",
-            opacity: create.busy ? 0.6 : 1
+            opacity: busy ? 0.6 : 1
           }}
         >
           <Icon name="up" size={22} color={has ? color.black : color.t3} weight="semibold" />

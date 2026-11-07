@@ -7,7 +7,7 @@
 import { Schema } from "effect"
 import { AppId, IntegrationId, MessageId, NotificationId, ProjectId, WorkstreamId } from "./Ids.ts"
 import { LinkColor, LinkIcon } from "./Links.ts"
-import { MediaRef } from "./Media.ts"
+import { Attachment, MediaRef } from "./Media.ts"
 
 const MessageFields = {
   id: MessageId,
@@ -35,6 +35,11 @@ export const TextMessage = Schema.TaggedStruct("Text", {
   /** Markdown from the agent; plain text from them. */
   text: Schema.String,
   media: Schema.Array(MediaRef),
+  /**
+   * Their messages only: photos and files they attached. Their text may be empty when there are some. Added in
+   * November 2026; older apps ignore it.
+   */
+  attachments: Schema.optionalKey(Schema.Array(Attachment)),
   /** Their messages only: when Dream began delivering it to the agent's machine (the receipt under it reads "Seen"). */
   seenAt: Schema.optionalKey(Schema.DateTimeUtc)
 })

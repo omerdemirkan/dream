@@ -1,9 +1,23 @@
+import { existsSync, readFileSync } from "node:fs"
+import { createServer, type Server } from "node:http"
+import type { AddressInfo } from "node:net"
+import { join } from "node:path"
 import { assert, describe, it } from "@effect/vitest"
-import { AgentEvent, type EventId, type TurnUsage, type WakeId } from "@dream/domain"
+import {
+  AgentEvent,
+  type Attachment,
+  DaemonEnv,
+  type EventId,
+  type MediaId,
+  type TurnUsage,
+  type WakeId
+} from "@dream/domain"
 import { Clock, Context, DateTime, Deferred, Duration, Effect, Layer, Option, Queue, Ref } from "effect"
+import { FetchHttpClient } from "effect/http"
 import { TestClock } from "effect/testing"
 import { Agent, backoff } from "../src/Agent.ts"
 import { Api, type Report } from "../src/Api.ts"
+import { Attachments } from "../src/Attachments.ts"
 import { Harness, type HarnessError, type TurnResult, TurnOutcome } from "../src/harness/Harness.ts"
 import type { TurnHandlers } from "../src/harness/Turn.ts"
 import { Inbox } from "../src/Inbox.ts"
@@ -16,7 +30,14 @@ type Script = (prompt: string, handlers: TurnHandlers) => Effect.Effect<TurnResu
 const completed = (progressed = true): TurnResult => ({ outcome: TurnOutcome.Completed(), usage: {}, progressed })
 const saying = (finalText: string): TurnResult => ({ ...completed(), finalText })
 
-const setup = (options: { readonly steerable?: boolean; readonly published?: Layer.Layer<Published> } = {}) =>
+const setup = (
+  options: {
+    readonly steerable?: boolean
+    readonly published?: Layer.Layer<Published>
+    /** The real attachment copier against this API, rooted at `dir`; none by default. */
+    readonly attachments?: { readonly apiUrl: string; readonly dir: string }
+  } = {}
+) =>
   Effect.gen(function* () {
     const turns = yield* Queue.unbounded<Script>()
     const log = yield* Ref.make<ReadonlyArray<string>>([])
@@ -31,11 +52,18 @@ const setup = (options: { readonly steerable?: boolean; readonly published?: Lay
           }),
           Api.layerTest(reports),
           Outreach.layer,
-          options.published ?? Published.layerNone
+          options.published ?? Published.layerNone,
+          options.attachments === undefined
+            ? Attachments.layerNone
+            : Attachments.layer.pipe(Layer.provide(FetchHttpClient.layer))
         )
       ),
       Layer.provideMerge(Inbox.layer),
-      Layer.provideMerge(baseLayer(tempDir()))
+      Layer.provideMerge(
+        options.attachments === undefined
+          ? baseLayer(tempDir())
+          : baseLayer(options.attachments.dir, { [DaemonEnv.apiUrl]: options.attachments.apiUrl })
+      )
     )
     const context = yield* Layer.build(layer)
     const inbox = Context.get(context, Inbox)
@@ -363,4 +391,70 @@ describe("Agent", () => {
       }).pipe(Effect.scoped)
     )
   })
+})
+
+describe("Agent with attachments", () => {
+  const photoBytes = new Uint8Array([0xff, 0xd8, 0xff, 9, 9, 9])
+  const photo: Attachment = {
+    id: "med_photo" as MediaId,
+    name: "IMG_0042.jpg",
+    contentType: "image/jpeg",
+    sizeBytes: photoBytes.length
+  }
+  const gone: Attachment = { id: "med_gone" as MediaId, name: "menu.pdf", contentType: "application/pdf", sizeBytes: 4 }
+
+  /** A Worker serving one attachment to the project token; it counts what it was asked for. */
+  const worker = Effect.acquireRelease(
+    Effect.promise(
+      () =>
+        new Promise<{ readonly url: string; readonly asked: Array<string>; readonly server: Server }>((resolve) => {
+          const asked: Array<string> = []
+          const server = createServer((request, response) => {
+            asked.push(`${request.url} ${request.headers.authorization}`)
+            if (
+              request.url === "/sandbox/attachments/med_photo" &&
+              request.headers.authorization === "Bearer project-token"
+            ) {
+              response.writeHead(200, { "content-type": "image/jpeg" }).end(photoBytes)
+            } else response.writeHead(404).end("Not found.")
+          }).listen(0, "127.0.0.1", () =>
+            resolve({ url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, asked, server })
+          )
+        })
+    ),
+    ({ server }) => Effect.promise(() => new Promise<void>((resolve) => server.close(() => resolve())))
+  )
+
+  it.live(
+    "copies them into the sandbox before the turn, and names where they are",
+    () =>
+      Effect.gen(function* () {
+        const api = yield* worker
+        const dir = tempDir()
+        const { turns, inbox, log } = yield* setup({ attachments: { apiUrl: api.url, dir } })
+        // Waits with real sleeps, so the HTTP server gets to answer.
+        const logged = (n: number) =>
+          Effect.gen(function* () {
+            while ((yield* Ref.get(log)).length < n) yield* Effect.sleep("20 millis")
+            return yield* Ref.get(log)
+          })
+        yield* Queue.offer(turns, () => Effect.succeed(completed()))
+        yield* inbox.deliver([{ ...userMessage(1, "The whiteboard and the menu"), attachments: [photo, gone] }])
+        const [prompt] = yield* logged(1)
+        const landed = join(dir, ".dream", "attachments", "msg_1", "IMG_0042.jpg")
+        assert.deepStrictEqual(new Uint8Array(readFileSync(landed)), photoBytes)
+        assert.include(prompt, "They attached 2 files:")
+        assert.include(prompt, "- /home/user/.dream/attachments/msg_1/IMG_0042.jpg (photo, 6 bytes)")
+        assert.include(prompt, "- menu.pdf (application/pdf, 4 bytes), which Dream couldn't copy into the sandbox")
+        assert.isFalse(existsSync(join(dir, ".dream", "attachments", "msg_1", "menu.pdf")))
+
+        // A later turn with the same message doesn't fetch what's already there.
+        const before = api.asked.filter((line) => line.includes("med_photo")).length
+        yield* Queue.offer(turns, () => Effect.succeed(completed()))
+        yield* inbox.deliver([{ ...userMessage(2, "again"), messageId: "msg_1" as never, attachments: [photo] }])
+        yield* logged(2)
+        assert.strictEqual(api.asked.filter((line) => line.includes("med_photo")).length, before)
+      }).pipe(Effect.scoped),
+    20_000
+  )
 })

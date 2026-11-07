@@ -23,6 +23,10 @@ export const Routes = {
   projectLive: (projectId: ProjectId) => `/projects/${projectId}/live`,
   /** GET with the session token; serves the bytes of a `MediaRef`. */
   media: (mediaId: MediaId) => `/media/${mediaId}`,
+  /** PUT an attachment's bytes, with the upload token `AppRpcs.CreateAttachmentUpload` put in the URL. */
+  attachmentUpload: (mediaId: MediaId) => `/attachments/${mediaId}/upload`,
+  /** GET with the project token (dreamd): the bytes of an attachment sent to that project. */
+  sandboxAttachment: (mediaId: MediaId) => `/sandbox/attachments/${mediaId}`,
   googleOAuthCallback: "/oauth/google/callback",
   /** Where every other OAuth provider (`AccessRequest.OAuth`) redirects back to, e.g. `/oauth/spotify/callback`. */
   oauthCallback: (provider: string) => `/oauth/${provider}/callback`,

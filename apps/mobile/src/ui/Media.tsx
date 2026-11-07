@@ -1,6 +1,6 @@
 /**
  * Screenshots and screen recordings the agent sends, as tiles (`.shot`) that
- * open full screen. Bytes come from the API with the session token; in
+ * open full screen (their attached photos open in the same viewer). Bytes come from the API with the session token; in
  * fixtures mode they're bundled with the app.
  */
 import type { MediaRef } from "@dream/domain"
@@ -26,15 +26,26 @@ const bundled: Record<string, number> = {
   med_cabincal: require("../../assets/fixtures/cabin-calendar.png"),
   med_cabinreq: require("../../assets/fixtures/cabin-requests.png"),
   med_cabinrot: require("../../assets/fixtures/cabin-rotation.png"),
-  med_digest: require("../../assets/fixtures/digest.png")
+  med_digest: require("../../assets/fixtures/digest.png"),
+  med_attboard: require("../../assets/fixtures/attach-whiteboard.png"),
+  med_attlist: require("../../assets/fixtures/attach-list.png")
 }
 
 type Source = number | { readonly uri: string; readonly headers: Record<string, string> }
+
+/**
+ * Photos they attached from this phone, by id: the picked file (or a fixture's bundled image), so their own photo
+ * shows at once in Chat without loading it back.
+ */
+export const localMedia = new Map<string, number | string>()
 
 export function useMediaSource(media: MediaRef): Source | undefined {
   const session = useAtomValue(sessionAtom)
   const fixture = bundled[media.id]
   if (fixture !== undefined) return fixture
+  const local = localMedia.get(media.id)
+  if (typeof local === "number") return local
+  if (local !== undefined) return { uri: local, headers: {} }
   const signedIn = Option.flatten(AsyncResult.value(session))
   if (Option.isNone(signedIn)) return undefined
   return {
