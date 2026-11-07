@@ -367,6 +367,15 @@ export const submitAppleAccessFn = appRuntime.fn(
   accessChanged
 )
 
+/** "Email it to me": a link to finish the request on a computer, sent to the address they signed in with. */
+export const emailAccessLinkFn = appRuntime.fn(
+  Effect.fn(function* (input: AccessRef) {
+    const app = yield* AppClient
+    return yield* receivedAccess(yield* app.EmailAccessLink(input).pipe(withWriteTimeout))
+  }),
+  accessChanged
+)
+
 export const declineAccessFn = appRuntime.fn(
   Effect.fn(function* (input: AccessRef & { readonly reason?: string }) {
     const app = yield* AppClient

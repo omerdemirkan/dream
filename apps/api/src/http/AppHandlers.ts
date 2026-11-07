@@ -33,6 +33,7 @@ import { Connections, toModelConnection } from "../db/Connections.ts"
 import { Projects, titleFromIdea } from "../db/Projects.ts"
 import { Users } from "../db/Users.ts"
 import { Access } from "../integrations/Access.ts"
+import { DesktopAccess } from "../desktop/DesktopAccess.ts"
 import { AppLinks, NoHandAddedLinks } from "../links/AppLinks.ts"
 import { Links } from "../db/Links.ts"
 import { Google } from "../integrations/Google.ts"
@@ -121,6 +122,7 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
     const connections = yield* Connections
     const clients = yield* ProjectClients
     const access = yield* Access
+    const desktopAccess = yield* DesktopAccess
     const modelConnect = yield* ModelConnect
     const connectLinks = yield* ConnectLinks
     const mediaStore = yield* MediaStore
@@ -389,6 +391,8 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
         Effect.flatMap(me, (userId) =>
           access.submitApple(userId, projectId, messageId, { issuerId, keyId, privateKey: Redacted.value(privateKey) })
         ),
+      EmailAccessLink: ({ projectId, messageId }) =>
+        Effect.flatMap(me, (userId) => desktopAccess.email(userId, projectId, messageId)),
       DeclineAccess: ({ projectId, messageId, reason }) =>
         Effect.flatMap(me, (userId) => access.decline(userId, projectId, messageId, reason?.trim() || undefined)),
 

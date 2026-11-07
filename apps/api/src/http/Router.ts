@@ -15,7 +15,16 @@ import { deleteProject } from "../project/Deletion.ts"
 import { LivePath } from "../project/ProjectRpcs.ts"
 import { timingSafeEqual } from "../lib/Bytes.ts"
 import { AppAuthServer, AuthedHandlers, bearer, PublicHandlers } from "./AppHandlers.ts"
+import { desktopLinkOfState } from "../desktop/DesktopAccess.ts"
 import { connectProvider, showConnectPage, submitConnectPage } from "./ConnectPage.ts"
+import {
+  desktopSignInResult,
+  openDesktopLink,
+  showDesktopAccess,
+  showDesktopLanding,
+  startDesktopSignIn,
+  submitDesktopAccess
+} from "./DesktopPage.ts"
 import { gateway } from "./Gateway.ts"
 import { downloadAttachmentForSandbox, downloadMedia, uploadAttachment, uploadMedia } from "./Media.ts"
 import { homePage, privacyPage } from "./PublicPages.ts"
@@ -217,6 +226,17 @@ export const route = (raw: Request) =>
       if (Option.isSome(provider) && request.method === "POST") return yield* submitConnectPage(provider.value)
     }
 
+    // Finishing an access request on a computer, from an `EmailAccessLink` email. Bodies are never logged.
+    if (path === Routes.desktop && request.method === "GET") return yield* showDesktopLanding
+    if (path === Routes.desktopOpen && request.method === "POST") return yield* openDesktopLink
+    const desktop = /^\/desktop\/(dsk_[A-Za-z0-9]+)(\/sign-in)?$/.exec(path)
+    if (desktop !== null) {
+      const linkId = desktop[1]!
+      if (desktop[2] === undefined && request.method === "GET") return yield* showDesktopAccess(linkId)
+      if (desktop[2] === undefined && request.method === "POST") return yield* submitDesktopAccess(linkId)
+      if (desktop[2] !== undefined && request.method === "GET") return yield* startDesktopSignIn(linkId)
+    }
+
     if (path === Routes.googleOAuthCallback && request.method === "GET") {
       const access = yield* Access
       const back = (params: Record<string, string>) =>
@@ -226,6 +246,19 @@ export const route = (raw: Request) =>
       const state = url.searchParams.get("state")
       const code = url.searchParams.get("code")
       const error = url.searchParams.get("error")
+      const desktopLink = state === null ? undefined : desktopLinkOfState(state)
+      if (desktopLink !== undefined) {
+        const service = "Google"
+        if (code === null || error !== null) {
+          const reason = error === "access_denied" || error === null ? "cancelled" : error
+          return yield* desktopSignInResult(desktopLink, { service, ok: false, error: reason })
+        }
+        const result = yield* access.finishGoogle(state!, code).pipe(Effect.result)
+        return yield* desktopSignInResult(
+          desktopLink,
+          result._tag === "Success" ? { service, ok: true } : { service, ok: false, error: result.failure.message }
+        )
+      }
       if (state === null || code === null || error !== null)
         return back({ status: "error", error: error ?? "cancelled" })
       const result = yield* access.finishGoogle(state, code).pipe(Effect.result)
@@ -247,6 +280,19 @@ export const route = (raw: Request) =>
       const state = url.searchParams.get("state")
       const code = url.searchParams.get("code")
       const error = url.searchParams.get("error")
+      const desktopLink = state === null ? undefined : desktopLinkOfState(state)
+      if (desktopLink !== undefined) {
+        const service = provider.charAt(0).toUpperCase() + provider.slice(1)
+        if (code === null || error !== null) {
+          const reason = error === "access_denied" || error === null ? "cancelled" : error
+          return yield* desktopSignInResult(desktopLink, { service, ok: false, error: reason })
+        }
+        const result = yield* access.finishOAuth(provider, state!, code).pipe(Effect.result)
+        return yield* desktopSignInResult(
+          desktopLink,
+          result._tag === "Success" ? { service, ok: true } : { service, ok: false, error: result.failure.message }
+        )
+      }
       if (state === null || code === null || error !== null)
         return back({ status: "error", error: error === "access_denied" || error === null ? "cancelled" : error })
       const result = yield* access.finishOAuth(provider, state, code).pipe(Effect.result)

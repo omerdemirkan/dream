@@ -27,6 +27,7 @@ import { DoRpcs, type ProjectFetch } from "../../src/project/Client.ts"
 import { AgentHandlers, LiveHandlers, ProjectHandlers, SandboxAuthServer } from "../../src/project/Handlers.ts"
 import { projectLayer } from "../../src/project/Layer.ts"
 import { Scheduler } from "../../src/project/Scheduler.ts"
+import type { SendEmailBinding } from "../../src/email/Mailer.ts"
 import { workerLayer } from "../../src/WorkerLayer.ts"
 import { ProjectClients } from "../../src/project/Client.ts"
 import type { RelayFetch } from "../../src/relay/RelayClients.ts"
@@ -163,8 +164,23 @@ export const makeCloud = (
       return created
     }
 
+    /** What Cloudflare Email Service was asked to send; set `failWith` to make it throw with that code. */
+    const mail: {
+      readonly sent: Array<Parameters<SendEmailBinding["send"]>[0]>
+      failWith: string | undefined
+    } = { sent: [], failWith: undefined }
+    const email: SendEmailBinding = {
+      send: async (message) => {
+        if (mail.failWith !== undefined)
+          throw Object.assign(new Error(`failed: ${message.text}`), { code: mail.failWith })
+        mail.sent.push(message)
+        return { messageId: `mail-${mail.sent.length}` }
+      }
+    }
+
     const worker = workerLayer(
       {
+        email,
         d1,
         r2: options.media,
         updates: options.updates,
@@ -241,6 +257,7 @@ export const makeCloud = (
 
     return {
       world,
+      mail,
       db,
       d1,
       phone,

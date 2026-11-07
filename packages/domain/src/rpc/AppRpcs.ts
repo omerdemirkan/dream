@@ -376,6 +376,18 @@ export class AuthedAppRpcs extends RpcGroup.make(
     error: Schema.Union([NotFound, InvalidRequest])
   }),
 
+  /**
+   * "Email it to me": emails them a link to finish this access request on a computer, at the address on file from
+   * their sign-in, and returns the card with `desktop` set. Nothing is sent unless they ask. The link works once,
+   * for 30 minutes, in one browser, and only while the request still waits (`canFinishOnDesktop`); sending again
+   * replaces it. `InvalidRequest` for a request that can't be finished there or after too many sends.
+   */
+  Rpc.make("EmailAccessLink", {
+    payload: ProjectMessage,
+    success: AccessMessage,
+    error: Schema.Union([NotFound, InvalidRequest, UpstreamFailure])
+  }),
+
   // Notifications from a project's apps ---------------------------------------
   /** A project's apps that notify, with their controls, and the last 30 days of what they sent. */
   Rpc.make("GetAppNotifications", {

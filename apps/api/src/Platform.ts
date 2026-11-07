@@ -13,6 +13,7 @@ import { Namespace } from "./brokers/Namespace.ts"
 import { ApiConfig } from "./Config.ts"
 import { ChatGpt } from "./connect/ChatGpt.ts"
 import { Connections } from "./db/Connections.ts"
+import { DesktopLinks } from "./db/DesktopLinks.ts"
 import { Attachments } from "./db/Attachments.ts"
 import { Links } from "./db/Links.ts"
 import { Projects } from "./db/Projects.ts"
@@ -54,7 +55,8 @@ export const databaseLayer = (d1: D1Database) =>
     TestflightGrants.layer,
     TestflightIdentity.layer,
     UpdateStore.layer,
-    TurnUsageLog.layer
+    TurnUsageLog.layer,
+    DesktopLinks.layer
   ).pipe(Layer.provide(D1Client.layer({ db: d1 }).pipe(Layer.orDie)))
 
 /** Everything above the database: providers, credentials, and the project clients. */

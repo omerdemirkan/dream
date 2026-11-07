@@ -6,6 +6,8 @@ import type { D1Database, R2Bucket } from "@cloudflare/workers-types"
 import { Effect, Layer } from "effect"
 import { ConnectLinks } from "./connect/ConnectLinks.ts"
 import { ModelConnect } from "./connect/ModelConnect.ts"
+import { DesktopAccess } from "./desktop/DesktopAccess.ts"
+import { Mailer, type SendEmailBinding } from "./email/Mailer.ts"
 import { SandboxReaper } from "./e2b/Reaper.ts"
 import { MediaStore } from "./http/Media.ts"
 import { LiveForwarder } from "./http/Router.ts"
@@ -24,11 +26,13 @@ export interface WorkerBindings {
   readonly updates: R2Bucket | undefined
   readonly fetchProject: ProjectFetch
   readonly forwardLive: LiveForwarder["Service"]["forward"]
+  /** Cloudflare Email Service, once the deployment sends email. */
+  readonly email?: SendEmailBinding | undefined
 }
 
 export const workerLayer = (bindings: WorkerBindings, overrides: PlatformOverrides = {}) =>
-  ConnectLinks.layer.pipe(
-    Layer.provideMerge(Layer.mergeAll(ModelConnect.layer, Access.layer, AppLinks.layer)),
+  Layer.mergeAll(ConnectLinks.layer, DesktopAccess.layer).pipe(
+    Layer.provideMerge(Layer.mergeAll(ModelConnect.layer, Access.layer, AppLinks.layer, Mailer.layer(bindings.email))),
     Layer.provideMerge(
       platformLayer({ d1: bindings.d1, fetchProject: bindings.fetchProject, fetchRelay: noRelays }, overrides)
     ),

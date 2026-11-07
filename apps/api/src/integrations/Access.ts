@@ -50,20 +50,27 @@ export interface OAuthResult {
   readonly messageId: MessageId
 }
 
+export interface SignInOptions {
+  /** Starts the OAuth `state`, so the callback can tell where the sign-in began (a desktop page's `dsk.<id>.`). */
+  readonly statePrefix?: string
+}
+
 export class Access extends Context.Service<
   Access,
   {
     readonly startGoogle: (
       userId: UserId,
       projectId: ProjectId,
-      messageId: MessageId
+      messageId: MessageId,
+      options?: SignInOptions
     ) => Effect.Effect<string, NotFound | InvalidRequest | UpstreamFailure>
     /** Finishes the Google redirect; fails with a short reason the app can show. */
     readonly finishGoogle: (state: string, code: string) => Effect.Effect<OAuthResult, InvalidRequest | UpstreamFailure>
     readonly startOAuth: (
       userId: UserId,
       projectId: ProjectId,
-      messageId: MessageId
+      messageId: MessageId,
+      options?: SignInOptions
     ) => Effect.Effect<string, NotFound | InvalidRequest | UpstreamFailure>
     /** Finishes a provider's redirect; fails with a short reason the app can show. */
     readonly finishOAuth: (
@@ -164,14 +171,15 @@ export class Access extends Context.Service<
       const startGoogle = Effect.fn("Access.startGoogle")(function* (
         userId: UserId,
         projectId: ProjectId,
-        messageId: MessageId
+        messageId: MessageId,
+        options?: SignInOptions
       ) {
         const message = yield* openAccess(userId, projectId, messageId)
         if (message.request._tag !== "Google") {
           return yield* new InvalidRequest({ message: "This access request isn't for Google." })
         }
         const existing = (yield* connections.integrations(userId)).find((row) => row.kind === "google_oauth")
-        const state = randomToken(32)
+        const state = `${options?.statePrefix ?? ""}${randomToken(32)}`
         yield* connections.putOAuthState({
           state,
           user_id: userId,
@@ -288,7 +296,8 @@ export class Access extends Context.Service<
       const startOAuth = Effect.fn("Access.startOAuth")(function* (
         userId: UserId,
         projectId: ProjectId,
-        messageId: MessageId
+        messageId: MessageId,
+        options?: SignInOptions
       ) {
         const message = yield* openAccess(userId, projectId, messageId)
         if (message.request._tag !== "OAuth") {
@@ -311,7 +320,7 @@ export class Access extends Context.Service<
         )
         const previous = existing?.access_json._tag === "OAuth" ? existing.access_json.scopes : []
         const scopes = [...new Set([...previous, ...request.scopes])]
-        const state = randomToken(32)
+        const state = `${options?.statePrefix ?? ""}${randomToken(32)}`
         const codeVerifier = provider.spec.pkce === true ? randomToken(64) : undefined
         yield* connections.putProviderState({
           state,

@@ -26,6 +26,7 @@ import {
   InvalidRequest,
   type Integration,
   type IntegrationAccess,
+  canFinishOnDesktop,
   isOpenAsk,
   type MediaId,
   type Message,
@@ -951,6 +952,18 @@ export class FakeBackend extends Context.Service<
               return yield* new InvalidRequest({ message: "That request isn't for an App Store Connect key." })
             return yield* connectIntegration(record, message, "Apple Developer", { _tag: "Apple", issuerId, keyId })
           }),
+        EmailAccessLink: ({ projectId, messageId }) =>
+          stallable(
+            Effect.gen(function* () {
+              const { record, message } = yield* findMessage(projectId, messageId)
+              if (message._tag !== "Access" || !canFinishOnDesktop(message)) {
+                return yield* new InvalidRequest({ message: "This doesn't need anything from you anymore." })
+              }
+              const sent: AccessMessage = { ...message, desktop: { sentAt: yield* DateTime.now, to: user.email } }
+              yield* setMessage(record, sent)
+              return sent
+            })
+          ),
         DeclineAccess: ({ projectId, messageId, reason }) =>
           stallable(
             Effect.gen(function* () {

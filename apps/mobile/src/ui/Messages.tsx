@@ -21,6 +21,7 @@ import {
   whenTag
 } from "./describe.ts"
 import { useAction, useSignInAccess, useToast } from "./actions.ts"
+import { FinishOnComputer } from "./Desktop.tsx"
 import { useAskPush } from "./hooks.ts"
 import { Button, GoogleButton, Choices, Icon, SignInButton } from "./kit.tsx"
 import { Markdown, MarkdownText } from "./Markdown.tsx"
@@ -680,6 +681,7 @@ export const AccessCard = forwardRef<HostInstance, { readonly message: AccessMes
             </Text>
           </View>
         )}
+        <FinishOnComputer message={m} />
         {later ? null : <DeclineLink message={m} />}
       </Card>
     )

@@ -32,6 +32,17 @@ export const Routes = {
   oauthCallback: (provider: string) => `/oauth/${provider}/callback`,
   /** GET serves the token page for a `CreateConnectLink` URL (`?t=<ticket>`); POST submits it. */
   connect: (provider: ConnectLinkProvider) => `/connect/${provider}`,
+  /**
+   * The page an `EmailAccessLink` email opens on a computer. The link's token rides in the URL fragment, which
+   * browsers never send, and the page posts it to `desktopOpen` when they continue.
+   */
+  desktop: "/desktop",
+  /** POST the emailed token: uses it up and starts this browser's session for that one request. */
+  desktopOpen: "/desktop/open",
+  /** GET the request's form in the browser that opened the link; POST submits it. */
+  desktopAccess: (linkId: string) => `/desktop/${linkId}`,
+  /** POST from the form of a Google or OAuth request: starts the sign-in in this browser. */
+  desktopSignIn: (linkId: string) => `/desktop/${linkId}/sign-in`,
   daemon: "/daemon/rpc",
   /** POST a `TestflightKeyRequest` from a Namespace build Mac; see Testflight.ts. */
   testflightKey: "/testflight/asc-key",

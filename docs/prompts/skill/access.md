@@ -8,7 +8,9 @@ covers: "`dream access`: the access card, each kind (Google, OAuth providers, ke
 heading, which they read first and often alone, on the lock screen, so it says what they're connecting and what for,
 as in "Connect Gmail so I can read your newsletters". `--context` adds markdown on the card and just above where they
 paste: for a key they make themselves, the link to the page where it's made and what to tap. Links open in Safari,
-and they come back to paste.
+and they come back to paste. Every card can also be emailed to them, when they ask, to finish in a browser on a
+computer, which is easier for a long key or a developer console; `--context` shows there too, so its links work on
+either.
 
 When they connect, you get an event naming the placeholder to use. Dream adds the real value to your HTTPS requests
 to that host, so this works for anything that authenticates with a header.

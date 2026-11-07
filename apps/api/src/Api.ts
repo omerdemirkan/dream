@@ -17,6 +17,7 @@ import { Config, Effect, Option } from "effect"
 import type { HttpClientRequest } from "effect/http"
 import * as HttpServerRequest from "effect/http/HttpServerRequest"
 import * as HttpServerResponse from "effect/http/HttpServerResponse"
+import { mailDomain, type SendEmailBinding } from "./email/Mailer.ts"
 import { route } from "./http/Router.ts"
 import type { ProjectFetch } from "./project/Client.ts"
 import ProjectDO from "./ProjectDO.ts"
@@ -36,6 +37,13 @@ export const WorkerName = "dream-api"
 /** Set once R2 is enabled on the account; until then the Worker runs without media storage. */
 export const R2Enabled = Config.Boolean("DREAM_R2_ENABLED").pipe(Config.withDefault(false))
 
+/**
+ * Set once Cloudflare Email Service can send for the domain (Workers Paid, and a deploy token with Email Sending:
+ * Edit); the Stack then onboards `mail.<domain>` and the Worker gets its `send_email` binding. Until then
+ * `EmailAccessLink` fails with "email isn't set up".
+ */
+export const EmailEnabled = Config.Boolean("DREAM_EMAIL_ENABLED").pipe(Config.withDefault(false))
+
 export default class Api extends Cloudflare.Worker<Api>()(
   "Api",
   Effect.gen(function* () {
@@ -53,7 +61,6 @@ export default class Api extends Cloudflare.Worker<Api>()(
     }
   }),
   Effect.gen(function* () {
-    yield* DreamDomain
     const projects = yield* ProjectDO
     // Bound so the Worker exports the class; ProjectDOs reach relays through the env, and the Worker never does.
     yield* RelayDO
@@ -61,12 +68,20 @@ export default class Api extends Cloudflare.Worker<Api>()(
     const r2Enabled = yield* R2Enabled
     const media = r2Enabled ? yield* Cloudflare.R2.ReadWriteBucket(Media) : undefined
     const updates = r2Enabled ? yield* Cloudflare.R2.ReadWriteBucket(Updates) : undefined
+    const domain = yield* DreamDomain
+    const mail = (yield* EmailEnabled)
+      ? yield* Cloudflare.Email.Send(
+          yield* Cloudflare.Email.SendEmail("Email", { allowedSenderAddresses: [`dream@${mailDomain(domain)}`] })
+        )
+      : undefined
 
     const bindings = Effect.gen(function* () {
       const d1 = (yield* database.raw) as unknown as D1Database
       const r2 = media === undefined ? undefined : ((yield* media.raw) as unknown as R2Bucket)
       const updatesBucket = updates === undefined ? undefined : ((yield* updates.raw) as unknown as R2Bucket)
+      const email = mail === undefined ? undefined : ((yield* mail.raw) as unknown as SendEmailBinding)
       return {
+        email,
         d1,
         r2,
         updates: updatesBucket,
@@ -107,6 +122,7 @@ export default class Api extends Cloudflare.Worker<Api>()(
     Effect.provide([
       Cloudflare.D1.QueryDatabaseBinding,
       Cloudflare.R2.ReadWriteBucketBinding,
+      Cloudflare.Email.SendBinding,
       Cloudflare.Workers.CronEventSourceLive
     ])
   )
