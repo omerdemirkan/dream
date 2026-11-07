@@ -254,9 +254,9 @@ const lookingAround = new Set([
 const machinery =
   /\b(sub-?agents?|agents?|session|turn|dream|placeholder|token|credential|proxy|prompt|skill|memory|context|harness|monitor|tool|tools|egress|sandbox|api key|keys?|secret|env(ironment)? var)/i
 
-/** Reads like code or a command line. */
+/** Reads like code or a command line. A bare scheme ("Fetching https") is what's left of a URL cut short. */
 const codeLike =
-  /`|https?:\/\/|\w\/\w|\w\.\w{1,5}\b|\b\w+-\w*\d|\/\w|\b[a-z]+[A-Z]\w*|\b\w+_\w+|(^|\s)--?\w|[{}[\]<>=|$#@\\]|\w\(|\bnpm\b|\bpnpm\b|\bnpx\b|\bvitest\b|\bpytest\b|\bgit\b|\bcurl\b/
+  /`|https?:\/\/|\b(?:https?|wss?|ftp)\b|\bwww\b|\w\/\w|\w\.\w{1,5}\b|\b\w+-\w*\d|\/\w|\b[a-z]+[A-Z]\w*|\b\w+_\w+|(^|\s)--?\w|[{}[\]<>=|$#@\\]|\w\(|\bnpm\b|\bpnpm\b|\bnpx\b|\bvitest\b|\bpytest\b|\bgit\b|\bcurl\b/
 
 /** The person is "they" to the agent; the line speaks to them. */
 const toThem = (text: string) =>
@@ -265,11 +265,14 @@ const toThem = (text: string) =>
     .replace(/\bthe user\b/gi, "you")
     .replace(/\btheir\b/g, "your")
 
-/** The first clause: up to a comma, a dash, "since", "because", "so", "then", "which", "while", "before", "to see". */
+/**
+ * The first clause: up to a comma, a dash, "since", "because", "so", "then", "which", "while", "before", "to see".
+ * A URL's colon doesn't end one, so the URL stays whole and the phrase is refused as code.
+ */
 export const firstClause = (text: string) =>
   (
     text.split(
-      /\s*(?:[,;:]|\s[–—-]\s|\.\s|\.$|\?|!|\bsince\b|\bbecause\b|\bso that\b|\bso\b|\bthen\b|\bwhich\b|\bwhile\b|\bto see\b|\bto make sure\b|\bto check\b|\bto confirm\b|\bbut\b)\s*/
+      /\s*(?:[,;]|:(?!\/\/)|\s[–—-]\s|\.\s|\.$|\?|!|\bsince\b|\bbecause\b|\bso that\b|\bso\b|\bthen\b|\bwhich\b|\bwhile\b|\bto see\b|\bto make sure\b|\bto check\b|\bto confirm\b|\bbut\b)\s*/
     )[0] ?? ""
   )
     .replace(/\s+/g, " ")

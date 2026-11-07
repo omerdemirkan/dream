@@ -5,7 +5,7 @@ import { TestClock } from "effect/testing"
 import { Api, type Report } from "../src/Api.ts"
 import type { Part } from "../src/harness/Turn.ts"
 import { check, width } from "../src/progress/Line.ts"
-import { derive, liveness } from "../src/progress/Derive.ts"
+import { derive, fitted, liveness } from "../src/progress/Derive.ts"
 import { fromImperative, fromSentence, gerund, presentable } from "../src/progress/Phrase.ts"
 import { Progress, triggerOf } from "../src/progress/Progress.ts"
 import * as Steps from "../src/progress/Steps.ts"
@@ -258,11 +258,22 @@ describe("phrases, without a model", () => {
       "Running a quick web search for them",
       "Checking that the router sits",
       "Fixing src/realtime/session",
-      "Setting VT_OPENAI_BASE"
+      "Setting VT_OPENAI_BASE",
+      "Fetching https",
+      "Opening www and the docs"
     ]) {
       assert.isFalse(presentable(phrase), phrase)
     }
     assert.isTrue(presentable("Checking the sūrah card's Arabic verses"))
+  })
+
+  it("keeps a URL whole, so a line never ends at its scheme", () => {
+    const thought = fromSentence("I'm fetching https://ankiweb.net/shared/info to check the API.")
+    assert.strictEqual(thought, "Fetching https://ankiweb.net/shared/info")
+    assert.strictEqual(fitted(thought!), undefined)
+    assert.strictEqual(fitted(fromImperative("Fetch https://docs.ankiweb.net/sync")!), undefined)
+    assert.strictEqual(fitted("Fetching https"), undefined)
+    assert.strictEqual(fromSentence("I'm checking the sync API: what it needs to log in."), "Checking the sync API")
   })
 })
 
