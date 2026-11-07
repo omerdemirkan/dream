@@ -246,10 +246,13 @@ describe("a Discord relay", () => {
       yield* runtime.start(discordConfig())
       yield* pass()
       discord.acking = false
-      yield* pass("90 seconds")
+      // The heartbeat's first beat comes at a random point in the interval, so the dead line closes somewhere
+      // between one and two intervals (41.25s) on. Discord answers again once it has: left off any longer, the
+      // resumed line's own first beat could go unanswered too, and the relay would rightly close that one as well.
+      for (let second = 0; second < 90 && !discord.calls.includes("close"); second++) yield* pass()
+      assert.isTrue(discord.calls.includes("close"))
       discord.acking = true
       yield* pass("10 seconds")
-      assert.isTrue(discord.calls.includes("close"))
       assert.isTrue(discord.calls.some((call) => call.startsWith("resume session-1")))
       assert.strictEqual((yield* runtime.status).state, "connected")
       assert.include((yield* runtime.status).problems[0]?.message, "stopped acknowledging heartbeats")
