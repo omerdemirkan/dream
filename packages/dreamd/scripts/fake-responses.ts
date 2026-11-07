@@ -20,7 +20,7 @@
  * Point dreamd at it with DREAM_CODEX_BASE_URL=http://127.0.0.1:<port>/backend-api/codex.
  * It prints each request's path, model and reasoning effort, whether the
  * Authorization header came, what the tool calls returned, and which of Dream's
- * system prompts the request carries (`persona`: "agent" or "task").
+ * system prompts the request carries (`persona`: "agent" or "task"), and which version of it (`promptOf`).
  */
 import { createServer } from "node:http"
 
@@ -53,6 +53,7 @@ const sse = (events: ReadonlyArray<{ readonly type: string; readonly [key: strin
 type Tool = { readonly type?: string; readonly name?: string; readonly tools?: ReadonlyArray<Tool> }
 type Item = {
   readonly type: string
+  readonly role?: string
   readonly name?: string
   readonly content?: ReadonlyArray<{ readonly text?: string }>
   readonly output?: unknown
@@ -64,6 +65,32 @@ const toolNames = (tools: ReadonlyArray<Tool>, prefix = ""): ReadonlyArray<strin
   tools.flatMap((tool) =>
     tool.type === "namespace" ? toolNames(tool.tools ?? [], `${tool.name}.`) : [`${prefix}${tool.name ?? tool.type}`]
   )
+
+const marks = (text: string) => [...text.matchAll(/PROMPT-MARK: (\w+)/g)].map((m) => m[1])
+const textsOf = (input: ReadonlyArray<Item>, role: string) =>
+  input
+    .filter((item) => item.type === "message" && item.role === role)
+    .map((item) => (item.content ?? []).map((c) => c.text ?? "").join("\n"))
+
+/**
+ * Which version of Dream's prompt the request carries: `PROMPT-MARK: <word>`s in the base instructions, and in each
+ * developer message of the conversation, oldest first (Codex puts its `developer_instructions` there, so a resumed
+ * thread shows both the old and the new one); the user messages so far, and every `REMEMBER: <word>` in them, so a
+ * fresh thread shows as one with no history.
+ */
+const promptOf = (instructions: string | undefined, input: ReadonlyArray<Item>) => {
+  const users = textsOf(input, "user")
+  return {
+    instructionMarks: marks(instructions ?? ""),
+    developerMarks: textsOf(input, "developer")
+      .map(marks)
+      .filter((found) => found.length > 0),
+    userMessages: users.length,
+    // What the last user message opens with, so a check can see what the turn's prompt started with.
+    opening: (users.at(-1) ?? "").trim().slice(0, 80),
+    remembered: users.flatMap((text) => [...text.matchAll(/REMEMBER: (\w+)/g)].map((m) => m[1]))
+  }
+}
 
 let counter = 0
 
@@ -138,6 +165,7 @@ createServer((request, response) => {
         model: body.model,
         effort: body.reasoning?.effort,
         persona: personaOf(raw),
+        ...promptOf(body.instructions, input),
         tools: toolNames([...(body.tools ?? []), ...input.flatMap((item) => item.tools ?? [])]).join(" "),
         outputs,
         role,

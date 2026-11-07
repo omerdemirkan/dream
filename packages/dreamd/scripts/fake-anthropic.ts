@@ -3,6 +3,7 @@
  *
  *   - a prompt containing `RUN: <command>` gets a Bash tool call running it (`RUN_BG: <command>` runs it with
  *     `run_in_background`), then, once the result comes back, a reply saying so;
+ *   - a prompt containing `SKILL: <name>` gets a Skill tool call loading that skill;
  *   - a prompt containing `AGENT: <json>` gets an Agent tool call with that input (say
  *     `{"description":"check","prompt":"say hi","model":"haiku","effort":"low"}`), to start a subagent;
  *   - a progress-line request (`scripts/progress-eval/compare.ts`) gets a line too long for the phone, then, asked
@@ -21,9 +22,11 @@
  *
  * Point Claude Code at it with ANTHROPIC_BASE_URL=http://127.0.0.1:<port> (in dreamd's sandbox, through the `env`
  * of ~/.claude/settings.json). It prints one JSON line per request, with the model and effort asked for, never the
- * Authorization header. `persona` says which of Dream's system prompts the request carries ("agent" or "task").
+ * Authorization header. `persona` says which of Dream's system prompts the request carries ("agent" or "task"), and
+ * `system` and `systemMarks` which version of it (see `systemOf`).
  * Node built-ins only, so it runs from anywhere.
  */
+import { createHash } from "node:crypto"
 import { createServer } from "node:http"
 
 /** Which of Dream's system prompts the request carries, by its opening words: the agent's, or a scheduled task's. */
@@ -34,6 +37,23 @@ const personaOf = (raw: string): "agent" | "task" | undefined =>
       ? "agent"
       : undefined
 
+/**
+ * What the request's system prompt is, apart from the conversation: a short hash of it, and every
+ * `PROMPT-MARK: <word>` it holds, so a test can plant a word in Dream's prompt and see which version a request carries.
+ */
+const systemOf = (system: unknown) => {
+  const all =
+    typeof system === "string"
+      ? system
+      : Array.isArray(system)
+        ? (system as ReadonlyArray<Block>).map((block) => (block.type === "text" ? (block.text ?? "") : "")).join("\n")
+        : ""
+  return {
+    system: createHash("sha256").update(all).digest("hex").slice(0, 12),
+    systemMarks: [...all.matchAll(/PROMPT-MARK: (\w+)/g)].map((m) => m[1])
+  }
+}
+
 const port = Number(process.argv[2] ?? 18789)
 
 type Block = { readonly type: string; readonly text?: string; readonly content?: unknown }
@@ -43,6 +63,18 @@ const textOf = (message: Message): string =>
   typeof message.content === "string"
     ? message.content
     : message.content.map((block) => (block.type === "text" ? (block.text ?? "") : "")).join("\n")
+
+/** The start of a user message's own text, past the reminders Claude Code puts in it. */
+const openingOf = (message: Message | undefined): string =>
+  (message === undefined
+    ? []
+    : typeof message.content === "string"
+      ? [message.content]
+      : message.content.map((b) => b.text ?? "")
+  )
+    .map((text) => text.trim())
+    .find((text) => text !== "" && !text.startsWith("<"))
+    ?.slice(0, 80) ?? ""
 
 const sse = (events: ReadonlyArray<Record<string, unknown>>) =>
   events.map((event) => `event: ${String(event.type)}\ndata: ${JSON.stringify(event)}\n\n`).join("")
@@ -100,6 +132,11 @@ const text = (body: string): Reply => ({ block: { type: "text", text: body }, st
 
 const agent = (input: unknown): Reply => ({
   block: { type: "tool_use", id: `toolu_fake_${counter + 1}`, name: "Agent", input },
+  stop: "tool_use"
+})
+
+const useSkill = (skill: string): Reply => ({
+  block: { type: "tool_use", id: `toolu_fake_${counter + 1}`, name: "Skill", input: { skill } },
   stop: "tool_use"
 })
 
@@ -180,6 +217,7 @@ createServer((request, response) => {
     const withTools = (body.tools?.length ?? 0) > 0
     const run = withTools ? /RUN(_BG)?: (.+)$/m.exec(lastText) : null
     const spawn = withTools ? /AGENT: (\{.+\})$/m.exec(lastText) : null
+    const skill = withTools ? /SKILL: ([\w-]+)$/m.exec(lastText) : null
     const role = !withTools
       ? "side"
       : userTexts.some((t) => t.includes("SUBAGENT")) && !userTexts.some((t) => /AGENT: \{/.test(t))
@@ -190,9 +228,11 @@ createServer((request, response) => {
       ? text("The command ran.")
       : spawn !== null
         ? agent(JSON.parse(spawn[1]!))
-        : run !== null
-          ? bash(run[2]!.trim(), run[1] !== undefined)
-          : text(`I remember: ${remembered.join(", ") || "nothing"}. User messages so far: ${userTexts.length}.`)
+        : skill !== null
+          ? useSkill(skill[1]!)
+          : run !== null
+            ? bash(run[2]!.trim(), run[1] !== undefined)
+            : text(`I remember: ${remembered.join(", ") || "nothing"}. User messages so far: ${userTexts.length}.`)
     console.log(
       JSON.stringify({
         at: new Date().toISOString(),
@@ -201,6 +241,7 @@ createServer((request, response) => {
         model,
         effort: body.output_config?.effort,
         persona: personaOf(raw),
+        ...systemOf(body.system),
         messages: messages.length,
         roles: messages.map((m) => m.role[0]).join(""),
         tools: body.tools?.length ?? 0,
@@ -208,14 +249,22 @@ createServer((request, response) => {
         role,
         usage: usageOf[role],
         userMessages: userTexts.length,
+        // What the last user message opens with, so a check can see what the turn's prompt started with.
+        opening: openingOf(last),
         remembered,
+        // Every `SKILL-MARK: <word>` in the conversation, oldest first: which skill listings and bodies it saw.
+        skillMarks: messages.flatMap((m) =>
+          [...JSON.stringify(m.content).matchAll(/SKILL-MARK: (\w+)/g)].map((found) => found[1])
+        ),
         did: toolResult
           ? "after-tool"
           : spawn !== null
             ? `agent: ${spawn[1]}`
-            : run !== null
-              ? `bash${run[1] ?? ""}: ${run[2]}`
-              : "reply"
+            : skill !== null
+              ? `skill: ${skill[1]}`
+              : run !== null
+                ? `bash${run[1] ?? ""}: ${run[2]}`
+                : "reply"
       })
     )
     const stream = body.stream === true

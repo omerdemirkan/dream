@@ -69,3 +69,45 @@ export const renderTaskPrompt = ({ why, brief, now, timeZone }: TaskPromptInput)
   const clock = DateTime.format(now, { locale: "en-US", timeZone: zone, dateStyle: "full", timeStyle: "short" })
   return `It's ${clock} where they are (${zone}).\n\nThe agent scheduled this job ("${why}"). Its brief:\n\n${brief.trim()}\n`
 }
+
+export interface GuidanceChange {
+  /** Whether the system prompt changed. */
+  readonly prompt: boolean
+  /** Whether the `dream` skill changed. */
+  readonly skill: boolean
+}
+
+/**
+ * Said before the turn's prompt the first time a session that keeps its conversation (Claude Code's) runs on new
+ * guidance from Dream, so the agent doesn't work from what it remembers of the old.
+ */
+export const renderGuidanceNote = ({ prompt, skill }: GuidanceChange): string => {
+  const changed = [
+    ...(prompt ? ["your system prompt is the new version now"] : []),
+    ...(skill ? ["the dream skill changed, so load it again before you rely on what you remember of it"] : [])
+  ]
+  return `Dream updated its guidance for you since your last turn: ${changed.join(", and ")}.\n`
+}
+
+export interface HandoffInput {
+  /** The previous conversation's log, if it was found. */
+  readonly log?: string | undefined
+  /** Its last exchanges, oldest first: Dream's prompts to the agent, and what the agent said. */
+  readonly recent: ReadonlyArray<{ readonly from: "dream" | "you"; readonly text: string }>
+}
+
+/**
+ * Said before the turn's prompt in a new conversation that replaces one whose guidance changed (Codex keeps a
+ * conversation's instructions for its whole life): where the old one is, and how it ended.
+ */
+export const renderHandoff = ({ log, recent }: HandoffInput): string => {
+  const where =
+    log === undefined
+      ? "Its log wasn't found, so the project's files and git history are what you have of it."
+      : `Its log is ${log} (JSON lines; the messages are the "response_item" lines). Read more of it when you need to.`
+  const exchanges =
+    recent.length === 0
+      ? ""
+      : `\n\nHow it ended:\n\n${recent.map(({ from, text }) => `[${from === "dream" ? "Dream" : "You"}]\n${text.trim()}`).join("\n\n")}`
+  return `Dream started this conversation for you because its guidance for you changed; your instructions are the new version. It continues your previous conversation with this project. ${where}${exchanges}\n`
+}

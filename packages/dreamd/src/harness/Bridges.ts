@@ -5,8 +5,10 @@
  * instead. The recipe's identity is a hash of its files, so a new pin is a new recipe: `dreamd bootstrap` installs
  * it when the template is built, and a sandbox refreshed from that template gets the install and its marker.
  *
+ * Dream also edits the bridge code where an adapter has no setting for what it needs (`bridgePatches`).
+ *
  * `scripts/harness-pins.ts` writes the manifests; `test/bridges.test.ts` checks they still match the installed
- * adapters' apart from the CLIs.
+ * adapters' apart from the CLIs, and that every patch still applies.
  */
 import { readFile } from "node:fs/promises"
 import { createRequire } from "node:module"
@@ -36,9 +38,43 @@ export const adapterBridgeDir = (harness: PinnedHarness): string =>
 /** The recipe files Dream replaces, by name within the bootstrap directory. */
 const replaced = ["package.json", "pnpm-lock.yaml"] as const
 
+/** The recipe file holding the bridge's code, by name within the bootstrap directory. */
+export const bridgeFile = "bridge.mjs"
+
+export interface BridgePatch {
+  /** Text that occurs exactly once in the adapter's bridge code. */
+  readonly find: string
+  readonly replace: string
+}
+
+/**
+ * Edits to each adapter's bridge code. A patch that no longer finds its text fails the bootstrap (and the test),
+ * so an adapter upgrade can't drop it silently.
+ *
+ * Claude Code records a conversation's system prompt on its first request and sends that record on every later
+ * request and resume until the conversation compacts, ignoring the text a later launch passes (`snapshot`, on by
+ * default, in the Agent SDK's `systemPrompt`). The project's session lives for weeks, so a new prompt from a
+ * template refresh would never reach it. `snapshot: false` renders the prompt on every request instead, from what
+ * dreamd passes, which is the same text until the template changes it. The adapter has no setting for it.
+ */
+export const bridgePatches: Readonly<Record<PinnedHarness, ReadonlyArray<BridgePatch>>> = {
+  "claude-code": [{ find: `preset: "claude_code",\n`, replace: `preset: "claude_code",\n\t\tsnapshot: false,\n` }],
+  codex: []
+}
+
+/** The bridge code with `patches` applied; throws if one doesn't find its text exactly once. */
+export const patchBridge = (code: string, patches: ReadonlyArray<BridgePatch>): string =>
+  patches.reduce((patched, { find, replace }) => {
+    const parts = patched.split(find)
+    if (parts.length !== 2) {
+      throw new Error(`A bridge patch found its text ${parts.length - 1} times, not once: ${JSON.stringify(find)}`)
+    }
+    return parts.join(replace)
+  }, code)
+
 /**
  * The adapter, with a bootstrap recipe that installs Dream's pinned CLI: the adapter's own recipe (its bridge code,
- * workspace settings and install commands) with Dream's manifest and lockfile.
+ * workspace settings and install commands) with Dream's manifest and lockfile, and its bridge code patched.
  */
 export const withPinnedCli = <H extends Pick<HarnessV1, "getBootstrap">>(harness: PinnedHarness, adapter: H): H => {
   const getBootstrap = adapter.getBootstrap
@@ -57,6 +93,7 @@ export const withPinnedCli = <H extends Pick<HarnessV1, "getBootstrap">>(harness
         ...recipe,
         files: recipe.files.map((file) => {
           const name = file.path.startsWith(prefix) ? file.path.slice(prefix.length) : undefined
+          if (name === bridgeFile) return { ...file, content: patchBridge(file.content, bridgePatches[harness]) }
           const content = name === undefined ? undefined : pinned[name]
           return content === undefined ? file : { ...file, content }
         })
