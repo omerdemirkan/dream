@@ -137,7 +137,6 @@ createServer((request, response) => {
       reasoning?: { effort?: string }
       input?: ReadonlyArray<Item>
       tools?: ReadonlyArray<Tool>
-      instructions?: string
     } = {}
     try {
       raw = Buffer.concat(chunks).toString("utf8")

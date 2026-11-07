@@ -41,11 +41,13 @@ const personaOf = (raw: string): "agent" | "task" | undefined =>
  * What the request's system prompt is, apart from the conversation: a short hash of it, and every
  * `PROMPT-MARK: <word>` it holds, so a test can plant a word in Dream's prompt and see which version a request carries.
  */
-const systemOf = (system: string | ReadonlyArray<Block> | undefined) => {
+const systemOf = (system: unknown) => {
   const all =
     typeof system === "string"
       ? system
-      : (system ?? []).map((block) => (block.type === "text" ? (block.text ?? "") : "")).join("\n")
+      : Array.isArray(system)
+        ? (system as ReadonlyArray<Block>).map((block) => (block.type === "text" ? (block.text ?? "") : "")).join("\n")
+        : ""
   return {
     system: createHash("sha256").update(all).digest("hex").slice(0, 12),
     systemMarks: [...all.matchAll(/PROMPT-MARK: (\w+)/g)].map((m) => m[1])
@@ -161,7 +163,6 @@ createServer((request, response) => {
       tools?: ReadonlyArray<unknown>
       stream?: boolean
       output_config?: { effort?: string }
-      system?: string | ReadonlyArray<Block>
     } = {}
     try {
       raw = Buffer.concat(chunks).toString("utf8")
