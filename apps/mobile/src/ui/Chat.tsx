@@ -543,8 +543,8 @@ export function ChatTab(props: {
         }}
         style={props.scope !== undefined && workstream !== props.scope ? { opacity: 0.32 } : undefined}
       >
+        {label === undefined ? null : <WorkstreamLabel title={label} mine={mine} />}
         <Holdable message={message} onReply={() => openThread(message.id)}>
-          {label === undefined ? null : <WorkstreamLabel title={label} mine={mine} />}
           <MessageBody
             message={message}
             time={time}

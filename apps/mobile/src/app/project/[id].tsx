@@ -404,6 +404,7 @@ function Project(props: {
       <AppNotificationsSheet projectId={props.projectId} title={project?.title ?? ""} />
       {state && thread ? (
         <ThreadView
+          key={thread.messageId}
           state={state}
           open={thread}
           label={labelOf(state.messages, thread.messageId, labels)}
