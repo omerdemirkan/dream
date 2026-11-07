@@ -26,8 +26,10 @@ export interface DreamdConfigShape extends Config.Success<typeof DaemonConfig> {
   readonly codexBaseUrl: Option.Option<string>
   /** The key relay deliveries are signed with (`RelayKeyPath` in a sandbox); dreamd makes it if it's missing. */
   readonly relayKeyPath: string
-  /** Whether dreamd reports what turns are doing (`DaemonEnv.progressLine` is "on"; see `progress/Progress.ts`). */
+  /** Whether dreamd reports what turns are doing (`DaemonEnv.progressLine`; see `progress/Progress.ts`). */
   readonly progressLine: boolean
+  /** Whether a small model writes the line ("on"), or only the model-free one does ("model-free"). */
+  readonly progressModel: boolean
 }
 
 const LocalConfig = Config.all({
@@ -80,6 +82,7 @@ const load = (provider: ConfigProvider.ConfigProvider, envFile: string) =>
       envHash: local.envHash,
       codexBaseUrl: local.codexBaseUrl,
       relayKeyPath: `${local.home}/.dream/relay.key`,
-      progressLine: local.progressLine.trim().toLowerCase() === "on"
+      progressLine: ["on", "model-free"].includes(local.progressLine.trim().toLowerCase()),
+      progressModel: local.progressLine.trim().toLowerCase() === "on"
     })
   })

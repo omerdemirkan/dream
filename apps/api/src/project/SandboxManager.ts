@@ -140,7 +140,7 @@ export const daemonSettings = (options: {
   readonly agentModel: Option.Option<string>
   readonly codexAgentModel: Option.Option<string>
   readonly agentEffort: Option.Option<ReasoningEffort>
-  readonly progressLine?: boolean
+  readonly progressLine?: "off" | "model" | "model-free"
 }): Record<string, string> => {
   const model = options.harness === "claude-code" ? options.agentModel : options.codexAgentModel
   return {
@@ -152,7 +152,11 @@ export const daemonSettings = (options: {
     [DaemonEnv.socket]: DefaultDaemonSocket,
     ...Option.match(model, { onNone: () => ({}), onSome: (value) => ({ [DaemonEnv.model]: value }) }),
     ...Option.match(options.agentEffort, { onNone: () => ({}), onSome: (value) => ({ [DaemonEnv.effort]: value }) }),
-    ...(options.progressLine === true ? { [DaemonEnv.progressLine]: "on" } : {})
+    ...(options.progressLine === "model"
+      ? { [DaemonEnv.progressLine]: "on" }
+      : options.progressLine === "model-free"
+        ? { [DaemonEnv.progressLine]: "model-free" }
+        : {})
   }
 }
 
@@ -1028,7 +1032,7 @@ export class SandboxManager extends Context.Service<
       const tellWatching = (watching: boolean) =>
         Effect.gen(function* () {
           const record = yield* core.sandbox
-          if (!config.progressLine || !record.working || record.access === undefined) return
+          if (config.progressLine === "off" || !record.working || record.access === undefined) return
           if (record.daemonToken === undefined) return
           yield* daemon.setWatching(record.access, record.daemonToken, watching)
         }).pipe(Effect.catch((error) => Effect.logInfo("couldn't tell dreamd who's watching", error.message)))

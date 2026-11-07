@@ -45,7 +45,7 @@ export interface Derived {
   readonly line: string
   readonly score: number
   /** Where it came from, for logs and the evaluation. */
-  readonly source: Step["kind"] | "status" | "held"
+  readonly source: Step["kind"] | "status" | "held" | "model"
 }
 
 /** The phrase as it fits on the phone, if it can be made to without cutting it. */

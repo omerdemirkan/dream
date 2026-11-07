@@ -93,7 +93,11 @@ export const DaemonEnv = {
    * DO knows the dreamd answering is the one that read this file.
    */
   envHash: "DREAM_ENV_HASH",
-  /** Optional: "on" lets dreamd report what a turn is doing (`TurnProgress`) while someone watches. Off unless set. */
+  /**
+   * Optional: dreamd reports what a turn is doing (`TurnProgress`) while someone watches. "on": a small model writes
+   * the line through the project's harness CLI, with the model-free line as its fallback; "model-free": only that.
+   * Off unless set.
+   */
   progressLine: "DREAM_PROGRESS_LINE"
 } as const
 

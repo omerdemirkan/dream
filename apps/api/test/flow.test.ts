@@ -985,7 +985,7 @@ describe("a project, end to end", () => {
 
   it.live("shows what a long turn is doing while someone watches, and tells dreamd who's watching", () =>
     Effect.gen(function* () {
-      const cloud = yield* makeCloud({ progressLine: true })
+      const cloud = yield* makeCloud({ progressLine: "model" })
       const { project } = yield* setup(cloud)
       yield* cloud.alarm(project.id)
       assert.strictEqual(envFileOf(cloud, project.id).env.DREAM_PROGRESS_LINE, "on")

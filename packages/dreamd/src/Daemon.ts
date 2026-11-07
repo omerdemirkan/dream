@@ -26,6 +26,7 @@ import { Tasks } from "./Tasks.ts"
 import { Inbox } from "./Inbox.ts"
 import { Outreach } from "./Outreach.ts"
 import { Progress } from "./progress/Progress.ts"
+import * as CliSummarizer from "./progress/CliSummarizer.ts"
 import { Summarizer } from "./progress/Summarizer.ts"
 import { Published } from "./Published.ts"
 import { RelayForwarder } from "./Relays.ts"
@@ -132,7 +133,12 @@ export const layerWithoutConfig = layerWith(
     AppTraffic.layer,
     PageCheck.layer.pipe(Layer.provide(FetchHttpClient.layer)),
     RelayForwarder.layer.pipe(Layer.provide(FetchHttpClient.layer)),
-    Summarizer.modelFree
+    // The progress line: a small model through the harness CLI, or only the model-free line.
+    Layer.unwrap(
+      Effect.gen(function* () {
+        return (yield* DreamdConfig).progressModel ? CliSummarizer.layer : Summarizer.modelFree
+      })
+    )
   )
 )
 

@@ -172,9 +172,20 @@ createServer((request, response) => {
         did: spawn !== null ? `spawn: ${spawn[1]}` : wait ? "wait" : "reply"
       })
     )
-    if (body.instructions?.includes("dream-progress-line") === true && request.url?.endsWith("/responses") === true) {
+    if (raw.includes("dream-progress-line") && request.url?.endsWith("/responses") === true) {
       // A progress line (`scripts/progress-eval`): too long the first time, so the retry is exercised, then one that fits.
       const retry = input.length > 1
+      // What one summary costs to send: `codex exec`'s own additions (tools, instructions) show up here.
+      console.log(
+        JSON.stringify({
+          did: "progress-line",
+          model: body.model,
+          effort: body.reasoning?.effort,
+          bodyBytes: raw.length,
+          toolBytes: JSON.stringify(input.filter((item) => item.type === "additional_tools")).length,
+          items: input.map((item) => `${item.type}:${JSON.stringify(item).length}`).join(" ")
+        })
+      )
       response.writeHead(200, { "content-type": "text/event-stream", ...rateLimits() })
       response.end(
         reply(

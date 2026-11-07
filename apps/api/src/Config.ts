@@ -68,9 +68,21 @@ export const ApiConfigSchema = Config.all({
   agentEffort: Config.option(Config.schema(ReasoningEffort, "DREAM_AGENT_EFFORT")),
   /**
    * Whether dreamd reports what a long turn is doing (a progress line and liveness, shown under "Working") while
-   * someone watches; written to dreamd's env as `DREAM_PROGRESS_LINE=on`. Off unless DREAM_PROGRESS_LINE is "true".
+   * someone watches, written to dreamd's env as `DREAM_PROGRESS_LINE`. DREAM_PROGRESS_LINE "true" (or "model"): the
+   * line comes from the provider's cheapest model through the harness CLI, on the person's login, with the
+   * model-free line as fallback; "model-free": only that; anything else, or unset: off.
    */
-  progressLine: Config.Boolean("DREAM_PROGRESS_LINE").pipe(Config.withDefault(false)),
+  progressLine: Config.String("DREAM_PROGRESS_LINE").pipe(
+    Config.withDefault("false"),
+    Config.map((value): "off" | "model" | "model-free" => {
+      const normalized = value.trim().toLowerCase()
+      return normalized === "true" || normalized === "model"
+        ? "model"
+        : normalized === "model-free"
+          ? "model-free"
+          : "off"
+    })
+  ),
   /** How dreamd is started in a new sandbox (run with `bash -lc`). */
   daemonCommand: Config.NonEmptyString("DREAMD_COMMAND").pipe(Config.withDefault("dreamd")),
   apnsKeyId: optionalString("APNS_KEY_ID"),
@@ -140,7 +152,7 @@ export class ApiConfig extends Context.Service<ApiConfig, ApiConfigShape>()("@dr
         agentModel: Option.none(),
         codexAgentModel: Option.none(),
         agentEffort: Option.none(),
-        progressLine: false,
+        progressLine: "off",
         daemonCommand: "dreamd",
         apnsKeyId: Option.some("KEYID12345"),
         apnsTeamId: Option.some("TEAMID1234"),

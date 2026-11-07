@@ -169,12 +169,13 @@ export const makeAdapter = (
   return name === "claude-code"
     ? withPinnedCli(
         "claude-code",
-        // With turn progress on, subagents' thinking and Claude Code's own summaries of them come through too
-        // (`progress/Steps.ts`): what a long turn is doing is mostly what its helpers are doing.
+        // With turn progress on, subagents' thinking and text come through too (`progress/Steps.ts`): what a long
+        // turn is doing is mostly what its helpers are doing.
         createClaudeCode({
           auth,
           effort,
-          ...(config.progressLine === true ? { forwardSubagentText: true, agentProgressSummaries: true } : {})
+          // Not `agentProgressSummaries`: those are extra model calls on their plan, and the line has its own.
+          ...(config.progressLine === true ? { forwardSubagentText: true } : {})
         })
       )
     : withPinnedCli(
