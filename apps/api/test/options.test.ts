@@ -37,12 +37,19 @@ const setup = Effect.gen(function* () {
     { _tag: "Output", text: "Long-lived authentication token created successfully!\r\n" },
     { _tag: "Output", text: `${claudeToken}\r\n` }
   ]
-  yield* cloud.phone.CompleteModelConnection({ connectionId: started.connection.id, code: Redacted.make("code123#state") })
+  yield* cloud.phone.CompleteModelConnection({
+    connectionId: started.connection.id,
+    code: Redacted.make("code123#state")
+  })
   const project = yield* cloud.phone.CreateProject({ idea: "A booking site for our family cabin." })
   yield* cloud.alarm(project.id)
   const dreamd = yield* cloud.sandbox(tokenOf(cloud, project.id))
   /** An uploaded file, as `dream` leaves it: reserved, then its bytes PUT. */
-  const upload = (filename: string, contentType: MediaContentType, size: { width?: number; height?: number; durationSeconds?: number } = {}) =>
+  const upload = (
+    filename: string,
+    contentType: MediaContentType,
+    size: { width?: number; height?: number; durationSeconds?: number } = {}
+  ) =>
     Effect.gen(function* () {
       const { media } = yield* dreamd.CreateMediaUpload({ filename, contentType, sizeBytes: 3, ...size })
       cloud.db.prepare("UPDATE media SET uploaded_at = ? WHERE id = ?").run(new Date().toISOString(), media.id)
@@ -81,7 +88,9 @@ describe("option previews", () => {
           ["Requests first", [flow.id]]
         ]
       )
-      const listed = (yield* cloud.phone.ListMessages({ projectId: project.id })).messages.find((m) => m.id === asked.id)
+      const listed = (yield* cloud.phone.ListMessages({ projectId: project.id })).messages.find(
+        (m) => m.id === asked.id
+      )
       assert.deepStrictEqual(listed?._tag === "Question" ? listed.previews : undefined, asked.previews)
 
       const note = "Yes, but open on A’s calendar so people see what’s free."
@@ -103,7 +112,10 @@ describe("option previews", () => {
       })
       yield* cloud.alarm(project.id)
       const heard = answers(cloud)
-      assert.deepStrictEqual(heard.map((e) => e.answer._tag === "Choice" && e.answer.note), [note, undefined])
+      assert.deepStrictEqual(
+        heard.map((e) => e.answer._tag === "Choice" && e.answer.note),
+        [note, undefined]
+      )
       yield* cloud.close
     })
   )
@@ -127,7 +139,9 @@ describe("option previews", () => {
       })
       assert.strictEqual(sound.previews?.[0]?.media[0]?.kind, "audio")
 
-      const inMessage = yield* dreamd.SendMessage({ text: "Listen", media: [chime.id], notify: false }).pipe(Effect.flip)
+      const inMessage = yield* dreamd
+        .SendMessage({ text: "Listen", media: [chime.id], notify: false })
+        .pipe(Effect.flip)
       assert.include(inMessage.message, "only as an option's preview")
       const onStatus = yield* dreamd.UpdateStatus({ media: [chime.id] }).pipe(Effect.flip)
       assert.include(onStatus.message, "only as an option's preview")

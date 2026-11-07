@@ -66,7 +66,11 @@ const glyphs = {
   reply: "arrowshape.turn.up.left",
   bell: "bell",
   clip: "paperclip",
-  photo: "photo"
+  photo: "photo",
+  pencil: "pencil",
+  waveform: "waveform",
+  again: "arrow.clockwise",
+  rotate: "rotate.right"
 } as const satisfies Record<string, SymbolViewProps["name"]>
 
 export type Glyph = keyof typeof glyphs

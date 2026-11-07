@@ -241,7 +241,10 @@ export const cabinDirections: QuestionMessage = {
         preview("med_optreqflow", "Asking for a weekend", "video/mp4", { width: 780, height: 1688, durationSeconds: 9 })
       ]
     },
-    { option: "Rotation", media: [preview("med_optrot", "Opening the site", "image/jpeg", { width: 1170, height: 2532 })] }
+    {
+      option: "Rotation",
+      media: [preview("med_optrot", "Opening the site", "image/jpeg", { width: 1170, height: 2532 })]
+    }
   ],
   state: { _tag: "Open" },
   notificationId: "5c2e8a1f-6b3d-4f7e-a9c0-1d2e3f4a5b6c" as NotificationId
@@ -258,7 +261,10 @@ export const timerSounds: QuestionMessage = {
   why: "You’ll hear it mid-set, so I’d rather you choose by ear.",
   previews: [
     { option: "Soft chime", media: [preview("med_sndchime", "Soft chime", "audio/mp4", { durationSeconds: 1.6 })] },
-    { option: "Three short buzzes", media: [preview("med_sndbuzz", "Three short buzzes", "audio/mp4", { durationSeconds: 1.2 })] },
+    {
+      option: "Three short buzzes",
+      media: [preview("med_sndbuzz", "Three short buzzes", "audio/mp4", { durationSeconds: 1.2 })]
+    },
     { option: "Rising tone", media: [preview("med_sndrise", "Rising tone", "audio/mp4", { durationSeconds: 2 })] }
   ],
   state: { _tag: "Open" }

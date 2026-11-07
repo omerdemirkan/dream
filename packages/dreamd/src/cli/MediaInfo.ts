@@ -12,15 +12,15 @@ export interface MediaInfo {
 }
 
 const u16 = (b: Uint8Array, at: number) => (b[at]! << 8) | b[at + 1]!
-const u32 = (b: Uint8Array, at: number) => ((b[at]! << 24) >>> 0) + ((b[at + 1]! << 16) | (b[at + 2]! << 8) | b[at + 3]!)
+const u32 = (b: Uint8Array, at: number) =>
+  ((b[at]! << 24) >>> 0) + ((b[at + 1]! << 16) | (b[at + 2]! << 8) | b[at + 3]!)
 const le32 = (b: Uint8Array, at: number) => (b[at]! | (b[at + 1]! << 8) | (b[at + 2]! << 16) | (b[at + 3]! << 24)) >>> 0
 const tag = (b: Uint8Array, at: number) => String.fromCharCode(b[at]!, b[at + 1]!, b[at + 2]!, b[at + 3]!)
 const s32 = (b: Uint8Array, at: number) => u32(b, at) | 0
 
 const size = (width: number, height: number): MediaInfo => (width > 0 && height > 0 ? { width, height } : {})
 
-const png = (b: Uint8Array): MediaInfo =>
-  b.length >= 24 && tag(b, 12) === "IHDR" ? size(u32(b, 16), u32(b, 20)) : {}
+const png = (b: Uint8Array): MediaInfo => (b.length >= 24 && tag(b, 12) === "IHDR" ? size(u32(b, 16), u32(b, 20)) : {})
 
 const jpeg = (b: Uint8Array): MediaInfo => {
   let at = 2

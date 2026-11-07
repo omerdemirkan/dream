@@ -19,6 +19,7 @@ import { FixturesLaunch } from "../ui/FixturesLaunch.tsx"
 import { FocusOverlay } from "../ui/FocusOverlay.tsx"
 import { DeclineHost } from "../ui/Decline.tsx"
 import { MediaViewer } from "../ui/Media.tsx"
+import { OptionsViewerHost } from "../ui/Options.tsx"
 import { color } from "../ui/theme.ts"
 import { Toast } from "../ui/Toast.tsx"
 import { UpdatesHost } from "../ui/UpdatesHost.tsx"
@@ -80,6 +81,7 @@ function Shell() {
       <FocusOverlay />
       <Toast />
       <MediaViewer />
+      <OptionsViewerHost />
       <DeclineHost />
     </>
   )

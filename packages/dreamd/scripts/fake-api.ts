@@ -98,7 +98,12 @@ const Handlers = SandboxRpcs.toLayer(
       Effect.fail(new UpstreamFailure({ service, message: "not available in the fake API" }))
     const message = { projectId, createdAt: start }
     const uploads = new Map<MediaId, MediaRef>()
-    const fakeRef = (mediaId: MediaId): MediaRef => ({ id: mediaId, kind: "image", contentType: "image/png", sizeBytes: 1 })
+    const fakeRef = (mediaId: MediaId): MediaRef => ({
+      id: mediaId,
+      kind: "image",
+      contentType: "image/png",
+      sizeBytes: 1
+    })
     const clear = <A>(value: A | null | undefined, previous: A | undefined) =>
       value === null ? undefined : value === undefined ? previous : value
     return {
@@ -126,7 +131,10 @@ const Handlers = SandboxRpcs.toLayer(
               : {
                   previews: previews.map(({ option, media }) => ({
                     option,
-                    media: media.map((mediaId) => uploads.get(mediaId) ?? fakeRef(mediaId)) as [MediaRef, ...Array<MediaRef>]
+                    media: media.map((mediaId) => uploads.get(mediaId) ?? fakeRef(mediaId)) as [
+                      MediaRef,
+                      ...Array<MediaRef>
+                    ]
                   }))
                 }),
             state: { _tag: "Open" as const }

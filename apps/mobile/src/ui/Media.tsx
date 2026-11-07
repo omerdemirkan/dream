@@ -28,10 +28,19 @@ const bundled: Record<string, number> = {
   med_cabinrot: require("../../assets/fixtures/cabin-rotation.png"),
   med_digest: require("../../assets/fixtures/digest.png"),
   med_attboard: require("../../assets/fixtures/attach-whiteboard.png"),
-  med_attlist: require("../../assets/fixtures/attach-list.png")
+  med_attlist: require("../../assets/fixtures/attach-list.png"),
+  // Option previews (`QuestionMessage.previews`): Cabin's three directions, and three rest-timer sounds.
+  med_optcal: require("../../assets/fixtures/option-cal.jpg"),
+  med_optcaldesk: require("../../assets/fixtures/option-cal-desktop.jpg"),
+  med_optreq: require("../../assets/fixtures/option-req.jpg"),
+  med_optreqflow: require("../../assets/fixtures/option-req-flow.mp4"),
+  med_optrot: require("../../assets/fixtures/option-rot.jpg"),
+  med_sndchime: require("../../assets/fixtures/sound-chime.m4a"),
+  med_sndbuzz: require("../../assets/fixtures/sound-buzz.m4a"),
+  med_sndrise: require("../../assets/fixtures/sound-rise.m4a")
 }
 
-type Source = number | { readonly uri: string; readonly headers: Record<string, string> }
+export type Source = number | { readonly uri: string; readonly headers: Record<string, string> }
 
 /**
  * Photos they attached from this phone, by id: the picked file (or a fixture's bundled image), so their own photo
@@ -60,7 +69,7 @@ const duration = (seconds: number) => {
 }
 
 /** A still from the recording: its last moment, which usually shows what it proves. */
-function VideoPoster(props: { readonly source: Source; readonly duration: number | undefined }) {
+export function VideoPoster(props: { readonly source: Source; readonly duration: number | undefined }) {
   const player = useVideoPlayer(props.source, (p) => {
     p.muted = true
     if (props.duration !== undefined) p.currentTime = Math.max(0, props.duration - 0.5)

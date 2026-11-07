@@ -541,7 +541,8 @@ export const AgentHandlers = SandboxRpcs.toLayer(
           }
           if (row.value.ref_json.kind === "audio" && !allowAudio) {
             return yield* new InvalidRequest({
-              message: "Audio plays only as an option's preview (`dream ask --show`), not in a message or the status card."
+              message:
+                "Audio plays only as an option's preview (`dream ask --show`), not in a message or the status card."
             })
           }
           refs.push(row.value.ref_json)

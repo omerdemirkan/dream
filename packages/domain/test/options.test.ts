@@ -20,7 +20,8 @@ import {
 } from "../src/index.ts"
 import * as Fixtures from "../src/fixtures.ts"
 
-const json = <S extends Schema.Top>(schema: S) => Schema.toCodecJson(schema as never) as never as Schema.Codec<S["Type"], unknown>
+const json = <S extends Schema.Top>(schema: S) =>
+  Schema.toCodecJson(schema as never) as never as Schema.Codec<S["Type"], unknown>
 const wireOf = (message: Message): unknown =>
   JSON.parse(JSON.stringify(Schema.encodeSync(Schema.toCodecJson(Message))(message)))
 
@@ -70,9 +71,16 @@ describe("option previews", () => {
     }
     assert.deepStrictEqual(Schema.decodeUnknownSync(Schema.toCodecJson(Message))(wireOf(answered)), answered)
     const old = Schema.decodeUnknownSync(Schema.toCodecJson(OldQuestion))(wireOf(answered))
-    assert.deepStrictEqual(old.state._tag === "Answered" && old.state.answer, { _tag: "Choice", option: "Requests first" })
+    assert.deepStrictEqual(old.state._tag === "Answered" && old.state.answer, {
+      _tag: "Choice",
+      option: "Requests first"
+    })
     // An API from before them takes the newer app's answer, without the note.
-    const choice = Schema.encodeSync(Schema.toCodecJson(QuestionAnswer))({ _tag: "Choice", option: "Rotation", note: "Hm" })
+    const choice = Schema.encodeSync(Schema.toCodecJson(QuestionAnswer))({
+      _tag: "Choice",
+      option: "Rotation",
+      note: "Hm"
+    })
     assert.deepStrictEqual(Schema.decodeUnknownSync(Schema.toCodecJson(OldAnswer))(choice), {
       _tag: "Choice",
       option: "Rotation"
@@ -101,9 +109,18 @@ describe("option previews", () => {
     assert.isUndefined(questionPreviewsProblem(options, []))
     assert.include(questionPreviewsProblem(options, [one("Calendar")])!, "isn't one of the options")
     assert.include(questionPreviewsProblem(options, [one("Calendar first"), one("Calendar first")])!, "more than one")
-    assert.include(questionPreviewsProblem(options, [one("Calendar first", QuestionPreviewLimits.perOption + 1)])!, "at most")
+    assert.include(
+      questionPreviewsProblem(options, [one("Calendar first", QuestionPreviewLimits.perOption + 1)])!,
+      "at most"
+    )
     const many = Array.from({ length: 4 }, (_, i) => one(`O${i}`, QuestionPreviewLimits.perOption))
-    assert.include(questionPreviewsProblem(many.map((p) => p.option), many)!, "a question shows at most")
+    assert.include(
+      questionPreviewsProblem(
+        many.map((p) => p.option),
+        many
+      )!,
+      "a question shows at most"
+    )
   })
 
   it("tell media kinds apart", () => {

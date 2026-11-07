@@ -2,7 +2,7 @@
  * Screen state that isn't data: the expanded message, where Chat should land,
  * the toast, and the media viewer.
  */
-import type { AccessMessage, AskMessage, LinkId, MediaRef, MessageId, ProjectId } from "@dream/domain"
+import type { AccessMessage, AskMessage, LinkId, MediaRef, MessageId, ProjectId, QuestionMessage } from "@dream/domain"
 import { Option } from "effect"
 import { Atom } from "effect/reactivity"
 
@@ -61,6 +61,14 @@ export const appNotificationsSheetAtom = Atom.make<Option.Option<ProjectId>>(Opt
 export const declineAtom = Atom.make<Option.Option<AccessMessage>>(Option.none()).pipe(Atom.keepAlive)
 
 export const viewerAtom = Atom.make<Option.Option<MediaRef>>(Option.none()).pipe(Atom.keepAlive)
+
+/** A question's option previews, full screen, opened at one of its options (`index`). */
+export interface OptionsView {
+  readonly message: QuestionMessage
+  readonly index: number
+}
+
+export const optionsViewerAtom = Atom.make<Option.Option<OptionsView>>(Option.none()).pipe(Atom.keepAlive)
 
 /** Measures for the message cards on screen in Chat, so the expanded view can shrink back into one. */
 export const messageRects = new Map<MessageId, () => Promise<Rect | undefined>>()

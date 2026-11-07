@@ -60,7 +60,9 @@ export const mediaType = (file: string, audio = false): Result.Result<MediaConte
   const type = mediaTypes[extension] ?? (audio ? audioTypes[extension] : undefined)
   if (type !== undefined) return Result.succeed(type)
   if (audioTypes[extension] !== undefined) {
-    return Result.fail(`${file}: audio plays only as an option's preview (\`dream ask --show\`); attach png, jpg or mp4 here.`)
+    return Result.fail(
+      `${file}: audio plays only as an option's preview (\`dream ask --show\`); attach png, jpg or mp4 here.`
+    )
   }
   return Result.fail(`${file}: attach png, jpg or mp4 files${audio ? ", or mp3, m4a or wav" : ""}.`)
 }
@@ -72,9 +74,18 @@ export const mediaType = (file: string, audio = false): Result.Result<MediaConte
 export const parseShow = (input: string): Result.Result<{ option: string; files: ReadonlyArray<string> }, string> => {
   const at = input.lastIndexOf("=")
   const option = at < 0 ? "" : input.slice(0, at).trim()
-  const files = at < 0 ? [] : input.slice(at + 1).split(",").map((file) => file.trim()).filter((file) => file !== "")
+  const files =
+    at < 0
+      ? []
+      : input
+          .slice(at + 1)
+          .split(",")
+          .map((file) => file.trim())
+          .filter((file) => file !== "")
   return option === "" || files.length === 0
-    ? Result.fail(`Can't read --show "${input}"; use --show "<option>=<files>", like --show "Calendar first=shots/a-*.png".`)
+    ? Result.fail(
+        `Can't read --show "${input}"; use --show "<option>=<files>", like --show "Calendar first=shots/a-*.png".`
+      )
     : Result.succeed({ option, files })
 }
 

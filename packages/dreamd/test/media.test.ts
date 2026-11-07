@@ -5,7 +5,9 @@ import { measure } from "../src/cli/MediaInfo.ts"
 import { mediaType, parseShow } from "../src/cli/Parse.ts"
 
 const bytes = (...parts: ReadonlyArray<ReadonlyArray<number> | string>) =>
-  new Uint8Array(parts.flatMap((part) => (typeof part === "string" ? [...part].map((c) => c.charCodeAt(0)) : [...part])))
+  new Uint8Array(
+    parts.flatMap((part) => (typeof part === "string" ? [...part].map((c) => c.charCodeAt(0)) : [...part]))
+  )
 const be32 = (n: number) => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255]
 const le32 = (n: number) => [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255]
 const box = (type: string, ...content: ReadonlyArray<ReadonlyArray<number>>) => {
@@ -34,13 +36,29 @@ describe("measuring media", () => {
 
   it("reads an mp4's size and length, turned or not, and an m4a's length", () => {
     assert.deepStrictEqual(measure("video/mp4", mp4(1920, 1080)), { width: 1920, height: 1080, durationSeconds: 9.5 })
-    assert.deepStrictEqual(measure("video/mp4", mp4(1920, 1080, true)), { width: 1080, height: 1920, durationSeconds: 9.5 })
+    assert.deepStrictEqual(measure("video/mp4", mp4(1920, 1080, true)), {
+      width: 1080,
+      height: 1920,
+      durationSeconds: 9.5
+    })
     assert.deepStrictEqual(measure("audio/mp4", mp4(0, 0)), { durationSeconds: 9.5 })
   })
 
   it("reads a wav's length", () => {
     const rate = 44100 * 2
-    const wav = bytes("RIFF", le32(0), "WAVE", "fmt ", le32(16), [1, 0, 1, 0], le32(44100), le32(rate), [2, 0, 16, 0], "data", le32(rate * 2))
+    const wav = bytes(
+      "RIFF",
+      le32(0),
+      "WAVE",
+      "fmt ",
+      le32(16),
+      [1, 0, 1, 0],
+      le32(44100),
+      le32(rate),
+      [2, 0, 16, 0],
+      "data",
+      le32(rate * 2)
+    )
     assert.deepStrictEqual(measure("audio/wav", wav), { durationSeconds: 2 })
   })
 
@@ -53,8 +71,14 @@ describe("measuring media", () => {
 
 describe("dream ask --show", () => {
   it("names an option and its files", () => {
-    assert.deepStrictEqual(parseShow("Calendar first=shots/a-*.png"), Result.succeed({ option: "Calendar first", files: ["shots/a-*.png"] }))
-    assert.deepStrictEqual(parseShow("x = y=a.png, b.mp4"), Result.succeed({ option: "x = y", files: ["a.png", "b.mp4"] }))
+    assert.deepStrictEqual(
+      parseShow("Calendar first=shots/a-*.png"),
+      Result.succeed({ option: "Calendar first", files: ["shots/a-*.png"] })
+    )
+    assert.deepStrictEqual(
+      parseShow("x = y=a.png, b.mp4"),
+      Result.succeed({ option: "x = y", files: ["a.png", "b.mp4"] })
+    )
     assert.isTrue(Result.isFailure(parseShow("Calendar first")))
     assert.isTrue(Result.isFailure(parseShow("=a.png")))
   })
