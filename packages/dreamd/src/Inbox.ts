@@ -4,12 +4,12 @@
  * it gets back as delivered; a crash, restart or pause loses nothing.
  *
  * An entry is `queued` until a turn takes it, `turn` while that turn runs, and
- * gone once the turn ends. A `WakeDue` with a `--run` command starts as
- * `command`: dreamd runs it, drops the event if it succeeds, and queues it
- * with the result if it fails. After a restart, events a turn had taken are
+ * gone once the turn ends. A `WakeDue` with a `--run` command or a `--task`
+ * starts as `command`: dreamd runs it, drops the event if it succeeds, and
+ * queues it with the result if it fails. After a restart, events a turn had taken are
  * queued again, so an interrupted turn's events reach the next one.
  */
-import { AgentEvent, EventId, TimeZone } from "@dream/domain"
+import { AgentEvent, EventId, type TaskFailure, TimeZone } from "@dream/domain"
 import { Context, Effect, FileSystem, Layer, Option, Path, Schema, Stream, SubscriptionRef } from "effect"
 import { DreamdConfig } from "./Config.ts"
 import * as JsonFile from "./JsonFile.ts"
@@ -42,7 +42,9 @@ export type WakeDueEvent = Extract<AgentEvent, { readonly _tag: "WakeDue" }>
 export type RunResult = NonNullable<NonNullable<WakeDueEvent["run"]>["result"]>
 
 const needsCommand = (event: AgentEvent): event is WakeDueEvent =>
-  event._tag === "WakeDue" && event.run !== undefined && event.run.result === undefined
+  event._tag === "WakeDue" &&
+  ((event.run !== undefined && event.run.result === undefined) ||
+    (event.run === undefined && event.task !== undefined && event.task.result === undefined))
 
 export class Inbox extends Context.Service<
   Inbox,
@@ -67,6 +69,11 @@ export class Inbox extends Context.Service<
     readonly commands: Effect.Effect<ReadonlyArray<WakeDueEvent>>
     /** A command finished: success drops the wake, failure queues it with the result for the agent. */
     readonly commandFinished: (id: EventId, result: RunResult) => Effect.Effect<void, JsonFile.StateFileError>
+    /** A task's session finished: success (no failure) drops the wake, failure queues it with why for the agent. */
+    readonly taskFinished: (
+      id: EventId,
+      failure: TaskFailure | undefined
+    ) => Effect.Effect<void, JsonFile.StateFileError>
     readonly state: Effect.Effect<InboxState>
     /** The state now and after every change. */
     readonly changes: Stream.Stream<InboxState>
@@ -181,6 +188,17 @@ export class Inbox extends Context.Service<
                   state: "queued",
                   event: { ...entry.event, run: { command: entry.event.run.command, result } }
                 }
+              ]
+            })
+            return [undefined, { ...state, entries }]
+          }),
+        taskFinished: (id, failure) =>
+          transact((state) => {
+            const entries = state.entries.flatMap((entry): Array<Entry> => {
+              if (entry.event.id !== id || entry.state !== "command" || entry.event._tag !== "WakeDue") return [entry]
+              if (failure === undefined || entry.event.task === undefined) return []
+              return [
+                { ...entry, state: "queued", event: { ...entry.event, task: { ...entry.event.task, result: failure } } }
               ]
             })
             return [undefined, { ...state, entries }]

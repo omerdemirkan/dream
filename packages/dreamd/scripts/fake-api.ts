@@ -341,6 +341,8 @@ const Handlers = SandboxRpcs.toLayer(
           return relay
         }),
       ReportTurn: (payload) => log("ReportTurn", payload),
+      ReportTask: (payload) =>
+        log("ReportTask", encode(SandboxRpcs.requests.get("ReportTask")!.payloadSchema, payload)),
       StayAwake: (payload) => log("StayAwake", payload),
       Sleep: (payload) => log("Sleep", payload)
     }

@@ -67,6 +67,15 @@ export const wakeWithCommand = (n: number, command: string) =>
     run: { command }
   })
 
+export const wakeWithTask = (n: number, brief: string) =>
+  AgentEvent.cases.WakeDue.make({
+    id: `evt_${n}` as EventId,
+    at: at(n),
+    wakeId: `wak_${n}` as WakeId,
+    why: "weekly episode",
+    task: { brief, model: "sonnet", effort: "medium" }
+  })
+
 export const usageReset = (n: number) =>
   AgentEvent.cases.UsageReset.make({ id: `evt_${n}` as EventId, at: at(n), window: "fiveHour" })
 

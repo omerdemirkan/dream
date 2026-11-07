@@ -21,6 +21,7 @@ import { PageCheck, PageCheckError, PageLoad } from "../src/cli/PageCheck.ts"
 import { DreamdConfig } from "../src/Config.ts"
 import { layerWith } from "../src/Daemon.ts"
 import { Harness, type HarnessError, type TurnResult, TurnOutcome } from "../src/harness/Harness.ts"
+import { Tasks } from "../src/Tasks.ts"
 import { RelayForwarder } from "../src/Relays.ts"
 import { Shutdown } from "../src/Shutdown.ts"
 import { configRecord, daemonClient, fakeApi, freePort, noPageChecks, tempDir, userMessage } from "./support.ts"
@@ -68,6 +69,7 @@ const setup = Effect.gen(function* () {
     layerWith(
       Layer.mergeAll(
         Harness.layerTest({ turns, log }),
+        Tasks.layerNone,
         Shutdown.layerTest(),
         noPageChecks,
         AppTraffic.layerNone,

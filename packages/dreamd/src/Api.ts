@@ -17,6 +17,7 @@ import {
   Routes,
   SandboxAuth,
   SandboxRpcs,
+  type TaskReport,
   type TurnUsage,
   type UsageSnapshot
 } from "@dream/domain"
@@ -34,6 +35,7 @@ export type Report =
       readonly usage?: TurnUsage
     }
   | { readonly _tag: "Usage"; readonly usage: UsageSnapshot }
+  | { readonly _tag: "Task"; readonly task: TaskReport }
   | { readonly _tag: "Question"; readonly question: DreamQuestion }
   | { readonly _tag: "Message"; readonly text: string }
   | { readonly _tag: "Publish"; readonly port: number }
@@ -74,6 +76,8 @@ export class Api extends Context.Service<
       usage?: TurnUsage
     ) => Effect.Effect<void>
     readonly reportUsage: (usage: UsageSnapshot) => Effect.Effect<void>
+    /** A scheduled task's session finished (`dream wake --task`). */
+    readonly reportTask: (report: TaskReport) => Effect.Effect<void>
     /** Once, with no retries: the caller asks again a minute later. A Worker older than `StayAwake` fails it. */
     readonly stayAwake: (reason: AwakeReason) => Effect.Effect<void, ApiError>
     /** Once, with no retries. A Worker older than `Sleep` fails it, and the sandbox sleeps on its timeout. */
@@ -110,6 +114,7 @@ export class Api extends Context.Service<
         reportTurn: (state, eventIds, usage) =>
           report(`turn ${state}`, client.ReportTurn({ state, eventIds, ...(usage === undefined ? {} : { usage }) })),
         reportUsage: (usage) => report("usage", client.ReportUsage({ usage })),
+        reportTask: (task) => report("a task's run", client.ReportTask(task)),
         stayAwake: (reason) =>
           client.StayAwake({ reason }).pipe(
             Effect.timeout("30 seconds"),
@@ -155,6 +160,7 @@ export class Api extends Context.Service<
             ]
           ),
         reportUsage: (usage) => Ref.update(reports, (all): ReadonlyArray<Report> => [...all, { _tag: "Usage", usage }]),
+        reportTask: (task) => Ref.update(reports, (all): ReadonlyArray<Report> => [...all, { _tag: "Task", task }]),
         stayAwake: (reason) =>
           Ref.update(reports, (all): ReadonlyArray<Report> => [...all, { _tag: "StayAwake", reason }]),
         sleep: (reason, checkedAt) =>

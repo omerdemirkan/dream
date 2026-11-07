@@ -8,7 +8,7 @@
 import { renderAgentEvent, type AgentEvent } from "@dream/domain"
 import { DateTime, Order } from "effect"
 
-export { dreamSkill, systemPrompt } from "./generated/prompts.ts"
+export { dreamSkill, systemPrompt, taskPrompt } from "./generated/prompts.ts"
 
 /** Where the skill goes: `<skills dir>/dream/SKILL.md` for Claude Code and Codex. */
 export const dreamSkillName = "dream"
@@ -51,3 +51,19 @@ export const renderTurnPrompt = (input: TurnPromptInput): string => render("What
  */
 export const renderSteerPrompt = (input: TurnPromptInput): string =>
   render("This arrived while you were working", input)
+
+export interface TaskPromptInput {
+  /** The wake's reason, as the agent gave it. */
+  readonly why: string
+  /** The agent's brief: the whole of what the task's session is told about the job. */
+  readonly brief: string
+  readonly now: DateTime.Utc
+  readonly timeZone?: string | undefined
+}
+
+/** The prompt that starts a scheduled task's session (`dream wake --task`): the time where they are, then the brief. */
+export const renderTaskPrompt = ({ why, brief, now, timeZone }: TaskPromptInput): string => {
+  const zone = timeZone ?? "UTC"
+  const clock = DateTime.format(now, { locale: "en-US", timeZone: zone, dateStyle: "full", timeStyle: "short" })
+  return `It's ${clock} where they are (${zone}).\n\nThe agent scheduled this job ("${why}"). Its brief:\n\n${brief.trim()}\n`
+}

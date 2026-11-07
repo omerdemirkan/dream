@@ -797,9 +797,12 @@ export const AgentHandlers = SandboxRpcs.toLayer(
       UpdateLiveActivity: ({ content }) => notifier.updateLive(content),
       EndLiveActivity: ({ content }) => notifier.endLive(content),
 
-      ScheduleWake: ({ when, why, run }) =>
+      ScheduleWake: ({ when, why, run, task }) =>
         Effect.gen(function* () {
           const nowMs = yield* Clock.currentTimeMillis
+          if (run !== undefined && task !== undefined) {
+            return yield* new InvalidRequest({ message: "A wake-up runs a command or a task, not both." })
+          }
           if (when._tag === "Cron" && Result.isFailure(Cron.parse(when.expression, when.timeZone ?? "UTC"))) {
             return yield* new InvalidRequest({
               message: `"${when.expression}" isn't a valid five-field cron expression.`
@@ -812,6 +815,7 @@ export const AgentHandlers = SandboxRpcs.toLayer(
             when,
             why,
             ...(run === undefined ? {} : { run }),
+            ...(task === undefined ? {} : { task }),
             nextAt: DateTime.makeUnsafe(next.value),
             createdAt: DateTime.makeUnsafe(nowMs)
           }
@@ -879,6 +883,7 @@ export const AgentHandlers = SandboxRpcs.toLayer(
       RemoveRelay: ({ relayId }) => relays.remove(relayId),
       RestartRelay: ({ relayId }) => relays.restart(relayId),
 
+      ReportTask: (report) => sandbox.taskFinished(report),
       ReportTurn: ({ state, usage }) => (state === "started" ? sandbox.turnStarted : sandbox.turnFinished(usage)),
       StayAwake: () => sandbox.stayAwake,
       Sleep: ({ reason, checkedAt }) => sandbox.sleep(reason, checkedAt)

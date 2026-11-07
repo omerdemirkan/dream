@@ -43,7 +43,8 @@ export class Scheduler extends Context.Service<Scheduler, { readonly run: Effect
                 at: yield* DateTime.now,
                 wakeId: wake.id,
                 why: wake.why,
-                ...(wake.run === undefined ? {} : { run: { command: wake.run } })
+                ...(wake.run === undefined ? {} : { run: { command: wake.run } }),
+                ...(wake.task === undefined ? {} : { task: wake.task })
               })
             )
             const next = nextWakeAt(wake.when, timeZone, nowMs + 1000)

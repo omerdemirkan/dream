@@ -39,7 +39,9 @@ export const backoff = (failures: number): Duration.Duration =>
  * a check of its published URL. A turn started only by these doesn't post its final text to Chat.
  */
 export const agentOnly = (event: AgentEvent): boolean =>
-  event._tag === "Alert" || event._tag === "PublishedUrlBroken" || (event._tag === "WakeDue" && event.run !== undefined)
+  event._tag === "Alert" ||
+  event._tag === "PublishedUrlBroken" ||
+  (event._tag === "WakeDue" && (event.run !== undefined || event.task !== undefined))
 
 const hasQueued = (state: InboxState) => state.entries.some((entry) => entry.state === "queued")
 const hasQueuedReset = (state: InboxState) =>

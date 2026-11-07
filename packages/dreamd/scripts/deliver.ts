@@ -3,6 +3,7 @@
  *
  *   node packages/dreamd/scripts/deliver.ts <daemon-url> <daemon-token> message "text"
  *   node packages/dreamd/scripts/deliver.ts <daemon-url> <daemon-token> wake "why" "command"
+ *   node packages/dreamd/scripts/deliver.ts <daemon-url> <daemon-token> task "why" "brief" [model] [effort]
  *   node packages/dreamd/scripts/deliver.ts <daemon-url> <daemon-token> reset fiveHour|weekly
  *   node packages/dreamd/scripts/deliver.ts <daemon-url> <daemon-token> health
  *
@@ -17,17 +18,18 @@ import {
   EventId,
   HttpRpcSerialization,
   MessageId,
+  ReasoningEffort,
   Routes,
   WakeId
 } from "@dream/domain"
 import { NodeRuntime } from "@effect/platform-node"
-import { Console, DateTime, Effect, Layer } from "effect"
+import { Console, DateTime, Effect, Layer, Schema } from "effect"
 import { FetchHttpClient, Headers, HttpClient, HttpClientRequest } from "effect/http"
 import { RpcClient, RpcMiddleware } from "effect/rpc"
 
-const [url, token, kind = "health", text = "", command] = process.argv.slice(2)
+const [url, token, kind = "health", text = "", command, model = "haiku", effort = "low"] = process.argv.slice(2)
 if (url === undefined || token === undefined) {
-  console.error("usage: deliver.ts <daemon-url> <daemon-token> message|wake|reset|health [text] [command]")
+  console.error("usage: deliver.ts <daemon-url> <daemon-token> message|wake|task|reset|health [text] [command|brief]")
   process.exit(2)
 }
 const trafficToken = process.env.E2B_TRAFFIC_TOKEN
@@ -44,13 +46,17 @@ const program = Effect.gen(function* () {
           at,
           window: text === "weekly" ? "weekly" : "fiveHour"
         })
-      : kind === "wake"
+      : kind === "wake" || kind === "task"
         ? AgentEvent.cases.WakeDue.make({
             id: EventId.make(`evt_${n}`),
             at,
             wakeId: WakeId.make(`wak_${n}`),
             why: text,
-            ...(command === undefined ? {} : { run: { command } })
+            ...(command === undefined
+              ? {}
+              : kind === "task"
+                ? { task: { brief: command, model, effort: Schema.decodeUnknownSync(ReasoningEffort)(effort) } }
+                : { run: { command } })
           })
         : AgentEvent.cases.UserMessage.make({
             id: EventId.make(`evt_${n}`),

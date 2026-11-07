@@ -38,6 +38,8 @@ import {
   type ReasoningEffort,
   SandboxKeyDir,
   sandboxKeyPath,
+  type TaskReport,
+  type TaskRun,
   type TurnUsage,
   UpstreamFailure
 } from "@dream/domain"
@@ -174,6 +176,8 @@ export class SandboxManager extends Context.Service<
     readonly turnStarted: Effect.Effect<void>
     /** A turn finished, with the tokens it used (none from older dreamd builds): recorded, and the header updated. */
     readonly turnFinished: (usage?: TurnUsage | undefined) => Effect.Effect<void>
+    /** A scheduled task's session finished (`SandboxRpcs.ReportTask`): recorded like a turn, and on its wake. */
+    readonly taskFinished: (report: TaskReport) => Effect.Effect<void>
     readonly keepalive: Effect.Effect<void>
     /** dreamd is running a scheduled command or serving the published app: keep the sandbox up a while longer. */
     readonly stayAwake: Effect.Effect<void>
@@ -668,8 +672,11 @@ export class SandboxManager extends Context.Service<
         )
         yield* store.markDelivered(accepted as ReadonlyArray<EventId>, DateTime.formatIso(yield* DateTime.now))
         yield* handedOff
-        // A scheduled command that succeeds never reaches the agent, so it starts no turn: stop saying "starting".
-        const startsNoTurn = pending.every((event) => event._tag === "WakeDue" && event.run !== undefined)
+        // A scheduled command or task that succeeds never reaches the agent, so it starts no turn: stop saying
+        // "starting".
+        const startsNoTurn = pending.every(
+          (event) => event._tag === "WakeDue" && (event.run !== undefined || event.task !== undefined)
+        )
         yield* update((r) => (startsNoTurn ? withoutStarting({ ...r, failures: 0 }) : { ...r, failures: 0 }))
         const rest = yield* store.pendingEvents(1)
         if (rest.length > 0) {
@@ -896,6 +903,40 @@ export class SandboxManager extends Context.Service<
           yield* live.publish(ProjectEvent.cases.Usage.make({ usage: yield* usageReport.glance(project) }))
         }).pipe(Effect.catchCause((cause) => Effect.logWarning("couldn't record the turn's usage", { cause })))
 
+      const taskFinished = (report: TaskReport) =>
+        Effect.gen(function* () {
+          const project = yield* core.project.pipe(Effect.orDie)
+          yield* turnLog.record({
+            id: `trn_${randomToken(22)}`,
+            userId: project.ownerId,
+            projectId: project.id,
+            provider: providerFor(project),
+            startedAt: report.startedAt,
+            endedAt: report.endedAt,
+            usage: report.usage,
+            before: report.before,
+            after: report.after ?? (yield* latestUsage),
+            wakeId: report.wakeId
+          })
+          const wake = yield* store.wake(report.wakeId)
+          if (Option.isSome(wake)) {
+            const lastRun: TaskRun = {
+              startedAt: report.startedAt,
+              endedAt: report.endedAt,
+              outcome: report.outcome,
+              ...(report.summary === undefined ? {} : { summary: report.summary }),
+              ...(report.usage === undefined ? {} : { usage: report.usage })
+            }
+            const { nextAt } = wake.value
+            yield* store.putWake(
+              { ...wake.value, lastRun },
+              nextAt === undefined ? undefined : DateTime.toEpochMillis(nextAt)
+            )
+            yield* core.wakesChanged
+          }
+          yield* live.publish(ProjectEvent.cases.Usage.make({ usage: yield* usageReport.glance(project) }))
+        }).pipe(Effect.catchCause((cause) => Effect.logWarning("couldn't record the task's run", { cause })))
+
       const turnFinished = (usage?: TurnUsage | undefined) =>
         Effect.gen(function* () {
           const record = yield* core.sandbox
@@ -1027,6 +1068,7 @@ export class SandboxManager extends Context.Service<
         gatewayTarget,
         turnStarted,
         turnFinished,
+        taskFinished,
         keepalive: keepalive.pipe(Effect.catch(() => Effect.void)),
         stayAwake,
         sleep,
