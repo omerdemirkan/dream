@@ -20,5 +20,6 @@ wakes the sandbox. From their phone it opens in Safari.
   published URL, and each one wakes the sandbox. Only one port is published, so the webhook routes go in the same
   server as the app. Some senders want an answer within three seconds, so answer first and do the slow part after. A
   service that only talks down a connection you keep open needs a relay (below).
-- A server you start as a background task of your shell stops when your turn ends. To keep one running between turns,
-  start it detached, e.g. `setsid nohup npm start > server.log 2>&1 &`.
+- A server you start as a background task of your shell keeps your turn going until Dream stops it, and doesn't
+  outlive the turn. To keep one running between turns, start it detached, e.g.
+  `setsid nohup npm start > server.log 2>&1 &`.
