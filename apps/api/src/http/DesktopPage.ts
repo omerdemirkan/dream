@@ -47,11 +47,13 @@ textarea{width:100%;min-height:150px;padding:14px;border-radius:12px;border:1px 
 textarea:focus{outline:none;border-color:rgba(255,179,92,.6)}
 .file{display:block;margin-top:8px;font-size:13px;color:rgba(245,245,247,.5)}
 .file input{width:auto;padding:0;border:0;background:none;font:inherit;color:inherit}
+.file input::file-selector-button{margin-right:8px;padding:6px 12px;border:0;border-radius:999px;background:#28282D;
+  color:#F5F5F7;font:inherit;font-weight:600;cursor:pointer}
 .button{display:block;width:100%;margin-top:16px;padding:14px;border-radius:12px;background:#FFB35C;color:#1B1204;
   font-weight:650;text-align:center;text-decoration:none}
 .warn{margin:14px 0 0;padding:10px 12px;border-radius:10px;background:rgba(255,179,92,.08);font-size:13px;color:rgba(245,245,247,.8)}
 .account{margin:18px 0 0;padding-top:14px;border-top:1px solid rgba(255,255,255,.08);font-size:13px;color:rgba(245,245,247,.4)}
-@media (min-width:700px){main{padding:36px 36px 32px}h1{font-size:26px}}
+@media (min-width:700px){body{font-size:17px}main{max-width:560px;padding:40px 40px 34px}h1{font-size:28px}}
 `
 
 /** A key's form fields: the ids and names the Worker reads back. */
@@ -75,6 +77,7 @@ export const contextHtml = (markdown: string): string =>
       let html = escape(paragraph.trim()).replace(/\n/g, "<br>")
       html = html.replace(/`([^`]+)`/g, "<code>$1</code>")
       html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      html = html.replace(/(^|[^*\w])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>")
       html = html.replace(
         /\[([^\]]+)\]\((https:\/\/[^)\s"<>]+)\)/g,
         (_, text: string, url: string) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${text}</a>`
