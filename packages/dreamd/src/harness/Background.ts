@@ -166,10 +166,12 @@ export const supervise = Effect.fnUntraced(function* <A, E, R>(options: {
       })
       if (before.live !== after.live && !sameTasks(before.live, after.live)) yield* persist(after.live)
     })
+  const bounds = options.bounds ?? limits
+  const every = Duration.millis(Math.min(Duration.toMillis(checkEvery), Duration.toMillis(bounds.quiet) / 4))
   const check = Effect.gen(function* () {
     while (true) {
-      yield* Effect.sleep(checkEvery)
-      const over = overLimit(yield* Ref.get(state), yield* Clock.currentTimeMillis, options.bounds)
+      yield* Effect.sleep(every)
+      const over = overLimit(yield* Ref.get(state), yield* Clock.currentTimeMillis, bounds)
       if (Option.isSome(over)) {
         yield* Ref.set(limited, over)
         yield* Effect.logWarning("Background work held the turn past Dream's limit; stopping the turn", {

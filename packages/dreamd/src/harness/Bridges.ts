@@ -45,7 +45,7 @@ export const bridgeFile = "bridge.mjs"
 /** Files Dream adds to each bridge, beside `bridge.mjs`, from `bridges/<harness>/`. */
 export const bridgeExtras: Readonly<Record<PinnedHarness, ReadonlyArray<string>>> = {
   "claude-code": ["background.mjs"],
-  codex: []
+  codex: ["background.mjs"]
 }
 
 export interface BridgePatch {
@@ -68,6 +68,11 @@ export interface BridgePatch {
  * would end it at the model's first reply and stop the CLI with its background subagents, shells and Monitors in
  * it. The patches route the CLI's messages through Dream's tracker and let it decide when a turn that had
  * background work is over; a turn without any ends where the adapter ends it.
+ *
+ * Codex's turn holds the same way for the root agent's children (`bridges/codex/background.mjs`): the app-server
+ * driver tells Dream's tracker what it hears about them, waits after the root's turn completes while they run, then
+ * starts another root turn with their final answers (or with a message steered in meanwhile), and adds up the
+ * root turns' usage.
  */
 export const bridgePatches: Readonly<Record<PinnedHarness, ReadonlyArray<BridgePatch>>> = {
   "claude-code": [
@@ -162,7 +167,105 @@ export const bridgePatches: Readonly<Record<PinnedHarness, ReadonlyArray<BridgeP
       ].join("\n")
     }
   ],
-  codex: []
+  codex: [
+    {
+      find: `import { isDeepStrictEqual } from "node:util";\n`,
+      replace:
+        `import { isDeepStrictEqual } from "node:util";\n` +
+        `import { addUsage as dreamAddUsage, createDreamChildren } from "./background.mjs";\n`
+    },
+    {
+      find: `\tlet loadedConfig;\n\tlet activeTurn;\n\tconst close = async () => {\n`,
+      replace: `\tlet loadedConfig;\n\tlet activeTurn;\n\tconst dreamChildren = createDreamChildren();\n\tconst close = async () => {\n`
+    },
+    {
+      find: [
+        `\t\t\t\tonNotification: (notification) => {`,
+        `\t\t\t\t\tif (client !== created || activeTurn == null) return;`,
+        ``
+      ].join("\n"),
+      replace: [
+        `\t\t\t\tonNotification: (notification) => {`,
+        `\t\t\t\t\tif (client === created) dreamChildren.observe(notification, loadedThreadId);`,
+        `\t\t\t\t\tif (client !== created || activeTurn == null) return;`,
+        ``
+      ].join("\n")
+    },
+    {
+      find: `\t\t\tfor await (const message of turn.experimental_userMessages) try {\n`,
+      replace: [
+        `\t\t\tfor await (const message of turn.experimental_userMessages) try {`,
+        `\t\t\t\tif (dreamChildren.holding()) {`,
+        `\t\t\t\t\tdreamChildren.steer(message);`,
+        `\t\t\t\t\tcontinue;`,
+        `\t\t\t\t}`,
+        ``
+      ].join("\n")
+    },
+    {
+      find: `\t\tlet keepClient = false;\n`,
+      replace: `\t\tlet keepClient = false;\n\t\tlet dreamWaiting = false;\n`
+    },
+    {
+      find: [
+        `\t\t\tconst result = await raceWithProcess({ operation: handler.waitForCompletion() });`,
+        `\t\t\tkeepClient = true;`,
+        `\t\t\tassertSuccessfulTurn(result);`,
+        ``
+      ].join("\n"),
+      replace: [
+        `\t\t\tconst result = await raceWithProcess({ operation: handler.waitForCompletion() });`,
+        `\t\t\tkeepClient = true;`,
+        `\t\t\tassertSuccessfulTurn(result);`,
+        `\t\t\tfor (;;) {`,
+        `\t\t\t\tdreamWaiting = true;`,
+        `\t\t\t\tconst next = await raceWithProcess({ operation: dreamChildren.settle((report) => emit({ type: "raw", rawValue: report })) });`,
+        `\t\t\t\tdreamWaiting = false;`,
+        `\t\t\t\tif (next === void 0) break;`,
+        `\t\t\t\tconst followUp = createAppServerEventHandler({`,
+        `\t\t\t\t\tstepTracker: options.stepTracker,`,
+        `\t\t\t\t\temitStreamEvent: (event) => {`,
+        `\t\t\t\t\t\tif (event.type !== "thread.started") options.emitStreamEvent(event);`,
+        `\t\t\t\t\t},`,
+        `\t\t\t\t\temitWarning: turn.emitWarning,`,
+        `\t\t\t\t\temitError: turn.emitError`,
+        `\t\t\t\t});`,
+        `\t\t\t\tfollowUp.announceThread(currentTurn.threadId);`,
+        `\t\t\t\tcurrentTurn.handler = followUp;`,
+        `\t\t\t\tcurrentTurn.turnId = void 0;`,
+        `\t\t\t\ttry {`,
+        `\t\t\t\t\tcurrentTurn.turnId = readNestedString({`,
+        `\t\t\t\t\t\tvalue: await raceWithProcess({ operation: runningClient.request({`,
+        `\t\t\t\t\t\t\tmethod: "turn/start",`,
+        `\t\t\t\t\t\t\tparams: {`,
+        `\t\t\t\t\t\t\t\t...createTurnParams({ threadId: currentTurn.threadId, start, codexModel, disableEnvironments: toolPolicy.disableEnvironments }),`,
+        `\t\t\t\t\t\t\t\tinput: [{ type: "text", text: next.input, text_elements: [] }]`,
+        `\t\t\t\t\t\t\t}`,
+        `\t\t\t\t\t\t}) }),`,
+        `\t\t\t\t\t\tpath: ["turn", "id"],`,
+        `\t\t\t\t\t\tmethod: "turn/start"`,
+        `\t\t\t\t\t});`,
+        `\t\t\t\t} catch (error) {`,
+        `\t\t\t\t\tfor (const message of next.messages) message.reject(error);`,
+        `\t\t\t\t\tthrow error;`,
+        `\t\t\t\t}`,
+        `\t\t\t\tfollowUp.setTurnId(currentTurn.turnId);`,
+        `\t\t\t\tfor (const message of next.messages) message.accept();`,
+        `\t\t\t\tassertSuccessfulTurn(await raceWithProcess({ operation: followUp.waitForCompletion() }));`,
+        `\t\t\t}`,
+        ``
+      ].join("\n")
+    },
+    {
+      // Stopped while it waited on children (dreamd's limit): stop the app-server with them, rather than leave them.
+      find: `\t\t\tthrow error;\n\t\t} finally {\n\t\t\tturn.experimental_userMessages.close();\n`,
+      replace: `\t\t\tif (dreamWaiting) keepClient = false;\n\t\t\tthrow error;\n\t\t} finally {\n\t\t\tturn.experimental_userMessages.close();\n`
+    },
+    {
+      find: `\t\tsetTurnUsage: (usage) => turnUsage = usage,\n`,
+      replace: `\t\tsetTurnUsage: (usage) => turnUsage = dreamAddUsage(turnUsage, usage),\n`
+    }
+  ]
 }
 
 /** The bridge code with `patches` applied; throws if one doesn't find its text exactly once. */

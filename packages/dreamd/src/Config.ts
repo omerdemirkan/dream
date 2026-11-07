@@ -30,6 +30,9 @@ export interface DreamdConfigShape extends Config.Success<typeof DaemonConfig> {
   readonly progressLine: boolean
   /** Whether a small model writes the line ("on"), or only the model-free one does ("model-free"). */
   readonly progressModel: boolean
+  /** For checks: shorter limits on background work holding a turn (see `harness/Background.ts`). */
+  readonly backgroundQuiet: Option.Option<Duration.Duration>
+  readonly backgroundLong: Option.Option<Duration.Duration>
 }
 
 const LocalConfig = Config.all({
@@ -40,7 +43,9 @@ const LocalConfig = Config.all({
   effort: Config.option(Config.schema(ReasoningEffort, DaemonEnv.effort)),
   envHash: Config.option(Config.NonEmptyString(DaemonEnv.envHash)),
   codexBaseUrl: Config.option(Config.NonEmptyString("DREAM_CODEX_BASE_URL")),
-  progressLine: Config.String(DaemonEnv.progressLine).pipe(Config.withDefault("off"))
+  progressLine: Config.String(DaemonEnv.progressLine).pipe(Config.withDefault("off")),
+  backgroundQuiet: Config.option(Config.Duration("DREAM_BACKGROUND_QUIET")),
+  backgroundLong: Config.option(Config.Duration("DREAM_BACKGROUND_LONG"))
 })
 
 export class DreamdConfig extends Context.Service<DreamdConfig, DreamdConfigShape>()("@dream/dreamd/DreamdConfig") {
@@ -83,6 +88,8 @@ const load = (provider: ConfigProvider.ConfigProvider, envFile: string) =>
       codexBaseUrl: local.codexBaseUrl,
       relayKeyPath: `${local.home}/.dream/relay.key`,
       progressLine: ["on", "model-free"].includes(local.progressLine.trim().toLowerCase()),
-      progressModel: local.progressLine.trim().toLowerCase() === "on"
+      progressModel: local.progressLine.trim().toLowerCase() === "on",
+      backgroundQuiet: local.backgroundQuiet,
+      backgroundLong: local.backgroundLong
     })
   })

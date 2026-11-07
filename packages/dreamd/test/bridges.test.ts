@@ -96,6 +96,19 @@ describe("Dream's bridge manifests", () => {
     })
   )
 
+  it.effect("Codex's bridge waits for the root's children and hands their answers to another root turn", () =>
+    Effect.gen(function* () {
+      const recipe = yield* Effect.promise(
+        async () => (await withPinnedCli("codex", createCodex()).getBootstrap?.()) ?? undefined
+      )
+      const bridge = recipe?.files.find((file) => file.path.endsWith(`/${bridgeFile}`))?.content ?? ""
+      assert.include(bridge, `from "./background.mjs";`)
+      assert.include(bridge, "dreamChildren.observe(notification, loadedThreadId);")
+      assert.include(bridge, "const next = await raceWithProcess({ operation: dreamChildren.settle(")
+      assert.include(bridge, "setTurnUsage: (usage) => turnUsage = dreamAddUsage(turnUsage, usage),")
+    })
+  )
+
   it("a patch that doesn't find its text exactly once fails", () => {
     const patch = { find: "a", replace: "b" }
     assert.strictEqual(patchBridge("xax", [patch]), "xbx")

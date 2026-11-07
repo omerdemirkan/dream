@@ -520,7 +520,11 @@ const make = Effect.fnUntraced(function* ({
           Effect.ensuring(detach(session))
         ),
       stop: () => Effect.sync(() => controller.abort(new Error("Dream stopped the turn's background work"))),
-      persist: persistBackground
+      persist: persistBackground,
+      bounds: {
+        quiet: Option.getOrElse(config.backgroundQuiet, () => Background.limits.quiet),
+        long: Option.getOrElse(config.backgroundLong, () => Background.limits.long)
+      }
     })
     // Once the agent got going, it has read the preamble.
     if (preamble !== undefined && (yield* Ref.get(progressed))) {
