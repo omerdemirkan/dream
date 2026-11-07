@@ -70,7 +70,9 @@ const glyphs = {
   pencil: "pencil",
   waveform: "waveform",
   again: "arrow.clockwise",
-  rotate: "rotate.right"
+  rotate: "rotate.right",
+  laptop: "laptopcomputer",
+  mail: "envelope"
 } as const satisfies Record<string, SymbolViewProps["name"]>
 
 export type Glyph = keyof typeof glyphs

@@ -34,7 +34,7 @@ import {
 import { Attachment, AttachmentContentType, AttachmentLimits, MediaUploadTarget } from "../Media.ts"
 import { ArchivedProject, Harness, Project, ProjectSummary } from "../Project.ts"
 import { AccountUsage, ModelProvider, ProjectUsage } from "../Usage.ts"
-import { Device, TimeZone, User } from "../User.ts"
+import { Device, Features, TimeZone, User } from "../User.ts"
 
 /** An open question or access request for the Home deck, with the project it belongs to. */
 export const OpenAsk = Schema.Struct({
@@ -83,6 +83,8 @@ export class PublicAppRpcs extends RpcGroup.make(
 
 export class AuthedAppRpcs extends RpcGroup.make(
   Rpc.make("GetMe", { success: User }),
+  /** What this deployment can do (`Features`). Fetched at launch; older APIs don't have it, which means nothing extra. */
+  Rpc.make("GetFeatures", { success: Features }),
 
   // Devices and push --------------------------------------------------------
   /** Upsert this install. Call on launch and whenever a push token or the time zone changes. */
@@ -387,6 +389,18 @@ export class AuthedAppRpcs extends RpcGroup.make(
     payload: { ...ProjectMessage, reason: Schema.optionalKey(DeclineReason) },
     success: AccessMessage,
     error: Schema.Union([NotFound, InvalidRequest])
+  }),
+
+  /**
+   * "Email it to me": emails them a link to finish this access request on a computer, at the address on file from
+   * their sign-in, and returns the card with `desktop` set. Nothing is sent unless they ask. The link works once,
+   * for 30 minutes, in one browser, and only while the request still waits (`canFinishOnDesktop`); sending again
+   * replaces it. `InvalidRequest` for a request that can't be finished there or after too many sends.
+   */
+  Rpc.make("EmailAccessLink", {
+    payload: ProjectMessage,
+    success: AccessMessage,
+    error: Schema.Union([NotFound, InvalidRequest, UpstreamFailure])
   }),
 
   // Notifications from a project's apps ---------------------------------------

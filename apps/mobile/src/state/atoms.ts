@@ -7,6 +7,7 @@
  */
 import {
   type AccessMessage,
+  type Features,
   type AppDelivery,
   type AppId,
   type AppLink,
@@ -93,6 +94,11 @@ export const projectsAtom = appRuntime
 export const modelConnectionsAtom = appRuntime
   .atom(AppClient.use((app) => app.ListModelConnections()))
   .pipe(Atom.withReactivity(["connections"]), Atom.keepAlive)
+
+/** What the API can do; an API without `GetFeatures` (or unreachable) turns nothing extra on. */
+export const featuresAtom = appRuntime
+  .atom(AppClient.use((app) => app.GetFeatures().pipe(Effect.orElseSucceed((): Features => ({})))))
+  .pipe(Atom.keepAlive)
 
 export const integrationsAtom = appRuntime
   .atom(AppClient.use((app) => app.ListIntegrations()))
@@ -374,6 +380,15 @@ export const submitAppleAccessFn = appRuntime.fn(
       .SubmitAppleAccess({ ...input, privateKey: Redacted.make(input.privateKey) })
       .pipe(withWriteTimeout)
     return yield* receivedAccess(message)
+  }),
+  accessChanged
+)
+
+/** "Email it to me": a link to finish the request on a computer, sent to the address they signed in with. */
+export const emailAccessLinkFn = appRuntime.fn(
+  Effect.fn(function* (input: AccessRef) {
+    const app = yield* AppClient
+    return yield* receivedAccess(yield* app.EmailAccessLink(input).pipe(withWriteTimeout))
   }),
   accessChanged
 )

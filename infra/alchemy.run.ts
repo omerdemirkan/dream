@@ -9,6 +9,7 @@
  *   DREAM_DOMAIN       apex domain whose zone is already in the Cloudflare account, e.g. "omer.build"
  *   DREAM_API_HOST     the API hostname (default dream.<domain>)
  *   DREAM_R2_ENABLED   "true" once R2 is enabled on the account (media storage)
+ *   DREAM_EMAIL_ENABLED "true" once the account can send email (Workers Paid; the token needs Email Sending: Edit)
  *   ALCHEMY_STATE      "cloudflare" to keep state in the account's alchemy state store (its API token needs
  *                      Secrets Store access); otherwise state is local in .alchemy/ and a fresh machine
  *                      re-imports the deployed resources with `--adopt`.
@@ -17,10 +18,11 @@
  * - `<api host>`     custom domain on the Worker (DNS record + cert managed by Cloudflare)
  * - `*.<domain>/*`   zone route to the same Worker: the gateway for published apps
  * - `*.<domain>`     proxied placeholder DNS record so the wildcard route receives traffic
+ * - `mail.<domain>`  Email Service sending subdomain (DKIM, SPF, bounces), when DREAM_EMAIL_ENABLED
  * The Worker binds ProjectDO, D1 and (when enabled) R2 itself (apps/api/src/Api.ts).
  */
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Api } from "@dream/api"
+import { Api, EmailEnabled, mailDomain } from "@dream/api"
 import * as Alchemy from "alchemy"
 import { adopt } from "alchemy/AdoptPolicy"
 import { localState } from "alchemy/State"
@@ -50,6 +52,16 @@ export default Alchemy.Stack(
       content: "100::",
       proxied: true
     })
+
+    // What Dream emails from (`EmailAccessLink`). Cloudflare writes its DNS records; no copies of sent mail are
+    // kept in the activity log, since each holds a live link.
+    if (yield* EmailEnabled) {
+      yield* Cloudflare.Email.SendingSubdomain("Mail", {
+        zoneId: zone.zoneId,
+        name: mailDomain(domain),
+        previewEnabled: false
+      })
+    }
 
     return { api: api.url.as<string>(), zoneId: zone.zoneId }
   })

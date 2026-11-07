@@ -288,6 +288,14 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
           return connected
         }),
 
+      SetAccessDesktop: ({ messageId, desktop }) =>
+        Effect.gen(function* () {
+          const message = yield* findAccess(messageId)
+          const changed = AccessMessage.make({ ...message, desktop })
+          yield* core.changeMessage(changed)
+          return changed
+        }),
+
       DeclineAccess: ({ messageId, reason }) =>
         Effect.gen(function* () {
           const message = yield* findAccess(messageId)

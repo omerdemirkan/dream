@@ -8,6 +8,7 @@
  * internal to the control plane, built from @dream/domain types.
  */
 import {
+  AccessDesktop,
   AccessMessage,
   AppDelivery,
   AppId,
@@ -109,6 +110,12 @@ export class ProjectRpcs extends RpcGroup.make(
   }),
   Rpc.make("AccessConnected", {
     payload: { messageId: MessageId, integration: Integration },
+    success: AccessMessage,
+    error: Schema.Union([NotFound, InvalidRequest])
+  }),
+  /** The card's `desktop`: the link they had emailed to finish it on a computer, or that it was opened there. */
+  Rpc.make("SetAccessDesktop", {
+    payload: { messageId: MessageId, desktop: AccessDesktop },
     success: AccessMessage,
     error: Schema.Union([NotFound, InvalidRequest])
   }),

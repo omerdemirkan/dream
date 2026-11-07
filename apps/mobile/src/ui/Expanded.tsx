@@ -37,6 +37,7 @@ import {
   submitKeyAccessFn
 } from "../state/atoms.ts"
 import { useAction, useSignInAccess, useToast } from "./actions.ts"
+import { FinishOnComputer } from "./Desktop.tsx"
 import { ElseComposer } from "./Composer.tsx"
 import { useDecline } from "./Decline.tsx"
 import { useAskPush } from "./hooks.ts"
@@ -917,6 +918,7 @@ function ExpandedConnect(props: ExpandedAccessProps) {
               Where to find these in App Store Connect
             </Text>
           ) : null}
+          <FinishOnComputer message={m} style={{ marginTop: 20 }} />
         </>
       }
       bottom={

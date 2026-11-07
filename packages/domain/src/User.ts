@@ -29,3 +29,13 @@ export const Device = Schema.Struct({
   updatedAt: Schema.DateTimeUtc
 })
 export type Device = typeof Device.Type
+
+/**
+ * What this deployment of Dream can do, for the app to show only what works. Fields are added as features are, and
+ * absent means no, so an older API (or one that predates a field) turns nothing on. Added in November 2026.
+ */
+export const Features = Schema.Struct({
+  /** Access requests can be emailed to finish on a computer (`EmailAccessLink`). */
+  emailLinks: Schema.optionalKey(Schema.Boolean)
+})
+export type Features = typeof Features.Type

@@ -26,6 +26,7 @@ import {
   InvalidRequest,
   type Integration,
   type IntegrationAccess,
+  canFinishOnDesktop,
   isOpenAsk,
   type MediaId,
   type Message,
@@ -101,6 +102,8 @@ export const Scenario = [
   "signed-out",
   "spotify-ask",
   "spotify-stopped",
+  "desktop-sent",
+  "desktop-opened",
   "long-question",
   "vague-access",
   "question-context",
@@ -982,6 +985,19 @@ export class FakeBackend extends Context.Service<
               return yield* new InvalidRequest({ message: "That request isn't for an App Store Connect key." })
             return yield* connectIntegration(record, message, "Apple Developer", { _tag: "Apple", issuerId, keyId })
           }),
+        GetFeatures: () => Effect.succeed({ emailLinks: true }),
+        EmailAccessLink: ({ projectId, messageId }) =>
+          stallable(
+            Effect.gen(function* () {
+              const { record, message } = yield* findMessage(projectId, messageId)
+              if (message._tag !== "Access" || !canFinishOnDesktop(message)) {
+                return yield* new InvalidRequest({ message: "This doesn't need anything from you anymore." })
+              }
+              const sent: AccessMessage = { ...message, desktop: { sentAt: yield* DateTime.now, to: user.email } }
+              yield* setMessage(record, sent)
+              return sent
+            })
+          ),
         DeclineAccess: ({ projectId, messageId, reason }) =>
           stallable(
             Effect.gen(function* () {
@@ -1444,6 +1460,19 @@ export class FakeBackend extends Context.Service<
                   placeholder: "dream-placeholder-google"
                 })
             }
+            return
+          }
+          case "desktop-sent":
+          case "desktop-opened": {
+            // Cabin's Google Calendar card, emailed to finish on a computer (and opened there).
+            const cabin = Array.from(records.values()).find((r) => r.project.slug === "cabin")
+            const card = cabin?.messages.find((m): m is AccessMessage => m._tag === "Access" && m.state._tag === "Open")
+            if (!cabin || !card) return
+            const sentAt = DateTime.subtract(now, { minutes: 2 })
+            yield* setMessage(cabin, {
+              ...card,
+              desktop: { sentAt, to: user.email, ...(name === "desktop-opened" ? { openedAt: now } : {}) }
+            })
             return
           }
           case "no-plan":

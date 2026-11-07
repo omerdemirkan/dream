@@ -286,6 +286,18 @@ export const AccessState = Schema.TaggedUnion({
 })
 export type AccessState = typeof AccessState.Type
 
+/**
+ * They asked Dream to email them a link to finish an access request on a computer (`EmailAccessLink`): when, to
+ * which address (the one on file from their sign-in), and when the link was first opened. Added in November 2026:
+ * older apps ignore it.
+ */
+export const AccessDesktop = Schema.Struct({
+  sentAt: Schema.DateTimeUtc,
+  to: Schema.String,
+  openedAt: Schema.optionalKey(Schema.DateTimeUtc)
+})
+export type AccessDesktop = typeof AccessDesktop.Type
+
 export const AccessMessage = Schema.TaggedStruct("Access", {
   ...MessageFields,
   request: AccessRequest,
@@ -301,9 +313,19 @@ export const AccessMessage = Schema.TaggedStruct("Access", {
   context: Schema.optionalKey(Schema.String),
   /** Roughly when it's needed, if not now, e.g. "around Thursday". Absent means now. */
   when: Schema.optionalKey(Schema.String),
-  state: AccessState
+  state: AccessState,
+  /** The latest link they had emailed to finish this on a computer, if they asked for one. */
+  desktop: Schema.optionalKey(AccessDesktop)
 })
 export type AccessMessage = typeof AccessMessage.Type
+
+/**
+ * Whether an access request can be emailed to finish on a computer: one still waiting to be connected (open, or
+ * connected once and gone), for anything but app notifications, which need no typing. The emailed link stops
+ * working as soon as this is false.
+ */
+export const canFinishOnDesktop = (message: Pick<AccessMessage, "request" | "state">): boolean =>
+  message.request._tag !== "Notifications" && (message.state._tag === "Open" || message.state._tag === "Disconnected")
 
 const googleProducts: ReadonlyArray<readonly [string, string]> = [
   ["gmail", "Gmail"],
