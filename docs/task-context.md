@@ -32,4 +32,4 @@ anything it should know next time it looks. It reads it in `dream wake list`, no
 for anything urgent.
 
 **The sandbox.** The machine is shared. The person's app may be running, and the agent may be working at the same time,
-with 4 CPUs and 8 GB of memory between everything. Leave alone what the job doesn't touch.
+with its CPUs and memory between everything (`dream machine` says how many). Leave alone what the job doesn't touch.

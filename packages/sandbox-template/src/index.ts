@@ -18,7 +18,8 @@
  *   them over from a fresh sandbox of this template)
  *
  * The CLIs need more memory than E2B's base sandbox has (installs OOM at
- * 512 MB), so the template asks for 4 vCPU and 8 GB, the Hobby maximum.
+ * 512 MB). It's built at two sizes (`sizes`): 2 vCPU and 4 GB for new projects, 4 vCPU and 8 GB for projects
+ * that moved up, each with 2 GB of swap.
  *
  * Build it with `bun run template:build` (see scripts/build.ts).
  */
@@ -27,20 +28,27 @@ import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSyn
 import { tmpdir } from "node:os"
 import { join, relative } from "node:path"
 import { fileURLToPath } from "node:url"
-import { DefaultDaemonPort } from "@dream/domain"
+import { DefaultDaemonPort, SandboxSizes } from "@dream/domain"
 import { Template } from "e2b"
 
 /** The template name sandboxes are created from. `DREAM_TEMPLATE` builds (or smoke-tests) another one. */
 export const templateName = process.env.DREAM_TEMPLATE ?? "dream-sandbox"
 
 /**
- * The machine every sandbox of the template gets. `DREAM_TEMPLATE_CPU` and `DREAM_TEMPLATE_MEMORY_MB` size a test
- * template differently (for measuring a smaller default); `dream-sandbox` is built with the defaults.
+ * The two machines, one template each from the same build (`SandboxSizes` in `@dream/domain`): new projects get
+ * `templateName` at the standard size, and a project the agent moved up gets `largeTemplateName`. `template:build`
+ * builds and promotes both, so they always carry the same release.
  */
-export const resources = {
-  cpuCount: Number(process.env.DREAM_TEMPLATE_CPU ?? 4),
-  memoryMB: Number(process.env.DREAM_TEMPLATE_MEMORY_MB ?? 8192)
+export const sizes = {
+  standard: { cpuCount: SandboxSizes.standard.cpus, memoryMB: SandboxSizes.standard.memoryGb * 1024 },
+  large: { cpuCount: SandboxSizes.large.cpus, memoryMB: SandboxSizes.large.memoryGb * 1024 }
 } as const
+
+/** The large size's template: the template's name with "-large" (the Worker's default `E2B_TEMPLATE_LARGE`). */
+export const largeTemplateName = `${templateName}-large`
+
+/** Swap on every sandbox, so a build that runs a little over memory slows down instead of being killed. */
+export const swapMb = 2048
 
 /** Disk the template should leave free for projects, in MiB (E2B grows the filesystem when it can). */
 export const minFreeDiskMb = 10_240
@@ -144,7 +152,8 @@ export const makeTemplate = (context: string) =>
         "PLAYWRIGHT_BROWSERS_PATH=/opt/playwright playwright install --with-deps chromium",
         "chmod -R a+rX /opt/playwright",
         "fc-cache -f",
-        "ln -sf /usr/bin/fdfind /usr/local/bin/fd"
+        "ln -sf /usr/bin/fdfind /usr/local/bin/fd",
+        `fallocate -l ${swapMb}M /swapfile && chmod 600 /swapfile && mkswap /swapfile`
       ],
       { user: "root" }
     )

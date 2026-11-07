@@ -13,10 +13,12 @@ import type {
   ProjectLinks,
   BrowserSession,
   Integration,
+  MachineInfo,
   MacStatus,
   MediaRef,
   QuestionMessage,
   Relay,
+  SandboxSize,
   StatusCard,
   TextMessage,
   UsageSnapshot,
@@ -27,6 +29,7 @@ import type {
 } from "@dream/domain"
 import {
   AgentLinksPerProject,
+  SandboxSizes,
   AppNotificationLimits,
   accessHeading,
   describeLinkTile,
@@ -274,6 +277,23 @@ export const mac = (status: MacStatus, now: DateTime.Utc): string =>
   status.state === "stopped"
     ? "No Mac is running. `dream mac start` rents one."
     : `The Mac is ${status.state}${status.startedAt === undefined ? "" : ` (started ${time(status.startedAt, now)})`}; it stops after ${status.idleTimeoutMinutes} idle minutes. Run commands with \`dream mac ssh -- <cmd>\`.`
+
+const machineName = (size: SandboxSize) =>
+  `the ${size} machine (${SandboxSizes[size].cpus} CPUs, ${SandboxSizes[size].memoryGb} GB)`
+
+export const machine = (info: MachineInfo): string => {
+  const other: SandboxSize = info.size === "standard" ? "large" : "standard"
+  const head = `This sandbox is ${machineName(info.size)}.`
+  if (info.move !== undefined) {
+    return `${head} A move to ${machineName(info.move.to)} is waiting ("${info.move.why}"): Dream does it when your turn ends. \`dream machine move ${info.size} "…"\` cancels it.`
+  }
+  return `${head} \`dream machine move ${other} "<why>"\` moves the project to ${machineName(other)} after this turn: about a minute, and a fresh boot (Dream restarts your servers).`
+}
+
+export const moving = (info: MachineInfo): string =>
+  info.move === undefined
+    ? `You're on ${machineName(info.size)}; nothing to move.`
+    : `Dream moves the project to ${machineName(info.move.to)} when this turn ends. It takes about a minute: your home directory comes over, processes don't, so it restarts the servers that were listening and tells you in your next turn.`
 
 const window = (name: string, value: UsageWindow | undefined, now: DateTime.Utc) =>
   value === undefined

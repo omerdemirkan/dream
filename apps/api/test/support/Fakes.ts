@@ -190,7 +190,9 @@ export const fakeE2B = (world: FakeWorld) =>
                 sandboxID: sandboxId,
                 state: sandbox.state,
                 startedAt: sandbox.startedAt,
-                endAt: DateTime.formatIso(sandbox.endAt)
+                endAt: DateTime.formatIso(sandbox.endAt),
+                // The large template's sandboxes have 4 vCPUs, the standard one's 2.
+                cpuCount: sandbox.template.endsWith("-large") ? 4 : 2
               })
         }),
       setTimeout: (sandboxId, timeoutSeconds) => {
@@ -281,6 +283,17 @@ export const fakeEnvd = (world: FakeWorld) => {
           for (const [key, result] of world.runResults) if (options.command.includes(key)) return result
           const files = world.sandboxes.get(sandbox.sandboxId)?.files
           if (files !== undefined) emulateFileCommands(files, options.command)
+          // A move, as the real scripts do it: the home directory comes over, and nothing was listening.
+          const fromId = /49983-([^.]+)\./.exec(options.envs?.FROM_URL ?? "")?.[1]
+          const from = fromId === undefined ? undefined : world.sandboxes.get(fromId)
+          if (from !== undefined && files !== undefined) {
+            for (const [path, content] of from.files) {
+              if (path.startsWith("/home/user/") && path !== DaemonEnvFile) files.set(path, content)
+            }
+          }
+          if (options.command.includes("move.mjs restore")) {
+            return { exitCode: 0, output: JSON.stringify({ restarted: [], notRestarted: [] }) }
+          }
           // A refresh, as the real scripts do it: stage the donor's release, swap it in, or put the old one back.
           const target = world.sandboxes.get(sandbox.sandboxId)
           if (target !== undefined) {

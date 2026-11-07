@@ -54,3 +54,49 @@ export const reapable = (sandbox: ListedSandbox, now: DateTime.Utc, projectSandb
   if (owned && !donor) return false
   return Duration.isGreaterThanOrEqualTo(DateTime.distance(sandbox.startedAt, now), ReapAfter)
 }
+
+// ---------------------------------------------------------------------------
+// Machine sizes
+// ---------------------------------------------------------------------------
+
+/**
+ * The machines a project's sandbox can be. New projects get `standard`; the agent can ask for `large` when builds
+ * crawl or processes get killed for memory (`dream machine move`), and back. E2B can't resize a sandbox, so a change
+ * is a move: Dream copies the home directory into a new sandbox of the other size between turns and restarts the
+ * servers that were running.
+ */
+export const SandboxSize = Schema.Literals(["standard", "large"])
+export type SandboxSize = typeof SandboxSize.Type
+
+/** What each size has. Projects created before sizes existed are `large` (they were all 4 CPUs and 8 GB). */
+export const SandboxSizes: Readonly<Record<SandboxSize, { readonly cpus: number; readonly memoryGb: number }>> = {
+  standard: { cpus: 2, memoryGb: 4 },
+  large: { cpus: 4, memoryGb: 8 }
+}
+
+/** The size of a sandbox E2B reports `cpuCount` vCPUs for. */
+export const sizeForCpus = (cpuCount: number): SandboxSize =>
+  cpuCount >= SandboxSizes.large.cpus ? "large" : "standard"
+
+/** A move the agent asked for, done after the turn it asked in. */
+export const MachineMove = Schema.Struct({
+  to: SandboxSize,
+  why: Schema.String,
+  requestedAt: Schema.DateTimeUtc
+})
+export type MachineMove = typeof MachineMove.Type
+
+/** `dream machine`: this sandbox's size, and a move that's waiting. */
+export const MachineInfo = Schema.Struct({
+  size: SandboxSize,
+  cpus: Schema.Int,
+  memoryGb: Schema.Int,
+  move: Schema.optionalKey(MachineMove)
+})
+export type MachineInfo = typeof MachineInfo.Type
+
+export const machineInfo = (size: SandboxSize, move?: MachineMove): MachineInfo => ({
+  size,
+  ...SandboxSizes[size],
+  ...(move === undefined ? {} : { move })
+})

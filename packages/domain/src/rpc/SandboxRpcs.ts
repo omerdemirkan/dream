@@ -26,6 +26,7 @@ import {
 import { SandboxAuth } from "../Auth.ts"
 import { Integration } from "../Connections.ts"
 import { InvalidRequest, NotFound, UpstreamFailure } from "../Errors.ts"
+import { MachineInfo, SandboxSize } from "../Sandbox.ts"
 import {
   AppId,
   BrowserSessionId,
@@ -384,6 +385,18 @@ export class SandboxRpcs extends RpcGroup.make(
   // Usage ------------------------------------------------------------------------------
   /** `dream usage`. */
   Rpc.make("GetUsage", { success: UsageSnapshot, error: NotFound }),
+  /** `dream machine`: the sandbox's size, and a move that's waiting. Added November 2026. */
+  Rpc.make("GetMachine", { success: MachineInfo }),
+  /**
+   * `dream machine move <size> "<why>"`: move the project to a sandbox of that size once the current turn ends (E2B
+   * can't resize one). Asking for the size it already has cancels a waiting move. `InvalidRequest` for an archived
+   * project. Added November 2026.
+   */
+  Rpc.make("MoveMachine", {
+    payload: { to: SandboxSize, why: Schema.String },
+    success: MachineInfo,
+    error: InvalidRequest
+  }),
 
   // Reported by dreamd, not the CLI ----------------------------------------------------
   /** After each turn and whenever the harness reports rate limits. With `limitedUntil`, Dream pauses the project and wakes the agent at reset. */

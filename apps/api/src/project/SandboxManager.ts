@@ -22,13 +22,17 @@
  * a turn that was paused is restarted (`resume`).
  */
 import {
-  type AgentEvent,
+  AgentEvent,
   DaemonEnv,
   DaemonEnvFile,
   DefaultDaemonPort,
   DefaultDaemonSocket,
   type EventId,
   type Harness,
+  InvalidRequest,
+  type MachineInfo,
+  type MachineMove,
+  machineInfo,
   NotFound,
   type ProjectId,
   ProjectEvent,
@@ -38,6 +42,8 @@ import {
   type ReasoningEffort,
   SandboxKeyDir,
   sandboxKeyPath,
+  type SandboxSize,
+  sizeForCpus,
   type TaskReport,
   type TaskRun,
   type TurnUsage,
@@ -67,11 +73,12 @@ import { Users } from "../db/Users.ts"
 import { Daemon } from "../e2b/Daemon.ts"
 import { E2B, type SandboxAccess, type TemplateBuild } from "../e2b/E2B.ts"
 import { Envd } from "../e2b/Envd.ts"
+import { MoveFailed, SandboxMove } from "../e2b/Move.ts"
 import { RefreshResult, SandboxRefresh } from "../e2b/Refresh.ts"
 import { KeyFiles } from "../integrations/KeyFiles.ts"
 import { SandboxCredentials } from "../integrations/SandboxCredentials.ts"
 import { toHex, utf8 } from "../lib/Bytes.ts"
-import { randomToken } from "../lib/Ids.ts"
+import { newEventId, randomToken } from "../lib/Ids.ts"
 import { providerFor, UsageReport } from "../usage/ProjectUsage.ts"
 import { Alarm } from "./Alarm.ts"
 import { Core } from "./Core.ts"
@@ -121,6 +128,8 @@ export const SleepMargin = Duration.seconds(2)
  * (`visitCheck`).
  */
 export const VisitGrace = Duration.minutes(2)
+/** After a turn that asked for a move, the move starts this much later (the turn's reports are in by then). */
+export const MoveAfterTurn = Duration.seconds(5)
 /** After a turn ends, the sandbox is refreshed (if it's behind) this much later: well within `TurnTail`, and likely idle. */
 export const RefreshAfterTurn = Duration.seconds(20)
 
@@ -273,6 +282,12 @@ export class SandboxManager extends Context.Service<
     }) => Effect.Effect<RelayForwardResult>
     /** Brings the sandbox up to the template's newest build, if it's behind and between turns. */
     readonly refresh: Effect.Effect<void>
+    /** `dream machine`: the sandbox's size and a waiting move. */
+    readonly machine: Effect.Effect<MachineInfo>
+    /** `dream machine move`: ask to move to `to` after the turn (or now, between turns); the same size cancels. */
+    readonly moveMachine: (to: SandboxSize, why: string) => Effect.Effect<MachineInfo, InvalidRequest>
+    /** The `sandbox-move` timer: does the move the agent asked for, between turns. */
+    readonly move: Effect.Effect<void>
     /** Kills the sandbox for good (retiring the project). */
     readonly destroy: Effect.Effect<void>
     /** They archived the project: stop the keepalive, refresh and delivery timers, and pause the sandbox where it is. */
@@ -299,6 +314,7 @@ export class SandboxManager extends Context.Service<
       const projects = yield* Projects
       const users = yield* Users
       const refresher = yield* SandboxRefresh
+      const mover = yield* SandboxMove
       const connections = yield* Connections
       const turnLog = yield* TurnUsageLog
       const usageReport = yield* UsageReport
@@ -484,14 +500,18 @@ export class SandboxManager extends Context.Service<
         const build = yield* e2b
           .currentBuild(config.sandboxTemplate)
           .pipe(Effect.orElseSucceed(() => Option.none<TemplateBuild>()))
+        // A new project gets the standard size; one whose sandbox is made again keeps the size it had.
+        const size = (yield* core.sandbox).size ?? "standard"
         const access = yield* e2b.create({
-          template: config.sandboxTemplate,
+          template: templateFor(size),
           timeoutSeconds: Duration.toSeconds(IdleTimeout),
           autoPause: true,
           envVars: {},
           metadata: { projectId: project.id, userId: project.ownerId },
           rules: setup.rules
         })
+        // What E2B made is what counts: a template built before sizes is large whatever was asked.
+        const made = yield* sizeOf(access.sandboxId).pipe(Effect.orElseSucceed(() => size))
         // The keys are in place before the agent's first turn.
         const ready = Effect.andThen(writeKeyFiles(access), restartDaemon(access, daemonToken))
         // Don't leak a sandbox that never became usable.
@@ -503,6 +523,7 @@ export class SandboxManager extends Context.Service<
           status: "ready",
           access,
           daemonToken,
+          size: made,
           createdAt: now,
           rulesHash: setup.rulesHash,
           rulesDirty: false,
@@ -1133,6 +1154,10 @@ export class SandboxManager extends Context.Service<
               (yield* Clock.currentTimeMillis) + Duration.toMillis(RefreshAfterTurn)
             )
           }
+          // A move the agent asked for in this turn goes first, before the refresh.
+          if (record.move !== undefined) {
+            yield* store.setTimer("sandbox-move", (yield* Clock.currentTimeMillis) + Duration.toMillis(MoveAfterTurn))
+          }
           yield* alarm.reschedule
           if (record.access !== undefined) {
             yield* timeouts
@@ -1167,7 +1192,8 @@ export class SandboxManager extends Context.Service<
           "turn-keepalive",
           "sandbox-refresh",
           "sandbox-resume",
-          "visit-check"
+          "visit-check",
+          "sandbox-move"
         ] as const) {
           yield* store.clearTimer(timer)
         }
@@ -1247,6 +1273,184 @@ export class SandboxManager extends Context.Service<
 
       const keyFilesChanged = update((r) => ({ ...r, keyFilesDirty: true }))
 
+      // -------------------------------------------------------------------------
+      // Machine size
+      // -------------------------------------------------------------------------
+
+      const templateFor = (size: SandboxSize) =>
+        size === "standard"
+          ? config.sandboxTemplate
+          : Option.getOrElse(config.sandboxTemplateLarge, () => `${config.sandboxTemplate}-large`)
+
+      /** What E2B says a sandbox is. */
+      const sizeOf = (sandboxId: string) =>
+        Effect.flatMap(e2b.info(sandboxId), (info) =>
+          Option.match(
+            Option.flatMap(info, (i) => Option.fromUndefinedOr(i.cpuCount)),
+            {
+              onNone: () => Effect.fail(new UpstreamFailure({ service: "E2B", message: "no size for the sandbox" })),
+              onSome: (cpus) => Effect.succeed(sizeForCpus(cpus))
+            }
+          )
+        )
+
+      /** The sandbox's size: as recorded, else as E2B says (and then recorded), else what a new one would get. */
+      const currentSize = Effect.gen(function* () {
+        const record = yield* core.sandbox
+        if (record.size !== undefined) return record.size
+        if (record.access === undefined) return "standard" as const
+        const found = yield* sizeOf(record.access.sandboxId).pipe(Effect.option)
+        if (Option.isNone(found)) return "large" as const
+        yield* update((r) => ({ ...r, size: found.value }))
+        return found.value
+      })
+
+      const machine = Effect.gen(function* () {
+        const size = yield* currentSize
+        return machineInfo(size, (yield* core.sandbox).move)
+      })
+
+      const moveMachine = (to: SandboxSize, why: string) =>
+        Effect.gen(function* () {
+          if (yield* held) return yield* new InvalidRequest({ message: "The project is archived." })
+          const size = yield* currentSize
+          if (to === size) {
+            yield* update(({ move: _, ...r }) => r)
+            yield* store.clearTimer("sandbox-move")
+            return machineInfo(size)
+          }
+          const move: MachineMove = { to, why, requestedAt: yield* DateTime.now }
+          yield* update((r) => ({ ...r, move }))
+          // Between turns (asked from an app, say), move now; otherwise once the turn ends.
+          const record = yield* core.sandbox
+          if (!record.working) {
+            yield* store.setTimer("sandbox-move", yield* Clock.currentTimeMillis)
+            yield* alarm.reschedule
+          }
+          return machineInfo(size, move)
+        })
+
+      /**
+       * Moves the project to the size the agent asked for: a new sandbox gets the old one's home directory
+       * (`e2b/Move.ts`), its key files and a dreamd of its own, then the servers that were running; the record
+       * switches over, the old sandbox goes, and the agent hears how it went (`MachineMoved`). Until the switch the
+       * old sandbox keeps serving, so a failure leaves the project exactly as it was.
+       */
+      const move = busy
+        .withPermits(1)(
+          Effect.gen(function* () {
+            yield* store.clearTimer("sandbox-move")
+            const record = yield* core.sandbox
+            const wanted = record.move
+            if (wanted === undefined || record.working || (yield* held)) return
+            if (record.status !== "ready" || record.access === undefined || record.daemonToken === undefined) return
+            const from = yield* currentSize
+            if (from === wanted.to) return yield* update(({ move: _, ...r }) => r)
+            const old = record.access
+            const project = yield* core.project.pipe(Effect.orDie)
+            const started = yield* Clock.currentTimeMillis
+            const result = yield* Effect.gen(function* () {
+              // Up for the whole move, paused or not; and on the current Dream, which has the move script.
+              yield* e2b
+                .connect(old.sandboxId, Duration.toSeconds(RefreshTimeout))
+                .pipe(Effect.mapError((error) => new MoveFailed({ step: "wake", message: error.message })))
+              yield* refreshIfDue(old, record.daemonToken!)
+              const setup = yield* credentials.setup(project.ownerId, project.harness)
+              const target = yield* mover.copy({
+                from: old,
+                template: templateFor(wanted.to),
+                timeoutSeconds: Duration.toSeconds(RefreshTimeout),
+                metadata: { projectId: project.id, userId: project.ownerId },
+                rules: setup.rules
+              })
+              const daemonToken = randomToken(40)
+              const health = yield* Effect.andThen(writeKeyFiles(target), restartDaemon(target, daemonToken)).pipe(
+                Effect.tapError(() => e2b.kill(target.sandboxId).pipe(Effect.ignore)),
+                Effect.mapError((error) => new MoveFailed({ step: "start dreamd", message: error.message }))
+              )
+              const restored = yield* mover.restore(target).pipe(
+                Effect.catch((error) =>
+                  Effect.succeed({
+                    restarted: [],
+                    notRestarted: [`(Dream couldn't restart servers: ${error.message})`]
+                  })
+                )
+              )
+              const build = yield* e2b
+                .currentBuild(templateFor(wanted.to))
+                .pipe(Effect.orElseSucceed(() => Option.none<TemplateBuild>()))
+              const now = yield* DateTime.now
+              yield* update(
+                ({ move: _m, latestBuild: _l, refreshFailure: _f, templateBuild: _b, release: _r, ...r }) => ({
+                  ...r,
+                  access: target,
+                  daemonToken,
+                  size: wanted.to,
+                  createdAt: now,
+                  rulesHash: setup.rulesHash,
+                  rulesDirty: false,
+                  keyFilesDirty: false,
+                  ...(health.release === undefined ? {} : { release: health.release }),
+                  ...Option.match(build, {
+                    onNone: () => ({}),
+                    onSome: (current) => ({ templateBuild: current.build })
+                  })
+                })
+              )
+              yield* timeouts
+                .withPermits(1)(e2b.setTimeout(target.sandboxId, Duration.toSeconds(TurnTail)))
+                .pipe(Effect.ignore)
+              yield* e2b.kill(old.sandboxId).pipe(Effect.ignore)
+              return { target, restored }
+            }).pipe(Effect.result)
+            const seconds = Math.round(((yield* Clock.currentTimeMillis) - started) / 1000)
+            const event = (fields: {
+              restarted: ReadonlyArray<string>
+              notRestarted: ReadonlyArray<string>
+              failure?: string
+            }) =>
+              Effect.gen(function* () {
+                return AgentEvent.cases.MachineMoved.make({
+                  id: yield* newEventId(),
+                  at: yield* DateTime.now,
+                  from,
+                  to: wanted.to,
+                  why: wanted.why,
+                  ...fields
+                })
+              })
+            if (result._tag === "Failure") {
+              yield* Effect.logError("couldn't move the sandbox", {
+                sandboxId: old.sandboxId,
+                to: wanted.to,
+                step: result.failure.step,
+                error: result.failure.message,
+                seconds
+              })
+              yield* update(({ move: _, ...r }) => r)
+              return yield* core.enqueue(
+                yield* event({
+                  restarted: [],
+                  notRestarted: [],
+                  failure: `${result.failure.step}: ${result.failure.message}`
+                })
+              )
+            }
+            yield* Effect.logInfo("moved the sandbox", {
+              from: { sandboxId: old.sandboxId, size: from },
+              to: { sandboxId: result.success.target.sandboxId, size: wanted.to },
+              restarted: result.success.restored.restarted.length,
+              notRestarted: result.success.restored.notRestarted.length,
+              seconds
+            })
+            yield* core.enqueue(yield* event(result.success.restored))
+          })
+        )
+        .pipe(
+          Effect.catchCause((cause) => Effect.logError("the sandbox move failed unexpectedly", { cause })),
+          Effect.withSpan("SandboxManager.move")
+        )
+
       return SandboxManager.of({
         deliver,
         ensureReady,
@@ -1265,6 +1469,9 @@ export class SandboxManager extends Context.Service<
         visitCheck,
         forwardRelay,
         refresh,
+        machine,
+        moveMachine,
+        move,
         destroy,
         pause,
         restored,

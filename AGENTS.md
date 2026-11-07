@@ -36,7 +36,7 @@ bun run test           # vitest, all projects (see vitest.config.ts)
 bun run format         # biome, TS and JSON only
 bun run sync-prompts   # regenerate agent-context strings after editing docs/agent-context.md, dream-skill.md or task-context.md
 bun run infra:plan     # alchemy plan; needs Cloudflare credentials and DREAM_DOMAIN in .env
-bun run template:build # build the dream-sandbox E2B template (~2 min), check a turn on each harness, make it current
+bun run template:build # build the dream-sandbox E2B template at both sizes (~4 min), check a turn on each harness, make them current
 ```
 
 Run alchemy from the workspace root (the `infra:*` scripts do), because relative paths in resource props, such as D1
@@ -200,6 +200,17 @@ the other workstreams to agree first.
   (`DREAM_TEMPLATE=dream-sandbox-<x> bun run template:build`), whose harness check runs a turn on each. A release can
   break its adapter (Codex 0.166.0 did; Codex stays on 0.165.0 until the adapter catches up). Rerun the pins script
   after bumping an adapter; a test fails until the manifests match the adapter's again.
+- **Machine sizes.** New projects get a standard sandbox (2 vCPU, 4 GB, 2 GB of swap; template `dream-sandbox`);
+  the agent can ask for a large one (4 vCPU, 8 GB; `dream-sandbox-large`, from the same build) with
+  `dream machine move large "<why>"`, and back (`SandboxSize` in `packages/domain/src/Sandbox.ts`). E2B can't
+  resize a sandbox, so the ProjectDO moves the project after the turn that asked (`SandboxManager.move`,
+  `apps/api/src/e2b/Move.ts`): `files/move.mjs capture` notes the servers outside dreamd's tree that listen on a port,
+  the old sandbox packs `/home/user` (not the harness bootstrap, caches, dreamd's env file or logs), a sandbox of the
+  other size unpacks it, gets its key files and a dreamd with a new daemon token, and `move.mjs restore` starts the
+  servers again; then the record switches over, the old sandbox is killed, and the agent gets `MachineMoved`. Wakes,
+  relays and the published port live in the ProjectDO, so they follow the record. A failure leaves the project as it
+  was. Projects made before sizes stay on 4/8 (their size reads from E2B's `cpuCount`). `apps/api/scripts/
+  move-check.ts` checks a move on real E2B against the fakes (about 9 s for a small project).
 - **Sandbox refresh.** A sandbox keeps the template build it was created from, so the ProjectDO brings it up to the
   template's current build between turns (`apps/api/src/e2b/Refresh.ts`): before the next delivery, 20 seconds
   after each turn (holding the sandbox up while it runs), and when the published app is visited (the gateway's

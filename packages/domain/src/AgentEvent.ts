@@ -12,6 +12,7 @@ import { Attachment, attachmentPath, formatBytes, isImageAttachment } from "./Me
 import { QuestionAnswer } from "./Message.ts"
 import { UsageWindowName } from "./Usage.ts"
 import { TaskFailure, WakeTask } from "./Wake.ts"
+import { SandboxSize, SandboxSizes } from "./Sandbox.ts"
 import { WorkstreamRef } from "./Workstream.ts"
 
 const EventFields = {
@@ -135,6 +136,21 @@ export const AgentEvent = Schema.TaggedUnion({
     reason: Schema.optionalKey(Schema.String),
     /** `muted`: until when. */
     until: Schema.optionalKey(Schema.DateTimeUtc)
+  },
+  /**
+   * Dream moved the project to a sandbox of another size, as the agent asked (`dream machine move`), or couldn't
+   * (`failure`, and it's still on `from`). Everything in the home directory came over; processes didn't, so Dream
+   * restarted the servers that were listening (`restarted`, their command lines) and lists the other processes it
+   * left (`notRestarted`). Added November 2026; only sandboxes built with `dream machine` get it.
+   */
+  MachineMoved: {
+    ...EventFields,
+    from: SandboxSize,
+    to: SandboxSize,
+    why: Schema.String,
+    restarted: Schema.Array(Schema.String),
+    notRestarted: Schema.Array(Schema.String),
+    failure: Schema.optionalKey(Schema.String)
   },
   /** One of the project's apps went over a limit, so Dream is holding back what it sends. At most once a day an app. */
   AppNotificationsHeld: {
@@ -348,6 +364,26 @@ export const renderAgentEvent = (event: AgentEvent, options: RenderOptions = {})
         case "muted":
           return `They muted ${who}${until === undefined ? "" : ` until ${formatEventTime(until, options)}`}.`
       }
+    },
+    MachineMoved: ({ from, to, why, restarted, notRestarted, failure }) => {
+      const machine = (size: SandboxSize) =>
+        `the ${size} machine (${SandboxSizes[size].cpus} CPUs, ${SandboxSizes[size].memoryGb} GB)`
+      if (failure !== undefined) {
+        return `Dream couldn't move this project to ${machine(to)} you asked for ("${why}"): ${failure}. You're still on ${machine(from)}, with everything as it was.`
+      }
+      const list = (commands: ReadonlyArray<string>) => commands.map((command) => `- \`${command}\``).join("\n")
+      return (
+        `Dream moved this project to ${machine(to)}, as you asked ("${why}"). Everything in your home directory came ` +
+        "over: the project, your session, ~/.dream. Processes can't move, so it was a fresh boot: " +
+        (restarted.length === 0
+          ? "no servers were listening, so nothing was restarted."
+          : `Dream restarted the servers that were listening, from the same directories:\n${list(restarted)}`) +
+        (notRestarted.length === 0
+          ? ""
+          : `\nThese were running too and weren't restarted; start again any you still need:\n${list(notRestarted)}`) +
+        "\nAnything installed outside your home directory (apt packages, files under /opt or /etc) needs installing " +
+        "again. Check your published app answers, then carry on."
+      )
     },
     AppNotificationsHeld: ({ app, name, limit }) =>
       `${name} (${app}) went over Dream's limit of ` +

@@ -7,6 +7,8 @@
 set -u
 source /opt/dream/sandbox/env.sh
 echo $$ > /tmp/dream-supervisor.pid
+# The swap file the template made; turned on once, and kept across pauses like everything else.
+if [ -f /swapfile ] && ! grep -q '^/swapfile ' /proc/swaps; then sudo -n swapon /swapfile 2>/dev/null || true; fi
 mkdir -p "$DREAM_LOG_DIR"
 log="$DREAM_LOG_DIR/dreamd.log"
 failures=0

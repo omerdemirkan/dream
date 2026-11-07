@@ -9,6 +9,7 @@
  * the project token "dev-project-token".
  */
 import { createServer } from "node:http"
+import { availableParallelism } from "node:os"
 import {
   type AccessMessage,
   type AppLink,
@@ -35,7 +36,10 @@ import {
   type Wake,
   WakeId,
   type Workstream,
-  WorkstreamId
+  WorkstreamId,
+  type MachineMove,
+  machineInfo,
+  sizeForCpus
 } from "@dream/domain"
 import { NodeHttpServer, NodeRuntime } from "@effect/platform-node"
 import { DateTime, Effect, Layer, Option, Ref, Schema } from "effect"
@@ -55,6 +59,7 @@ const Handlers = SandboxRpcs.toLayer(
   Effect.gen(function* () {
     const start = yield* DateTime.now
     const apps = yield* Ref.make<ReadonlyArray<AppSender>>([])
+    const move = yield* Ref.make<MachineMove | undefined>(undefined)
     const sentByApps = yield* Ref.make<ReadonlyArray<AppNotification>>([])
     const status = yield* Ref.make<StatusCard>({
       phase: "new",
@@ -425,7 +430,22 @@ const Handlers = SandboxRpcs.toLayer(
         log("ReportTask", encode(SandboxRpcs.requests.get("ReportTask")!.payloadSchema, payload)),
       ReportProgress: (payload) => log("ReportProgress", payload),
       StayAwake: (payload) => log("StayAwake", payload),
-      Sleep: (payload) => log("Sleep", payload)
+      Sleep: (payload) => log("Sleep", payload),
+      // It runs in the sandbox, so the machine it reports is the one it's on.
+      GetMachine: () =>
+        log("GetMachine", {}).pipe(
+          Effect.andThen(Ref.get(move)),
+          Effect.map((pending) => machineInfo(sizeForCpus(availableParallelism()), pending))
+        ),
+      MoveMachine: (payload) =>
+        Effect.gen(function* () {
+          yield* log("MoveMachine", payload)
+          const size = sizeForCpus(availableParallelism())
+          const pending =
+            payload.to === size ? undefined : { to: payload.to, why: payload.why, requestedAt: yield* DateTime.now }
+          yield* Ref.set(move, pending)
+          return machineInfo(size, pending)
+        })
     }
   })
 )

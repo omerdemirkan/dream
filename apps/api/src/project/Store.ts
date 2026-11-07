@@ -14,6 +14,7 @@ import {
   type IntegrationId,
   LiveActivityAttributes,
   LiveActivityContent,
+  MachineMove,
   Message,
   MessageId,
   NotificationId,
@@ -21,6 +22,7 @@ import {
   RelayId,
   RelaySource,
   RelayTarget,
+  SandboxSize,
   StatusCard,
   TurnProgress,
   UsageSnapshot,
@@ -81,6 +83,10 @@ export const SandboxRecord = Schema.Struct({
    * restarted, so the turn's events go to a fresh turn in the same session.
    */
   interruptedTurn: Schema.optionalKey(Schema.Boolean),
+  /** Its size (`SandboxSizes`). Absent for sandboxes made before sizes: E2B's `cpuCount` says, and they were large. */
+  size: Schema.optionalKey(SandboxSize),
+  /** A move to another size the agent asked for (`dream machine move`), done after its turn. */
+  move: Schema.optionalKey(MachineMove),
   /** Refreshing to `build` failed `failures` times in a row; don't try that build again before `retryAt`. */
   refreshFailure: Schema.optionalKey(
     Schema.Struct({
@@ -255,6 +261,7 @@ export type TimerName =
   | "sandbox-refresh"
   | "sandbox-resume"
   | "visit-check"
+  | "sandbox-move"
 
 export class Store extends Context.Service<
   Store,

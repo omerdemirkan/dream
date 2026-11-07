@@ -1506,6 +1506,92 @@ describe("a project, end to end", () => {
   )
 })
 
+describe("machine size", () => {
+  it.live("a new project gets the standard size, and a move to large carries its home over between turns", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project } = yield* setup(cloud)
+      yield* cloud.alarm(project.id)
+      const { sandbox: old, env } = envFileOf(cloud, project.id)
+      assert.strictEqual(old.template, "dream-sandbox")
+      const dreamd = yield* cloud.sandbox(env.DREAM_PROJECT_TOKEN)
+      assert.deepStrictEqual(yield* dreamd.GetMachine(), { size: "standard", cpus: 2, memoryGb: 4 })
+      old.files.set("/home/user/project/app.ts", "Bun.serve({ port: 3000 })")
+      // A published app and a wake-up, which have to keep working on the other side.
+      yield* dreamd.Publish({ port: 3000 })
+      const wake = yield* dreamd.ScheduleWake({
+        when: { _tag: "At", at: DateTime.add(yield* DateTime.now, { seconds: 2 }) },
+        why: "Look at the app again"
+      })
+
+      // Asked during a turn: nothing moves until the turn is over.
+      yield* dreamd.ReportTurn({ state: "started", eventIds: [] })
+      const asked = yield* dreamd.MoveMachine({ to: "large", why: "next build gets OOM-killed" })
+      assert.strictEqual(asked.move?.to, "large")
+      yield* cloud.alarm(project.id)
+      assert.strictEqual(old.state, "running")
+      // Asking for the size it has cancels; asking again between turns moves it at once.
+      yield* dreamd.MoveMachine({ to: "standard", why: "never mind" })
+      assert.isUndefined((yield* dreamd.GetMachine()).move)
+      yield* dreamd.ReportTurn({ state: "finished", eventIds: [] })
+      yield* dreamd.MoveMachine({ to: "large", why: "next build gets OOM-killed" })
+      yield* cloud.alarm(project.id)
+
+      const moved = [...cloud.world.sandboxes.values()].find(
+        (s) => s.metadata.projectId === project.id && s.state !== "killed" && s.metadata.purpose === undefined
+      )!
+      assert.strictEqual(moved.template, "dream-sandbox-large")
+      assert.strictEqual(old.state, "killed")
+      assert.strictEqual(moved.files.get("/home/user/project/app.ts"), "Bun.serve({ port: 3000 })")
+      assert.isDefined(moved.files.get(DaemonEnvFile))
+      // dreamd got an env file of its own, with a new daemon token.
+      assert.notStrictEqual(moved.files.get(DaemonEnvFile), old.files.get(DaemonEnvFile))
+      assert.deepStrictEqual(yield* dreamd.GetMachine(), { size: "large", cpus: 4, memoryGb: 8 })
+      // The agent hears about it in a turn of its own, in the new sandbox.
+      const last = cloud.world.delivered.at(-1)!
+      assert.strictEqual(last.sandboxId, moved.access.sandboxId)
+      const event = (last.events as ReadonlyArray<AgentEvent>).find((e) => e._tag === "MachineMoved")
+      assert.isTrue(event?._tag === "MachineMoved" && event.to === "large" && event.failure === undefined)
+
+      // The published app is served from the new sandbox, and the wake-up fires there.
+      const clients = Context.get(cloud.workerContext, ProjectClients)
+      const target = yield* clients.use(project.id, (client) => client.GatewayTarget())
+      assert.isTrue(target.origin.includes(moved.access.sandboxId), target.origin)
+      assert.strictEqual(target.trafficAccessToken, moved.access.trafficAccessToken)
+      yield* Effect.sleep("2100 millis")
+      yield* cloud.alarm(project.id)
+      const due = cloud.world.delivered.at(-1)!
+      assert.strictEqual(due.sandboxId, moved.access.sandboxId)
+      const fired = (due.events as ReadonlyArray<AgentEvent>).find((e) => e._tag === "WakeDue")
+      assert.isTrue(fired?._tag === "WakeDue" && fired.wakeId === wake.id)
+      yield* cloud.close
+    })
+  )
+
+  it.live("a move that fails leaves the project where it was, and says why", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project } = yield* setup(cloud)
+      yield* cloud.alarm(project.id)
+      const { sandbox: old, env } = envFileOf(cloud, project.id)
+      const dreamd = yield* cloud.sandbox(env.DREAM_PROJECT_TOKEN)
+      cloud.world.runResults.set("tar -x", { exitCode: 2, output: "tar: Unexpected EOF in archive" })
+      yield* dreamd.MoveMachine({ to: "large", why: "builds crawl" })
+      yield* cloud.alarm(project.id)
+      assert.strictEqual(old.state, "running")
+      const extra = [...cloud.world.sandboxes.values()].filter((s) => s.template === "dream-sandbox-large")
+      assert.isTrue(extra.length === 1 && extra[0]!.state === "killed")
+      assert.deepStrictEqual(yield* dreamd.GetMachine(), { size: "standard", cpus: 2, memoryGb: 4 })
+      const event = (cloud.world.delivered.at(-1)?.events as ReadonlyArray<AgentEvent> | undefined)?.find(
+        (e) => e._tag === "MachineMoved"
+      )
+      assert.isTrue(event?._tag === "MachineMoved" && event.failure?.includes("Unexpected EOF") === true)
+      assert.strictEqual(cloud.world.delivered.at(-1)?.sandboxId, old.access.sandboxId)
+      yield* cloud.close
+    })
+  )
+})
+
 describe("sandbox refresh", () => {
   /** The newest build is cached for a while; pretend that while has passed. */
   const forgetLatest = (core: Context.Service.Shape<typeof Core>) =>
