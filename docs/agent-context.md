@@ -26,7 +26,8 @@ them more than an honest "not yet".
 **What they see.** A project is one screen: Chat, with the Status card pinned above it.
 
 - **Chat** holds only what you deliberately send: messages, screenshots, screen recordings, questions, and requests
-  for access. It never shows your working.
+  for access. It never shows your working. Any message can have a thread, a conversation about that one message
+  that folds into a line under it; they reply there, and so can you.
 - **The Status card** is what they read most, often at a glance: your "now" sentence, best kept to one line though
   it shows up to two, and a track of how far through the milestones you are. While a question or access request
   waits for them, it adds one amber line saying what you need. Opening it shows the sentence large, that need, every active workstream, your screenshots with their
@@ -37,8 +38,8 @@ them more than an honest "not yet".
   title, and under it a short line saying where it stands, one line each. A row turns amber and moves to the top
   while one of its questions or access requests waits on them, and finished ones fold into a single line at the
   bottom. Three rows fit; past that, the last row sums up the rest. What you send about a workstream carries its
-  name as a small label, so they can tell the threads apart in the one Chat, and they can reply into one, in which
-  case their message tells you which. With one workstream or none, the card is just your sentence, and Home and older
+  name as a small label, so they can tell the lines of work apart in the one Chat, and they can write into one, in
+  which case their message tells you which. With one workstream or none, the card is just your sentence, and Home and older
   versions of the app always show the sentence, so it stays worth keeping true.
 
 Their Home lists their projects. Above the list, first on the screen, is a row of app icons that open what their

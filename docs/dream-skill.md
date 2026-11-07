@@ -1,6 +1,6 @@
 ---
 name: dream
-description: Reaching the person and Dream from this sandbox — messages, questions, access to services, notifications from your apps, the Status card, workstreams, wake-ups, relays, publishing, app links on their Home, a browser, a Mac, and usage. Read it when you need any of these.
+description: Reaching the person and Dream from this sandbox — messages and threads, questions, access to services, notifications from your apps, the Status card, workstreams, wake-ups, relays, publishing, app links on their Home, a browser, a Mac, and usage. Read it when you need any of these.
 ---
 
 # `dream`
@@ -48,7 +48,8 @@ this sandbox, including the apps you build. `dream <command> --help` lists every
   - Answers are visible in Chat and arrive in this sandbox, so `dream ask` refuses questions that ask for a token, key,
     password or other credential. Ask for those with `dream access`. `--not-a-secret` sends a question that only
     mentions one.
-  - `dream ask withdraw <id>` takes back a question that no longer needs an answer.
+  - `dream ask withdraw <id>` takes back a question that no longer needs an answer, and `dream ask revise <id>`
+    changes one that's still open (see Threads).
 - `dream access …` asks for access to a service. It shows up like a question, with a way to connect. `--why` is its
   heading, which they read first and often alone, on the lock screen, so it says what they're connecting and
   what for, as in "Connect Gmail so I can read your newsletters". `--context` adds markdown on the card and just
@@ -149,6 +150,28 @@ An app you build can notify them as itself, with no turn of yours involved, usua
   - `--media` shows screenshots and recordings with their captions when they open the card.
   - `--title`, `--kind`, `--icon` and `--phase` set how the project appears on their Home screen: its name, what it
     is (web app, iOS app, background worker, …), its icon, and where it stands.
+## Threads
+
+Any message can grow a thread: theirs, yours, a question or an access request. They start one by holding a message
+and tapping Reply, or with Reply on an open question or access request, and Chat folds each thread into one line
+under its message, with how many replies there are and the latest. Their reply arrives naming the message it's on,
+with the start of it quoted, and whether a question or access request there is still open.
+
+- `--reply-to <message-id>` on `dream message`, `dream ask` and `dream access` puts what you send in that message's
+  thread. It goes in that message's workstream too, so it needs no `--work`.
+- Reply in the thread when you're answering what they wrote there, or when what you say is about that one message
+  and would read oddly on its own in Chat, like a detail about a screenshot they asked about. Something new, or
+  something they should see even if they never open the thread, is a message of its own: a thread reply sits folded
+  under a message they may have scrolled past, so one that matters also takes `--notify`.
+- A reply on a question doesn't answer it. Often it asks for the question to change: an option it's missing, a
+  better way to put it, or a case it didn't cover. `dream ask revise <id>` changes the card in place, where it is in
+  Chat, marked "Changed", without notifying them again, so say in the thread that it's done. `--option` replaces the
+  list (previews of options that stay are kept), `--question`, `--why`, `--context` and `--meanwhile` replace those,
+  and `""` clears one. Once they've answered, a question stays as it was; ask a new one if the decision needs another
+  look.
+- Older versions of the app show replies in Chat where they fall, as messages of their own, and a changed question
+  without the mark, so a reply still has to make sense read that way.
+
 ## Workstreams
 
 When you run several things at once, each one they might ask about on its own can be a workstream. While two or more
@@ -168,8 +191,9 @@ are active, the Status card shows a row for each in place of `--now`.
 - `--work <id>` on `dream message`, `dream ask` and `dream access` labels what you send with the workstream. While
   its question or access request is open, the row is amber and sits at the top, showing what you asked instead of
   its line, until they answer.
-- Their messages arrive with the workstream when they replied into one. When they didn't, `dream work route
-  <message-id> <id>` files one under the workstream it belongs to; it then carries that label too.
+- Their messages arrive with the workstream when they wrote into one, from its row on the card or in a thread on one
+  of its messages. When they didn't, `dream work route <message-id> <id>` files one under the workstream it belongs
+  to; it then carries that label too.
 - Three rows fit on the card. With four or more active, the first two show (waiting ones first, then the order they
   started) and the third reads "2 more: …" with their titles; opening the card shows them all.
 - `dream work` and `dream work list` show every workstream and exactly what the card shows of them.
