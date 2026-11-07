@@ -76,9 +76,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     // CFBundleVersion: build-ios.sh sets BUILD_NUMBER so the app and its widget carry the same, new build number.
     ...(env.BUILD_NUMBER ? { buildNumber: env.BUILD_NUMBER } : {}),
     infoPlist: {
-      // expo-image and expo-file-system link photo-library APIs, so App Store Connect requires a purpose string
-      // even though Dream never opens the photo library.
-      NSPhotoLibraryUsageDescription: "Dream doesn't use your photo library.",
+      // The photo-library and camera purpose strings come from expo-image-picker's plugin below. App Store Connect
+      // rejects a build after upload (ITMS-90683) when the binary links an API without its purpose string, even one
+      // Dream never calls, and it never shows in TestFlight.
       NSSupportsLiveActivities: true,
       NSSupportsLiveActivitiesFrequentUpdates: true,
       ITSAppUsesNonExemptEncryption: false
@@ -103,7 +103,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       "expo-image-picker",
       {
         photosPermission: "Dream lets you attach photos to what you send, so the agent can see them.",
-        cameraPermission: false,
+        // The picker's native code references the camera, so the string is required even though Dream only opens
+        // the library.
+        cameraPermission: "Dream lets you attach a photo you take to what you send, so the agent can see it.",
         microphonePermission: false
       }
     ],
