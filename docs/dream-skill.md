@@ -189,8 +189,10 @@ are active, the Status card shows a row for each in place of `--now`.
   - For work that should carry on after your turn ends, such as a long import, `--at 1m --run "…"` keeps the sandbox
     awake until it's done.
   - Once the command is done, and nothing else needs the sandbox, it goes back to sleep within seconds. So a quick
-    check costs seconds of machine time, and checking every few minutes is fine. A wake-up without a command starts a
-    turn, which sends the model your whole session before it does anything, so on a schedule it adds up.
+    check costs seconds of machine time, but each one is paid for, and a schedule keeps paying until it's cancelled:
+    every fifteen minutes is nearly a hundred wakes a day. Check as often as the job needs, and cancel a check once
+    its reason is gone. A wake-up without a command starts a turn, which sends the model your whole session before it
+    does anything, so on a schedule it adds up.
 - `dream wake --cron "<expr>" --task "<brief>" --model <model> --effort <effort> "why"` (or `--at`) runs a task in
   a session of its own when it fires, instead of waking you: a new conversation on the model and effort you give,
   named as your subagents' are, that starts from the brief.
