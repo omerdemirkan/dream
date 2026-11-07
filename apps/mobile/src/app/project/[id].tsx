@@ -8,6 +8,8 @@
  * `?sheet=notifications` the Notifications sheet, as the bell does (shown once one of its apps has asked to notify
  * them). `?work=<workstream id>` writes to that workstream, as tapping its row on the card does.
  * `?options=<messageId>&option=<n>` opens a question's option previews full screen at option n.
+ * `?thread=<messageId>` opens that message's thread (`&compose=1` gives its composer the keyboard), and
+ * `?hold=<messageId>` holds that message, bringing up its menu.
  */
 import {
   type Message,
@@ -30,13 +32,23 @@ import type { ProjectState } from "../../data/projectState.ts"
 import { draftKey } from "../../data/Replies.ts"
 import { useViewingProject } from "../../platform/viewing.ts"
 import { clearDraftFn, draftAtom, projectsAtom, sendMessageFn } from "../../state/atoms.ts"
-import { appNotificationsSheetAtom, declineAtom, focusAtom, landingAtom } from "../../state/ui.ts"
+import {
+  appNotificationsSheetAtom,
+  declineAtom,
+  focusAtom,
+  heldAtom,
+  holdRequestAtom,
+  landingAtom,
+  threadOpenAtom
+} from "../../state/ui.ts"
 import { useAction } from "../../ui/actions.ts"
 import { AppNotificationsSheet, useOpenAppNotifications } from "../../ui/AppNotifications.tsx"
 import { ChatTab } from "../../ui/Chat.tsx"
 import { samplesFor } from "../../ui/attachmentSamples.ts"
 import { useStagedAttachments } from "../../ui/Attachments.tsx"
 import { ChatComposer } from "../../ui/Composer.tsx"
+import { HoldMenu } from "../../ui/HoldMenu.tsx"
+import { ThreadView } from "../../ui/Thread.tsx"
 import { useOpenMessage, useProject, useRequestId } from "../../ui/hooks.ts"
 import { useOpenOptions } from "../../ui/Options.tsx"
 import { IconButton } from "../../ui/kit.tsx"
@@ -65,6 +77,9 @@ export default function ProjectScreen() {
     work?: string
     options?: string
     option?: string
+    thread?: string
+    compose?: string
+    hold?: string
     /** Fixtures: `sample` stages sample attachments in the composer. */
     attach?: string
   }>()
@@ -81,6 +96,9 @@ export default function ProjectScreen() {
       work={params.work}
       options={params.options}
       option={params.option}
+      thread={params.thread}
+      compose={params.compose}
+      hold={params.hold}
       attach={params.attach}
     />
   )
@@ -96,6 +114,9 @@ function Project(props: {
   readonly work: string | undefined
   readonly options: string | undefined
   readonly option: string | undefined
+  readonly thread: string | undefined
+  readonly compose: string | undefined
+  readonly hold: string | undefined
   readonly attach: string | undefined
 }) {
   const router = useRouter()
@@ -152,6 +173,35 @@ function Project(props: {
     openOptions(message, Number(props.option ?? 0) || 0)
     router.setParams({ options: undefined, option: undefined })
   }, [props.options, props.option, state, router, openOptions])
+
+  // A message's thread, over Chat: from its folded line, Reply, a swipe, a notification about a reply, `?thread=`.
+  const threadOpen = Option.getOrUndefined(useAtomValue(threadOpenAtom))
+  const setThread = useAtomSet(threadOpenAtom)
+  const thread = threadOpen?.projectId === props.projectId ? threadOpen : undefined
+  useEffect(() => {
+    const messageId = Option.getOrUndefined(decodeMessageId(props.thread))
+    if (!messageId) return
+    setThread(Option.some({ projectId: props.projectId, messageId, compose: props.compose === "1", at: Date.now() }))
+    router.setParams({ thread: undefined, compose: undefined })
+  }, [props.thread, props.compose, props.projectId, router, setThread])
+  const setHoldRequest = useAtomSet(holdRequestAtom)
+  useEffect(() => {
+    const messageId = Option.getOrUndefined(decodeMessageId(props.hold))
+    if (!messageId) return
+    setHoldRequest(Option.some(messageId))
+    router.setParams({ hold: undefined })
+  }, [props.hold, router, setHoldRequest])
+  // Leaving the project closes its thread and any held message.
+  const setHeld = useAtomSet(heldAtom)
+  useFocusEffect(
+    useCallback(
+      () => () => {
+        setHeld(Option.none())
+        setThread((open) => (Option.isSome(open) && open.value.projectId === props.projectId ? Option.none() : open))
+      },
+      [setHeld, setThread, props.projectId]
+    )
+  )
 
   // The roadmap opens over Chat (`?tab=status`) and folds back (`?tab=chat`, or an ask expanding from anywhere,
   // so Back from the expanded view returns to Chat).
@@ -215,8 +265,8 @@ function Project(props: {
 
   const summary = summaries?.find((s) => s.project.id === props.projectId)
 
-  // Writing to one workstream: from its row on the card, a swipe on one of its messages, or `?work=`. Only while the
-  // card shows rows, and only to one that's still active.
+  // Writing to one workstream: from its row on the card, or `?work=`. Only while the card shows rows, and only to one
+  // that's still active. (Replying to one of its messages goes in that message's thread, and so into it too.)
   const status = state?.status
   const labels = useMemo(() => (status ? labelsOf(status) : undefined), [status])
   const [scopeId, setScopeId] = useState<WorkstreamId | undefined>(undefined)
@@ -245,7 +295,6 @@ function Project(props: {
             onAway={setAway}
             labels={labels}
             scope={scope?.id}
-            onReply={writeTo}
           />
           <KeyboardStickyView
             offset={{ opened: keyboardOffset }}
@@ -353,8 +402,27 @@ function Project(props: {
         onClose={() => setUsage(false)}
       />
       <AppNotificationsSheet projectId={props.projectId} title={project?.title ?? ""} />
+      {state && thread ? (
+        <ThreadView
+          state={state}
+          open={thread}
+          label={labelOf(state.messages, thread.messageId, labels)}
+          onClose={() => setThread(Option.none())}
+        />
+      ) : null}
+      <HoldMenu projectId={props.projectId} />
     </View>
   )
+}
+
+/** The workstream label of a thread's first message, while the card shows rows. */
+const labelOf = (
+  messages: ReadonlyArray<Message>,
+  messageId: MessageId,
+  labels: ReadonlyMap<WorkstreamId, string> | undefined
+): string | undefined => {
+  const workstream = messages.find((m) => m.id === messageId)?.workstream
+  return workstream === undefined ? undefined : labels?.get(workstream)
 }
 
 /**

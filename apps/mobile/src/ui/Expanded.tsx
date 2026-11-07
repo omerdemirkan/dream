@@ -63,9 +63,45 @@ import { color, gutter } from "./theme.ts"
 // Shell
 // ---------------------------------------------------------------------------
 
+/** The thread's way in from the expanded view: Reply, or how many replies there are. */
+export interface ReplyEntry {
+  readonly count: number
+  readonly onPress: () => void
+}
+
+/** Opposite Back: opens the card's thread, to reply or read what's been said there. */
+function ReplyPill(props: ReplyEntry) {
+  const title = props.count === 0 ? "Reply" : props.count === 1 ? "1 reply" : `${props.count} replies`
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={props.count === 0 ? "Reply" : `${title}. Opens the thread`}
+      hitSlop={8}
+      onPress={props.onPress}
+      style={({ pressed }) => ({
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 7,
+        height: 40,
+        paddingLeft: 13,
+        paddingRight: 15,
+        marginRight: -4,
+        borderRadius: 20,
+        backgroundColor: pressed ? color.s3 : color.s1,
+        borderWidth: 1,
+        borderColor: color.line
+      })}
+    >
+      <Icon name="reply" size={15} weight="semibold" />
+      <Text style={{ color: color.t1, fontSize: 15, fontWeight: "600" }}>{title}</Text>
+    </Pressable>
+  )
+}
+
 function Shell(props: {
   readonly project: Pick<Project, "title" | "icon"> | undefined
   readonly onBack: () => void
+  readonly reply?: ReplyEntry | undefined
   readonly eyebrow: ReactNode
   readonly title: string
   readonly titleSize?: number
@@ -75,8 +111,20 @@ function Shell(props: {
   const insets = useSafeAreaInsets()
   return (
     <View style={{ flex: 1, paddingTop: insets.top + 4 }}>
-      <View style={{ height: 44, justifyContent: "center", paddingHorizontal: gutter }}>
-        <BackPill title={`${props.project?.title ?? "Project"} · Chat`} onPress={props.onBack} />
+      <View
+        style={{
+          height: 44,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          paddingHorizontal: gutter
+        }}
+      >
+        <View style={{ flexShrink: 1 }}>
+          <BackPill title={`${props.project?.title ?? "Project"} · Chat`} onPress={props.onBack} />
+        </View>
+        {props.reply ? <ReplyPill {...props.reply} /> : null}
       </View>
       <ScrollView
         style={{ flex: 1 }}
@@ -154,6 +202,7 @@ export function ExpandedQuestion(props: {
   readonly message: QuestionMessage
   readonly project: Pick<Project, "title" | "icon"> | undefined
   readonly onBack: () => void
+  readonly reply?: ReplyEntry | undefined
 }) {
   const m = props.message
   const answer = useAction(answerNowFn)
@@ -196,6 +245,7 @@ export function ExpandedQuestion(props: {
       <Shell
         project={props.project}
         onBack={props.onBack}
+        reply={props.reply}
         eyebrow={<Eyebrow text="Question · no longer needed" />}
         title={m.question}
         body={<Lead>Dream worked this out on its own, so it doesn’t need an answer anymore.</Lead>}
@@ -210,6 +260,7 @@ export function ExpandedQuestion(props: {
       <Shell
         project={props.project}
         onBack={props.onBack}
+        reply={props.reply}
         eyebrow={<Eyebrow text="Question · answered" />}
         title={m.question}
         body={
@@ -263,7 +314,13 @@ export function ExpandedQuestion(props: {
     <Shell
       project={props.project}
       onBack={props.onBack}
-      eyebrow={<Eyebrow text={changing ? "Question · changing your answer" : "Question"} need />}
+      reply={props.reply}
+      eyebrow={
+        <Eyebrow
+          text={changing ? "Question · changing your answer" : m.revisedAt ? "Question · changed" : "Question"}
+          need
+        />
+      }
       title={m.question}
       body={
         <>
@@ -635,6 +692,7 @@ type ExpandedAccessProps = {
   readonly message: AccessMessage
   readonly project: Pick<Project, "title" | "icon"> | undefined
   readonly onBack: () => void
+  readonly reply?: ReplyEntry | undefined
 }
 
 export function ExpandedAccess(props: ExpandedAccessProps) {
@@ -659,6 +717,7 @@ function ExpandedNotifications(
     <Shell
       project={props.project}
       onBack={props.onBack}
+      reply={props.reply}
       eyebrow={
         <Eyebrow
           text={open ? "Notifications" : allowed ? "Notifications · allowed" : "Notifications · not allowed"}
@@ -719,6 +778,7 @@ function ExpandedConnect(props: ExpandedAccessProps) {
       <Shell
         project={props.project}
         onBack={props.onBack}
+        reply={props.reply}
         eyebrow={<Eyebrow text="Access · connected" />}
         title={heading.title}
         titleSize={titleSize}
@@ -793,6 +853,7 @@ function ExpandedConnect(props: ExpandedAccessProps) {
     <Shell
       project={props.project}
       onBack={props.onBack}
+      reply={props.reply}
       eyebrow={
         <>
           <Eyebrow

@@ -23,7 +23,7 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { scheduleOnRN } from "react-native-worklets"
 import { projectsAtom } from "../state/atoms.ts"
-import { type Focus, focusAtom, landingAtom, messageRects, type Rect } from "../state/ui.ts"
+import { type Focus, focusAtom, landingAtom, messageRects, type Rect, threadOpenAtom } from "../state/ui.ts"
 import { ExpandedAccess, ExpandedQuestion } from "./Expanded.tsx"
 import { nextOpenAsk } from "./asks.ts"
 import { useMessage, useProject } from "./hooks.ts"
@@ -157,6 +157,20 @@ function FocusLayer(props: { readonly focus: Focus }) {
     land(true)
   }
 
+  // Reply opens the card's thread over the project's Chat, which is already underneath.
+  const setThread = useAtomSet(threadOpenAtom)
+  const reply = {
+    count: live?.messages.filter((m) => m.replyTo === focus.messageId).length ?? 0,
+    onPress: () => {
+      if (closing.current) return
+      closing.current = true
+      setThread(Option.some({ projectId: focus.projectId, messageId: focus.messageId, compose: true, at: Date.now() }))
+      fade.value = withTiming(0, { duration: 200 }, (finished) => {
+        if (finished) scheduleOnRN(() => setFocus(Option.none()))
+      })
+    }
+  }
+
   const back = () => {
     if (closing.current) return
     closing.current = true
@@ -218,9 +232,9 @@ function FocusLayer(props: { readonly focus: Focus }) {
           >
             <Animated.View style={sliding}>
               {message?._tag === "Question" ? (
-                <ExpandedQuestion message={message} project={project} onBack={back} />
+                <ExpandedQuestion message={message} project={project} onBack={back} reply={reply} />
               ) : message?._tag === "Access" ? (
-                <ExpandedAccess message={message} project={project} onBack={back} />
+                <ExpandedAccess message={message} project={project} onBack={back} reply={reply} />
               ) : null}
             </Animated.View>
           </KeyboardAvoidingView>

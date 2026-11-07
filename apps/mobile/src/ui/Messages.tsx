@@ -60,7 +60,7 @@ export function UserBubble(props: {
             borderColor: color.line
           }}
         >
-          <Text selectable style={{ fontSize: 16, lineHeight: 22.7, letterSpacing: -0.16, color: color.t1 }}>
+          <Text style={{ fontSize: 16, lineHeight: 22.7, letterSpacing: -0.16, color: color.t1 }}>
             {props.message.text}
           </Text>
         </View>
@@ -105,7 +105,7 @@ export function AgentText(props: { readonly message: TextMessage; readonly time:
   if (props.message.text === unsupportedText) return <Unsupported time={props.time} />
   return (
     <View style={{ maxWidth: "94%" }}>
-      <Markdown source={props.message.text} />
+      <Markdown source={props.message.text} selectable={false} />
       <Attachments media={props.message.media} />
       {props.time ? <Time text={props.time} /> : null}
     </View>
@@ -414,7 +414,7 @@ export const QuestionCard = forwardRef<
   }
   return (
     <Card ref={ref} tone="need" onOpen={props.onOpen}>
-      <CardHead label="Question" />
+      <CardHead label="Question" tag={m.revisedAt === undefined ? undefined : "Changed"} />
       <CardTitle lines={4} onClamp={clamps.track("question")}>
         {m.question}
       </CardTitle>
