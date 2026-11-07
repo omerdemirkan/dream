@@ -5,9 +5,16 @@
  * packages/domain/src/Testflight.ts). The key never passes through the machine running this script, an env var,
  * a command line, or a log. Run from the repo root with Node 24:
  *
- *   node apps/mobile/scripts/testflight-namespace.ts check
- *       Starts a Mac, has it fetch the key, checks it (a P-256 key, mode 0600) and signs one read-only App Store
- *       Connect call with it (looks up the app record). Builds nothing. About 1 minute.
+ *   node apps/mobile/scripts/testflight-namespace.ts status
+ *       Asks the Worker for the latest builds (`/admin/testflight/builds`, behind DEV_LOGIN_SECRET): it signs the
+ *       App Store Connect token with the key itself, so no Mac starts and the one Namespace Mac slot stays free.
+ *       Prints the app record, each build's number, upload time, processing state, expiry and TestFlight states,
+ *       and the account's latest uploads under any bundle id. A few seconds.
+ *
+ *   node apps/mobile/scripts/testflight-namespace.ts check [--mac]
+ *       The same as `status`. With --mac (or when the Worker predates that route), starts a Mac instead, has it
+ *       fetch the key, checks it (a P-256 key, mode 0600) and signs the same read-only App Store Connect calls with
+ *       it: that tests the key's way to a build Mac. Builds nothing. About 1 minute.
  *
  *   node apps/mobile/scripts/testflight-namespace.ts testflight [--no-upload]
  *       The same, then ships the committed tree (`git archive HEAD`) to the Mac and runs
@@ -65,12 +72,16 @@ import { join } from "node:path"
 const mode = process.argv[2]
 const noUpload = process.argv.includes("--no-upload")
 const dryRun = process.argv.includes("--dry-run")
-if (
-  (mode !== "check" && mode !== "testflight" && mode !== "destroy") ||
-  process.argv.slice(3).some((a) => a !== "--no-upload" && a !== "--dry-run")
-) {
+const onMacOnly = process.argv.includes("--mac")
+const flags: Record<string, ReadonlyArray<string>> = {
+  status: [],
+  check: ["--mac"],
+  testflight: ["--no-upload", "--dry-run"],
+  destroy: []
+}
+if (mode === undefined || !(mode in flags) || process.argv.slice(3).some((a) => !flags[mode]!.includes(a))) {
   console.error(
-    "usage: node apps/mobile/scripts/testflight-namespace.ts check | testflight [--no-upload] [--dry-run] | destroy"
+    "usage: node apps/mobile/scripts/testflight-namespace.ts status | check [--mac] | testflight [--no-upload] [--dry-run] | destroy"
   )
   process.exit(2)
 }
@@ -502,7 +513,50 @@ const requiredPurposeStrings = [
   "NSSpeechRecognitionUsageDescription"
 ]
 
+/** Prints a build as `check` always has, from the Worker's `TestflightBuild` or the Mac's report. */
+const logBuild = (b: Json) =>
+  log(
+    `  build ${b.build}, uploaded ${b.uploaded}: ${b.processing}${b.expired ? ", expired" : ""}; internal testing ${b.internalBuildState ?? "?"}, external ${b.externalBuildState ?? "?"}`
+  )
+
+/**
+ * The builds, read by the Worker with the key it holds (`/admin/testflight/builds`). False when the Worker
+ * doesn't have that route yet; any other failure is final, since a Mac would sign with the same key.
+ */
+const statusFromWorker = async (): Promise<boolean> => {
+  const secret = await devSecret()
+  const res = await fetchRetrying(
+    `${keyApi}/admin/testflight/builds?bundleId=${encodeURIComponent(bundleId)}`,
+    { headers: { "x-dream-dev-secret": secret } },
+    "Reading the builds"
+  )
+  if (res.status === 404) return false
+  const body: Json = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const asc = body.appStoreConnect === undefined ? "" : `App Store Connect answered ${body.appStoreConnect}: `
+    throw new Error(`Reading the builds failed (${res.status}): ${asc}${body.problem ?? "no detail"}`)
+  }
+  if (body.app === undefined) log(`App Store Connect has no app record for ${bundleId}`)
+  else log(`App Store Connect, read by the Worker, for "${body.app.name}" (${body.app.bundleId}):`)
+  for (const b of body.accountBuilds ?? []) log(`  ${b.build} ${b.processing} ${b.bundleId ?? "?"}`)
+  for (const b of body.builds ?? [])
+    logBuild({
+      ...b,
+      uploaded: b.uploadedAt ?? "?",
+      internalBuildState: b.internalState,
+      externalBuildState: b.externalState
+    })
+  if (body.app !== undefined && (body.builds ?? []).length === 0) log("  no builds yet")
+  return true
+}
+
 const main = async () => {
+  if (mode === "status" || (mode === "check" && !onMacOnly)) {
+    if (await statusFromWorker()) return
+    if (mode === "status")
+      throw new Error(`${keyApi} has no /admin/testflight/builds yet: deploy, or run \`check --mac\``)
+    log("The Worker can't read the builds itself yet; checking on a Mac")
+  }
   if (mode === "destroy") {
     const macs = await buildMacs()
     for (const mac of macs) {
@@ -668,10 +722,7 @@ const main = async () => {
     if (!report.ok) throw new Error(`The key isn't usable: ${report.problem ?? "unknown"} (${facts})`)
     log(`Key arrived (${facts}); App Store Connect answered ${report.appStoreConnect} for "${report.app}"`)
     for (const line of [...((report.accountBuilds as ReadonlyArray<string> | undefined) ?? [])]) log(`  ${line}`)
-    for (const b of (report.builds as ReadonlyArray<Json> | undefined) ?? [])
-      log(
-        `  build ${b.build}, uploaded ${b.uploaded}: ${b.processing}${b.expired ? ", expired" : ""}; internal testing ${b.internalBuildState ?? "?"}, external ${b.externalBuildState ?? "?"}`
-      )
+    for (const b of (report.builds as ReadonlyArray<Json> | undefined) ?? []) logBuild(b)
   } else if (state === "keyed") log("The key is already on the Mac")
 
   if (mode === "check") {

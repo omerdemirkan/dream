@@ -115,6 +115,13 @@ export const ApiConfigSchema = Config.all({
    * founder in the dashboard. Released only to a granted Namespace build Mac (http/Testflight.ts).
    */
   ascTestflightKey: optionalSecret("ASC_TESTFLIGHT_KEY_P8"),
+  /** That key's id and issuer, for the JWTs the Worker signs with it itself (http/TestflightBuilds.ts). */
+  ascTestflightKeyId: Config.NonEmptyString("ASC_TESTFLIGHT_KEY_ID").pipe(Config.withDefault("5G566N355S")),
+  ascTestflightIssuerId: Config.NonEmptyString("ASC_TESTFLIGHT_ISSUER_ID").pipe(
+    Config.withDefault("0e7009f1-c7f0-40f0-b12e-b76df2001875")
+  ),
+  /** The app record whose builds `Routes.testflightBuilds` lists by default. */
+  ascTestflightBundleId: Config.NonEmptyString("ASC_TESTFLIGHT_BUNDLE_ID").pipe(Config.withDefault("build.omer.dream")),
   /** The app's URL scheme, for redirects back from OAuth. */
   appScheme: Config.NonEmptyString("APP_URL_SCHEME").pipe(Config.withDefault("dream"))
 })
@@ -172,6 +179,9 @@ export class ApiConfig extends Context.Service<ApiConfig, ApiConfigShape>()("@dr
         namespaceTenantId: "tenant_test",
         namespaceFederationUrl: NamespaceFederationIssuer,
         ascTestflightKey: Option.none(),
+        ascTestflightKeyId: "TESTKEY123",
+        ascTestflightIssuerId: "00000000-0000-0000-0000-000000000000",
+        ascTestflightBundleId: "build.omer.dream",
         appScheme: "dream"
       }),
       ...overrides

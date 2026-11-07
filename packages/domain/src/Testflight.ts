@@ -83,3 +83,38 @@ export const TestflightGrantRequest = Schema.Struct({
   instanceId: Schema.String.check(Schema.isPattern(/^[a-z0-9]{8,32}$/))
 })
 export type TestflightGrantRequest = typeof TestflightGrantRequest.Type
+
+/** One of the app's builds as App Store Connect reports it, in `TestflightBuilds`. */
+export const TestflightBuild = Schema.Struct({
+  /** The build number (`CFBundleVersion`). */
+  build: Schema.String,
+  uploadedAt: Schema.optionalKey(Schema.DateTimeUtc),
+  /** `PROCESSING`, `FAILED`, `INVALID` or `VALID`. */
+  processing: Schema.String,
+  expired: Schema.Boolean,
+  /** TestFlight states, e.g. `IN_BETA_TESTING`, `READY_FOR_BETA_SUBMISSION`, `MISSING_EXPORT_COMPLIANCE`. */
+  internalState: Schema.optionalKey(Schema.String),
+  externalState: Schema.optionalKey(Schema.String)
+})
+export type TestflightBuild = typeof TestflightBuild.Type
+
+/** A build anywhere on the account, so an upload under another bundle id shows too. */
+export const TestflightAccountBuild = Schema.Struct({
+  build: Schema.String,
+  uploadedAt: Schema.optionalKey(Schema.DateTimeUtc),
+  processing: Schema.String,
+  bundleId: Schema.optionalKey(Schema.String)
+})
+export type TestflightAccountBuild = typeof TestflightAccountBuild.Type
+
+/**
+ * 200 response to GET `Routes.testflightBuilds` (operator, `x-dream-dev-secret`; `?bundleId=` defaults to Dream's):
+ * the latest builds, read by the Worker with the App Store Connect key it holds. `app` is absent when the account
+ * has no app record for the bundle id.
+ */
+export const TestflightBuilds = Schema.Struct({
+  app: Schema.optionalKey(Schema.Struct({ id: Schema.String, name: Schema.String, bundleId: Schema.String })),
+  builds: Schema.Array(TestflightBuild),
+  accountBuilds: Schema.Array(TestflightAccountBuild)
+})
+export type TestflightBuilds = typeof TestflightBuilds.Type

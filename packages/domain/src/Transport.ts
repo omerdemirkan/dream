@@ -50,6 +50,8 @@ export const Routes = {
   testflightIdentity: "/testflight/signing-identity",
   /** POST a `TestflightGrantRequest` with the operator's `x-dream-dev-secret`. */
   testflightGrant: "/admin/testflight/grants",
+  /** GET with the operator's `x-dream-dev-secret`: `TestflightBuilds`, read by the Worker itself. */
+  testflightBuilds: "/admin/testflight/builds",
   /** GET: the Expo Updates protocol (v1) manifest endpoint, the app's `updates.url`. */
   updatesManifest: "/updates/manifest",
   /** GET an update asset by its `AssetHash` (public and immutable, like the bundle inside the app). */

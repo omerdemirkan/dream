@@ -30,14 +30,18 @@ through Chat, my logs, an env var, or a Dream project.
 Then I run, from the repo on an up-to-date `main`:
 
 ```sh
-node apps/mobile/scripts/testflight-namespace.ts check       # ~1 min, builds nothing
-node apps/mobile/scripts/testflight-namespace.ts testflight  # 15–25 min, uploads
+node apps/mobile/scripts/testflight-namespace.ts check --mac  # ~1 min, builds nothing
+node apps/mobile/scripts/testflight-namespace.ts testflight   # 15–25 min, uploads
 ```
 
 If the run is interrupted after the build started, rerunning `testflight` picks the build up where it is;
 `node apps/mobile/scripts/testflight-namespace.ts destroy` stops it instead.
 
-`check` makes sure the key arrives intact, then signs one read-only App Store Connect request with it (it looks
+To see whether a build reached App Store Connect and where it is in processing and TestFlight, without a Mac,
+run `node apps/mobile/scripts/testflight-namespace.ts status` (`check` without `--mac` does the same): the Worker
+signs the App Store Connect request with the key itself and returns only the builds.
+
+`check --mac` makes sure the key arrives intact, then signs one read-only App Store Connect request with it (it looks
 up the "Dream by Omer" record). It prints only the key's size, file mode and a short hash, never the key.
 `testflight` then builds and uploads, as step 3 would on your Mac.
 

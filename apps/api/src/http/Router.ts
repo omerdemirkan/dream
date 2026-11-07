@@ -3,7 +3,7 @@
  * RPC endpoints, the live WebSocket hand-off, media and OAuth callbacks;
  * every other `*.<domain>` host is a published app.
  */
-import { AppRpcs, HttpRpcSerialization, ProjectId, Routes, SandboxRpcs } from "@dream/domain"
+import { AppRpcs, HttpRpcSerialization, ProjectId, Routes, SandboxRpcs, TestflightBuilds } from "@dream/domain"
 import { Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { HttpServerRequest } from "effect/http/HttpServerRequest"
 import * as HttpServerResponse from "effect/http/HttpServerResponse"
@@ -30,6 +30,7 @@ import { downloadAttachmentForSandbox, downloadMedia, uploadAttachment, uploadMe
 import { homePage, privacyPage } from "./PublicPages.ts"
 import { SandboxAuthServer, WorkerSandboxHandlers } from "./SandboxHandlers.ts"
 import { grantAscKey, releaseAscKey, storeSigningIdentity } from "./Testflight.ts"
+import { readTestflightBuilds } from "./TestflightBuilds.ts"
 import {
   answered,
   ensureSigningKey,
@@ -170,6 +171,24 @@ export const route = (raw: Request) =>
       return yield* grantAscKey(body).pipe(
         Effect.map((instanceId) => HttpServerResponse.jsonUnsafe({ granted: instanceId })),
         Effect.catchTag("TestflightDenied", (e) => Effect.succeed(HttpServerResponse.text(e.reason, { status: 400 })))
+      )
+    }
+    if (path === Routes.testflightBuilds && request.method === "GET") {
+      if (!operator()) return HttpServerResponse.text("Forbidden", { status: 403 })
+      const bundleId = url.searchParams.get("bundleId")
+      if (bundleId !== null && !/^[A-Za-z0-9.-]{1,155}$/.test(bundleId))
+        return HttpServerResponse.text("Bad bundle id", { status: 400 })
+      const problem = (status: number, body: object) => Effect.succeed(HttpServerResponse.jsonUnsafe(body, { status }))
+      return yield* readTestflightBuilds(bundleId ?? undefined).pipe(
+        Effect.map((builds) =>
+          HttpServerResponse.jsonUnsafe(Schema.encodeSync(Schema.toCodecJson(TestflightBuilds))(builds))
+        ),
+        Effect.catchTags({
+          TestflightRateLimited: () => problem(429, { problem: "rate limited; try again in a minute" }),
+          AscKeyUnusable: (e) => problem(500, { problem: `ASC_TESTFLIGHT_KEY_P8 doesn't import: ${e.reason}` }),
+          AscRefused: (e) => problem(502, { appStoreConnect: e.status, problem: e.detail }),
+          UpstreamFailure: (e) => problem(503, { problem: `${e.service}: ${e.message}` })
+        })
       )
     }
     if (path === Routes.testflightKey && request.method === "POST") {
