@@ -94,6 +94,9 @@ export class Scheduler extends Context.Service<Scheduler, { readonly run: Effect
             case "sandbox-resume":
               yield* sandbox.resume
               break
+            case "visit-check":
+              yield* sandbox.visitCheck
+              break
             case "mac-idle":
               yield* machines.macIdleCheck
               break

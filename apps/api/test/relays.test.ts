@@ -6,6 +6,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { DaemonEnvFile, DiscordDefaultIntents, type IntegrationId, type ProjectId, RelaySource } from "@dream/domain"
 import { Context, DateTime, Duration, Effect, Exit, Redacted } from "effect"
+import { ProjectClients } from "../src/project/Client.ts"
 import { Core } from "../src/project/Core.ts"
 import { Store } from "../src/project/Store.ts"
 import { RelayRuntime } from "../src/relay/Runtime.ts"
@@ -324,6 +325,45 @@ describe("going back to sleep after scheduled work", () => {
       yield* dreamd.Sleep({ reason: "app", checkedAt: yield* DateTime.now })
       assert.strictEqual(sandbox.state, "paused")
       assert.strictEqual(sandbox.pauses, pauses + 2)
+      yield* cloud.close
+    })
+  )
+
+  it.live("puts the sandbox back to sleep when a visit woke it but never reached the app", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project, dreamd, sandbox, instance } = yield* idle(cloud)
+      yield* dreamd.Publish({ port: 8080 })
+      const store = Context.get(instance.context, Store)
+      const clients = Context.get(cloud.workerContext, ProjectClients)
+      /** The gateway looks up where to send a visit, and the request it forwards resumes the paused sandbox. */
+      const visit = Effect.gen(function* () {
+        sandbox.state = "paused"
+        yield* clients.use(project.id, (client) => client.GatewayTarget())
+        sandbox.state = "running"
+      })
+      /** `VisitGrace` later. */
+      const later = Effect.andThen(
+        Effect.flatMap(store.dueTimers(Date.now() + Duration.toMillis(Duration.minutes(2)) + 1000), (due) =>
+          due.includes("visit-check") ? store.setTimer("visit-check", 0) : Effect.void
+        ),
+        cloud.alarm(project.id)
+      )
+
+      // The Morning Build (Nov 2026): podcast apps gave up while the sandbox resumed, so the app never saw their
+      // requests, dreamd never asked to sleep, and each such poll held the sandbox up for the whole five minutes.
+      const pauses = sandbox.pauses
+      yield* visit
+      yield* later
+      assert.strictEqual(sandbox.state, "paused")
+      assert.strictEqual(sandbox.pauses, pauses + 1)
+
+      // A visit dreamd serves is dreamd's to end: its StayAwake says so.
+      yield* visit
+      yield* dreamd.StayAwake({ reason: "app" })
+      yield* later
+      assert.strictEqual(sandbox.state, "running")
+      assert.strictEqual(sandbox.pauses, pauses + 1)
       yield* cloud.close
     })
   )

@@ -113,6 +113,14 @@ export const LatestBuildTtl = Duration.minutes(10)
  * or a relay's deliveries) it may not have seen. Within this margin of the look counts as after, for clock skew.
  */
 export const SleepMargin = Duration.seconds(2)
+/**
+ * After the gateway looks up where to send a visit, dreamd has this long to say it's serving it (`StayAwake`, which
+ * it sends within a minute of seeing a request). If it doesn't, the visit woke the sandbox without reaching the app:
+ * the client gave up while the sandbox resumed (a podcast app polling a feed, Nov 2026), so the request was dropped,
+ * and dreamd, seeing no traffic, would never ask to sleep. The ProjectDO puts it back to sleep instead
+ * (`visitCheck`).
+ */
+export const VisitGrace = Duration.minutes(2)
 /** After a turn ends, the sandbox is refreshed (if it's behind) this much later: well within `TurnTail`, and likely idle. */
 export const RefreshAfterTurn = Duration.seconds(20)
 
@@ -245,6 +253,11 @@ export class SandboxManager extends Context.Service<
      */
     readonly sleep: (reason: "command" | "relay" | "app", checkedAt: DateTime.Utc) => Effect.Effect<void>
     /**
+     * The `visit-check` timer: a visit was sent to the sandbox `VisitGrace` ago and dreamd never said it served it.
+     * Pause the sandbox as `sleep` would, rather than let a wake nobody uses run out its five minutes.
+     */
+    readonly visitCheck: Effect.Effect<void>
+    /**
      * Hands a relay's events to dreamd, which posts them to the app on `port`, waking the sandbox (creating it, if
      * there's none). Failures come back in the result, for the relay to retry.
      */
@@ -295,6 +308,8 @@ export class SandboxManager extends Context.Service<
       /** Relay deliveries under way, and when dreamd was last handed anything. */
       const relaysInFlight = yield* Ref.make(0)
       const lastHandoffMs = yield* Ref.make<number | undefined>(undefined)
+      /** When the gateway last looked up where to send a visit (`expectVisit`). */
+      const lastVisitMs = yield* Ref.make<number | undefined>(undefined)
       const handedOff = Effect.flatMap(Clock.currentTimeMillis, (now) => Ref.set(lastHandoffMs, now))
 
       const update = (f: (record: SandboxRecord) => SandboxRecord) =>
@@ -794,6 +809,15 @@ export class SandboxManager extends Context.Service<
        * API calls took a new connection hung on its first call after a sleep, and so never reported a visit. The
        * refresh restarts dreamd, which the app runs outside of.
        */
+      /** A visit is on its way to the sandbox: unless dreamd reports serving it, `visitCheck` runs after `VisitGrace`. */
+      const expectVisit = Effect.gen(function* () {
+        if ((yield* core.sandbox).working) return
+        const now = yield* Clock.currentTimeMillis
+        yield* Ref.set(lastVisitMs, now)
+        yield* store.setTimer("visit-check", now + Duration.toMillis(VisitGrace))
+        yield* alarm.reschedule
+      })
+
       const gatewayTarget = Effect.gen(function* () {
         const project = yield* core.project
         // Serving it would wake the sandbox, and with it a turn the archive paused.
@@ -807,6 +831,7 @@ export class SandboxManager extends Context.Service<
         if (record.access === undefined) return yield* new NotFound({ entity: "sandbox", id: project.id })
         if (record.rulesDirty) yield* pushRules(record, true)
         yield* refreshSoon
+        yield* expectVisit
         return {
           origin: `https://${project.publishedPort}-${record.access.sandboxId}.${record.access.domain}`,
           trafficAccessToken: record.access.trafficAccessToken
@@ -866,6 +891,8 @@ export class SandboxManager extends Context.Service<
       const stayAwake = timeouts
         .withPermits(1)(
           Effect.gen(function* () {
+            // dreamd has work, a visit among it: it asks to sleep itself once that's done.
+            yield* store.clearTimer("visit-check")
             if (yield* held) return
             const record = yield* core.sandbox
             if (record.working || record.access === undefined) return
@@ -880,7 +907,8 @@ export class SandboxManager extends Context.Service<
         )
         .pipe(Effect.catch((error) => Effect.logWarning("couldn't keep the sandbox awake", String(error))))
 
-      const sleep = (reason: "command" | "relay" | "app", checkedAt: DateTime.Utc) =>
+      /** Pauses the sandbox if nothing needs it: what happened, for the log. */
+      const pauseIfIdle = (checkedAt: DateTime.Utc) =>
         busy
           .withPermitsIfAvailable(1)(
             timeouts.withPermits(1)(
@@ -907,12 +935,25 @@ export class SandboxManager extends Context.Service<
               })
             )
           )
-          .pipe(
-            Effect.map(Option.getOrElse(() => "a delivery or refresh is under way")),
-            Effect.tap((outcome) => Effect.logInfo("dreamd asked to sleep", { reason, outcome })),
-            Effect.catch((error) => Effect.logWarning("couldn't put the sandbox to sleep", String(error))),
-            Effect.asVoid
-          )
+          .pipe(Effect.map(Option.getOrElse(() => "a delivery or refresh is under way")))
+
+      const sleep = (reason: "command" | "relay" | "app", checkedAt: DateTime.Utc) =>
+        pauseIfIdle(checkedAt).pipe(
+          Effect.tap((outcome) => Effect.logInfo("dreamd asked to sleep", { reason, outcome })),
+          Effect.catch((error) => Effect.logWarning("couldn't put the sandbox to sleep", String(error))),
+          Effect.asVoid
+        )
+
+      const visitCheck = Effect.gen(function* () {
+        yield* store.clearTimer("visit-check")
+        // Anything handed to dreamd since the visit was sent counts as after dreamd's look.
+        const sentMs = (yield* Ref.get(lastVisitMs)) ?? (yield* Clock.currentTimeMillis) - Duration.toMillis(VisitGrace)
+        const outcome = yield* pauseIfIdle(DateTime.makeUnsafe(sentMs))
+        yield* Effect.logInfo("a visit woke the sandbox and dreamd never served it", { outcome })
+      }).pipe(
+        Effect.catch((error) => Effect.logWarning("couldn't put the sandbox to sleep after a visit", String(error))),
+        Effect.withSpan("SandboxManager.visitCheck")
+      )
 
       const forwardRelay: Context.Service.Shape<typeof SandboxManager>["forwardRelay"] = (request) =>
         Effect.gen(function* () {
@@ -1117,7 +1158,13 @@ export class SandboxManager extends Context.Service<
         })
 
       const pause = Effect.gen(function* () {
-        for (const timer of ["deliver", "turn-keepalive", "sandbox-refresh", "sandbox-resume"] as const) {
+        for (const timer of [
+          "deliver",
+          "turn-keepalive",
+          "sandbox-refresh",
+          "sandbox-resume",
+          "visit-check"
+        ] as const) {
           yield* store.clearTimer(timer)
         }
         yield* alarm.reschedule
@@ -1211,6 +1258,7 @@ export class SandboxManager extends Context.Service<
         keepalive: keepalive.pipe(Effect.catch(() => Effect.void)),
         stayAwake,
         sleep,
+        visitCheck,
         forwardRelay,
         refresh,
         destroy,

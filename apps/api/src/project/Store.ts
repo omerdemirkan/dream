@@ -254,6 +254,7 @@ export type TimerName =
   | "sandbox-retry"
   | "sandbox-refresh"
   | "sandbox-resume"
+  | "visit-check"
 
 export class Store extends Context.Service<
   Store,
