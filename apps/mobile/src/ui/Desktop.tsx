@@ -89,7 +89,7 @@ export function FinishOnComputer(props: { readonly message: AccessMessage; reado
     >
       <Icon name={status._tag === "Opened" ? "laptop" : "mail"} size={18} color={color.cool} />
       <View style={{ flex: 1 }}>
-        <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: "600", color: color.t1 }}>
+        <Text numberOfLines={1} ellipsizeMode="middle" style={{ fontSize: 14, fontWeight: "600", color: color.t1 }}>
           {status._tag === "Opened" ? "Opened on your computer" : `Sent to ${status.to}`}
         </Text>
         <Text style={{ fontSize: 13, lineHeight: 17, color: color.t2, marginTop: 1 }}>{detail}</Text>
