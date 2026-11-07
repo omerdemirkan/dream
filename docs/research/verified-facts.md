@@ -455,3 +455,41 @@ subscription with real models. No ChatGPT account is connected, so nothing on Co
 - Codex tasks report no usage readings (`before`/`after`): dreamd reads Codex's rate limits from the rollout of the
   agent's thread, and doesn't look for the task's. The Worker then uses the latest stored reading as `after`.
 - Claude Code's `rate_limit_event` can name no window (status only); dreamd ignores those as readings.
+
+## New guidance in a running session (2026-11-07, fix/prompt-refresh; Claude Code 2.1.318 / agent SDK 0.3.318, Codex 0.165.0)
+- Claude Code records a conversation's system prompt on its first request (a `prompt_snapshot` attachment in the
+  transcript, with the tools) and sends that record on every later request and `--resume`, ignoring a different
+  `--append-system-prompt` or SDK `systemPrompt.append` passed by a later launch, until the conversation compacts
+  (the SDK's `systemPrompt.snapshot`, default on; documented in `sdk.d.ts`: "a different `append` … passed on a
+  later launch of the same session is ignored until compaction or a new session"). `snapshot: false` renders the
+  prompt fresh on every request, history kept; going back to `snapshot` on (or omitted) sends the old record
+  again, because the record is the last `prompt_snapshot` in the transcript. Seen against `fake-anthropic.ts`
+  with the CLI, the SDK and Dream's adapter. There's no env var to turn it off; `set_model`'s `system_prompt`
+  also waits for compaction under snapshots.
+- So every prompt change before this branch reached only new Claude Code sessions: a project's session (weeks
+  long) kept the prompt of its first turn. `@ai-sdk/harness-claude-code` 1.0.178 passes
+  `{ type: "preset", preset: "claude_code", append, excludeDynamicSections }` and has no setting for `snapshot`, so
+  Dream patches its bridge to add `snapshot: false` (`bridgePatches` in `src/harness/Bridges.ts`; a test fails if
+  the patch stops applying). With it the rendered prompt is byte-identical across launches while the text is the
+  same (the same hash as the old record), so the cache prefix only moves when the text does.
+- Skills on Claude Code refresh: the adapter rewrites `~/.claude/skills/dream/SKILL.md` on each session start,
+  Claude Code announces a changed description in its next skill listing, and loading the skill gives the new
+  body. Bodies loaded earlier stay in the conversation as they were.
+- A Codex thread keeps its developer instructions: `codex exec resume` with a new `developer_instructions`, and
+  app-server `thread/resume` with a new `developerInstructions` or `config.developer_instructions`, all go on
+  sending the thread's first developer message. After `thread/compact/start` the rebuilt context carries the
+  resume's new `developerInstructions` (and user messages survive). `@ai-sdk/harness-codex` 1.0.176 has no
+  manual compaction.
+- `@ai-sdk/harness-codex` fingerprints `instructions` + tools (kept in the resume state as
+  `turnConfigurationFingerprint`) and checks whether `writeSkills` changed anything; if either changed it sends
+  `restartThread`, and the bridge starts a new thread. So on Codex every prompt or skill change before this
+  branch gave the agent the new guidance and a new, empty conversation, without a word about the old one.
+- What dreamd does now (`src/harness/Session.ts`): `session.json` keeps hashes of the prompt and the skill the
+  session runs on. On a change, Claude Code's session goes on and its next turn opens with a note saying what
+  changed (reload the skill); Codex gets a new thread from dreamd, opening with a handoff: the old thread's
+  rollout path and its last 12 messages (2,000 characters each, 12,000 in all), no model call. A session saved
+  before (no hashes) counts as changed. Checked by `scripts/prompt-refresh-check.ts` (both harnesses, one process
+  per turn, fakes) and on E2B with a throwaway `dream-sandbox-promptcheck`: projects started on main's build
+  (release e9d655321f17c1e6), refreshed to this branch's with marked prompt and skill; the next request carried
+  the new prompt on both, Claude Code in the same conversation with the note, Codex in a new thread with the
+  handoff; both still recalled the first turn's `REMEMBER` word.
