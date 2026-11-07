@@ -348,6 +348,11 @@ subscription with real models. No ChatGPT account is connected, so nothing on Co
     is killed with the CLI (checked: a 40 s subagent never finished, the turn ended after 3 s); with
     `run_in_background: false` the turn waited 42 s for it. Quick background agents whose completion notice arrives
     before the final reply are fine.
+  - `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` (2.1.318, checked against a fake Messages API) takes
+    `run_in_background` out of both the `Agent` and `Bash` schemas and the Agent description stops saying subagents
+    run in the background; a call that still passes `run_in_background: true` runs in the foreground
+    (`task_started` with `is_backgrounded: false`) and the turn waits for the report. dreamd sets it in `agentEnv`
+    as an interim guard.
   - Side requests (no tools) also go to the top-level model, at effort medium.
 - Codex subagents: the `collaboration` namespace (multi-agent v2): `spawn_agent`, `wait_agent`, `send_message`,
   `followup_task`, `interrupt_agent`, `list_agents`. `spawn_agent` params: `task_name` (required; lowercase,
