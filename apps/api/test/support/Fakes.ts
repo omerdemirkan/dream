@@ -287,7 +287,9 @@ export const fakeEnvd = (world: FakeWorld) => {
           const fromId = /49983-([^.]+)\./.exec(options.envs?.FROM_URL ?? "")?.[1]
           const from = fromId === undefined ? undefined : world.sandboxes.get(fromId)
           if (from !== undefined && files !== undefined) {
-            for (const [path, content] of from.files) if (path.startsWith("/home/user/")) files.set(path, content)
+            for (const [path, content] of from.files) {
+              if (path.startsWith("/home/user/") && path !== DaemonEnvFile) files.set(path, content)
+            }
           }
           if (options.command.includes("move.mjs restore")) {
             return { exitCode: 0, output: JSON.stringify({ restarted: [], notRestarted: [] }) }

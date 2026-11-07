@@ -100,11 +100,20 @@ const capture = () => {
     for (const port of portsOf(pid, listening)) entry.ports.add(port)
     sessions.set(leader, entry)
   }
+  // A wrapper that started a server (a shell running `node app.js > log`) goes with the server, not on its own.
+  const serving = new Set()
+  for (const [leader, { ports }] of sessions) {
+    if (ports.size === 0) continue
+    for (let at = all.get(leader)?.ppid ?? 0, hops = 0; at > 1 && hops < 64; hops++) {
+      serving.add(at)
+      at = all.get(at)?.ppid ?? 0
+    }
+  }
   const servers = []
   const others = []
   for (const [leader, { ports }] of sessions) {
     const args = argv(leader)
-    if (args.length === 0) continue
+    if (args.length === 0 || serving.has(leader)) continue
     if (ports.size === 0) {
       others.push(commandLine(args))
       continue

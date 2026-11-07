@@ -10,7 +10,7 @@
  * the old one's envd. The caller decides when (between turns), starts dreamd in the new sandbox, swaps its record
  * over and kills the old one; a failure here kills the new one and leaves the old one as it was.
  */
-import { UpstreamFailure } from "@dream/domain"
+import { DaemonEnvFile, UpstreamFailure } from "@dream/domain"
 import { Context, Data, Duration, Effect, Layer, Schema } from "effect"
 import { E2B, type NetworkRules, type SandboxAccess } from "./E2B.ts"
 import { Envd } from "./Envd.ts"
@@ -18,8 +18,21 @@ import { Envd } from "./Envd.ts"
 const Tarball = "/tmp/dream-move.tar"
 const MoveScript = "/opt/dream/sandbox/move.mjs"
 
-/** Left out of the copy: the new sandbox's template has the current harnesses, and caches refill. */
-export const excluded = ["./.ai-sdk-harness/.harness-bootstrap", "./.cache", "./.npm/_cacache", "./.bun/install/cache"]
+/**
+ * Left out of the copy: the new sandbox's template has the current harnesses, and caches refill. dreamd's env file
+ * too: the new dreamd starts when the caller writes its own (with a new daemon token), not halfway through the unpack.
+ * And dreamd's logs, which start afresh in the new sandbox.
+ */
+export const excluded = [
+  "./.ai-sdk-harness/.harness-bootstrap",
+  "./.cache",
+  "./.npm/_cacache",
+  "./.bun/install/cache",
+  `./${DaemonEnvFile.replace("/home/user/", "")}`,
+  // The new sandbox's dreamd already holds its log open (it waits for the env file from boot); replacing the file
+  // under it would hide everything it writes.
+  "./.dream/logs"
+]
 
 /** In the old sandbox, as root: pack the home directory beside it, failing early when the disk can't hold it. */
 export const packCommand = [
