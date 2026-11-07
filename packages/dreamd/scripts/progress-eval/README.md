@@ -10,7 +10,8 @@ through dreamd's progress code, exactly as a phone watching the whole time would
 | `replay.ts` | Runs a turn the way `src/progress/Progress.ts` does: a check every 10 seconds, a new line only when the work moved on, at most once a minute, held at least two minutes unless something bigger replaces it. |
 | `criteria.ts` | What a script can check (below). |
 | `eval.ts` | The model-free lines, turn by turn, with flags and totals. `test/progress.test.ts` holds them to the bar. |
-| `prompt.ts`, `compare.ts` | The same windows through Haiku 5.5 and gpt-6-luna, on Dream's own operator API keys only (never a person's subscription). Not run yet. |
+| `cli-replay.ts` | The model-backed line: the recorded turns through the real pinned CLI (`claude -p --model haiku`, `codex exec -m gpt-6-luna`) exactly as `src/progress/CliSummarizer.ts` calls it, side by side with the model-free line, with each call's tokens. Against the fake servers, or a real provider inside a sandbox. |
+| `compare.ts` | The same windows through the providers' APIs on Dream's own operator keys (never a person's subscription). Not run. |
 
 ```sh
 node packages/dreamd/scripts/progress-eval/eval.ts
@@ -90,3 +91,57 @@ flag on send").
 What a model-free line can't do: explain why ("the first version let most slips through"), or turn developer words
 ("pid file", "CA bundle", "app factory") into the person's. That's what `compare.ts` would show a model adding.
 There's no recorded Codex turn yet; Codex's reasoning summaries (with their bold headings) feed the same path.
+
+## Model-backed, through the harness CLI (7 November 2026)
+
+With `DREAM_PROGRESS_LINE=on`, dreamd asks the provider's cheapest current model for the line through the project's
+own harness CLI, on the login the agent already uses (`src/progress/CliSummarizer.ts`): `claude -p --model haiku`
+(claude-haiku-5-5 in Claude Code 2.1.318) or `codex exec -m gpt-6-luna` (Codex 0.165.0), both at low effort. It sees
+only the window (`src/progress/Window.ts`: what started the turn, how long it's run, the line on screen, the last ten
+steps; at most 3,000 characters), never the conversation. A call is made at most every two minutes, only while
+someone watches and the work moved on; the model line stays up until the next call replaces it. The model-free line
+stands in before the first call, when a call fails, takes more than 25 seconds, or answers with something that
+doesn't fit one line or reads like code.
+
+### What one call sends
+
+Measured by pointing the real pinned CLIs at the fake servers (`fake-anthropic.ts`, `fake-responses.ts` log each
+request's size):
+
+- **Claude Code**: one request, about 4.5 KB. Dream's prompt replaces Claude Code's (`--system-prompt`), with no
+  tools (`--tools ""`), no settings, MCP servers, slash commands or session file. What the CLI still adds: a billing
+  header, a one-line agent preamble and an environment block (about 250 tokens). `--bare` would drop more, but it
+  refuses subscription logins.
+- **Codex**: one request, about 27 KB. Dream's prompt replaces Codex's base instructions (`model_instructions_file`),
+  and every optional tool and instruction block that can be switched off is off. What's left: 18 KB of tools
+  gpt-6-luna keeps whatever the config says (its code-running tool and the multi-agent tools) and 6 KB of skills and
+  multi-agent text. That's about 7,000 tokens a call, 25 KB of it the same every time, so mostly cached.
+
+### A real check
+
+Five calls on a throwaway QA project (deleted afterwards), Claude Code on the founder's login, on five of the recorded
+windows:
+
+| Moment | Model-backed (Haiku 5.5) | Model-free |
+| --- | --- | --- |
+| Morning Build, 6 min | Fixing the link decoding and topic clustering | Checking the font |
+| Morning Build, 16 min | Adjusting the sting level and re-rendering | Checking the intro phrasing |
+| Voice Tutor, 8 min | Opening db.py to check the sqlite layer | Checking the scheduling states |
+| Voice Tutor, 20 min | Writing a correct endpoint for regrading cards | Changing the test to wait |
+| Voice Tutor, 32 min | Stopping the mock server and cleaning up | Checking how the sūrah name is laid out |
+
+Each call: 1,200 to 1,370 input tokens and 16 to 18 output tokens, 1.2 to 2.9 seconds, $0.00025 to $0.00028 at
+list prices by Claude Code's own count. One line ("Opening db.py…") names a file, which the presentability check
+would have refused, so on screen the model-free line would have stayed.
+
+### What it costs the person
+
+The recorded turns on Claude: the 36-minute Voice Tutor turn cost $13.76 at list prices and moved the weekly window
+from 34% to 36%; the 26-minute Morning Build turn cost $5.08. Across the ledger's turns with readings, a dollar of
+list-price use is about 0.35% of the founder's weekly window.
+
+Watched from start to end, the 36-minute turn gets about 18 calls (one per two minutes): about 23,000 Haiku input
+tokens and 300 output, about $0.005. That's 0.03% of the turn's own cost, or about 0.002% of the week. Nobody
+watching, nothing is called. On Codex the calls are heavier (about 7,000 tokens, mostly cached prefix, at
+gpt-6-luna's $0.10 in and $0.50 out per million tokens: under $0.001 a call uncached), still a rounding error next
+to a gpt-6.1-sol turn; there's no ChatGPT account connected to measure a real one.
