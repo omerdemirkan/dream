@@ -11,5 +11,5 @@ gets fixed.
 Before they see any UI, whether a new screen, page or flow or a change to one, have it reviewed adversarially. Hand
 screenshots of it, at the sizes it will be used at, to a reviewer whose only job is to find what's wrong: what looks
 generic or unfinished, what's cramped, misaligned or hard to read, what someone would stumble on, and where it falls
-short of a product someone cared about. Have what it gets right fixed, and if the changes were large, have the result
-reviewed again.
+short of a product someone cared about. Have the findings that hold up fixed, and if the changes were large, have
+the result reviewed again.
