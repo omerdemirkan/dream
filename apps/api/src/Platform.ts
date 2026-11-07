@@ -17,6 +17,7 @@ import { DesktopLinks } from "./db/DesktopLinks.ts"
 import { Attachments } from "./db/Attachments.ts"
 import { Links } from "./db/Links.ts"
 import { Projects } from "./db/Projects.ts"
+import { RateLimits } from "./db/RateLimits.ts"
 import { Secrets } from "./db/Secrets.ts"
 import { TestflightGrants } from "./db/TestflightGrants.ts"
 import { TestflightIdentity } from "./db/TestflightIdentity.ts"
@@ -56,7 +57,8 @@ export const databaseLayer = (d1: D1Database) =>
     TestflightIdentity.layer,
     UpdateStore.layer,
     TurnUsageLog.layer,
-    DesktopLinks.layer
+    DesktopLinks.layer,
+    RateLimits.layer
   ).pipe(Layer.provide(D1Client.layer({ db: d1 }).pipe(Layer.orDie)))
 
 /** Everything above the database: providers, credentials, and the project clients. */
