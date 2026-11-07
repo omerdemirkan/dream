@@ -36,6 +36,7 @@ import {
   type NotificationId,
   ProjectPhase,
   QuestionMessage,
+  questionPreviewsProblem,
   ReasoningEffort,
   DiscordDefaultEvents,
   DiscordDefaultIntents,
@@ -59,8 +60,10 @@ import { Cause, Console, DateTime, Effect, FileSystem, Option, Path, Redacted, R
 import { Argument, CliError, Command, Flag } from "effect/cli"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
+import { glob } from "node:fs/promises"
 import { Dream, newerThanApi, userFacing } from "./cli/Client.ts"
 import * as Format from "./cli/Format.ts"
+import { measure } from "./cli/MediaInfo.ts"
 import { PageCheck, PageLoad } from "./cli/PageCheck.ts"
 import * as Parse from "./cli/Parse.ts"
 import * as Secrets from "./cli/Secrets.ts"
@@ -127,13 +130,16 @@ const textFrom = (text: Option.Option<string>, missing: string) =>
     onSome: readText
   })
 
-/** Reserve a media id and upload the file's bytes to where the API says. */
-const upload = Effect.fn("dream.upload")(function* (file: string, caption?: string) {
+/**
+ * Reserve a media id and upload the file's bytes to where the API says, with its size and length when `dream` can
+ * read them. Audio only where `audio` says it can go (an option's preview).
+ */
+const upload = Effect.fn("dream.upload")(function* (file: string, caption?: string, audio = false) {
   const dream = yield* Dream
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
   const http = yield* HttpClient.HttpClient
-  const contentType = yield* fromResult(Parse.mediaType(file))
+  const contentType = yield* fromResult(Parse.mediaType(file, audio))
   const bytes = yield* fs
     .readFile(file)
     .pipe(Effect.mapError((cause) => new CliError.UserError({ cause, userMessage: `Can't read ${file}.` })))
@@ -143,6 +149,7 @@ const upload = Effect.fn("dream.upload")(function* (file: string, caption?: stri
       filename: path.basename(file),
       contentType,
       sizeBytes: bytes.byteLength,
+      ...measure(contentType, bytes),
       ...(caption === undefined ? {} : { caption })
     })
   )
@@ -161,6 +168,34 @@ const upload = Effect.fn("dream.upload")(function* (file: string, caption?: stri
   if (response.status >= 300) return yield* fail(`Uploading ${file} failed with HTTP ${response.status}.`)
   return media
 })
+
+/** The files `pattern` names: itself, or a glob's matches in name order. */
+const filesFor = (pattern: string) =>
+  Effect.gen(function* () {
+    if (!/[*?[{]/.test(pattern)) return [pattern]
+    const matches = yield* Effect.tryPromise({
+      try: async () => {
+        const found: Array<string> = []
+        for await (const match of glob(pattern)) found.push(match)
+        return found
+      },
+      catch: (cause) => new CliError.UserError({ cause, userMessage: `Can't read the files ${pattern} names.` })
+    })
+    if (matches.length === 0) return yield* fail(`No files match ${pattern}.`)
+    return matches.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+  })
+
+/** A file's name as a caption: "2-the-clash.png" → "The clash". */
+const captionOf = (file: string) => {
+  const name = file
+    .split("/")
+    .pop()!
+    .replace(/\.[^.]+$/, "")
+    .replace(/^[a-z]?\d*[-_ ]+/i, "")
+    .replace(/[-_]+/g, " ")
+    .trim()
+  return name === "" ? undefined : name.charAt(0).toUpperCase() + name.slice(1)
+}
 
 const workFlag = Flag.String("work").pipe(
   Flag.withDescription(
@@ -252,6 +287,12 @@ const ask = Command.make(
       Flag.withDescription('What you\'ll keep doing while you wait; "-" reads it from stdin.'),
       Flag.optional
     ),
+    show: Flag.String("show").pipe(
+      Flag.withDescription(
+        'What an option looks or sounds like: "<option>=<files>", with a file, a glob, or several separated by commas (png, jpg, mp4, mp3, m4a, wav), shown in name order. Each file\'s name becomes its caption ("2-the-clash.png" reads "The clash"). Repeat for each option.'
+      ),
+      Flag.atLeast(0)
+    ),
     work: workFlag,
     notASecret: Flag.Boolean("not-a-secret").pipe(
       Flag.withDescription("Send it even though it mentions a credential, because it doesn't ask them for one."),
@@ -279,6 +320,27 @@ const ask = Command.make(
         const secret = Secrets.requestedSecret([question, why ?? "", ...input.option, context ?? ""])
         if (Option.isSome(secret)) return yield* fail(Secrets.refusal(secret.value))
       }
+      const shows = yield* Effect.forEach(input.show, (raw) => fromResult(Parse.parseShow(raw)))
+      for (const { option } of shows) {
+        if (!input.option.includes(option)) {
+          return yield* fail(
+            `--show names "${option}", which isn't one of the options (${input.option.map((o) => `"${o}"`).join(", ")}).`
+          )
+        }
+      }
+      const expanded = yield* Effect.forEach(shows, ({ option, files }) =>
+        Effect.map(Effect.forEach(files, filesFor), (paths) => ({ option, media: paths.flat() }))
+      )
+      const problem = questionPreviewsProblem(input.option, expanded)
+      if (problem !== undefined) return yield* fail(problem)
+      const previews = yield* Effect.forEach(expanded, ({ option, media: paths }) =>
+        Effect.gen(function* () {
+          const [first, ...rest] = yield* Effect.forEach(paths, (file) =>
+            Effect.map(upload(file, captionOf(file), true), (m) => m.id)
+          )
+          return { option, media: [first!, ...rest] as const }
+        })
+      )
       const asked = yield* userFacing(
         dream.AskQuestion(
           defined({
@@ -287,11 +349,21 @@ const ask = Command.make(
             why,
             context: context === "" ? undefined : context,
             meanwhile,
+            previews: previews.length === 0 ? undefined : previews,
             workstream: workOf(input.work)
           })
         )
       )
-      yield* show(input.json, QuestionMessage, asked, Format.asked(asked) + Format.unlabeled(workOf(input.work), asked))
+      yield* show(
+        input.json,
+        QuestionMessage,
+        asked,
+        Format.asked(asked) +
+          (previews.length > 0 && asked.previews === undefined
+            ? "\nDream's API here doesn't show previews yet, so they see the options as plain buttons."
+            : "") +
+          Format.unlabeled(workOf(input.work), asked)
+      )
     })
 ).pipe(
   Command.withDescription(
