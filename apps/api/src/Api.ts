@@ -57,6 +57,14 @@ export default class Api extends Cloudflare.Worker<Api>()(
       domain: apiHost,
       routes: [{ pattern: `*.${domain}/*`, zoneName: domain }],
       workersDev: false,
+      // Query strings carry one-time secrets: OAuth codes on the callbacks (the provider picks the format), the live
+      // WebSocket ticket, the connect page's ticket. Keep them out of Workers Logs; the rest is as before.
+      observability: {
+        enabled: true,
+        headSamplingRate: 1,
+        logs: { enabled: true, invocationLogs: true, persist: true, headSamplingRate: 1 },
+        redactQueryString: true
+      },
       env: { DREAM_API_HOST: apiHost }
     }
   }),
