@@ -1,6 +1,6 @@
 /**
- * The `dream` skill as the harness wants it. The canonical text
- * (`docs/dream-skill.md`) is a SKILL.md with frontmatter; the harness writes
+ * The `dream` skill as the harness wants it. The canonical text (the
+ * sections in `docs/prompts/skill/`) is built into a SKILL.md with frontmatter; the harness writes
  * SKILL.md itself from a name, a description and the body, for Claude Code
  * (`~/.claude/skills/dream/`) and Codex (`~/.agents/skills/dream/`).
  */

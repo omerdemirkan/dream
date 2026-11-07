@@ -1,8 +1,8 @@
 # Dream
 
 Dream is an iPhone app where a person describes an idea and an agent builds it, over hours to weeks, in its own E2B
-sandbox. Read `docs/PLAN.md` first (architecture, data, flows), then `docs/agent-context.md` and `docs/dream-skill.md`
-(what the agent in the sandbox is told), `docs/research/verified-facts.md` (versions and decisions), and
+sandbox. Read `docs/PLAN.md` first (architecture, data, flows), then `docs/prompts/README.md`
+(what the agent in the sandbox is told, section by section), `docs/research/verified-facts.md` (versions and decisions), and
 `mocks/deck-v3.html` (the locked UI).
 
 Three workstreams build on this foundation in parallel: the control plane (`apps/api`, `infra`), the sandbox
@@ -34,7 +34,7 @@ bun run check          # format check + typecheck every package + all tests; run
 bun run typecheck      # tsc (TypeScript 7) in each package
 bun run test           # vitest, all projects (see vitest.config.ts)
 bun run format         # biome, TS and JSON only
-bun run sync-prompts   # regenerate agent-context strings after editing docs/agent-context.md, dream-skill.md or task-context.md
+bun run sync-prompts   # rebuild the agent's prompts and their map after editing a section in docs/prompts/
 bun run infra:plan     # alchemy plan; needs Cloudflare credentials and DREAM_DOMAIN in .env
 bun run template:build # build the dream-sandbox E2B template at both sizes (~4 min), check a turn on each harness, make them current
 ```
@@ -146,7 +146,8 @@ the other workstreams to agree first.
 3. Add a codec or RPC test in `packages/domain/test` if the shape is new or tricky.
 4. Implement the handler where the group is served (`Group.toLayer({...})` or `toLayerHandler`), and call it from the
    client with `RpcClient.make(Group)`. Typecheck fails until every handler exists.
-5. If the agent should know about it, update `docs/dream-skill.md` and run `bun run sync-prompts`.
+5. If the agent should know about it, update the command's section in `docs/prompts/skill/` and run
+   `bun run sync-prompts`.
 
 ## Workstream notes
 
@@ -164,7 +165,8 @@ the other workstreams to agree first.
   in Node against layers and fakes.
 - **Sandbox runtime.** dreamd reads `DaemonConfig` (env set by the ProjectDO at sandbox creation). The `dream` CLI maps
   one-to-one onto `SandboxRpcs`. Turn prompts come from `renderTurnPrompt` in `@dream/agent-context`, and the system
-  prompt and skill are exported there as strings. The bins run directly under Node 24 type stripping, which is why
+  prompt, skill and task prompt are exported there as strings, joined from the sections in `docs/prompts/` (its
+  README maps them, and says where else the agent's text comes from). The bins run directly under Node 24 type stripping, which is why
   `erasableSyntaxOnly` is on (no enums, namespaces or parameter properties).
   The top-level agent's model and effort come from `src/harness/Fleet.ts` (each provider's flagship, effort high;
   the agent picks each subagent's model and effort itself), unless the operator overrides them for a QA run
@@ -185,7 +187,7 @@ the other workstreams to agree first.
   `node packages/sandbox-template/scripts/costs.ts` prints it per day and cause. dreamd posts relay deliveries to the app on
   localhost, signed with `~/.dream/relay.key` (`src/Relays.ts`).
   A scheduled task (`dream wake --task`) runs like a `--run` command, but in a new harness session of its own, on the
-  model and effort the agent picked, from its brief and `taskPrompt` (`docs/task-context.md`; `src/Tasks.ts`). Each
+  model and effort the agent picked, from its brief and `taskPrompt` (`docs/prompts/task/`; `src/Tasks.ts`). Each
   run is reported with `ReportTask` and counted in the ledger like a turn; `packages/sandbox-template/scripts/
   task-check.ts` runs one on each harness against the fakes.
   The `dream-sandbox` template's start command keeps dreamd running, and the snapshot carries it into every new

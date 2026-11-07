@@ -2,9 +2,9 @@ import { assert, describe, it } from "@effect/vitest"
 import type { AgentEvent, EventId, MessageId, WakeId } from "@dream/domain"
 import * as Fixtures from "@dream/domain/fixtures"
 import { DateTime } from "effect"
-import { readFileSync } from "node:fs"
+import { readdirSync, readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
-import { extractPrompts } from "../src/extract.ts"
+import { buildPrompts, withMap } from "../src/extract.ts"
 import {
   dreamSkill,
   renderSteerPrompt,
@@ -13,25 +13,45 @@ import {
   systemPrompt,
   taskPrompt
 } from "../src/index.ts"
+import { layout } from "../src/sections.ts"
 
-const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf8")
+const docs = (path: string) => fileURLToPath(new URL(`../../../docs/prompts/${path}`, import.meta.url))
+const built = buildPrompts((path) => readFileSync(docs(path), "utf8"))
 
 describe("prompts", () => {
-  it("match the docs (run `bun run --filter @dream/agent-context sync` if this fails)", () => {
-    const expected = extractPrompts({
-      agentContext: read("../../../docs/agent-context.md"),
-      dreamSkill: read("../../../docs/dream-skill.md"),
-      taskContext: read("../../../docs/task-context.md")
-    })
-    assert.strictEqual(systemPrompt, expected.systemPrompt)
-    assert.strictEqual(dreamSkill, expected.dreamSkill)
-    assert.strictEqual(taskPrompt, expected.taskPrompt)
+  it("match the sections in docs/prompts (run `bun run sync-prompts` if this fails)", () => {
+    const text = Object.fromEntries(built.map((prompt) => [prompt.name, prompt.text]))
+    assert.strictEqual(systemPrompt, text.systemPrompt)
+    assert.strictEqual(dreamSkill, text.dreamSkill)
+    assert.strictEqual(taskPrompt, text.taskPrompt)
+  })
+
+  it("have a current map in docs/prompts/README.md (run `bun run sync-prompts` if this fails)", () => {
+    const readme = readFileSync(docs("README.md"), "utf8")
+    assert.strictEqual(readme, withMap(readme, built))
+  })
+
+  it("use every section file, each once", () => {
+    for (const prompt of Object.values(layout)) {
+      const files = readdirSync(docs(prompt.dir)).filter((file) => file.endsWith(".md"))
+      const listed = prompt.sections.map((section) => `${section}.md`)
+      assert.deepStrictEqual([...files].sort(), [...listed].sort(), `docs/prompts/${prompt.dir} and src/sections.ts`)
+    }
+  })
+
+  it("give every section but an opening one a heading", () => {
+    for (const prompt of built) {
+      prompt.sections.forEach((section, i) => {
+        if (i > 0 || prompt.name === "dreamSkill") assert.notStrictEqual(section.heading, "(opening)", section.file)
+      })
+    }
   })
 
   it("keep the system prompt body only, and the skill's frontmatter", () => {
     assert.isTrue(systemPrompt.startsWith("You're the agent behind one project in Dream."))
-    assert.isFalse(systemPrompt.includes("draft v1"))
-    assert.isTrue(dreamSkill.startsWith("---\nname: dream\n"))
+    assert.isFalse(systemPrompt.includes("covers:"))
+    assert.isTrue(dreamSkill.startsWith("---\nname: dream\ndescription: "))
+    assert.isTrue(dreamSkill.includes("\n---\n\n# `dream`\n"))
   })
 })
 

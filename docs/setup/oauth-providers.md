@@ -222,6 +222,6 @@ Then register Dream's app with the provider (redirect URI `https://dream.omer.bu
 `clientAuth` (`basic` or `body`), `tokenBody` (`form` or `json`), `scopeParam`, `authorizeParams`, `tokenPath` for a
 token nested in the response, per-host `header`/`format` (`{token}`, or `{basic:<user>}` for Basic auth), `account`
 (where to read who signed in), `revoke` and `notes` (told to the agent). An invalid `OAUTH_PROVIDERS` is ignored with a
-warning in the Worker logs. Also add the provider to the list in `docs/dream-skill.md` (and run
+warning in the Worker logs. Also add the provider to the list in `docs/prompts/skill/access.md` (and run
 `bun run sync-prompts`), or agents won't know to ask for it. A provider whose API needs signed requests rather than a
 header (OAuth 1.0a, AWS-style signatures) can't be added this way.
