@@ -32,8 +32,6 @@ import { type DateTime, Effect, Option, Redacted, Schema, Stream } from "effect"
 import { Atom } from "effect/reactivity"
 import { AppClient } from "../data/AppClient.ts"
 import { type AnswerInput, Answers, asksChanged } from "../data/Answers.ts"
-import { AttachmentUploads } from "../data/AttachmentUploads.ts"
-import type { PickedFile } from "../data/attachments.ts"
 import { withWriteTimeout } from "../data/errors.ts"
 import { ProjectArchive } from "../data/ProjectArchive.ts"
 import { ProjectStates } from "../data/ProjectStates.ts"
@@ -279,15 +277,6 @@ export const sendMessageFn = appRuntime.fn(
     return message
   }),
   { reactivityKeys: ["projects"] }
-)
-
-/** Uploads one photo or file they picked; several run at once. */
-export const uploadAttachmentFn = appRuntime.fn(
-  Effect.fn(function* (file: PickedFile) {
-    const uploads = yield* AttachmentUploads
-    return yield* uploads.upload(file)
-  }),
-  { concurrent: true }
 )
 
 /** A reply typed into a notification (see `Replies`): retried, and kept as a draft if it still fails. */

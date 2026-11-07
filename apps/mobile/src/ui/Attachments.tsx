@@ -7,7 +7,7 @@
  */
 import { type Attachment, AttachmentLimits, isImageAttachment, type MediaRef } from "@dream/domain"
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
-import { Cause, Exit, Option, Redacted } from "effect"
+import { Cause, Effect, Exit, Option, Redacted } from "effect"
 import { AsyncResult } from "effect/reactivity"
 import { Image } from "expo-image"
 import { useCallback, useEffect, useRef, useState } from "react"
@@ -22,10 +22,11 @@ import {
   type Staged,
   settle
 } from "../data/attachments.ts"
+import { AttachmentError, AttachmentUploads } from "../data/AttachmentUploads.ts"
 import { describeError } from "../data/errors.ts"
 import { photosAvailable, pickFiles, pickPhotos, previewFile } from "../platform/attachments.ts"
-import { sessionAtom, uploadAttachmentFn } from "../state/atoms.ts"
-import { appConfig } from "../state/runtime.ts"
+import { sessionAtom } from "../state/atoms.ts"
+import { appConfig, appRuntime } from "../state/runtime.ts"
 import { viewerAtom } from "../state/ui.ts"
 import { useToast } from "./actions.ts"
 import { Icon } from "./kit.tsx"
@@ -54,7 +55,16 @@ export function useStagedAttachments(samples?: ReadonlyArray<PickedFile>): Stage
   const [staged, setStaged] = useState<ReadonlyArray<Staged>>([])
   const current = useRef(staged)
   current.current = staged
-  const upload = useAtomSet(uploadAttachmentFn, { mode: "promiseExit" })
+  // Straight on the app's services rather than through an action atom: overlapping calls to one atom share its
+  // result, and each upload needs its own.
+  const runtime = Option.getOrUndefined(AsyncResult.value(useAtomValue(appRuntime)))
+  const upload = useCallback(
+    (file: PickedFile) =>
+      runtime === undefined
+        ? Promise.resolve(Exit.fail(new AttachmentError({ message: "Dream is still starting. Try again." })))
+        : Effect.runPromiseExit(AttachmentUploads.use((uploads) => uploads.upload(file)).pipe(Effect.provide(runtime))),
+    [runtime]
+  )
   const toast = useToast()
 
   const add = useCallback(
