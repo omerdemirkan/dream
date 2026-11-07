@@ -229,6 +229,11 @@ the other workstreams to agree first.
   after changing any of them. Existing sandboxes pick the new build up between turns (Sandbox refresh, above).
   To roll every sandbox back, make an older build current again:
   `bun run template:build promote <release>` (releases are the build's `release-…` tags).
-- End-to-end checks against the live API: `node packages/sandbox-template/scripts/qa.ts` (see its header).
+- End-to-end checks against the live API: `node packages/sandbox-template/scripts/qa.ts` (see its header). End every
+  QA run with `qa.ts done`, which deletes the projects the run created: a forgotten one with a frequent schedule keeps
+  a sandbox up for hours a day.
+- Throwaway sandboxes (checks, probes, scripts) carry `devSandboxMetadata(<script>)` from `@dream/domain`, and the
+  Worker's maintenance kills any without an owner that started over an hour ago (`apps/api/src/e2b/Reaper.ts`).
+  `reaper: "skip"` in a sandbox's metadata spares a long experiment.
 - The iPhone app's JavaScript: `node apps/mobile/scripts/updates.ts publish` from main (rollback and status too;
   see apps/mobile/README.md). Native changes still need a TestFlight build, and `publish` says so.

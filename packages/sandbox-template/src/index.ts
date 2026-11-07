@@ -33,7 +33,14 @@ import { Template } from "e2b"
 /** The template name sandboxes are created from. `DREAM_TEMPLATE` builds (or smoke-tests) another one. */
 export const templateName = process.env.DREAM_TEMPLATE ?? "dream-sandbox"
 
-export const resources = { cpuCount: 4, memoryMB: 8192 } as const
+/**
+ * The machine every sandbox of the template gets. `DREAM_TEMPLATE_CPU` and `DREAM_TEMPLATE_MEMORY_MB` size a test
+ * template differently (for measuring a smaller default); `dream-sandbox` is built with the defaults.
+ */
+export const resources = {
+  cpuCount: Number(process.env.DREAM_TEMPLATE_CPU ?? 4),
+  memoryMB: Number(process.env.DREAM_TEMPLATE_MEMORY_MB ?? 8192)
+} as const
 
 /** Disk the template should leave free for projects, in MiB (E2B grows the filesystem when it can). */
 export const minFreeDiskMb = 10_240

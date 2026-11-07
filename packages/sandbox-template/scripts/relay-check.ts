@@ -7,6 +7,13 @@
  *                                                   on `Sleep` it pauses the sandbox, as the ProjectDO does. Expose it.
  *   node scripts/relay-check.ts sleep <api url>     a 5-second scheduled command: the sandbox goes back to sleep
  *                                                   seconds after it, not five minutes
+ *   node scripts/relay-check.ts cron <api url> [n]  a scheduled `--run` command every 5 minutes, n times (default
+ *                                                   3), with the sandbox asleep between: E2B's event log says how
+ *                                                   long each wake was billed
+ *   node scripts/relay-check.ts visit <api url>     a few requests to the published app, then none: the sandbox
+ *                                                   sleeps about a minute and a half after the last one
+ *   node scripts/relay-check.ts tail                no dreamd: a sandbox woken by a request gets E2B's five minutes,
+ *                                                   and the ProjectDO's 90-second post-turn timeout cuts that short
  *   node scripts/relay-check.ts relay <api url> <probe url> <fake discord url> <probe key> [probe name]
  *                                                   a relay running in a throwaway Worker (apps/api/scripts/
  *                                                   relay-probe.ts) holds a fake Discord's Gateway open
@@ -49,6 +56,9 @@ const connection = {
   ...(process.env.HTTPS_PROXY === undefined ? {} : { proxy: process.env.HTTPS_PROXY })
 }
 const IdleMs = 5 * 60_000
+/** As the ProjectDO: `StayAwake` keeps it up this long (`AwakeTail`), a turn's end this long (`TurnTail`). */
+const AwakeTailMs = 2 * 60_000
+const TurnTailMs = 90_000
 const appPort = 3000
 const stamp = () => new Date().toISOString().slice(11, 19)
 const say = (line: string) => console.log(`${stamp()} ${line}`)
@@ -61,9 +71,9 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 const stayAwake = async (sandboxId: string, reason: string) => {
   const info = await Sandbox.getInfo(sandboxId, connection)
   if (info.state !== "running") return say(`StayAwake ${reason}: ${info.state}, left alone`)
-  if (info.endAt.getTime() >= Date.now() + IdleMs) return say(`StayAwake ${reason}: already up long enough`)
-  await Sandbox.setTimeout(sandboxId, IdleMs, connection)
-  say(`StayAwake ${reason}: up until 5 minutes from now`)
+  if (info.endAt.getTime() >= Date.now() + AwakeTailMs) return say(`StayAwake ${reason}: already up long enough`)
+  await Sandbox.setTimeout(sandboxId, AwakeTailMs, connection)
+  say(`StayAwake ${reason}: up until 2 minutes from now`)
 }
 
 /** What the ProjectDO's `sleep` does, for a sandbox with no turns or events of its own. */
@@ -152,7 +162,7 @@ const run = async (sandbox: Sandbox, command: string, timeoutMs = 120_000) => {
   return `${result.stdout}${result.stderr}`.trim()
 }
 
-const setup = async (apiUrl: string) => {
+const setup = async (apiUrl: string, options: { readonly publishedPort?: number } = {}) => {
   const sandbox = await Sandbox.create(templateName, {
     ...connection,
     timeoutMs: IdleMs,
@@ -165,6 +175,13 @@ const setup = async (apiUrl: string) => {
   try {
     await sandbox.files.write("/home/user/project/app.ts", app)
     await run(sandbox, "cd /home/user/project; setsid nohup bun app.ts > app.log 2>&1 < /dev/null &")
+    // dreamd reads the published port when it starts (as if `dream publish` had gone through).
+    if (options.publishedPort !== undefined) {
+      await sandbox.files.write(
+        "/home/user/.dream/state/published.json",
+        JSON.stringify({ port: options.publishedPort })
+      )
+    }
     await sandbox.files.write(
       DaemonEnvFile,
       [
@@ -191,6 +208,30 @@ const setup = async (apiUrl: string) => {
 
 const state = async (sandboxId: string) => (await Sandbox.getInfo(sandboxId, connection)).state
 
+/** Each billed run of a sandbox, from E2B's event log: when it started and how long it lasted. */
+const billedRuns = async (sandboxId: string) => {
+  const response = await fetch(`https://api.e2b.app/events/sandboxes/${sandboxId}?limit=100`, {
+    headers: process.env.E2B_API_KEY === undefined ? {} : { "X-API-KEY": process.env.E2B_API_KEY }
+  })
+  const events = (await response.json()) as ReadonlyArray<{
+    readonly type: string
+    readonly eventData?: { readonly execution?: { readonly execution_time: number; readonly started_at: string } }
+  }>
+  return events
+    .flatMap((event) => (event.eventData?.execution === undefined ? [] : [event.eventData.execution]))
+    .map((run) => ({ startedAt: run.started_at, seconds: run.execution_time / 1000 }))
+    .sort((a, b) => a.startedAt.localeCompare(b.startedAt))
+}
+
+const deliverWake = (sandbox: Sandbox, daemonToken: string, traffic: string, domain: string, command: string) => {
+  const deliver = fileURLToPath(new URL("../../dreamd/scripts/deliver.ts", import.meta.url))
+  const origin = `https://${DefaultDaemonPort}-${sandbox.sandboxId}.${domain}`
+  return execFileSync("node", [deliver, origin, daemonToken, "wake", "check", command], {
+    env: { ...process.env, E2B_TRAFFIC_TOKEN: traffic },
+    encoding: "utf8"
+  }).trim()
+}
+
 /** Polls until `check` says yes, every `everyMs`, for up to `withinMs`; returns how long it took, or undefined. */
 const until = async (check: () => Promise<boolean>, withinMs: number, everyMs = 1000) => {
   const started = Date.now()
@@ -202,6 +243,91 @@ const until = async (check: () => Promise<boolean>, withinMs: number, everyMs = 
 }
 
 const scenarios: Record<string, (args: ReadonlyArray<string>) => Promise<boolean>> = {
+  cron: async ([apiUrl, times]) => {
+    const n = Number(times ?? 3)
+    const { sandbox, daemonToken, traffic, domain } = await setup(apiUrl!)
+    try {
+      for (let i = 1; i <= n; i++) {
+        // Asleep before each check, as between a schedule's runs.
+        await until(async () => (await state(sandbox.sandboxId)) === "paused", 6 * 60_000, 2000)
+        if (i > 1) await sleep(Math.max(0, 5 * 60_000 - 30_000))
+        say(`check ${i}: ${deliverWake(sandbox, daemonToken, traffic, domain, "curl -fsS localhost:3000 > /dev/null")}`)
+        await sleep(30_000)
+      }
+      await until(async () => (await state(sandbox.sandboxId)) === "paused", 6 * 60_000, 2000)
+      await sleep(5_000)
+      const runs = await billedRuns(sandbox.sandboxId)
+      for (const run of runs) say(`billed run from ${run.startedAt.slice(11, 19)}: ${run.seconds.toFixed(1)} s`)
+      // The first run is the setup; each check after it should be seconds, not five minutes.
+      return runs.slice(1).length >= n && runs.slice(1).every((run) => run.seconds < 30)
+    } finally {
+      await sandbox.kill()
+      say("killed")
+    }
+  },
+
+  visit: async ([apiUrl]) => {
+    const { sandbox, traffic, domain } = await setup(apiUrl!, { publishedPort: appPort })
+    try {
+      // Asleep first, so the visit wakes it like a real one (with E2B's five minutes).
+      await until(async () => (await state(sandbox.sandboxId)) === "paused", 6 * 60_000, 2000)
+      const url = `https://${appPort}-${sandbox.sandboxId}.${domain}/`
+      let last = 0
+      for (let i = 0; i < 4; i++) {
+        const response = await fetch(url, { headers: { "e2b-traffic-access-token": traffic } })
+        last = Date.now()
+        say(`request ${i + 1}: ${response.status}`)
+        await sleep(20_000)
+      }
+      const took = await until(async () => (await state(sandbox.sandboxId)) === "paused", 6 * 60_000, 1000)
+      const after = took === undefined ? undefined : (Date.now() - last) / 1000
+      say(after === undefined ? "still running after 6 minutes" : `paused ${after.toFixed(0)} s after the last request`)
+      say(
+        `dreamd:\n${await run(sandbox, "grep -h 'asking to sleep\\|Nothing left' ~/.dream/logs/dreamd.log | cut -c1-160")}`
+      )
+      await sleep(5_000)
+      for (const r of await billedRuns(sandbox.sandboxId))
+        say(`billed run from ${r.startedAt.slice(11, 19)}: ${r.seconds.toFixed(1)} s`)
+      return after !== undefined && after < 150
+    } finally {
+      await sandbox.kill()
+      say("killed")
+    }
+  },
+
+  tail: async () => {
+    const sandbox = await Sandbox.create(templateName, {
+      ...connection,
+      timeoutMs: IdleMs,
+      metadata: devSandboxMetadata("relay-check"),
+      lifecycle: { onTimeout: "pause", autoResume: true }
+    })
+    try {
+      say(`sandbox ${sandbox.sandboxId}: created with five minutes`)
+      await Sandbox.pause(sandbox.sandboxId, connection)
+      // A wake (here a resume from the API, as traffic does) gets five minutes; a turn's end then sets 90 s.
+      const woken = Date.now()
+      await Sandbox.connect(sandbox.sandboxId, { ...connection, timeoutMs: IdleMs })
+      say(`woken: up until ${(await Sandbox.getInfo(sandbox.sandboxId, connection)).endAt.toISOString().slice(11, 19)}`)
+      await sleep(20_000)
+      await Sandbox.setTimeout(sandbox.sandboxId, TurnTailMs, connection)
+      const set = Date.now()
+      const took = await until(async () => (await state(sandbox.sandboxId)) === "paused", 6 * 60_000, 1000)
+      say(
+        took === undefined
+          ? "still running after 6 minutes"
+          : `paused ${((Date.now() - set) / 1000).toFixed(0)} s after the 90 s timeout was set (${((Date.now() - woken) / 1000).toFixed(0)} s after the wake)`
+      )
+      await sleep(5_000)
+      const runs = await billedRuns(sandbox.sandboxId)
+      for (const r of runs) say(`billed run from ${r.startedAt.slice(11, 19)}: ${r.seconds.toFixed(1)} s`)
+      return took !== undefined && (Date.now() - set) / 1000 < 120
+    } finally {
+      await sandbox.kill()
+      say("killed")
+    }
+  },
+
   sleep: async ([apiUrl]) => {
     const { sandbox, daemonToken, traffic, domain } = await setup(apiUrl!)
     try {
