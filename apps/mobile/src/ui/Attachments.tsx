@@ -29,7 +29,7 @@ import { appConfig } from "../state/runtime.ts"
 import { viewerAtom } from "../state/ui.ts"
 import { useToast } from "./actions.ts"
 import { Icon } from "./kit.tsx"
-import { useMediaSource } from "./Media.tsx"
+import { localMedia, useMediaSource } from "./Media.tsx"
 import { color } from "./theme.ts"
 
 // ---------------------------------------------------------------------------
@@ -67,6 +67,7 @@ export function useStagedAttachments(samples?: ReadonlyArray<PickedFile>): Stage
       for (const item of next.added) {
         void upload(item.file).then((exit) => {
           if (Exit.isSuccess(exit)) {
+            localMedia.set(exit.value.id, item.file.preview ?? item.file.uri)
             setStaged((all) => settle(all, item.key, { _tag: "Ready", attachment: exit.value }))
             return
           }

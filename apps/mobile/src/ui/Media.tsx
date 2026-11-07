@@ -33,10 +33,19 @@ const bundled: Record<string, number> = {
 
 type Source = number | { readonly uri: string; readonly headers: Record<string, string> }
 
+/**
+ * Photos they attached from this phone, by id: the picked file (or a fixture's bundled image), so their own photo
+ * shows at once in Chat without loading it back.
+ */
+export const localMedia = new Map<string, number | string>()
+
 export function useMediaSource(media: MediaRef): Source | undefined {
   const session = useAtomValue(sessionAtom)
   const fixture = bundled[media.id]
   if (fixture !== undefined) return fixture
+  const local = localMedia.get(media.id)
+  if (typeof local === "number") return local
+  if (local !== undefined) return { uri: local, headers: {} }
   const signedIn = Option.flatten(AsyncResult.value(session))
   if (Option.isNone(signedIn)) return undefined
   return {
