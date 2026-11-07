@@ -16,7 +16,7 @@
  */
 import { createServer } from "node:http"
 import { type AccessMessage, DaemonEnvFile, type ProjectId } from "@dream/domain"
-import { Effect, Layer, Redacted } from "effect"
+import { Effect, Layer, Redacted, type Scope } from "effect"
 import * as HttpServerRequest from "effect/http/HttpServerRequest"
 import * as HttpServerResponse from "effect/http/HttpServerResponse"
 import type { SendEmailBinding } from "../src/email/Mailer.ts"
@@ -49,7 +49,8 @@ const host = new URL(base).host
 const cloud = await Effect.runPromise(
   makeCloud({ domain: "omer.build", apiHost: host, apiUrl: base.replace(/\/$/, "") }, { email: rest })
 )
-const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect)
+const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>) => Effect.runPromise(Effect.scoped(effect))
+const text = (body: string) => new TextEncoder().encode(body)
 
 const signedIn = await run(cloud.phone.DevSignIn({ email: inbox, secret: Redacted.make("dev-secret") }))
 cloud.session.token = Redacted.value(signedIn.sessionToken)
@@ -103,26 +104,28 @@ createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", base)
   try {
     if (url.pathname === "/check/send" && req.method === "POST") {
-      res.end(JSON.stringify(await send()))
+      res.end(text(JSON.stringify(await send())))
       return
     }
     if (url.pathname === "/check/card") {
-      res.end(JSON.stringify(await card()))
+      res.end(text(JSON.stringify(await card())))
       return
     }
     if (url.pathname === "/check/expire" && req.method === "POST") {
       cloud.db.prepare("UPDATE desktop_links SET expires_at_ms = 1, session_expires_at_ms = 1").run()
-      res.end("expired")
+      res.end(text("expired"))
       return
     }
-    const chunks: Array<Buffer> = []
-    for await (const chunk of req) chunks.push(chunk as Buffer)
+    const chunks: Array<Uint8Array> = []
+    for await (const chunk of req as unknown as AsyncIterable<Uint8Array>) chunks.push(chunk)
+    const body = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0))
+    chunks.reduce((at, c) => (body.set(c, at), at + c.length), 0)
     const headers = new Headers()
     for (const [k, v] of Object.entries(req.headers)) if (typeof v === "string") headers.set(k, v)
     const raw = new Request(url, {
-      method: req.method,
+      method: req.method ?? "GET",
       headers,
-      ...(req.method === "GET" || req.method === "HEAD" ? {} : { body: Buffer.concat(chunks) })
+      ...(req.method === "GET" || req.method === "HEAD" ? {} : { body })
     })
     const response = await run(
       route(raw).pipe(
@@ -134,9 +137,10 @@ createServer(async (req, res) => {
     // Paths only: the token never reaches a URL, and this log is where it would show if it did.
     say(`${req.method} ${url.pathname}${url.search === "" ? "" : "?…"} → ${web.status}`)
     res.writeHead(web.status, Object.fromEntries(web.headers))
-    res.end(Buffer.from(await web.arrayBuffer()))
+    res.end(new Uint8Array(await web.arrayBuffer()))
   } catch (error) {
     say(`error ${String(error)}`)
-    res.writeHead(500).end()
+    res.writeHead(500, {})
+    res.end()
   }
-}).listen(port, () => say(`listening on ${port} for ${base}`))
+}).listen(port, "0.0.0.0", () => say(`listening on ${port} for ${base}`))
