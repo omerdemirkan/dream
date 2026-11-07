@@ -122,7 +122,9 @@ export class Tasks extends Context.Service<
             if (part.type !== "raw") return
             const reading = Usage.fromClaudeRaw(part.rawValue, yield* DateTime.now)
             if (Option.isNone(reading)) return
-            yield* Ref.update(first, (seen) => (Option.isSome(seen) ? seen : reading))
+            // An event can name no window at all (the API sent none); that's no reading of where they stand.
+            const windows = reading.value.fiveHour !== undefined || reading.value.weekly !== undefined
+            yield* Ref.update(first, (seen) => (Option.isSome(seen) || !windows ? seen : reading))
             yield* Ref.update(last, (previous) => Usage.merge(previous, reading.value))
             if (reading.value.limit !== undefined) controller.abort(new Error("usage limit reached"))
           })

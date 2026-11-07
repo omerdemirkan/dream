@@ -149,6 +149,41 @@ describe("dreamd", () => {
     }).pipe(Effect.scoped)
   )
 
+  it.live("schedules a task with its brief, model and effort, and refuses one without them", () =>
+    Effect.gen(function* () {
+      const { cli, waitFor } = yield* setup
+      yield* cli(
+        "wake",
+        "--cron",
+        "15 5 * * 1",
+        "--task",
+        "Write and publish this week's episode.",
+        "--model",
+        "sonnet",
+        "--effort",
+        "medium",
+        "Monday episode"
+      )
+      const calls = yield* waitFor((calls) => calls.some((call) => call.startsWith("ScheduleWake")))
+      assert.include(
+        calls.find((call) => call.startsWith("ScheduleWake")),
+        '"task":{"brief":"Write and publish this week\'s episode.","model":"sonnet","effort":"medium"}'
+      )
+      const refused = (...args: Array<string>) =>
+        cli(...args).pipe(
+          Effect.flip,
+          Effect.map((error) => error.message)
+        )
+      assert.include(yield* refused("wake", "--at", "2h", "--task", "x", "Episode"), "--model and --effort")
+      assert.include(yield* refused("wake", "--at", "2h", "--model", "sonnet", "Episode"), "go with --task")
+      assert.include(yield* refused("wake", "--at", "2h", "--run", "x", "--task", "y", "Episode"), "not both")
+      assert.include(
+        yield* refused("wake", "--task", "x", "--model", "sonnet", "--effort", "low", "Now"),
+        "--at or --cron"
+      )
+    }).pipe(Effect.scoped)
+  )
+
   it.live("publishes, then prints what the URL answers, and still publishes when the check fails", () =>
     Effect.gen(function* () {
       const { cliWith, calls } = yield* setup
