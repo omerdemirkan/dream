@@ -16,9 +16,18 @@
  *
  * Point dreamd at it with DREAM_CODEX_BASE_URL=http://127.0.0.1:<port>/backend-api/codex.
  * It prints each request's path, model and reasoning effort, whether the
- * Authorization header came, and what the tool calls returned.
+ * Authorization header came, what the tool calls returned, and which of Dream's
+ * system prompts the request carries (`persona`: "agent" or "task").
  */
 import { createServer } from "node:http"
+
+/** Which of Dream's system prompts the request carries, by its opening words: the agent's, or a scheduled task's. */
+const personaOf = (raw: string): "agent" | "task" | undefined =>
+  raw.includes("You're running one job for a project in Dream")
+    ? "task"
+    : raw.includes("You're the agent behind one project in Dream")
+      ? "agent"
+      : undefined
 
 const port = Number(process.argv[2] ?? 18788)
 const mode = process.env.MODE === "limit" ? "limit" : "ok"
@@ -91,6 +100,7 @@ createServer((request, response) => {
   const chunks: Array<Buffer> = []
   request.on("data", (chunk: Buffer) => chunks.push(chunk))
   request.on("end", () => {
+    let raw = ""
     let body: {
       model?: string
       reasoning?: { effort?: string }
@@ -98,7 +108,8 @@ createServer((request, response) => {
       tools?: ReadonlyArray<Tool>
     } = {}
     try {
-      body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}")
+      raw = Buffer.concat(chunks).toString("utf8")
+      body = JSON.parse(raw || "{}")
     } catch {
       // Not JSON (a GET); answered by path.
     }
@@ -122,6 +133,7 @@ createServer((request, response) => {
         authorization: request.headers.authorization !== undefined,
         model: body.model,
         effort: body.reasoning?.effort,
+        persona: personaOf(raw),
         tools: toolNames([...(body.tools ?? []), ...input.flatMap((item) => item.tools ?? [])]).join(" "),
         outputs,
         role,
