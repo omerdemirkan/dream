@@ -34,7 +34,7 @@ bun run check          # format check + typecheck every package + all tests; run
 bun run typecheck      # tsc (TypeScript 7) in each package
 bun run test           # vitest, all projects (see vitest.config.ts)
 bun run format         # biome, TS and JSON only
-bun run sync-prompts   # regenerate agent-context strings after editing docs/agent-context.md or docs/dream-skill.md
+bun run sync-prompts   # regenerate agent-context strings after editing docs/agent-context.md, dream-skill.md or task-context.md
 bun run infra:plan     # alchemy plan; needs Cloudflare credentials and DREAM_DOMAIN in .env
 bun run template:build # build the dream-sandbox E2B template (~2 min), check a turn on each harness, make it current
 ```
@@ -175,6 +175,10 @@ the other workstreams to agree first.
   the command or delivery it woke for is done and nothing else needs the sandbox, dreamd asks for it to sleep now
   (`Sleep`), so a scheduled check costs seconds rather than five minutes. dreamd posts relay deliveries to the app on
   localhost, signed with `~/.dream/relay.key` (`src/Relays.ts`).
+  A scheduled task (`dream wake --task`) runs like a `--run` command, but in a new harness session of its own, on the
+  model and effort the agent picked, from its brief and `taskPrompt` (`docs/task-context.md`; `src/Tasks.ts`). Each
+  run is reported with `ReportTask` and counted in the ledger like a turn; `packages/sandbox-template/scripts/
+  task-check.ts` runs one on each harness against the fakes.
   The `dream-sandbox` template's start command keeps dreamd running, and the snapshot carries it into every new
   sandbox, so the ProjectDO starts dreamd by writing `DaemonEnvFile` (rewriting it restarts dreamd). Both harness
   CLIs are pre-installed. `packages/sandbox-template/scripts/smoke.ts` checks a fresh sandbox, and with
