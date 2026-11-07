@@ -178,7 +178,10 @@ the other workstreams to agree first.
   runs, a relay delivery is under way, or the published app is in use (`src/Awake.ts`); a turn's keepalive covers
   turns. The other way round, once the command, delivery or app visit it was awake for is done and nothing else needs
   the sandbox, dreamd asks for it to sleep now (`Sleep`), so a scheduled check costs seconds rather than five minutes
-  and a visit about a minute and a half after its last request. Machine time is the bulk of Dream's E2B bill:
+  and a visit about a minute and a half after its last request. A visit that resumes the sandbox but never reaches
+  the app (the client gave up during the resume) leaves dreamd nothing to see, so when the gateway looks up a visit's
+  target the ProjectDO pauses the sandbox two minutes later unless dreamd's `StayAwake` says it's serving it
+  (`visit-check`). Machine time is the bulk of Dream's E2B bill:
   `node packages/sandbox-template/scripts/costs.ts` prints it per day and cause. dreamd posts relay deliveries to the app on
   localhost, signed with `~/.dream/relay.key` (`src/Relays.ts`).
   A scheduled task (`dream wake --task`) runs like a `--run` command, but in a new harness session of its own, on the
