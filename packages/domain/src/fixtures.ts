@@ -497,6 +497,61 @@ export const morningBriefAppNotifications: ReadonlyArray<AppNotification> = [
   }
 ]
 
+/** A thread on the Health import update (`Thread.ts`): their reply, and the agent's in the same thread. */
+export const liftLogDupes: TextMessage = {
+  _tag: "Text",
+  id: "msg_dupes" as MessageId,
+  projectId: ids.lift,
+  createdAt: at("2026-11-04T21:52:00Z"),
+  from: "user",
+  text: "Some of my old workouts are in there twice. Can it skip duplicates?",
+  media: [],
+  replyTo: liftLogUpdate.id,
+  seenAt: at("2026-11-04T21:52:02Z")
+}
+
+export const liftLogDupesReply: TextMessage = {
+  _tag: "Text",
+  id: "msg_dupesreply" as MessageId,
+  projectId: ids.lift,
+  createdAt: at("2026-11-04T21:58:00Z"),
+  from: "agent",
+  text: "It does now. Each workout is matched on its start time and exercises, so the 214 came down to 187.",
+  media: [],
+  replyTo: liftLogUpdate.id
+}
+
+/** Their reply in the timer question's thread, and the question as the agent changed it (`dream ask revise`). */
+export const timerLouder: TextMessage = {
+  _tag: "Text",
+  id: "msg_louder" as MessageId,
+  projectId: ids.lift,
+  createdAt: at("2026-11-04T21:45:00Z"),
+  from: "user",
+  text: "Could it start soft and get louder if I don’t stop it?",
+  media: [],
+  replyTo: timerSounds.id,
+  seenAt: at("2026-11-04T21:45:01Z")
+}
+
+export const timerSoundsRevised: QuestionMessage = {
+  ...timerSounds,
+  options: ["A chime that gets louder", "Soft chime", "Three short buzzes"],
+  previews: (timerSounds.previews ?? []).filter((p) => p.option !== "Rising tone"),
+  revisedAt: at("2026-11-04T21:47:00Z")
+}
+
+export const timerLouderReply: TextMessage = {
+  _tag: "Text",
+  id: "msg_louderreply" as MessageId,
+  projectId: ids.lift,
+  createdAt: at("2026-11-04T21:47:05Z"),
+  from: "agent",
+  text: "Good idea. It’s the first option now: a chime that builds over about ten seconds.",
+  media: [],
+  replyTo: timerSounds.id
+}
+
 export const messages: ReadonlyArray<Message> = [appleAccess, liftLogUpdate, cabinQuestion, recipeQuestion, gmailAccess]
 
 export const events: ReadonlyArray<AgentEvent> = [

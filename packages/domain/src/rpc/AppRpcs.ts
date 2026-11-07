@@ -277,11 +277,23 @@ export class AuthedAppRpcs extends RpcGroup.make(
     error: NotFound
   }),
   /**
+   * A thread (`Thread.ts`): its first message and every reply, oldest first, for opening one whose first message is
+   * older than the Chat loaded (from a notification, say). Added in November 2026. `NotFound` for a message the
+   * project doesn't have; for a reply, the thread it's in.
+   */
+  Rpc.make("ListThread", {
+    payload: ProjectMessage,
+    success: Schema.Struct({ root: Message, replies: Schema.Array(Message) }),
+    error: NotFound
+  }),
+  /**
    * Post their message to Chat. With a `requestId`, a retry returns the message the first attempt posted. With a
    * `workstream` (added in November 2026), they wrote it into that workstream; one the project doesn't have is
    * ignored. `attachments` (November 2026): uploads from `CreateAttachmentUpload` that go with it, in order; with
    * some, `text` may be empty. `InvalidRequest` for an empty message, or an attachment that isn't theirs, wasn't
-   * uploaded, or went with another message.
+   * uploaded, or went with another message. With `replyTo` (November 2026), they wrote it in that message's thread
+   * (`Thread.ts`), and it goes into that message's workstream; a reply to a reply goes into the same thread, and one
+   * to a message the project doesn't have is `NotFound`.
    */
   Rpc.make("SendMessage", {
     payload: {
@@ -289,6 +301,7 @@ export class AuthedAppRpcs extends RpcGroup.make(
       text: Schema.String,
       requestId: Schema.optionalKey(RequestId),
       workstream: Schema.optionalKey(WorkstreamId),
+      replyTo: Schema.optionalKey(MessageId),
       attachments: Schema.optionalKey(Attachments)
     },
     success: TextMessage,

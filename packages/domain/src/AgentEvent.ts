@@ -13,6 +13,7 @@ import { QuestionAnswer } from "./Message.ts"
 import { UsageWindowName } from "./Usage.ts"
 import { TaskFailure, WakeTask } from "./Wake.ts"
 import { SandboxSize, SandboxSizes } from "./Sandbox.ts"
+import { ThreadRef } from "./Thread.ts"
 import { WorkstreamRef } from "./Workstream.ts"
 
 const EventFields = {
@@ -33,13 +34,15 @@ export const AgentEvent = Schema.TaggedUnion({
    * They wrote in Chat. A project's first event is the idea itself. `workstream`: they wrote it into one of the
    * agent's workstreams (a reply to it); added in November 2026, older dreamd builds ignore it. `attachments`: photos
    * and files they attached, which dreamd copies to `attachmentPath` before the turn; also November 2026, and
-   * older dreamd builds ignore them.
+   * older dreamd builds ignore them. `thread`: they wrote it in the thread on that message (`Thread.ts`); also
+   * November 2026, and older dreamd builds render the message without it.
    */
   UserMessage: {
     ...EventFields,
     messageId: MessageId,
     text: Schema.String,
     workstream: Schema.optionalKey(WorkstreamRef),
+    thread: Schema.optionalKey(ThreadRef),
     attachments: Schema.optionalKey(Schema.Array(Attachment))
   },
   QuestionAnswered: {
@@ -191,6 +194,18 @@ const quote = (text: string): string =>
     .map((line) => (line.length === 0 ? ">" : `> ${line}`))
     .join("\n")
 
+/** The message a thread is on, as in "They wrote (…) in the thread on your question msg_…, "…", which is still open". */
+const renderThread = ({ messageId, from, kind, excerpt, open }: ThreadRef): string => {
+  switch (kind) {
+    case "text":
+      return `${from === "agent" ? "your" : "their own"} message ${messageId} ("${excerpt}")`
+    case "question":
+      return `your question ${messageId}, "${excerpt}"${open === true ? ", which is still open (a reply doesn't answer it)" : ""}`
+    case "access":
+      return `your access request ${messageId}, "${excerpt}"${open === true ? ", which is still open" : ""}`
+  }
+}
+
 const renderAnswer = (answer: QuestionAnswer): string =>
   QuestionAnswer.match(answer, {
     Choice: ({ option, note }) => (note === undefined ? `"${option}"` : `"${option}", adding:\n${quote(note)}`),
@@ -290,11 +305,19 @@ const renderAttachments = (messageId: string, attachments: ReadonlyArray<Attachm
 export const renderAgentEvent = (event: AgentEvent, options: RenderOptions = {}): string => {
   const time = formatEventTime(event.at, options)
   const body = AgentEvent.match(event, {
-    UserMessage: ({ messageId, text, workstream, attachments = [] }) => {
+    UserMessage: ({ messageId, text, workstream, thread, attachments = [] }) => {
+      const where = thread === undefined ? "" : ` in the thread on ${renderThread(thread)}`
       const into = workstream === undefined ? "" : ` into your workstream "${workstream.title}" (${workstream.id})`
       const files = renderAttachments(messageId, attachments, options)
-      if (text.trim().length === 0 && files !== "") return `They sent (${messageId})${into} ${files}`
-      return `They wrote (${messageId})${into}:\n${quote(text)}${files === "" ? "" : `\nThey attached ${files}`}`
+      const revise =
+        thread?.kind === "question" && thread.open === true
+          ? `\nIf they're asking you to change it, \`dream ask revise ${thread.messageId}\` changes the card in place.`
+          : ""
+      if (text.trim().length === 0 && files !== "") return `They sent (${messageId})${where}${into} ${files}${revise}`
+      return (
+        `They wrote (${messageId})${where}${into}:\n${quote(text)}` +
+        `${files === "" ? "" : `\nThey attached ${files}`}${revise}`
+      )
     },
     QuestionAnswered: ({ messageId, question, answer, previous }) =>
       `They answered your question ${messageId}, "${question}", ${renderAnswer(answer)}` +
