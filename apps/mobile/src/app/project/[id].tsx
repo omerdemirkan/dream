@@ -33,6 +33,8 @@ import { appNotificationsSheetAtom, declineAtom, focusAtom, landingAtom } from "
 import { useAction } from "../../ui/actions.ts"
 import { AppNotificationsSheet, useOpenAppNotifications } from "../../ui/AppNotifications.tsx"
 import { ChatTab } from "../../ui/Chat.tsx"
+import { samplesFor } from "../../ui/attachmentSamples.ts"
+import { useStagedAttachments } from "../../ui/Attachments.tsx"
 import { ChatComposer } from "../../ui/Composer.tsx"
 import { useOpenMessage, useProject, useRequestId } from "../../ui/hooks.ts"
 import { IconButton } from "../../ui/kit.tsx"
@@ -59,6 +61,8 @@ export default function ProjectScreen() {
     decline?: string
     sheet?: string
     work?: string
+    /** Fixtures: `sample` stages sample attachments in the composer. */
+    attach?: string
   }>()
   const projectId = Option.getOrUndefined(decodeProjectId(params.id))
   if (!projectId) return null
@@ -71,6 +75,7 @@ export default function ProjectScreen() {
       decline={params.decline}
       sheet={params.sheet}
       work={params.work}
+      attach={params.attach}
     />
   )
 }
@@ -83,6 +88,7 @@ function Project(props: {
   readonly decline: string | undefined
   readonly sheet: string | undefined
   readonly work: string | undefined
+  readonly attach: string | undefined
 }) {
   const router = useRouter()
   const insets = useSafeAreaInsets()
@@ -93,6 +99,7 @@ function Project(props: {
   const summaries = Option.getOrUndefined(AsyncResult.value(useAtomValue(projectsAtom)))
   const project = state?.project ?? summaries?.find((s) => s.project.id === props.projectId)?.project
   const send = useAction(sendMessageFn)
+  const attachments = useStagedAttachments(samplesFor(props.attach))
   const requestId = useRequestId()
   // A reply typed into a notification that didn't send waits here, with the request id it was sent with.
   const chat = { _tag: "Chat", projectId: props.projectId } as const
@@ -231,13 +238,16 @@ function Project(props: {
               draft={draft?.text}
               inputRef={input}
               scope={scope ? { title: scope.title, onClear: () => setScopeId(undefined) } : undefined}
-              onSend={(text, sent) =>
+              attachments={attachments}
+              onSend={(text, sent, attached) =>
                 send.run(
                   {
                     projectId: props.projectId,
                     text,
-                    requestId: requestId.for(text),
-                    ...(scope ? { workstream: scope.id } : {})
+                    // The same text with other attachments is another message.
+                    requestId: requestId.for(attached.length === 0 ? text : `${text}\n${attached.join(",")}`),
+                    ...(scope ? { workstream: scope.id } : {}),
+                    ...(attached.length === 0 ? {} : { attachments: attached })
                   },
                   {
                     onSuccess: () => {

@@ -1,13 +1,16 @@
 /**
  * The composers: type, or tap the mic to dictate into the field, then send.
  *
- * - `ChatComposer`: "Message Dream" at the bottom of Chat (`.compose.quiet`).
+ * - `ChatComposer`: "Message Dream" at the bottom of Chat (`.compose.quiet`), with a paperclip where the field
+ *   starts for photos and files, which wait in a tray above the field until they send.
  * - `ElseComposer`: "Something else…" in the expanded question (`.else`).
  * - `ReasonField`: why they decline an access request, in the decline sheet (no send button; the sheet sends).
  */
 import { type Ref, useEffect, useRef, useState } from "react"
 import { Pressable, StyleSheet, Text, TextInput, type TextInputInstance, View } from "react-native"
+import type { MediaId } from "@dream/domain"
 import { useDictation } from "../platform/dictation.ts"
+import { AttachButton, AttachmentTray, type StagedAttachments } from "./Attachments.tsx"
 import { Bars, Icon, IconButton } from "./kit.tsx"
 import { color } from "./theme.ts"
 
@@ -59,11 +62,20 @@ export function FieldPlaceholder(props: { readonly text: string; readonly color:
  */
 type Send = (text: string, sent: () => void) => void
 
-/** Sends what's in the field unless a send is already in flight; clears it on `sent` unless they've edited it since. */
-const useSend = (text: string, setText: (update: (current: string) => string) => void, onSend: Send, busy: boolean) => {
+/**
+ * Sends what's in the field unless a send is already in flight; clears it on `sent` unless they've edited it since.
+ * With `alsoAttached`, an empty field sends too (attachments on their own).
+ */
+const useSend = (
+  text: string,
+  setText: (update: (current: string) => string) => void,
+  onSend: Send,
+  busy: boolean,
+  alsoAttached = false
+) => {
   const has = text.trim().length > 0
   const send = () => {
-    if (!has || busy) return
+    if ((!has && !alsoAttached) || busy) return
     const sending = text.trim()
     onSend(sending, () => setText((current) => (current.trim() === sending ? "" : current)))
   }
@@ -107,8 +119,13 @@ function ScopeTag(props: { readonly title: string; readonly onClear: () => void 
   )
 }
 
+/** Chat's send also carries what they attached (uploaded ones, in order); `sent` clears both. */
+type SendWithAttachments = (text: string, sent: () => void, attachments: ReadonlyArray<MediaId>) => void
+
 export function ChatComposer(props: {
-  readonly onSend: Send
+  readonly onSend: SendWithAttachments
+  /** Photos and files they've attached (`useStagedAttachments`); without it there's no paperclip. */
+  readonly attachments?: StagedAttachments | undefined
   readonly sample?: string
   readonly busy?: boolean
   readonly draft?: string | undefined
@@ -119,8 +136,28 @@ export function ChatComposer(props: {
   const [text, setText] = useState("")
   useDraft(props.draft, setText)
   const dictation = useDictation((heard) => setText((current) => join(current, heard)), props.sample)
-  const { has, send } = useSend(text, setText, props.onSend, props.busy === true)
+  const attachments = props.attachments
+  const attached = attachments?.staged.length ?? 0
+  const uploading = attachments?.uploading === true
+  const busy = props.busy === true || uploading
+  const { has: hasText, send } = useSend(
+    text,
+    setText,
+    (sending, sent) =>
+      props.onSend(
+        sending,
+        () => {
+          sent()
+          attachments?.clear()
+        },
+        attachments?.ids ?? []
+      ),
+    busy,
+    attached > 0
+  )
+  const has = hasText || attached > 0
   const scope = props.scope
+  const clip = attachments !== undefined
   return (
     <View
       style={[
@@ -131,20 +168,30 @@ export function ChatComposer(props: {
           borderColor: dictation.listening ? color.needLine : scope ? color.line2 : color.line,
           boxShadow: "0 10px 34px rgba(0,0,0,0.55)"
         },
-        scope ? { paddingTop: 9, paddingLeft: 9, borderRadius: 26 } : null
+        scope ? { paddingTop: 9, paddingLeft: 9, borderRadius: 26 } : null,
+        attached > 0 ? { borderRadius: 26 } : null
       ]}
     >
       {scope ? <ScopeTag title={scope.title} onClear={scope.onClear} /> : null}
+      {attachments ? (
+        <AttachmentTray
+          staged={attachments.staged}
+          onRemove={attachments.remove}
+          ring={color.s1}
+          inset={scope ? 2 : 10}
+        />
+      ) : null}
       <View
         style={{
           flexDirection: "row",
           alignItems: "center",
-          gap: 12,
+          gap: clip ? 6 : 12,
           height: scope ? 50 : 54,
-          paddingLeft: scope ? 11 : 20,
+          paddingLeft: clip ? (scope ? 0 : 7) : scope ? 11 : 20,
           paddingRight: 8
         }}
       >
+        {attachments && !dictation.listening ? <AttachButton onPress={attachments.attach} /> : null}
         <View style={{ flex: 1, height: "100%" }}>
           {text ? null : (
             <FieldPlaceholder
@@ -170,10 +217,10 @@ export function ChatComposer(props: {
           <IconButton
             icon="up"
             tone="white"
-            label={props.busy === true ? "Sending" : "Send"}
+            label={uploading ? "Uploading" : props.busy === true ? "Sending" : "Send"}
             onPress={send}
-            disabled={props.busy === true}
-            busy={props.busy === true}
+            disabled={busy}
+            busy={busy}
           />
         ) : dictation.available ? (
           <IconButton

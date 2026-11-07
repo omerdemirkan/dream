@@ -1,6 +1,6 @@
 /**
  * Screenshots and screen recordings the agent sends, as tiles (`.shot`) that
- * open full screen. Bytes come from the API with the session token; in
+ * open full screen (their attached photos open in the same viewer). Bytes come from the API with the session token; in
  * fixtures mode they're bundled with the app.
  */
 import type { MediaRef } from "@dream/domain"
@@ -26,7 +26,9 @@ const bundled: Record<string, number> = {
   med_cabincal: require("../../assets/fixtures/cabin-calendar.png"),
   med_cabinreq: require("../../assets/fixtures/cabin-requests.png"),
   med_cabinrot: require("../../assets/fixtures/cabin-rotation.png"),
-  med_digest: require("../../assets/fixtures/digest.png")
+  med_digest: require("../../assets/fixtures/digest.png"),
+  med_attboard: require("../../assets/fixtures/attach-whiteboard.png"),
+  med_attlist: require("../../assets/fixtures/attach-list.png")
 }
 
 type Source = number | { readonly uri: string; readonly headers: Record<string, string> }

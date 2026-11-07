@@ -14,6 +14,7 @@ import {
   type LinkIcon,
   type LinkId,
   type IntegrationId,
+  type MediaId,
   type Message,
   type MessageId,
   type ModelConnectionId,
@@ -31,6 +32,8 @@ import { type DateTime, Effect, Option, Redacted, Schema, Stream } from "effect"
 import { Atom } from "effect/reactivity"
 import { AppClient } from "../data/AppClient.ts"
 import { type AnswerInput, Answers, asksChanged } from "../data/Answers.ts"
+import { AttachmentUploads } from "../data/AttachmentUploads.ts"
+import type { PickedFile } from "../data/attachments.ts"
 import { withWriteTimeout } from "../data/errors.ts"
 import { ProjectArchive } from "../data/ProjectArchive.ts"
 import { ProjectStates } from "../data/ProjectStates.ts"
@@ -197,7 +200,11 @@ export const refreshHomeFn = appRuntime.fn(
 
 /** `requestId` stays the same when they retry the same idea, so a retry can't start a second project. */
 export const createProjectFn = appRuntime.fn(
-  Effect.fn(function* (input: { readonly idea: string; readonly requestId: RequestId }) {
+  Effect.fn(function* (input: {
+    readonly idea: string
+    readonly requestId: RequestId
+    readonly attachments?: ReadonlyArray<MediaId>
+  }) {
     const app = yield* AppClient
     return yield* app.CreateProject(input).pipe(withWriteTimeout)
   }),
@@ -263,6 +270,8 @@ export const sendMessageFn = appRuntime.fn(
     readonly requestId: RequestId
     /** Written into one of the agent's workstreams. */
     readonly workstream?: WorkstreamId
+    /** Uploaded photos and files that go with it. */
+    readonly attachments?: ReadonlyArray<MediaId>
   }) {
     const app = yield* AppClient
     const message = yield* app.SendMessage(input).pipe(withWriteTimeout)
@@ -270,6 +279,15 @@ export const sendMessageFn = appRuntime.fn(
     return message
   }),
   { reactivityKeys: ["projects"] }
+)
+
+/** Uploads one photo or file they picked; several run at once. */
+export const uploadAttachmentFn = appRuntime.fn(
+  Effect.fn(function* (file: PickedFile) {
+    const uploads = yield* AttachmentUploads
+    return yield* uploads.upload(file)
+  }),
+  { concurrent: true }
 )
 
 /** A reply typed into a notification (see `Replies`): retried, and kept as a draft if it still fails. */

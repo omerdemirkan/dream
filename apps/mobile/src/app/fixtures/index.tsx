@@ -26,7 +26,11 @@ const sections: ReadonlyArray<{ readonly title: string; readonly jumps: Readonly
       { title: "New idea · long", to: "/new?sample=long" },
       { title: "New idea · dictating", to: "/new?dictate=1" },
       { title: "New idea · dictating into a long one", to: "/new?sample=long&dictate=1" },
-      { title: "New idea · a starter's draft", to: "/new?starter=run-club-bot" }
+      { title: "New idea · a starter's draft", to: "/new?starter=run-club-bot" },
+      {
+        title: "New idea · with attachments",
+        to: "/new?attach=sample&text=A%20meal%20planner%20for%20our%20week.%20This%20is%20the%20fridge%20whiteboard%20we%20use%20now%2C%20and%20last%20month%E2%80%99s%20grocery%20list."
+      }
     ]
   },
   {
@@ -48,6 +52,12 @@ const sections: ReadonlyArray<{ readonly title: string; readonly jumps: Readonly
         title: "Lift Log · long Chat, scrolled up",
         scenarios: ["reset", "long-chat"],
         to: "/project/prj_liftlog?land=msg_long8"
+      },
+      { title: "Lift Log · attaching", scenarios: ["reset"], to: "/project/prj_liftlog?tab=chat&attach=sample" },
+      {
+        title: "Lift Log · sent attachments",
+        scenarios: ["reset", "attachments-sent"],
+        to: "/project/prj_liftlog?tab=chat"
       },
       { title: "Morning Brief", scenarios: ["reset"], to: "/project/prj_morningbrief" },
       { title: "Morning Brief · Status card open", scenarios: ["reset"], to: "/project/prj_morningbrief?tab=status" },
