@@ -174,6 +174,8 @@ export const makeAdapter = (
         createClaudeCode({
           auth,
           effort,
+          // The CLI says when its session goes idle, which the bridge's turn waits for (`Bridges.ts`).
+          env: { CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1" },
           // Not `agentProgressSummaries`: those are extra model calls on their plan, and the line has its own.
           ...(config.progressLine === true ? { forwardSubagentText: true } : {})
         })

@@ -30,22 +30,12 @@ export const harnessEnv = (
  * The environment of every process dreamd starts for the agent. `DREAM_SOCKET`
  * is set explicitly because dreamd may have read it from its env file, and
  * `dream` must find dreamd from anywhere.
- *
- * `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS` takes `run_in_background` out of Claude Code's `Agent` and `Bash` tools,
- * so subagents and commands run in the foreground and the turn waits for them. The harness bridge ends a turn at
- * the model's last reply and stops the CLI, so background work would otherwise die with it and its results never
- * reach the agent. An interim guard until turns wait for background work.
  */
 export const agentEnv = (
   processEnv: Readonly<Record<string, string | undefined>>,
   config: { readonly home: string; readonly socket: string }
 ): Record<string, string> =>
-  harnessEnv(processEnv, {
-    HOME: config.home,
-    [DaemonEnv.socket]: config.socket,
-    DISABLE_AUTOUPDATER: "1",
-    CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
-  })
+  harnessEnv(processEnv, { HOME: config.home, [DaemonEnv.socket]: config.socket, DISABLE_AUTOUPDATER: "1" })
 
 /**
  * How each harness authenticates, given to its adapter as an explicit

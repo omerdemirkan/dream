@@ -6,6 +6,7 @@ import { assert, describe, it } from "@effect/vitest"
 import { Effect } from "effect"
 import {
   adapterBridgeDir,
+  bridgeExtras,
   bridgeFile,
   bridgePatches,
   bridgesDir,
@@ -34,7 +35,7 @@ describe("Dream's bridge manifests", () => {
   }
 
   it.effect(
-    "replace the adapter's manifest and lockfile in its recipe, patch its bridge, and change nothing else",
+    "replace the adapter's manifest and lockfile in its recipe, patch its bridge, add Dream's files, and change nothing else",
     () =>
       Effect.gen(function* () {
         for (const [harness, adapter] of [
@@ -51,13 +52,16 @@ describe("Dream's bridge manifests", () => {
           assert.deepStrictEqual(pinned.commands, original.commands)
           assert.deepStrictEqual(
             pinned.files.map((file) => file.path),
-            original.files.map((file) => file.path)
+            [
+              ...original.files.map((file) => file.path),
+              ...bridgeExtras[harness].map((name) => `${pinned.bootstrapDir}/${name}`)
+            ]
           )
           for (const [index, file] of pinned.files.entries()) {
             const name = file.path.slice(`${pinned.bootstrapDir}/`.length)
             const content = original.files[index]?.content ?? ""
             const expected =
-              name === "package.json" || name === "pnpm-lock.yaml"
+              name === "package.json" || name === "pnpm-lock.yaml" || bridgeExtras[harness].includes(name)
                 ? readFileSync(join(bridgesDir, harness, name), "utf8")
                 : name === bridgeFile
                   ? patchBridge(content, bridgePatches[harness])
@@ -75,6 +79,20 @@ describe("Dream's bridge manifests", () => {
       )
       const bridge = recipe?.files.find((file) => file.path.endsWith(`/${bridgeFile}`))?.content ?? ""
       assert.match(bridge, /preset: "claude_code",\n\t\tsnapshot: false,\n/)
+    })
+  )
+
+  it.effect("Claude Code's bridge runs the CLI's messages through Dream's hold on background work", () =>
+    Effect.gen(function* () {
+      const recipe = yield* Effect.promise(
+        async () => (await withPinnedCli("claude-code", createClaudeCode()).getBootstrap?.()) ?? undefined
+      )
+      const bridge = recipe?.files.find((file) => file.path.endsWith(`/${bridgeFile}`))?.content ?? ""
+      assert.include(bridge, `from "./background.mjs";`)
+      assert.include(bridge, "for await (const msg of dreamBackground.watch(messages()))")
+      assert.include(bridge, "emitStreamEvent(dreamBackground.forStream(msg));")
+      assert.include(bridge, "if (dreamBackground.engaged() && !dreamBackground.endNow()) continue;")
+      assert.isTrue(recipe?.files.some((file) => file.path.endsWith("/background.mjs")))
     })
   )
 

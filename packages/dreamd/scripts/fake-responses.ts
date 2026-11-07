@@ -6,7 +6,9 @@
  * containing `SPAWN: <json>` first gets a `spawn_agent` call with that input
  * (say `{"task_name":"check","message":"say hi","model":"gpt-6-luna","reasoning_effort":"low"}`),
  * which needs a model with Codex's multi-agent tools (the gpt-6 family), and
- * then a `wait_agent` call, so the subagent works within the turn.
+ * then a `wait_agent` call, so the subagent works within the turn. `SPAWN_BG: <json>` spawns it the same way but
+ * then ends the turn ("I'll wait for its result") without waiting, as an agent that leaves a subagent running does.
+ * A subagent whose message holds `SLEEP: <ms>` first calls `clock.sleep` for that long, so it outlives the turn.
  *
  * A progress-line request (`scripts/progress-eval/compare.ts`) gets a line too long for the phone, then, asked
  * again, one that fits.
@@ -154,9 +156,17 @@ createServer((request, response) => {
       said("newly spawned child agent") || (said("<multi_agent_role>") && !said("You are `/root`"))
         ? "subagent"
         : "agent"
-    const spawn = outputs.length === 0 && role === "agent" ? /SPAWN: (\{.+\})/.exec(prompt.join("\n")) : null
-    // Once its subagent started, the agent waits for it, so the subagent's requests fall inside the turn.
-    const wait = role === "agent" && input.findLast((item) => item.type === "function_call")?.name === "spawn_agent"
+    const spawn = outputs.length === 0 && role === "agent" ? /SPAWN(_BG)?: (\{.+\})/.exec(prompt.join("\n")) : null
+    const lastCall = input.findLast((item) => item.type === "function_call")?.name
+    // Once its subagent started, the agent waits for it, so the subagent's requests fall inside the turn; unless it
+    // was told to leave it running (`SPAWN_BG`).
+    const lastUser = textsOf(input, "user").at(-1) ?? ""
+    const wait =
+      role === "agent" &&
+      ((lastCall === "spawn_agent" && !said("SPAWN_BG:")) ||
+        (lastUser.includes("WAIT_AGENT") && input.at(-1)?.type === "message"))
+    const slept = input.some((item) => item.type === "function_call" && item.name === "sleep")
+    const sleep = role === "subagent" && !slept ? /SLEEP: (\d+)/.exec(prompt.join("\n")) : null
     console.log(
       JSON.stringify({
         method: request.method,
@@ -168,8 +178,19 @@ createServer((request, response) => {
         ...promptOf(body.instructions, input),
         tools: toolNames([...(body.tools ?? []), ...input.flatMap((item) => item.tools ?? [])]).join(" "),
         outputs,
+        // The newest input items in brief, so a check can see what reached the model (a subagent's report, say).
+        recent: input
+          .slice(-4)
+          .map((item) => `${item.type}: ${JSON.stringify(item.content ?? item.output ?? "").slice(0, 160)}`),
         role,
-        did: spawn !== null ? `spawn: ${spawn[1]}` : wait ? "wait" : "reply"
+        did:
+          spawn !== null
+            ? `spawn${spawn[1] ?? ""}: ${spawn[2]}`
+            : wait
+              ? "wait"
+              : sleep !== null
+                ? `sleep: ${sleep[1]}`
+                : "reply"
       })
     )
     if (raw.includes("dream-progress-line") && request.url?.endsWith("/responses") === true) {
@@ -230,23 +251,37 @@ createServer((request, response) => {
                 call_id: `call_${counter + 1}`,
                 namespace: "collaboration",
                 name: "spawn_agent",
-                arguments: spawn[1]
+                arguments: spawn[2]
               }
-            : wait
+            : sleep !== null
               ? {
                   type: "function_call",
                   id: `fc_${counter + 1}`,
                   call_id: `call_${counter + 1}`,
-                  namespace: "collaboration",
-                  name: "wait_agent",
-                  arguments: JSON.stringify({ timeout_ms: 30_000 })
+                  namespace: "clock",
+                  name: "sleep",
+                  arguments: JSON.stringify({ duration_ms: Number(sleep[1]) })
                 }
-              : {
-                  type: "message",
-                  role: "assistant",
-                  id: `msg_${counter + 1}`,
-                  content: [{ type: "output_text", text: "hi there" }]
-                },
+              : wait
+                ? {
+                    type: "function_call",
+                    id: `fc_${counter + 1}`,
+                    call_id: `call_${counter + 1}`,
+                    namespace: "collaboration",
+                    name: "wait_agent",
+                    arguments: JSON.stringify({ timeout_ms: 30_000 })
+                  }
+                : {
+                    type: "message",
+                    role: "assistant",
+                    id: `msg_${counter + 1}`,
+                    content: [
+                      {
+                        type: "output_text",
+                        text: role === "agent" && lastCall === "spawn_agent" ? "I'll wait for its result." : "hi there"
+                      }
+                    ]
+                  },
           usageOf[role]
         )
       )

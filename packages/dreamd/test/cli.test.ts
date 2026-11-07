@@ -107,9 +107,9 @@ describe("the harness environment", () => {
     assert.deepStrictEqual(env, { PATH: "/usr/bin", DREAM_SOCKET: "/tmp/dreamd.sock", HOME: "/home/user" })
   })
 
-  it("keeps Claude Code's subagents and commands in the foreground", () => {
+  it("leaves Claude Code's background tasks on, since turns wait for them", () => {
     const env = agentEnv({ PATH: "/usr/bin" }, { home: "/home/user", socket: "/tmp/dreamd.sock" })
-    assert.strictEqual(env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS, "1")
+    assert.isUndefined(env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS)
   })
 
   it("gives each harness a placeholder credential and no refreshable login", () => {
