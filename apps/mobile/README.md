@@ -99,7 +99,8 @@ Scenarios (`dream://fixtures/<name>?to=/path`, or `-dreamScenario a,b`): `signed
 `paused` (Lift Log waits for a usage reset), `all-clear`, `cabin-resolved`, `withdraw-cabin`, `no-plan`,
 `live-activity`, `live-activity-needs` (start a Live Activity on the phone), `spotify-ask` (Lift Log asks to connect
 Spotify), `spotify-stopped` (Lift Log's Spotify connection stopped working: its card says so and connects again),
-`long-question`, `vague-access`, `question-context` (see the message ids above), `options-sounds` (Lift Log asks
+`long-question`, `desktop-sent` and `desktop-opened` (Cabin's Google Calendar card, emailed to finish on a
+computer, then opened there), `vague-access`, `question-context` (see the message ids above), `options-sounds` (Lift Log asks
 which rest-timer sound to use, with the sounds to play),
 `unsupported-message`, `now-two-lines` and `now-three-lines` (Lift Log's now sentence on two lines, and cut at two), `long-chat` (an afternoon of Lift Log messages to read back through: open
 `/project/prj_liftlog?land=msg_long8` and the Status card folds to one line), `stall-next-write` (the next answer, message, new idea, key or decline hangs until the app
