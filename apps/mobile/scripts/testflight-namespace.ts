@@ -268,6 +268,13 @@ const b64u = (bytes) => Buffer.from(bytes).toString("base64url")
       "&sort=-uploadedDate&limit=4&fields[builds]=version,processingState,expired,uploadedDate,buildBetaDetail" +
       "&include=buildBetaDetail&fields[buildBetaDetails]=internalBuildState,externalBuildState",
       { headers: { authorization: "Bearer " + jwt } }).then((r) => r.json()).catch(() => ({}))
+    // Builds anywhere on the account: an upload under another bundle id lands on another app. (Apple's upload records,
+    // which say why an upload was rejected, can't be listed with this key; the reason goes to the account's email.)
+    const all = await fetch("https://api.appstoreconnect.apple.com/v1/builds?sort=-uploadedDate&limit=4" +
+      "&fields[builds]=version,processingState,uploadedDate,app&include=app&fields[apps]=bundleId",
+      { headers: { authorization: "Bearer " + jwt } }).then((r) => r.json()).catch(() => ({}))
+    facts.accountBuilds = (all.data ?? []).map((d) => d.attributes.version + " " + d.attributes.processingState + " " +
+      ((all.included ?? []).find((a) => a.id === d.relationships?.app?.data?.id)?.attributes?.bundleId ?? "?"))
     const beta = new Map((b.included ?? []).map((d) => [d.id, d.attributes]))
     facts.builds = (b.data ?? []).map((d) => ({ build: d.attributes.version, uploaded: d.attributes.uploadedDate,
       processing: d.attributes.processingState, expired: d.attributes.expired,
@@ -638,6 +645,7 @@ const main = async () => {
     const facts = `${report.bytes ?? "?"} bytes, mode ${report.mode ?? "?"} in a ${report.dirMode ?? "?"} directory, sha256 ${report.sha256 ?? "?"}…`
     if (!report.ok) throw new Error(`The key isn't usable: ${report.problem ?? "unknown"} (${facts})`)
     log(`Key arrived (${facts}); App Store Connect answered ${report.appStoreConnect} for "${report.app}"`)
+    for (const line of [...((report.accountBuilds as ReadonlyArray<string> | undefined) ?? [])]) log(`  ${line}`)
     for (const b of (report.builds as ReadonlyArray<Json> | undefined) ?? [])
       log(
         `  build ${b.build}, uploaded ${b.uploaded}: ${b.processing}${b.expired ? ", expired" : ""}; internal testing ${b.internalBuildState ?? "?"}, external ${b.externalBuildState ?? "?"}`
