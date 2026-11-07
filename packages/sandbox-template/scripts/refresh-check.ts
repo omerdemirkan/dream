@@ -31,6 +31,7 @@ const connection = {
 }
 const stateFile = process.env.STATE ?? "/tmp/dream-refresh-check.json"
 const fakeAnthropic = fileURLToPath(new URL("../../dreamd/scripts/fake-anthropic.ts", import.meta.url))
+const fakeResponses = fileURLToPath(new URL("../../dreamd/scripts/fake-responses.ts", import.meta.url))
 
 type State = { readonly sandboxId: string; readonly daemonToken: string; readonly template: string }
 const load = (): State => JSON.parse(readFileSync(stateFile, "utf8")) as State
@@ -68,7 +69,9 @@ const setup = async () => {
   writeFileSync(stateFile, JSON.stringify({ sandboxId: sandbox.sandboxId, daemonToken, template: templateName }))
   console.log(`sandbox ${sandbox.sandboxId} from ${templateName}, ${harness}`)
   for (const [path, content] of Object.entries(project)) await sandbox.files.write(path, content)
+  // The fake models come from this checkout (Node built-ins only), so an older build logs what this one's do.
   await sandbox.files.write("/home/user/fakes/fake-anthropic.ts", readFileSync(fakeAnthropic, "utf8"))
+  await sandbox.files.write("/home/user/fakes/fake-responses.ts", readFileSync(fakeResponses, "utf8"))
   await sandbox.files.write(
     "/home/user/.claude/settings.json",
     JSON.stringify({ env: { ANTHROPIC_BASE_URL: "http://127.0.0.1:18789" } }, null, 2)
@@ -81,10 +84,7 @@ const setup = async () => {
         // The fake API needs dreamd's dependencies; a copy outlives the refresh swapping /opt/dream.
         "cp -r /opt/dream /home/user/fakes/dream",
         daemonize("node /home/user/fakes/dream/packages/dreamd/scripts/fake-api.ts 8787", "/home/user/fakes/api.log"),
-        daemonize(
-          "node /home/user/fakes/dream/packages/dreamd/scripts/fake-responses.ts 18788",
-          "/home/user/fakes/responses.log"
-        ),
+        daemonize("node /home/user/fakes/fake-responses.ts 18788", "/home/user/fakes/responses.log"),
         "sleep 2 && tail -n 1 /home/user/fakes/anthropic.log /home/user/fakes/api.log"
       ].join("\n")
     )
