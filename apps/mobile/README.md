@@ -136,11 +136,14 @@ The agent's presence (Deck v3 "A+B+C": the row at the bottom of Chat, the dot an
 Home, the receipt under their latest message) follows the mock's scenario, a new question in Lift
 Log (`msg_askrest`, reply `msg_replyrest`): `activity-sent` (Sent, typing dots, "Asleep · waking up"),
 `activity-starting` ("Starting its computer…", Seen), `activity-working` ("Working · 2m"), `activity-done` (the
-reply, "Done for now", a green dot), `activity-home` (Home with every state: done, asleep until 6:55 AM, waiting
+reply, "Done for now", a green dot), `activity-home` (Home with every state: done, done for now until 6:55 AM, waiting
 for you, paused until 4 PM), and `activity-new-idea` (a new idea's first half-minute, at
 `/project/prj_newidea?tab=chat`). Without a scenario, Lift Log is working, Cabin is awake and Morning Brief sleeps
 until 6:55 AM; a message to any project goes through Sent, then Seen as delivery begins (with "starting" if it was asleep), working, then the
-reply and "Done for now".
+reply and "Done for now". "Done for now" means the agent finished what it was doing and nothing of it is running (a
+turn lasts while its background work does, so that's still Working); the header and Chat say it alike whether its
+computer is up or asleep, which only the dot shows, with when it wakes next if it's scheduled. "Asleep" is said only
+before a project's first turn has ended.
 
 Workstreams (mocks/screens/workstreams, option A): while two or more of a project's workstreams are active, the
 Status card shows a row for each in place of the "now" sentence, a row waiting on them in amber at the top, the rest

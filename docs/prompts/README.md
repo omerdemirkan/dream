@@ -70,7 +70,7 @@ The system prompt of the project's agent, for every turn (`systemPrompt`).
 | 20 | [Recurring work](system/recurring-work.md) | What recurring work costs as a turn, as a scheduled task, or as an app calling a model API. | 175 |
 | 21 | [If it grows](system/if-it-grows.md) | What changes if a project outgrows the sandbox and has to serve many people. | 52 |
 
-### The `dream` skill, 5,541 words
+### The `dream` skill, 5,582 words
 
 The `dream` skill (`SKILL.md`), which the agent and every task's session load when they need it (`dreamSkill`).
 
@@ -81,7 +81,7 @@ The `dream` skill (`SKILL.md`), which the agent and every task's session load wh
 | 3 | [Questions](skill/questions.md) | `dream ask`: the question card, options with screenshots, recordings or audio, answers, and withdrawing. | 490 |
 | 4 | [Access to services](skill/access.md) | `dream access`: the access card, each kind (Google, OAuth providers, keys in a header, Apple, key files), and connections over time. | 906 |
 | 5 | [Notifications from your apps](skill/app-notifications.md) | `dream notify`: readying an app to notify them, sending as the app, their controls and Dream's limits, and the history. | 436 |
-| 6 | [The Status card](skill/status.md) | `dream status`: the now sentence, milestones and their needs, media, and how the project shows on Home. | 187 |
+| 6 | [The Status card](skill/status.md) | `dream status`: the now sentence, milestones and their needs, media, and how the project shows on Home. | 228 |
 | 7 | [Workstreams](skill/workstreams.md) | `dream work`: starting, updating, finishing and dropping workstreams, labelling what you send, and routing their messages. | 393 |
 | 8 | [Threads](skill/threads.md) | Threads: their replies on any message, `--reply-to`, when a thread reply beats a new message, and `dream ask revise`. | 330 |
 | 9 | [Live Activity](skill/live-activity.md) | `dream live`: a Live Activity on their lock screen and Dynamic Island. | 54 |

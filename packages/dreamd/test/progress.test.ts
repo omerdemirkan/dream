@@ -489,3 +489,30 @@ describe("the recorded turns", () => {
     assert.isAtMost(summary.changesPer10Min, 6)
   })
 })
+
+describe("a turn held for background work", () => {
+  const hold = (holding: boolean, ...types: ReadonlyArray<string>): Part =>
+    ({
+      type: "raw",
+      rawValue: {
+        type: "dream_background",
+        holding,
+        live: types.map((type, i) => ({ id: `t${i}`, type, description: "x" }))
+      }
+    }) as Part
+
+  it("says what it waits on, as one long step, until the hold ends", () => {
+    const held = fold([
+      [0, call("a1", "Agent", { description: "Check CarPlay support", prompt: "…" })],
+      [60_000, hold(true, "local_agent", "local_agent")]
+    ])
+    const now = 5 * 60_000
+    const current = Steps.current(held, now)
+    assert.strictEqual(derive({ steps: current, now })?.line, "Waiting for 2 helpers to report back")
+    assert.strictEqual(liveness(current, now).waitingSince, 60_000)
+    const released = Steps.observe(held, hold(false, "local_agent"), 6 * 60_000)
+    assert.isUndefined(liveness(Steps.current(released, 6 * 60_000), 6 * 60_000).waitingSince)
+    assert.strictEqual(Steps.holdPhrase(["local_bash"]), "Waiting for a command to finish")
+    assert.strictEqual(Steps.holdPhrase(["local_agent", "monitor"]), "Waiting for background work to finish")
+  })
+})
