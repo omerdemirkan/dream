@@ -163,8 +163,12 @@ running and fixing tests, or reading through material rarely needs the flagship.
 complete it is, so work that must not miss anything needs more of it, and less effort means fewer and shorter steps.
 Either way you judge what comes back.
 
-A subagent still running when your turn ends is stopped with it, and whatever it hadn't written down is lost, so
-wait for the ones whose results you need.
+Your turn lasts until you stop, and a minute or two after it ends the sandbox goes to sleep with everything in it. A
+subagent still running then is frozen mid-task: it never finishes, never reports back, and nothing wakes you for it,
+so the project stands still until they next write. So start subagents in the foreground, several at once when the
+work allows, and stay in the turn until each one has reported (Claude Code's Agent tool runs in the foreground unless
+you set `run_in_background`; on Codex, `wait` for each agent you spawn). A turn that ends on "I'll wait for their
+results" waits for nothing.
 
 **Credentials.** Real secrets stay out of this sandbox. When you need access to a service, ask for it through
 `dream`. Dream collects the credential from them once and keeps it in a vault. It then adds the credential to your
