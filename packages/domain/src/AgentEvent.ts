@@ -161,6 +161,25 @@ export const AgentEvent = Schema.TaggedUnion({
     app: AppId,
     name: Schema.String,
     limit: Schema.Literals(["hour", "day", "project"])
+  },
+  /**
+   * Background work the agent started (a subagent, a command or a Monitor running in the background) was stopped
+   * before it reported back, so the agent can start it again. Made by dreamd itself, never by the API.
+   * `reason`: `quiet`, Dream stopped it after its turn had waited `minutes` with nothing from it; `long`, after the
+   * turn had waited on background work for `minutes` in all; `ended`, the turn ended another way (an error, a usage
+   * limit) with it running; `restart`, dreamd restarted during the turn; `earlier`, a turn ended before Dream waited
+   * for background work (found in the session once, after the update). Added November 2026.
+   */
+  BackgroundStopped: {
+    ...EventFields,
+    reason: Schema.Literals(["quiet", "long", "ended", "restart", "earlier"]),
+    tasks: Schema.Array(
+      Schema.Struct({
+        kind: Schema.Literals(["subagent", "command", "monitor", "other"]),
+        description: Schema.String
+      })
+    ),
+    minutes: Schema.optionalKey(Schema.Int)
   }
 })
 export type AgentEvent = typeof AgentEvent.Type
@@ -406,6 +425,31 @@ export const renderAgentEvent = (event: AgentEvent, options: RenderOptions = {})
           : `\nThese were running too and weren't restarted; start again any you still need:\n${list(notRestarted)}`) +
         "\nAnything installed outside your home directory (apt packages, files under /opt or /etc) needs installing " +
         "again. Check your published app answers, then carry on."
+      )
+    },
+    BackgroundStopped: ({ reason, tasks, minutes }) => {
+      const kind = { subagent: "subagent", command: "command", monitor: "Monitor", other: "task" } as const
+      const list = tasks.map((task) => `- ${kind[task.kind]}: ${task.description}`).join("\n")
+      const waited = minutes === undefined ? "" : ` ${minutes} minutes`
+      const why =
+        reason === "quiet"
+          ? `Your last turn waited${waited} on background work that showed no sign of progress, so Dream stopped it:`
+          : reason === "long"
+            ? `Your last turn had waited${waited} on background work, Dream's limit, so Dream stopped what was still running:`
+            : reason === "ended"
+              ? "Your last turn ended another way while background work was still running, which stopped it:"
+              : reason === "restart"
+                ? "Dream restarted during your last turn, which stopped the background work it was waiting on:"
+                : "When your last turn ended, the background work you'd started was stopped with it before it " +
+                  "reported back (Dream didn't keep turns going for background work then; it does now):"
+      const after =
+        reason === "quiet" || reason === "long"
+          ? " A server you want running between turns goes outside your turn (`setsid nohup … &`); a long job, in " +
+            '`dream wake --at 1m --run "…"` or `--task`.'
+          : ""
+      return (
+        `${why}\n${list}\nNothing it hadn't written down reached you. Start again what you still need, and if you ` +
+        `told them you'd come back with its results, follow through.${after}`
       )
     },
     AppNotificationsHeld: ({ app, name, limit }) =>

@@ -34,6 +34,7 @@ import {
 import { DreamdConfig } from "../Config.ts"
 import * as JsonFile from "../JsonFile.ts"
 import * as Usage from "../Usage.ts"
+import * as Background from "./Background.ts"
 import { withPinnedCli } from "./Bridges.ts"
 import { codexContextWindow, topLevel } from "./Fleet.ts"
 import { agentEnv, harnessAuth } from "./HarnessEnv.ts"
@@ -61,6 +62,8 @@ export interface TurnResult {
   readonly finalText?: string
   /** What the turn used of the model, for `ReportTurn`, when the harness said anything about it. */
   readonly turnUsage?: TurnUsage
+  /** Background work that was still running when the turn ended, and so stopped with it (`Background.ts`). */
+  readonly backgroundStopped?: Background.Stopped
 }
 
 /** The harness couldn't run a turn at all (it didn't start, or crashed outside a turn). */
@@ -83,6 +86,11 @@ export class Harness extends Context.Service<
     readonly turn: (prompt: string, handlers: TurnHandlers) => Effect.Effect<TurnResult, HarnessError>
     /** Give the running turn more input, e.g. a message that arrived while it works. */
     readonly steer: (text: string) => Effect.Effect<void, SteerUnavailable>
+    /**
+     * Background work that stopped before dreamd started (a restart mid-turn, or a turn from before turns waited
+     * for it), once: later calls return nothing.
+     */
+    readonly takeStopped: Effect.Effect<Option.Option<Background.Stopped>>
   }
 >()("@dream/dreamd/Harness") {
   static readonly layer = Layer.effect(
@@ -107,12 +115,16 @@ export class Harness extends Context.Service<
     readonly turns: Queue.Dequeue<(prompt: string, handlers: TurnHandlers) => Effect.Effect<TurnResult, HarnessError>>
     readonly log: Ref.Ref<ReadonlyArray<string>>
     readonly steerable?: boolean
+    /** What `takeStopped` finds. */
+    readonly stopped?: Background.Stopped
   }) =>
     Layer.effect(
       Harness,
       Effect.gen(function* () {
         const running = yield* Ref.make(false)
+        const stopped = yield* Ref.make(Option.fromUndefinedOr(options.stopped))
         return Harness.of({
+          takeStopped: Ref.getAndSet(stopped, Option.none()),
           name: options.name ?? "claude-code",
           turn: (prompt, handlers) =>
             Ref.set(running, true).pipe(
@@ -188,6 +200,9 @@ export const makeAdapter = (
 
 /** How long detaching from the session may take. */
 const detachTimeout = Duration.seconds(5)
+
+/** How much of the end of a Claude Code transcript is looked over for its last turn. */
+const strandedTail = 8 * 1024 * 1024
 
 const make = Effect.fnUntraced(function* ({
   instructions,
@@ -343,6 +358,61 @@ const make = Effect.fnUntraced(function* ({
     yield* save(next)
   }
 
+  // Background work: what the running turn waits on is kept on disk, so after a restart the agent hears what
+  // stopped with it. A session from before turns waited is looked over once for work its last turn left running.
+  const backgroundStore = JsonFile.make(Background.Saved, path.join(config.stateDir, "background.json"))
+  const savedBackground = yield* provide(backgroundStore.read).pipe(
+    Effect.catch((error) =>
+      Effect.logWarning("Couldn't read what background work the last turn had", { error: error.message }).pipe(
+        Effect.as(Option.none<Background.Saved>())
+      )
+    )
+  )
+  const persistBackground = (live: ReadonlyArray<Background.Task>) =>
+    provide(backgroundStore.write({ live, checkedSession: true })).pipe(
+      Effect.catch((error) => Effect.logWarning("Couldn't save the turn's background work", { error: error.message }))
+    )
+  const strandedEarlier = Effect.gen(function* () {
+    if (name !== "claude-code") return []
+    const sessionId = yield* savedString("claudeSessionId")
+    if (Option.isNone(sessionId)) return []
+    const projects = path.join(config.home, ".claude", "projects")
+    if (!(yield* fs.exists(projects))) return []
+    for (const project of yield* fs.readDirectory(projects)) {
+      const file = path.join(projects, project, `${sessionId.value}.jsonl`)
+      if (yield* fs.exists(file)) {
+        return Background.strandedInTranscript(yield* provide(Usage.readTail(file, strandedTail)))
+      }
+    }
+    return []
+  }).pipe(
+    Effect.catch((error) =>
+      Effect.logWarning("Couldn't look over the session for background work", { error: String(error) }).pipe(
+        Effect.as<ReadonlyArray<Background.Task>>([])
+      )
+    )
+  )
+  const stoppedBefore: Option.Option<Background.Stopped> = yield* Option.match(savedBackground, {
+    onSome: (saved) =>
+      Effect.succeed(
+        saved.live.length > 0
+          ? Option.some<Background.Stopped>({ reason: "restart", tasks: saved.live })
+          : Option.none()
+      ),
+    onNone: () =>
+      Effect.map(strandedEarlier, (tasks) =>
+        tasks.length > 0 ? Option.some<Background.Stopped>({ reason: "earlier", tasks }) : Option.none()
+      )
+  })
+  if (Option.isSome(stoppedBefore)) {
+    yield* Effect.logWarning("Background work stopped before dreamd started; the agent will hear of it", {
+      reason: stoppedBefore.value.reason,
+      tasks: stoppedBefore.value.tasks.map((task) => `${task.kind}: ${task.description}`)
+    })
+  }
+  if (Option.isNone(savedBackground) || Option.isSome(stoppedBefore)) yield* persistBackground([])
+  const stopped = yield* Ref.make(stoppedBefore)
+
   const turn = Effect.fn("Harness.turn")(function* (prompt: string, handlers: TurnHandlers) {
     const startedAt = yield* DateTime.now
     const before = yield* Ref.get(state)
@@ -413,35 +483,45 @@ const make = Effect.fnUntraced(function* ({
             return
         }
       })
-    const consume = drive(
-      {
-        start: streamOf(() =>
-          agent.stream({
-            session,
-            prompt: preamble === undefined ? prompt : `${preamble}\n${prompt}`,
-            abortSignal: controller.signal
-          })
-        ),
-        // A tool message ending the input continues the paused turn instead of starting one.
-        answer: (results) =>
-          streamOf(() =>
+    const consume = (observeBackground: (part: Part) => Effect.Effect<void>) =>
+      drive(
+        {
+          start: streamOf(() =>
             agent.stream({
               session,
-              messages: [{ role: "tool", content: [...results] }],
+              prompt: preamble === undefined ? prompt : `${preamble}\n${prompt}`,
               abortSignal: controller.signal
             })
-          )
-      },
-      handlers,
-      onPart
-    ).pipe(Effect.flatMap((result) => Ref.set(finalText, result.finalText)))
+          ),
+          // A tool message ending the input continues the paused turn instead of starting one.
+          answer: (results) =>
+            streamOf(() =>
+              agent.stream({
+                session,
+                messages: [{ role: "tool", content: [...results] }],
+                abortSignal: controller.signal
+              })
+            )
+        },
+        handlers,
+        (part) => Effect.andThen(onPart(part), observeBackground(part))
+      ).pipe(Effect.flatMap((result) => Ref.set(finalText, result.finalText)))
 
-    const exit = yield* consume.pipe(
-      Effect.onInterrupt(() => Effect.sync(() => controller.abort(new Error("dreamd interrupted the turn")))),
-      Effect.ensuring(Ref.set(active, Option.none())),
-      Effect.ensuring(detach(session)),
-      Effect.exit
-    )
+    // The bridges hold the turn while background work runs; Dream stops it past a limit (`Background.ts`).
+    const {
+      exit,
+      stopped: backgroundStopped,
+      limited
+    } = yield* Background.supervise({
+      run: (observeBackground) =>
+        consume(observeBackground).pipe(
+          Effect.onInterrupt(() => Effect.sync(() => controller.abort(new Error("dreamd interrupted the turn")))),
+          Effect.ensuring(Ref.set(active, Option.none())),
+          Effect.ensuring(detach(session))
+        ),
+      stop: () => Effect.sync(() => controller.abort(new Error("Dream stopped the turn's background work"))),
+      persist: persistBackground
+    })
     // Once the agent got going, it has read the preamble.
     if (preamble !== undefined && (yield* Ref.get(progressed))) {
       yield* save(Session.delivered(yield* Ref.get(state)))
@@ -468,9 +548,12 @@ const make = Effect.fnUntraced(function* ({
         startedAt
       })
     )
-    const errorMessage = Exit.isFailure(exit)
-      ? Option.some(String(Cause.squash(exit.cause)))
-      : yield* Ref.get(lastError)
+    // A turn Dream stopped for its background work ended as Dream meant it to.
+    const errorMessage = limited
+      ? Option.none<string>()
+      : Exit.isFailure(exit)
+        ? Option.some(String(Cause.squash(exit.cause)))
+        : yield* Ref.get(lastError)
     const reading = yield* Ref.get(usage)
     const unreadLimit =
       reading.limit === undefined && Option.isSome(errorMessage) && Usage.isCodexUsageLimitMessage(errorMessage.value)
@@ -484,7 +567,8 @@ const make = Effect.fnUntraced(function* ({
         : reading,
       progressed: yield* Ref.get(progressed),
       finalText: yield* Ref.get(finalText),
-      ...Option.match(turnUsage, { onNone: () => ({}), onSome: (turnUsage) => ({ turnUsage }) })
+      ...Option.match(turnUsage, { onNone: () => ({}), onSome: (turnUsage) => ({ turnUsage }) }),
+      ...Option.match(backgroundStopped, { onNone: () => ({}), onSome: (stopped) => ({ backgroundStopped: stopped }) })
     } satisfies TurnResult
   })
 
@@ -497,5 +581,5 @@ const make = Effect.fnUntraced(function* ({
     })
   })
 
-  return Harness.of({ name, turn, steer })
+  return Harness.of({ name, turn, steer, takeStopped: Ref.getAndSet(stopped, Option.none()) })
 })

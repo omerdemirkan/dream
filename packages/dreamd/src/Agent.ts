@@ -20,12 +20,20 @@
  * After a completed turn with nothing else queued, the published URL is
  * loaded, and a new breakage there becomes an event for the agent (see
  * `Published.ts`).
+ *
+ * A turn lasts while the agent's background work runs (`harness/Background.ts`). Whatever was still running when it
+ * ended (Dream stopped it past a limit, or the turn ended another way) becomes a `BackgroundStopped` event, which
+ * starts the next turn, as does work that stopped before dreamd started. One exception keeps a loop from forming: a
+ * turn started only by such an event whose own background work is stopped past a limit again holds that news for
+ * the next turn something else starts.
  */
 import { renderSteerPrompt, renderTurnPrompt } from "@dream/agent-context"
-import type { AgentEvent, EventId, ModelProvider, TurnState } from "@dream/domain"
+import { randomUUID } from "node:crypto"
+import { type AgentEvent, EventId, type ModelProvider, type TurnState } from "@dream/domain"
 import { Clock, Context, DateTime, Duration, Effect, Exit, Layer, Option, Ref, Stream } from "effect"
 import { Api } from "./Api.ts"
 import { Attachments } from "./Attachments.ts"
+import * as Background from "./harness/Background.ts"
 import { Harness, type TurnResult, TurnOutcome } from "./harness/Harness.ts"
 import { type QuestionOutcome, replyFromFinalText } from "./harness/PersonChannel.ts"
 import type { TurnHandlers } from "./harness/Turn.ts"
@@ -46,6 +54,7 @@ export const backoff = (failures: number): Duration.Duration =>
 export const agentOnly = (event: AgentEvent): boolean =>
   event._tag === "Alert" ||
   event._tag === "PublishedUrlBroken" ||
+  event._tag === "BackgroundStopped" ||
   (event._tag === "WakeDue" && (event.run !== undefined || event.task !== undefined))
 
 const hasQueued = (state: InboxState) => state.entries.some((entry) => entry.state === "queued")
@@ -76,6 +85,33 @@ export class Agent extends Context.Service<
       const running = yield* Ref.make(false)
       const lastTurnEndedMs = yield* Ref.make(Option.none<number>())
       const usage = yield* Ref.make<Usage.UsageReading>({})
+      /** News of background work stopped again, held for the next turn (see above). */
+      const heldStop = yield* Ref.make(Option.none<AgentEvent>())
+
+      const stoppedEvent = (stopped: Background.Stopped) =>
+        Effect.map(DateTime.now, (at) =>
+          Background.toEvent(stopped, { id: EventId.make(`evt_dreamd_${randomUUID()}`), at })
+        )
+      /** Tell the agent about background work that stopped, now or (`hold`) with the next turn. */
+      const reportStopped = (stopped: Background.Stopped, hold: boolean) =>
+        Effect.gen(function* () {
+          const event = yield* stoppedEvent(stopped)
+          if (hold) {
+            yield* Ref.set(heldStop, Option.some(event))
+            yield* Effect.logWarning("Background work was stopped again; the agent hears of it next turn", {
+              reason: stopped.reason
+            })
+            return
+          }
+          yield* inbox.deliver([event])
+          yield* Effect.logInfo("Background work stopped before it reported back; told the agent", {
+            reason: stopped.reason,
+            tasks: stopped.tasks.length,
+            event: event.id
+          })
+        }).pipe(
+          Effect.catch((error) => Effect.logError("Couldn't tell the agent its background work stopped", { error }))
+        )
 
       const waitFor = (predicate: (state: InboxState) => boolean) =>
         inbox.changes.pipe(Stream.filter(predicate), Stream.take(1), Stream.runDrain)
@@ -166,6 +202,8 @@ export class Agent extends Context.Service<
 
       /** Run one turn with everything queued. Returns whether it should be retried. */
       const turn = Effect.gen(function* () {
+        const held = yield* Ref.getAndSet(heldStop, Option.none())
+        if (Option.isSome(held)) yield* inbox.deliver([held.value])
         const events = yield* inbox.take
         if (events.length === 0) return false
         const taken = yield* Ref.make<ReadonlyArray<EventId>>(events.map((event) => event.id))
@@ -196,6 +234,12 @@ export class Agent extends Context.Service<
         const limited = result?.usage.limit !== undefined
         yield* inbox.release(ids, requeue ? "retry" : "done")
 
+        if (result?.backgroundStopped !== undefined) {
+          const again =
+            events.every((event) => event._tag === "BackgroundStopped") &&
+            (result.backgroundStopped.reason === "quiet" || result.backgroundStopped.reason === "long")
+          yield* reportStopped(result.backgroundStopped, again)
+        }
         if (result !== undefined) yield* Ref.update(usage, (previous) => Usage.merge(previous, result.usage))
         const reading = yield* Ref.get(usage)
         if (Object.keys(reading).length > 0) {
@@ -228,6 +272,8 @@ export class Agent extends Context.Service<
       )
 
       const run = Effect.gen(function* () {
+        const before = yield* harness.takeStopped
+        if (Option.isSome(before)) yield* reportStopped(before.value, false)
         let failures = 0
         while (true) {
           yield* waitOutLimit
