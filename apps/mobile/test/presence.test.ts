@@ -15,6 +15,7 @@ import {
   homeLine,
   type Presence,
   presenceOf,
+  progressNote,
   receiptOf
 } from "../src/data/presence.ts"
 
@@ -198,5 +199,67 @@ describe("edges", () => {
     assert.strictEqual(elapsedLabel(at("14:02"), at("15:02")), "1h")
     assert.strictEqual(elapsedLabel(at("14:02"), at("15:17")), "1h 15m")
     assert.strictEqual(aheadLabel(at("09:30", "07"), at("14:02"), tz), "Sat 9:30 AM")
+  })
+})
+
+describe("what a working turn is doing", () => {
+  const now = at("14:40")
+  const progress = (minutesAgo: number, extra: { line?: string; waitingMinutes?: number } = {}) => ({
+    ...(extra.line === undefined ? {} : { line: extra.line }),
+    activeAt: DateTime.subtract(now, { minutes: minutesAgo }),
+    ...(extra.waitingMinutes === undefined
+      ? {}
+      : { waitingSince: DateTime.subtract(now, { minutes: extra.waitingMinutes }) }),
+    at: now
+  })
+
+  it("shows dreamd's line, and how long one long step has run once it's worth saying", () => {
+    assert.deepStrictEqual(progressNote(progress(0, { line: "Setting up unit tests" }), now), {
+      text: "Setting up unit tests",
+      quiet: false
+    })
+    assert.deepStrictEqual(progressNote(progress(0, { line: "Running the scorer tests", waitingMinutes: 11 }), now), {
+      text: "Running the scorer tests · 11m",
+      quiet: false
+    })
+    assert.deepStrictEqual(progressNote(progress(0, { line: "Running the scorer tests", waitingMinutes: 1 }), now), {
+      text: "Running the scorer tests",
+      quiet: false
+    })
+    assert.deepStrictEqual(progressNote(progress(0, { waitingMinutes: 6 }), now), {
+      text: "One long step · 6m",
+      quiet: false
+    })
+  })
+
+  it("says so plainly when nothing has happened for ten minutes", () => {
+    assert.deepStrictEqual(progressNote(progress(12, { line: "Setting up unit tests" }), now), {
+      text: "Nothing new for 12 minutes",
+      quiet: true
+    })
+    // A long command running isn't quiet.
+    assert.strictEqual(progressNote(progress(12, { line: "Building", waitingMinutes: 12 }), now)?.quiet, false)
+  })
+
+  it("says nothing new when it only repeats the Status card, or dreamd hasn't said", () => {
+    assert.isUndefined(
+      progressNote(progress(0, { line: "Charting your estimated 1RM" }), now, "Charting your estimated 1RM")
+    )
+    assert.isUndefined(progressNote(undefined, now))
+    assert.isUndefined(progressNote(progress(0), now))
+  })
+
+  it("rides along on the Working row in Chat", () => {
+    const activity: AgentActivity = {
+      state: "working",
+      since: at("14:05"),
+      progress: progress(0, { line: "Setting up unit tests" })
+    }
+    const presence = presenceOf({ activity, working: true, pausedUntil: undefined, now })
+    assert.deepStrictEqual(chatRowOf(presence, [], now), {
+      _tag: "Working",
+      since: at("14:05"),
+      note: { text: "Setting up unit tests", quiet: false }
+    })
   })
 })

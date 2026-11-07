@@ -983,6 +983,64 @@ describe("a project, end to end", () => {
     })
   )
 
+  it.live("shows what a long turn is doing while someone watches, and tells dreamd who's watching", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud({ progressLine: true })
+      const { project } = yield* setup(cloud)
+      yield* cloud.alarm(project.id)
+      assert.strictEqual(envFileOf(cloud, project.id).env.DREAM_PROGRESS_LINE, "on")
+      const dreamd = yield* cloud.sandbox(envFileOf(cloud, project.id).env.DREAM_PROJECT_TOKEN)
+
+      // Nobody watching yet: the turn starts without telling dreamd anything.
+      yield* dreamd.ReportTurn({ state: "started", eventIds: [] })
+      assert.deepStrictEqual(cloud.world.watching, [])
+
+      const live = yield* cloud.live(project.id)
+      const seen = yield* live.Subscribe().pipe(
+        Stream.filter((event) => event._tag === "ActivityChanged" && event.activity.progress?.line !== undefined),
+        Stream.take(1),
+        Stream.runCollect,
+        Effect.forkChild
+      )
+      yield* Effect.sleep("50 millis")
+      assert.deepStrictEqual(
+        cloud.world.watching.map((call) => call.watching),
+        [true]
+      )
+      const activeAt = yield* DateTime.now
+      yield* dreamd.ReportProgress({ line: "Setting up unit tests", activeAt })
+      const [event] = yield* Fiber.join(seen)
+      const progress = event?._tag === "ActivityChanged" ? event.activity.progress : undefined
+      assert.strictEqual(progress?.line, "Setting up unit tests")
+      assert.strictEqual(DateTime.formatIso(progress!.activeAt), DateTime.formatIso(activeAt))
+      // Home has it too.
+      const row = (yield* cloud.phone.ListProjects())[0]
+      assert.strictEqual(row?.activity?.progress?.line, "Setting up unit tests")
+
+      // The turn ends: the line goes with it, and a report after that is ignored.
+      yield* dreamd.ReportTurn({ state: "finished", eventIds: [] })
+      yield* dreamd.ReportProgress({ line: "Late", activeAt })
+      assert.isUndefined((yield* cloud.phone.ListProjects())[0]?.activity?.progress)
+      yield* cloud.close
+    })
+  )
+
+  it.live("tells dreamd nothing about watchers when turn progress is off", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project } = yield* setup(cloud)
+      yield* cloud.alarm(project.id)
+      assert.isUndefined(envFileOf(cloud, project.id).env.DREAM_PROGRESS_LINE)
+      const dreamd = yield* cloud.sandbox(envFileOf(cloud, project.id).env.DREAM_PROJECT_TOKEN)
+      const live = yield* cloud.live(project.id)
+      const fiber = yield* live.Subscribe().pipe(Stream.take(1), Stream.runCollect, Effect.forkChild)
+      yield* Fiber.join(fiber)
+      yield* dreamd.ReportTurn({ state: "started", eventIds: [] })
+      assert.deepStrictEqual(cloud.world.watching, [])
+      yield* cloud.close
+    })
+  )
+
   it.live("records each turn's tokens and the windows around it, and tells the phone its share of the week", () =>
     Effect.gen(function* () {
       const cloud = yield* makeCloud()

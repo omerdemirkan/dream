@@ -3,6 +3,7 @@
  * port, the CLI socket and the turn loop, with a scripted harness.
  */
 import { AppTraffic } from "../src/Awake.ts"
+import { Summarizer } from "../src/progress/Summarizer.ts"
 import { createHmac } from "node:crypto"
 import { readFileSync, statSync } from "node:fs"
 import { createServer } from "node:http"
@@ -73,7 +74,8 @@ const setup = Effect.gen(function* () {
         Shutdown.layerTest(),
         noPageChecks,
         AppTraffic.layerNone,
-        RelayForwarder.layer.pipe(Layer.provide(FetchHttpClient.layer))
+        RelayForwarder.layer.pipe(Layer.provide(FetchHttpClient.layer)),
+        Summarizer.modelFree
       )
     ).pipe(Layer.provideMerge(DreamdConfig.layerFromRecord(env)), Layer.provideMerge(NodeServices.layer))
   )

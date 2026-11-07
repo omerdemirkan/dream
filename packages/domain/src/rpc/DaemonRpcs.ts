@@ -48,6 +48,13 @@ export class DaemonRpcs extends RpcGroup.make(
     success: RelayForwardResult,
     error: DaemonRestarting
   }),
+  /**
+   * Whether anyone is watching the project (a phone subscribed to its live feed), sent by the DO while a turn runs:
+   * when the turn starts, when the first phone subscribes or the last one leaves, and again every few minutes while
+   * one stays. dreamd reports a turn's progress only while someone watches, and stops if it hears nothing for a while.
+   * Added after the first release: an older dreamd fails it as an unknown request, which the DO ignores.
+   */
+  Rpc.make("SetWatching", { payload: { watching: Schema.Boolean } }),
   Rpc.make("Health", {
     success: Schema.Struct({
       version: Schema.String,

@@ -15,7 +15,7 @@ import { Pressable, ScrollView, Text, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { phaseLabel, providerName } from "../data/format.ts"
 import { profileHint } from "../data/usage.ts"
-import { dotOf, homeLine, presenceOf } from "../data/presence.ts"
+import { dotOf, homeLine, presenceOf, progressNote } from "../data/presence.ts"
 import { hiddenProjectsAtom, modelConnectionsAtom, projectsAtom } from "../state/atoms.ts"
 import { linkSheetAtom } from "../state/ui.ts"
 import { AppLinksRow } from "../ui/AppLinks.tsx"
@@ -242,6 +242,8 @@ function ProjectRow(props: { readonly summary: ProjectSummary; readonly first: b
     headline
   })
   const sub = headline ?? phaseLabel(project.phase)
+  // What a working turn is doing, on its own line under "Working · 35m" (see `progressNote`).
+  const note = presence._tag === "Working" ? progressNote(presence.progress, now, headline) : undefined
   return (
     <ProjectLink project={project}>
       {/* Link's Slot drops a function style, so the pressed look lives on a View inside. */}
@@ -249,37 +251,45 @@ function ProjectRow(props: { readonly summary: ProjectSummary; readonly first: b
         {({ pressed }) => (
           <View
             style={{
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 14,
               paddingVertical: 13,
               borderTopWidth: props.first ? 0 : 1,
               borderColor: color.line,
               opacity: pressed ? 0.6 : 1
             }}
           >
-            <PresenceTile icon={project.icon} dot={dotOf(presence)} />
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={{ fontSize: 17, fontWeight: "600", letterSpacing: -0.25, color: color.t1 }}>
-                {project.title}
-              </Text>
-              {line ? (
-                <StateLineText line={line} style={{ fontSize: 14, marginTop: 2 }} />
-              ) : (
-                <Text numberOfLines={1} style={{ fontSize: 14, color: color.t2, marginTop: 2 }}>
-                  {sub}
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+              <PresenceTile icon={project.icon} dot={dotOf(presence)} />
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={{ fontSize: 17, fontWeight: "600", letterSpacing: -0.25, color: color.t1 }}>
+                  {project.title}
                 </Text>
-              )}
+                {line ? (
+                  <StateLineText line={line} style={{ fontSize: 14, marginTop: 2 }} />
+                ) : (
+                  <Text numberOfLines={1} style={{ fontSize: 14, color: color.t2, marginTop: 2 }}>
+                    {sub}
+                  </Text>
+                )}
+              </View>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                {open > 0 ? (
+                  <Dot kind="need" />
+                ) : project.phase === "live" ? (
+                  <Text style={{ fontSize: 13, color: color.t3 }}>Live</Text>
+                ) : progress && progress.total > 0 && project.phase === "building" ? (
+                  <Progress done={progress.done} total={progress.total} current={project.phase === "building"} />
+                ) : null}
+              </View>
             </View>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              {open > 0 ? (
-                <Dot kind="need" />
-              ) : project.phase === "live" ? (
-                <Text style={{ fontSize: 13, color: color.t3 }}>Live</Text>
-              ) : progress && progress.total > 0 && project.phase === "building" ? (
-                <Progress done={progress.done} total={progress.total} current={project.phase === "building"} />
-              ) : null}
-            </View>
+            {note ? (
+              // Spans the row past the progress bar: dreamd sized the line for this width (tile 44 + gap 14 in).
+              <Text
+                numberOfLines={1}
+                style={{ fontSize: 14, color: note.quiet ? color.t3 : color.t2, marginLeft: 58, marginTop: 2 }}
+              >
+                {note.text}
+              </Text>
+            ) : null}
           </View>
         )}
       </Pressable>

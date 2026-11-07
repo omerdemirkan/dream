@@ -4,13 +4,17 @@
  * derived here from what the API sends (`AgentActivity`, the pause, open asks, messages) and the clock, so every
  * state is covered by tests in Node.
  */
-import type { AgentActivity, Harness, Message, TextMessage } from "@dream/domain"
+import type { AgentActivity, Harness, Message, TextMessage, TurnProgress } from "@dream/domain"
 import { DateTime, Duration } from "effect"
 import { sameDay, timeLabel } from "./format.ts"
 
 export type Presence =
-  /** A turn is running (`since` is absent from APIs that only send the working flag). */
-  | { readonly _tag: "Working"; readonly since?: DateTime.Utc | undefined }
+  /** A turn is running (`since` is absent from APIs that only send the working flag), and what it's doing. */
+  | {
+      readonly _tag: "Working"
+      readonly since?: DateTime.Utc | undefined
+      readonly progress?: TurnProgress | undefined
+    }
   /** Dream is bringing its computer up to deliver something. */
   | { readonly _tag: "Starting"; readonly since: DateTime.Utc }
   /** Waiting for a usage window to reset. */
@@ -44,7 +48,11 @@ const isAfter = (a: DateTime.Utc | undefined, b: DateTime.Utc) => a !== undefine
 export const presenceOf = (input: PresenceInput): Presence => {
   const { activity, now } = input
   if (activity?.state === "working" || (activity === undefined && input.working)) {
-    return { _tag: "Working", since: activity?.since }
+    return {
+      _tag: "Working",
+      since: activity?.since,
+      ...(activity?.progress === undefined ? {} : { progress: activity.progress })
+    }
   }
   if (
     activity?.state === "starting" &&
@@ -246,24 +254,65 @@ export const sentPending = (messages: ReadonlyArray<Message>, now: DateTime.Utc)
   )
 }
 
+/** Silence this long, with no long step running, is worth saying out loud. */
+export const QuietAfter = Duration.minutes(10)
+/** A long step shows how long it's run once it has run this long. */
+export const LongStepAfter = Duration.minutes(3)
+
+/**
+ * What a working turn is doing, under "Working" in Chat and on Home: dreamd's progress line, with how long one long
+ * step has run once that's worth saying ("Running the scorer tests · 11m"), or, after ten minutes of nothing at all,
+ * that it's been quiet. Nothing when dreamd hasn't said (older builds, nobody watching yet), or when the line only
+ * repeats the Status card's headline.
+ */
+export const progressNote = (
+  progress: TurnProgress | undefined,
+  now: DateTime.Utc,
+  headline?: string | undefined
+): { readonly text: string; readonly quiet: boolean } | undefined => {
+  if (progress === undefined) return undefined
+  const silent = DateTime.distance(progress.activeAt, now)
+  if (progress.waitingSince === undefined && !Duration.isLessThan(silent, QuietAfter)) {
+    return { text: `Nothing new for ${Math.floor(Duration.toMinutes(silent))} minutes`, quiet: true }
+  }
+  const long =
+    progress.waitingSince !== undefined &&
+    !Duration.isLessThan(DateTime.distance(progress.waitingSince, now), LongStepAfter)
+      ? elapsedLabel(progress.waitingSince, now)
+      : undefined
+  const line =
+    progress.line !== undefined && progress.line.toLowerCase() !== headline?.trim().toLowerCase()
+      ? progress.line
+      : undefined
+  if (line !== undefined) return { text: long === undefined ? line : `${line} · ${long}`, quiet: false }
+  return long === undefined ? undefined : { text: `One long step · ${long}`, quiet: false }
+}
+
 /** The row at the bottom of Chat. */
 export type ChatRow =
   /** Typing dots: sent, nothing more known yet. */
   | { readonly _tag: "Sent" }
   /** `fresh`: a new idea, whose agent hasn't said anything yet. */
   | { readonly _tag: "Starting"; readonly fresh: boolean }
-  | { readonly _tag: "Working"; readonly since?: DateTime.Utc | undefined }
+  | {
+      readonly _tag: "Working"
+      readonly since?: DateTime.Utc | undefined
+      readonly note?: { readonly text: string; readonly quiet: boolean } | undefined
+    }
   /** Under the reply: the turn is over, so silence after it means it really stopped. */
   | { readonly _tag: "Done" }
 
 export const chatRowOf = (
   presence: Presence,
   messages: ReadonlyArray<Message>,
-  now: DateTime.Utc
+  now: DateTime.Utc,
+  headline?: string | undefined
 ): ChatRow | undefined => {
   switch (presence._tag) {
-    case "Working":
-      return { _tag: "Working", since: presence.since }
+    case "Working": {
+      const note = progressNote(presence.progress, now, headline)
+      return { _tag: "Working", since: presence.since, ...(note === undefined ? {} : { note }) }
+    }
     case "Starting":
       return { _tag: "Starting", fresh: !messages.some((m) => m._tag !== "Text" || m.from === "agent") }
     case "Paused":

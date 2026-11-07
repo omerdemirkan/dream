@@ -38,9 +38,11 @@ const inMemoryHttp = <R extends RpcGroup.Any>(group: R, serverLayer: Layer.Layer
     })
   )
 
+const watched: Array<boolean> = []
 const DaemonHandlers = DaemonRpcs.toLayer({
   Deliver: ({ events }) => Effect.succeed({ accepted: events.map((event) => event.id) }),
   ForwardRelay: ({ deliveries }) => Effect.succeed({ delivered: deliveries.length }),
+  SetWatching: ({ watching }) => Effect.sync(() => void watched.push(watching)),
   Health: () => Effect.succeed({ version: "test", turn: "idle" as const, queued: 0 })
 })
 
@@ -69,6 +71,15 @@ describe("DaemonRpcs over HTTP", () => {
         result.accepted,
         events.map((event) => event.id)
       )
+    }).pipe(Effect.provide(Layer.mergeAll(transport, daemonAuthClient(token))))
+  )
+
+  it.effect("tells dreamd whether anyone is watching", () =>
+    Effect.gen(function* () {
+      const client = yield* RpcClient.make(DaemonRpcs)
+      yield* client.SetWatching({ watching: true })
+      yield* client.SetWatching({ watching: false })
+      assert.deepStrictEqual(watched, [true, false])
     }).pipe(Effect.provide(Layer.mergeAll(transport, daemonAuthClient(token))))
   )
 

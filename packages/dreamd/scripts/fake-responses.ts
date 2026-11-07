@@ -8,6 +8,9 @@
  * which needs a model with Codex's multi-agent tools (the gpt-6 family), and
  * then a `wait_agent` call, so the subagent works within the turn.
  *
+ * A progress-line request (`scripts/progress-eval/compare.ts`) gets a line too long for the phone, then, asked
+ * again, one that fits.
+ *
  * Every response reports usage that says who asked, so a turn's reported tokens show what was counted: the
  * agent's own requests 1,000 input (600 of it cached) and 10 output (4 reasoning); a subagent's (Codex told it
  * it isn't the root agent) 50,000 input (40,000 cached) and 5,000 output (2,000 reasoning).
@@ -103,6 +106,7 @@ createServer((request, response) => {
     let raw = ""
     let body: {
       model?: string
+      instructions?: string
       reasoning?: { effort?: string }
       input?: ReadonlyArray<Item>
       tools?: ReadonlyArray<Tool>
@@ -140,7 +144,29 @@ createServer((request, response) => {
         did: spawn !== null ? `spawn: ${spawn[1]}` : wait ? "wait" : "reply"
       })
     )
-    if (request.url?.endsWith("/responses") !== true) {
+    if (body.instructions?.includes("dream-progress-line") === true && request.url?.endsWith("/responses") === true) {
+      // A progress line (`scripts/progress-eval`): too long the first time, so the retry is exercised, then one that fits.
+      const retry = input.length > 1
+      response.writeHead(200, { "content-type": "text/event-stream", ...rateLimits() })
+      response.end(
+        reply(
+          {
+            type: "message",
+            role: "assistant",
+            id: `msg_${counter + 1}`,
+            content: [
+              {
+                type: "output_text",
+                text: retry
+                  ? "Checking the progress line"
+                  : "Checking every progress line the fake server was asked for today"
+              }
+            ]
+          },
+          usageOf.agent
+        )
+      )
+    } else if (request.url?.endsWith("/responses") !== true) {
       response.writeHead(404).end()
     } else if (mode === "limit") {
       response.writeHead(429, { "content-type": "application/json", ...rateLimits() })

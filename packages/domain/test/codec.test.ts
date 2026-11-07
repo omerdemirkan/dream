@@ -103,6 +103,40 @@ describe("JSON codecs", () => {
       assert.deepStrictEqual(roundTrip(ProjectSummary, summary).decoded, summary)
     })
 
+    it("carries a working turn's progress line, which older decoders drop", () => {
+      const activity: AgentActivity = {
+        state: "working",
+        since: at("2026-11-04T22:02:30Z"),
+        progress: {
+          line: "Making the slip detector stricter",
+          activeAt: at("2026-11-04T22:29:50Z"),
+          at: at("2026-11-04T22:30:00Z")
+        }
+      }
+      const event = ProjectEvent.cases.ActivityChanged.make({ activity })
+      const { wire, decoded } = roundTrip(ProjectEvent, event)
+      assert.deepStrictEqual(decoded, event)
+      assert.deepStrictEqual(wire.activity.progress, {
+        line: "Making the slip detector stricter",
+        activeAt: "2026-11-04T22:29:50.000Z",
+        at: "2026-11-04T22:30:00.000Z"
+      })
+      const OldActivity = Schema.Struct({ state: Schema.String, since: Schema.optionalKey(Schema.String) })
+      assert.deepStrictEqual(Schema.decodeUnknownSync(OldActivity)(wire.activity), {
+        state: "working",
+        since: "2026-11-04T22:02:30.000Z"
+      })
+    })
+
+    it("refuses a progress line that's empty or too long for the phone, and takes liveness alone", () => {
+      const decode = Schema.decodeUnknownExit(Schema.toCodecJson(Domain.TurnProgress))
+      const at = "2026-11-04T22:30:00.000Z"
+      assert.isTrue(Exit.isFailure(decode({ line: "", activeAt: at, at })))
+      assert.isTrue(Exit.isFailure(decode({ line: "x".repeat(Domain.ProgressLineMaxLength + 1), activeAt: at, at })))
+      assert.isTrue(Exit.isSuccess(decode({ line: "x".repeat(Domain.ProgressLineMaxLength), activeAt: at, at })))
+      assert.isTrue(Exit.isSuccess(decode({ activeAt: at, waitingSince: at, at })))
+    })
+
     it("still decodes a snapshot, a Home row and a message from an API that sends none of it", () => {
       const snapshot = ProjectEvent.cases.Snapshot.make({
         project: Fixtures.liftLog,

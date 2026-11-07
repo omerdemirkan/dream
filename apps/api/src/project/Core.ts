@@ -39,7 +39,12 @@ export const activityOf = (record: SandboxRecord, nextWakeMs: Option.Option<numb
     onSome: (ms) => ({ nextWakeAt: DateTime.makeUnsafe(ms) })
   })
   if (record.working) {
-    return { state: "working", ...(record.turnStartedAt ? { since: record.turnStartedAt } : {}), ...wake }
+    return {
+      state: "working",
+      ...(record.turnStartedAt ? { since: record.turnStartedAt } : {}),
+      ...wake,
+      ...(record.progress ? { progress: record.progress } : {})
+    }
   }
   if (record.startingSince) return { state: "starting", since: record.startingSince, ...wake }
   return {
@@ -53,7 +58,10 @@ export const activityOf = (record: SandboxRecord, nextWakeMs: Option.Option<numb
 const activityKey = (record: SandboxRecord) =>
   [record.working, record.turnStartedAt, record.startingSince, record.turnEndedAt, record.awakeUntil]
     .map((value) => (value === undefined ? "" : typeof value === "boolean" ? String(value) : DateTime.formatIso(value)))
-    .join("|")
+    .join("|") +
+  (record.progress === undefined
+    ? ""
+    : `|${record.progress.line ?? ""}|${DateTime.formatIso(record.progress.activeAt)}|${record.progress.waitingSince === undefined ? "" : DateTime.formatIso(record.progress.waitingSince)}`)
 
 export class Core extends Context.Service<
   Core,

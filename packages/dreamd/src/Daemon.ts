@@ -25,6 +25,8 @@ import { Harness } from "./harness/Harness.ts"
 import { Tasks } from "./Tasks.ts"
 import { Inbox } from "./Inbox.ts"
 import { Outreach } from "./Outreach.ts"
+import { Progress } from "./progress/Progress.ts"
+import { Summarizer } from "./progress/Summarizer.ts"
 import { Published } from "./Published.ts"
 import { RelayForwarder } from "./Relays.ts"
 import { DaemonServer, SocketServer } from "./Servers.ts"
@@ -73,6 +75,7 @@ export const main = Effect.gen(function* () {
   const agent = yield* Agent
   const commands = yield* Commands
   const awake = yield* Awake
+  const progress = yield* Progress
   const shutdown = yield* Shutdown
   yield* Effect.logInfo("dreamd started", {
     version,
@@ -84,7 +87,9 @@ export const main = Effect.gen(function* () {
     workDir: config.workDir,
     envHash: Option.getOrUndefined(config.envHash)
   })
-  const work = yield* Effect.forkDetach(Effect.all([agent.run, commands.run, awake.run], { concurrency: "unbounded" }))
+  const work = yield* Effect.forkDetach(
+    Effect.all([agent.run, commands.run, awake.run, progress.run], { concurrency: "unbounded" })
+  )
   const stop = (reason: string) =>
     Effect.gen(function* () {
       yield* shutdown.begin(reason)
@@ -101,12 +106,12 @@ export const main = Effect.gen(function* () {
 
 /** Everything `main` needs, given the harness, how to shut down, the config and the platform. */
 export const layerWith = <E, R>(
-  base: Layer.Layer<Harness | Tasks | Shutdown | PageCheck | AppTraffic | RelayForwarder, E, R>
+  base: Layer.Layer<Harness | Tasks | Shutdown | PageCheck | AppTraffic | RelayForwarder | Summarizer, E, R>
 ) =>
   Layer.mergeAll(DaemonServer, SocketServer).pipe(
     Layer.provideMerge(Awake.layer),
     Layer.provideMerge(Layer.mergeAll(Agent.layer, Commands.layer)),
-    Layer.provideMerge(Published.layer),
+    Layer.provideMerge(Layer.mergeAll(Published.layer, Progress.layer)),
     Layer.provideMerge(
       Layer.mergeAll(
         Inbox.layer,
@@ -126,7 +131,8 @@ export const layerWithoutConfig = layerWith(
     Shutdown.layer,
     AppTraffic.layer,
     PageCheck.layer.pipe(Layer.provide(FetchHttpClient.layer)),
-    RelayForwarder.layer.pipe(Layer.provide(FetchHttpClient.layer))
+    RelayForwarder.layer.pipe(Layer.provide(FetchHttpClient.layer)),
+    Summarizer.modelFree
   )
 )
 

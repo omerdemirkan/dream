@@ -162,7 +162,7 @@ const writeClaudeSettings = (file: string) => {
  */
 export const makeAdapter = (
   name: HarnessName,
-  config: { readonly codexBaseUrl: Option.Option<string> },
+  config: { readonly codexBaseUrl: Option.Option<string>; readonly progressLine?: boolean },
   effort: ReasoningEffort
 ) => {
   const auth = {
@@ -172,7 +172,16 @@ export const makeAdapter = (
       : {})
   }
   return name === "claude-code"
-    ? withPinnedCli("claude-code", createClaudeCode({ auth, effort }))
+    ? withPinnedCli(
+        "claude-code",
+        // With turn progress on, subagents' thinking and Claude Code's own summaries of them come through too
+        // (`progress/Steps.ts`): what a long turn is doing is mostly what its helpers are doing.
+        createClaudeCode({
+          auth,
+          effort,
+          ...(config.progressLine === true ? { forwardSubagentText: true, agentProgressSummaries: true } : {})
+        })
+      )
     : withPinnedCli(
         "codex",
         createCodex({ auth, reasoningEffort: effort, codexConfig: { model_context_window: codexContextWindow } })
@@ -337,6 +346,7 @@ const make = Effect.gen(function* () {
     const onPart = (part: Part) =>
       Effect.gen(function* () {
         yield* Ref.update(tally, (previous) => Tokens.observe(previous, part))
+        if (handlers.observe !== undefined) yield* handlers.observe(part)
         switch (part.type) {
           case "raw": {
             const reading = Usage.fromClaudeRaw(part.rawValue, yield* DateTime.now)

@@ -5,6 +5,8 @@
  *     `run_in_background`), then, once the result comes back, a reply saying so;
  *   - a prompt containing `AGENT: <json>` gets an Agent tool call with that input (say
  *     `{"description":"check","prompt":"say hi","model":"haiku","effort":"low"}`), to start a subagent;
+ *   - a progress-line request (`scripts/progress-eval/compare.ts`) gets a line too long for the phone, then, asked
+ *     again, one that fits;
  *   - any other prompt gets a reply listing every `REMEMBER: <word>` the conversation holds, and how many user
  *     messages it has, so a resumed session shows its history.
  *
@@ -119,6 +121,7 @@ createServer((request, response) => {
     let raw = ""
     let body: {
       model?: string
+      system?: unknown
       messages?: ReadonlyArray<Message>
       tools?: ReadonlyArray<unknown>
       stream?: boolean
@@ -139,6 +142,30 @@ createServer((request, response) => {
       response
         .writeHead(404, { "content-type": "application/json" })
         .end(JSON.stringify({ type: "error", error: { type: "not_found_error", message: "fake" } }))
+      return
+    }
+    // A progress line (`scripts/progress-eval`): too long the first time, so the retry is exercised, then one that fits.
+    if (typeof body.system === "string" && body.system.includes("dream-progress-line")) {
+      const retry = (body.messages ?? []).length > 1
+      console.log(
+        JSON.stringify({
+          at: new Date().toISOString(),
+          path,
+          model: body.model,
+          did: retry ? "progress-line retry" : "progress-line"
+        })
+      )
+      response.writeHead(200, { "content-type": "application/json" })
+      response.end(
+        render(
+          body.model ?? "claude-fake",
+          text(
+            retry ? "Checking the progress line" : "Checking every progress line the fake server was asked for today"
+          ),
+          false,
+          usageOf.side
+        )
+      )
       return
     }
     const model = body.model ?? "claude-fake"

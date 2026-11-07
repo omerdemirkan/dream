@@ -22,6 +22,7 @@ import {
   RelaySource,
   RelayTarget,
   StatusCard,
+  TurnProgress,
   UsageSnapshot,
   UsageWindowName,
   Wake,
@@ -53,6 +54,8 @@ export const SandboxRecord = Schema.Struct({
   keyFilesDirty: Schema.optionalKey(Schema.Boolean),
   working: Schema.Boolean,
   turnStartedAt: Schema.optionalKey(Schema.DateTimeUtc),
+  /** What the running turn is doing, as dreamd last reported it (`ReportProgress`). */
+  progress: Schema.optionalKey(TurnProgress),
   /** The subscription's usage as Dream knew it when the running turn started: its "before" in the turn ledger. */
   turnUsageBefore: Schema.optionalKey(UsageSnapshot),
   /** Set while events wait for a sandbox that's being created or resumed, until a turn takes them. */

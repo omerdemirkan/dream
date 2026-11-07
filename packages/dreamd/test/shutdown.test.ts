@@ -5,6 +5,7 @@
  * whole group, as it does for a harness bridge and the CLI it started.
  */
 import { AppTraffic } from "../src/Awake.ts"
+import { Summarizer } from "../src/progress/Summarizer.ts"
 import { spawn } from "node:child_process"
 import { writeFileSync } from "node:fs"
 import { join } from "node:path"
@@ -41,7 +42,8 @@ const dreamd = (dir: string, envFile: string, apiPort: number, turns: Queue.Queu
             Shutdown.layerTest({ grace: "300 millis" }),
             noPageChecks,
             AppTraffic.layerNone,
-            RelayForwarder.layerNone
+            RelayForwarder.layerNone,
+            Summarizer.modelFree
           )
         ).pipe(Layer.provideMerge(DreamdConfig.layerFromRecord(env, envFile)), Layer.provideMerge(NodeServices.layer))
       ),

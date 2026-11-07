@@ -119,6 +119,7 @@ export const daemonSettings = (options: {
   readonly agentModel: Option.Option<string>
   readonly codexAgentModel: Option.Option<string>
   readonly agentEffort: Option.Option<ReasoningEffort>
+  readonly progressLine?: boolean
 }): Record<string, string> => {
   const model = options.harness === "claude-code" ? options.agentModel : options.codexAgentModel
   return {
@@ -129,7 +130,8 @@ export const daemonSettings = (options: {
     [DaemonEnv.port]: String(DefaultDaemonPort),
     [DaemonEnv.socket]: DefaultDaemonSocket,
     ...Option.match(model, { onNone: () => ({}), onSome: (value) => ({ [DaemonEnv.model]: value }) }),
-    ...Option.match(options.agentEffort, { onNone: () => ({}), onSome: (value) => ({ [DaemonEnv.effort]: value }) })
+    ...Option.match(options.agentEffort, { onNone: () => ({}), onSome: (value) => ({ [DaemonEnv.effort]: value }) }),
+    ...(options.progressLine === true ? { [DaemonEnv.progressLine]: "on" } : {})
   }
 }
 
@@ -201,6 +203,14 @@ export class SandboxManager extends Context.Service<
     readonly gatewayTarget: Effect.Effect<GatewayTarget, NotFound | UpstreamFailure>
     /** A turn started: the phone hears it's working, and the subscription's usage now is noted as its "before". */
     readonly turnStarted: Effect.Effect<void>
+    /** What the running turn is doing (`SandboxRpcs.ReportProgress`); ignored between turns. */
+    readonly reportProgress: (report: {
+      readonly line?: string | undefined
+      readonly activeAt: DateTime.Utc
+      readonly waitingSince?: DateTime.Utc | undefined
+    }) => Effect.Effect<void>
+    /** A phone subscribed to the live feed, or left it: dreamd hears whether anyone is watching. */
+    readonly watchersChanged: Effect.Effect<void>
     /** A turn finished, with the tokens it used (none from older dreamd builds): recorded, and the header updated. */
     readonly turnFinished: (usage?: TurnUsage | undefined) => Effect.Effect<void>
     /**
@@ -339,7 +349,8 @@ export class SandboxManager extends Context.Service<
             daemonToken,
             agentModel: config.agentModel,
             codexAgentModel: config.codexAgentModel,
-            agentEffort: config.agentEffort
+            agentEffort: config.agentEffort,
+            progressLine: config.progressLine
           })
         }))
 
@@ -795,6 +806,8 @@ export class SandboxManager extends Context.Service<
             .withPermits(1)(keepTurnRunning(record, record.access, record.daemonToken))
             .pipe(Effect.catch((error) => Effect.logWarning("keepalive couldn't check the sandbox", String(error))))
         }
+        // dreamd stops reporting progress if it isn't told again within a few keepalives.
+        if ((yield* live.watchers) > 0) yield* tellWatching(true)
       })
 
       /**
@@ -899,23 +912,59 @@ export class SandboxManager extends Context.Service<
         yield* update((r) => {
           // A repeated "started" for the running turn keeps the turn's start and its "before".
           const continuing = r.working && r.turnStartedAt !== undefined
-          const { turnUsageBefore: _, ...rest } = withoutStarting(r)
+          const { turnUsageBefore: _, progress: _p, ...rest } = withoutStarting(r)
           const kept = continuing ? r.turnUsageBefore : before
           return {
             ...rest,
             working: true,
             startedWork: true,
             turnStartedAt: continuing && r.turnStartedAt ? r.turnStartedAt : now,
-            ...(kept === undefined ? {} : { turnUsageBefore: kept })
+            ...(kept === undefined ? {} : { turnUsageBefore: kept }),
+            ...(continuing && r.progress !== undefined ? { progress: r.progress } : {})
           }
         })
         yield* keepalive
+        // dreamd reports progress only while someone watches; it forgets between turns.
+        if ((yield* live.watchers) > 0) yield* tellWatching(true)
       })
 
       const usageReported = (usage: UsageSnapshot) =>
         update((r) => {
           const before = freshBefore(r, usage)
           return before === undefined ? r : { ...r, turnUsageBefore: before }
+        })
+
+      /** Tells dreamd whether anyone is watching, while a turn runs. Best effort: a miss only delays a line. */
+      const tellWatching = (watching: boolean) =>
+        Effect.gen(function* () {
+          const record = yield* core.sandbox
+          if (!config.progressLine || !record.working || record.access === undefined) return
+          if (record.daemonToken === undefined) return
+          yield* daemon.setWatching(record.access, record.daemonToken, watching)
+        }).pipe(Effect.catch((error) => Effect.logInfo("couldn't tell dreamd who's watching", error.message)))
+
+      const watchersChanged = Effect.flatMap(live.watchers, (count) => tellWatching(count > 0))
+
+      const reportProgress = (report: {
+        readonly line?: string | undefined
+        readonly activeAt: DateTime.Utc
+        readonly waitingSince?: DateTime.Utc | undefined
+      }) =>
+        Effect.gen(function* () {
+          const at = yield* DateTime.now
+          yield* update((r) =>
+            r.working
+              ? {
+                  ...r,
+                  progress: {
+                    ...(report.line === undefined ? {} : { line: report.line }),
+                    activeAt: report.activeAt,
+                    ...(report.waitingSince === undefined ? {} : { waitingSince: report.waitingSince }),
+                    at
+                  }
+                }
+              : r
+          )
         })
 
       /**
@@ -980,7 +1029,7 @@ export class SandboxManager extends Context.Service<
           const record = yield* core.sandbox
           const now = yield* DateTime.now
           yield* update((r) => {
-            const { turnStartedAt: _, turnUsageBefore: _b, ...rest } = withoutStarting(r)
+            const { turnStartedAt: _, turnUsageBefore: _b, progress: _p, ...rest } = withoutStarting(r)
             return { ...rest, working: false, turnEndedAt: now, awakeUntil: DateTime.addDuration(now, IdleTimeout) }
           })
           yield* store.clearTimer("turn-keepalive")
@@ -1032,7 +1081,7 @@ export class SandboxManager extends Context.Service<
         }
         // Paused, the sandbox is asleep: the phone shows no turn, and the paused one is noted for the restore.
         yield* update((r) => {
-          const { turnStartedAt: _, turnUsageBefore: _b, awakeUntil: _a, ...rest } = withoutStarting(r)
+          const { turnStartedAt: _, turnUsageBefore: _b, awakeUntil: _a, progress: _p, ...rest } = withoutStarting(r)
           return r.working ? { ...rest, working: false, turnEndedAt: now, interruptedTurn: true } : rest
         })
         if (record.access !== undefined) yield* pauseSandbox(record.access.sandboxId)
@@ -1108,6 +1157,8 @@ export class SandboxManager extends Context.Service<
         turnFinished,
         usageReported,
         taskFinished,
+        reportProgress,
+        watchersChanged,
         keepalive: keepalive.pipe(Effect.catch(() => Effect.void)),
         stayAwake,
         sleep,

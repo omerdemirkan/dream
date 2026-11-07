@@ -65,6 +65,29 @@ export type AgentState = typeof AgentState.Type
  * What the presence dot and state line (Home, a project's header) and the row at the bottom of Chat show. Being
  * paused for usage is `pausedUntil`, and waiting for them is an open ask; neither is a state here.
  */
+/** The most characters a progress line may have. dreamd also checks how wide it would be on the phone. */
+export const ProgressLineMaxLength = 60
+
+/** One line in the agent's voice saying what it's doing right now ("Making the slip detector stricter"). */
+export const ProgressText = Schema.NonEmptyString.check(Schema.isMaxLength(ProgressLineMaxLength))
+
+/**
+ * What a long turn is doing, so it shows real progress without a message. dreamd derives it from the turn's
+ * harness events (no model) and reports it while someone is watching: a new line at most once a minute, when the
+ * work has moved on, and the liveness fields every couple of minutes.
+ */
+export const TurnProgress = Schema.Struct({
+  /** What the agent is doing, once dreamd has something to say. */
+  line: Schema.optionalKey(ProgressText),
+  /** When the harness last did anything: proof the turn is alive. */
+  activeAt: Schema.DateTimeUtc,
+  /** Set while one long step (a command, a build, a helper) runs with nothing else happening: since when. */
+  waitingSince: Schema.optionalKey(Schema.DateTimeUtc),
+  /** When dreamd reported this. */
+  at: Schema.DateTimeUtc
+})
+export type TurnProgress = typeof TurnProgress.Type
+
 export const AgentActivity = Schema.Struct({
   state: AgentState,
   /**
@@ -75,7 +98,9 @@ export const AgentActivity = Schema.Struct({
   /** `idle` only: when the sandbox goes to sleep, a few minutes after the last turn. Past or absent: asleep. */
   awakeUntil: Schema.optionalKey(Schema.DateTimeUtc),
   /** The next scheduled wake (`dream wake`), if there is one. */
-  nextWakeAt: Schema.optionalKey(Schema.DateTimeUtc)
+  nextWakeAt: Schema.optionalKey(Schema.DateTimeUtc),
+  /** `working` only: what the turn is doing, once dreamd has reported it. Absent from older APIs. */
+  progress: Schema.optionalKey(TurnProgress)
 })
 export type AgentActivity = typeof AgentActivity.Type
 
