@@ -24,6 +24,7 @@ import {
   LinkTitleMaxLength,
   linkUrlProblem,
   LiveActivityContent,
+  MachineInfo,
   MacStatus,
   ProjectLink,
   ProjectLinks,
@@ -1814,6 +1815,38 @@ const mac = Command.make("mac", { json }, (input) =>
   ])
 )
 
+const machine = Command.make("machine", { json }, (input) =>
+  Effect.gen(function* () {
+    const dream = yield* Dream
+    const info = yield* userFacing(dream.GetMachine())
+    yield* show(input.json, MachineInfo, info, Format.machine(info))
+  })
+).pipe(
+  Command.withDescription("This sandbox's CPUs and memory, and moving the project to a bigger or smaller one."),
+  Command.withSubcommands([
+    Command.make(
+      "move",
+      {
+        size: Argument.Literals("size", ["standard", "large"]).pipe(
+          Argument.withDescription("standard (2 CPUs, 4 GB) or large (4 CPUs, 8 GB)")
+        ),
+        why: Argument.String("why").pipe(Argument.withDescription("what needs it, in a sentence")),
+        json
+      },
+      (input) =>
+        Effect.gen(function* () {
+          const dream = yield* Dream
+          const info = yield* userFacing(dream.MoveMachine({ to: input.size, why: input.why }))
+          yield* show(input.json, MachineInfo, info, Format.moving(info))
+        })
+    ).pipe(
+      Command.withDescription(
+        "Move to that size once this turn ends: about a minute, your files and session come over, your servers restart."
+      )
+    )
+  ])
+)
+
 const usage = Command.make("usage", { json }, (input) =>
   Effect.gen(function* () {
     const dream = yield* Dream
@@ -1826,7 +1859,7 @@ const usage = Command.make("usage", { json }, (input) =>
 
 export const dream = Command.make("dream").pipe(
   Command.withDescription(
-    "Reach the person and Dream from this sandbox: messages, questions, access, notifications from your apps, status, workstreams, wake-ups, relays, publishing, app links on their Home, a browser, a Mac, and usage."
+    "Reach the person and Dream from this sandbox: messages, questions, access, notifications from your apps, status, workstreams, wake-ups, relays, publishing, app links on their Home, a browser, a Mac, usage, and this machine's size."
   ),
   Command.withSubcommands([
     message,
@@ -1843,6 +1876,7 @@ export const dream = Command.make("dream").pipe(
     media,
     browser,
     mac,
-    usage
+    usage,
+    machine
   ])
 )

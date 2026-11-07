@@ -45,6 +45,8 @@ const SandboxInfo = Schema.Struct({
   domain: Schema.optionalKey(Schema.NullOr(Schema.String)),
   /** When it last started or resumed: E2B's run cap counts from here. */
   startedAt: Schema.optionalKey(Schema.DateTimeUtcFromString),
+  /** Its size, fixed when it was created from its template. */
+  cpuCount: Schema.optionalKey(Schema.Number),
   endAt: Schema.optionalKey(Schema.String)
 })
 export type SandboxInfo = typeof SandboxInfo.Type

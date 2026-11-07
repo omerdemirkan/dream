@@ -42,6 +42,11 @@ export const ApiConfigSchema = Config.all({
   /** The template project sandboxes start from (built by packages/sandbox-template). */
   sandboxTemplate: Config.NonEmptyString("E2B_TEMPLATE").pipe(Config.withDefault("dream-sandbox")),
   /**
+   * The same build at the large size (4 CPUs, 8 GB), for projects the agent moved up (`dream machine move large`).
+   * Defaults to the template's name with "-large"; `template:build` builds and promotes both.
+   */
+  sandboxTemplateLarge: optionalString("E2B_TEMPLATE_LARGE"),
+  /**
    * How long E2B lets a sandbox run before it pauses it, whatever its timeout ("1 hour" on Hobby, "24 hours" on
    * Pro). Resuming restarts the clock, so a long turn is paused and resumed just before the cap.
    */
@@ -146,6 +151,7 @@ export class ApiConfig extends Context.Service<ApiConfig, ApiConfigShape>()("@dr
         e2bApiUrl: "https://api.e2b.test",
         e2bDomain: "e2b.test",
         sandboxTemplate: "dream-sandbox",
+        sandboxTemplateLarge: Option.none(),
         sandboxMaxRun: Duration.hours(1),
         sandboxRefresh: true,
         authTemplate: Option.none(),
