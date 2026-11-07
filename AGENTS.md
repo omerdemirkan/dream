@@ -198,8 +198,9 @@ the other workstreams to agree first.
   break its adapter (Codex 0.166.0 did; Codex stays on 0.165.0 until the adapter catches up). Rerun the pins script
   after bumping an adapter; a test fails until the manifests match the adapter's again.
 - **Sandbox refresh.** A sandbox keeps the template build it was created from, so the ProjectDO brings it up to the
-  template's current build between turns (`apps/api/src/e2b/Refresh.ts`): before the next delivery, and 20 seconds
-  after each turn (holding the sandbox up while it runs). It copies `/opt/dream` and `~/.ai-sdk-harness/.harness-bootstrap` over from a short-lived donor sandbox
+  template's current build between turns (`apps/api/src/e2b/Refresh.ts`): before the next delivery, 20 seconds
+  after each turn (holding the sandbox up while it runs), and when the published app is visited (`StayAwake` with
+  reason `app`), since a project woken only by its app gets no delivery. It copies `/opt/dream` and `~/.ai-sdk-harness/.harness-bootstrap` over from a short-lived donor sandbox
   of the template, and the new build's `files/refresh.sh` swaps them in and restarts dreamd, rolling back if the new
   dreamd doesn't come up. The project, `~/.dream`, `~/.claude`, `~/.codex` and processes outside dreamd's tree stay.
   Builds are tagged `release-<hash of /opt/dream>`, so a rebuild of the same source refreshes nothing; system

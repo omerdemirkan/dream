@@ -923,7 +923,7 @@ export const AgentHandlers = SandboxRpcs.toLayer(
       ReportTask: (report) => sandbox.taskFinished(report),
       ReportTurn: ({ state, usage }) => (state === "started" ? sandbox.turnStarted : sandbox.turnFinished(usage)),
       ReportProgress: (report) => sandbox.reportProgress(report),
-      StayAwake: () => sandbox.stayAwake,
+      StayAwake: ({ reason }) => sandbox.stayAwake(reason),
       Sleep: ({ reason, checkedAt }) => sandbox.sleep(reason, checkedAt)
     }
   })
