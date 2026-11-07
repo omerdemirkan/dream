@@ -952,6 +952,7 @@ export class FakeBackend extends Context.Service<
               return yield* new InvalidRequest({ message: "That request isn't for an App Store Connect key." })
             return yield* connectIntegration(record, message, "Apple Developer", { _tag: "Apple", issuerId, keyId })
           }),
+        GetFeatures: () => Effect.succeed({ emailLinks: true }),
         EmailAccessLink: ({ projectId, messageId }) =>
           stallable(
             Effect.gen(function* () {

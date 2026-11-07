@@ -116,6 +116,23 @@ const cardOf = (cloud: Cloud, projectId: ProjectId, messageId: string) =>
 const emailedLink = (cloud: Cloud) => /https:\/\/\S+\/desktop#[A-Za-z0-9]+/.exec(cloud.mail.sent.at(-1)!.text)![0]
 
 describe("finishing access on a computer", () => {
+  it.live("tells the phone whether this deployment sends email, so the row shows only when it works", () =>
+    Effect.gen(function* () {
+      const on = yield* makeCloud()
+      yield* setup(on)
+      assert.deepStrictEqual(yield* on.phone.GetFeatures(), { emailLinks: true })
+      const off = yield* makeCloud({}, { noEmail: true })
+      const { project, dreamd } = yield* setup(off)
+      assert.deepStrictEqual(yield* off.phone.GetFeatures(), { emailLinks: false })
+      const request = yield* askStripe(dreamd)
+      const refused = yield* off.phone
+        .EmailAccessLink({ projectId: project.id, messageId: request.id })
+        .pipe(Effect.flip)
+      assert.strictEqual(refused._tag, "UpstreamFailure")
+      assert.isUndefined((yield* cardOf(off, project.id, request.id))?.desktop)
+    })
+  )
+
   it.live("emails a link that opens once, in one browser, and connects the key as the phone would", () =>
     Effect.gen(function* () {
       const cloud = yield* makeCloud()

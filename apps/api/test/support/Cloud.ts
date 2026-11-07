@@ -78,6 +78,8 @@ export const makeCloud = (
     readonly updates?: R2Bucket | undefined
     readonly media?: R2Bucket | undefined
     readonly databasePath?: string
+    /** A deployment that doesn't send email (no `send_email` binding). */
+    readonly noEmail?: boolean
   } = {}
 ) =>
   Effect.gen(function* () {
@@ -180,7 +182,7 @@ export const makeCloud = (
 
     const worker = workerLayer(
       {
-        email,
+        email: options.noEmail === true ? undefined : email,
         d1,
         r2: options.media,
         updates: options.updates,

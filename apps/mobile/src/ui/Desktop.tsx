@@ -5,7 +5,10 @@
  */
 import { type AccessMessage, canFinishOnDesktop } from "@dream/domain"
 import { ActivityIndicator, Pressable, type StyleProp, Text, View, type ViewStyle } from "react-native"
-import { emailAccessLinkFn } from "../state/atoms.ts"
+import { useAtomValue } from "@effect/atom-react"
+import { AsyncResult } from "effect/reactivity"
+import { Option } from "effect"
+import { emailAccessLinkFn, featuresAtom } from "../state/atoms.ts"
 import { useAction } from "./actions.ts"
 import { desktopStatus, linkMinutes } from "./desktopStatus.ts"
 import { Icon } from "./kit.tsx"
@@ -14,7 +17,9 @@ import { color } from "./theme.ts"
 export function FinishOnComputer(props: { readonly message: AccessMessage; readonly style?: StyleProp<ViewStyle> }) {
   const m = props.message
   const send = useAction(emailAccessLinkFn)
-  if (!canFinishOnDesktop(m)) return null
+  // Shown only once this deployment sends email, and for requests still waiting.
+  const features = Option.getOrUndefined(AsyncResult.value(useAtomValue(featuresAtom)))
+  if (features?.emailLinks !== true || !canFinishOnDesktop(m)) return null
   const run = () => {
     if (!send.busy) send.run({ projectId: m.projectId, messageId: m.id })
   }

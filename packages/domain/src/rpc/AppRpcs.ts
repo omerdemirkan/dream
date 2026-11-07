@@ -34,7 +34,7 @@ import {
 import { Attachment, AttachmentContentType, AttachmentLimits, MediaUploadTarget } from "../Media.ts"
 import { ArchivedProject, Harness, Project, ProjectSummary } from "../Project.ts"
 import { AccountUsage, ModelProvider, ProjectUsage } from "../Usage.ts"
-import { Device, TimeZone, User } from "../User.ts"
+import { Device, Features, TimeZone, User } from "../User.ts"
 
 /** An open question or access request for the Home deck, with the project it belongs to. */
 export const OpenAsk = Schema.Struct({
@@ -83,6 +83,8 @@ export class PublicAppRpcs extends RpcGroup.make(
 
 export class AuthedAppRpcs extends RpcGroup.make(
   Rpc.make("GetMe", { success: User }),
+  /** What this deployment can do (`Features`). Fetched at launch; older APIs don't have it, which means nothing extra. */
+  Rpc.make("GetFeatures", { success: Features }),
 
   // Devices and push --------------------------------------------------------
   /** Upsert this install. Call on launch and whenever a push token or the time zone changes. */

@@ -36,7 +36,11 @@ export const mailDomain = (domain: string) => `mail.${domain}`
 
 export class Mailer extends Context.Service<
   Mailer,
-  { readonly send: (mail: Mail) => Effect.Effect<void, UpstreamFailure> }
+  {
+    /** Whether this deployment sends email at all (it has the binding). */
+    readonly enabled: boolean
+    readonly send: (mail: Mail) => Effect.Effect<void, UpstreamFailure>
+  }
 >()("@dream/api/Mailer") {
   /** Sends through the binding; without one (email isn't set up on this deployment) every send fails. */
   static readonly layer = (binding: SendEmailBinding | undefined) =>
@@ -68,7 +72,7 @@ export class Mailer extends Context.Service<
               })
           })
         })
-        return Mailer.of({ send })
+        return Mailer.of({ enabled: binding !== undefined, send })
       })
     )
 }

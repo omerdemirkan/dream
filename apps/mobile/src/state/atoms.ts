@@ -7,6 +7,7 @@
  */
 import {
   type AccessMessage,
+  type Features,
   type AppDelivery,
   type AppId,
   type AppLink,
@@ -93,6 +94,11 @@ export const projectsAtom = appRuntime
 export const modelConnectionsAtom = appRuntime
   .atom(AppClient.use((app) => app.ListModelConnections()))
   .pipe(Atom.withReactivity(["connections"]), Atom.keepAlive)
+
+/** What the API can do; an API without `GetFeatures` (or unreachable) turns nothing extra on. */
+export const featuresAtom = appRuntime
+  .atom(AppClient.use((app) => app.GetFeatures().pipe(Effect.orElseSucceed((): Features => ({})))))
+  .pipe(Atom.keepAlive)
 
 export const integrationsAtom = appRuntime
   .atom(AppClient.use((app) => app.ListIntegrations()))
