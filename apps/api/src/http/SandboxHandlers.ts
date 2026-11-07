@@ -82,6 +82,7 @@ export const WorkerSandboxHandlers = SandboxRpcs.toLayer(
     return {
       SendMessage: (payload) => forwardUnlessLeaking(payload, (c) => c.SendMessage(payload)),
       AskQuestion: (payload) => forwardUnlessLeaking(payload, (c) => c.AskQuestion(payload)),
+      ReviseQuestion: (payload) => forwardUnlessLeaking(payload, (c) => c.ReviseQuestion(payload)),
       WithdrawQuestion: (payload) => forward((c) => c.WithdrawQuestion(payload)),
       RequestAccess: (payload) =>
         Effect.gen(function* () {

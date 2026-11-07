@@ -24,6 +24,7 @@ import {
   SandboxRpcs,
   type StatusCard,
   TextMessage,
+  threadRefOf,
   type Wake,
   type WakeWhen,
   DefaultDaemonPort,
@@ -119,6 +120,14 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
         Option.match(found, { onNone: () => Effect.fail(notFound("message", id)), onSome: Effect.succeed })
       )
 
+    /** The first message of the thread a reply to `id` goes into. */
+    const threadRoot = (id: Message["id"]) =>
+      Effect.flatMap(findMessage(id), (message) =>
+        message.replyTo === undefined
+          ? Effect.succeed(message)
+          : findMessage(message.replyTo).pipe(Effect.orElseSucceed(() => message))
+      )
+
     const findAccess = (id: Message["id"]) =>
       Effect.flatMap(findMessage(id), (message) =>
         message._tag === "Access" ? Effect.succeed(message) : Effect.fail(notFound("access request", id))
@@ -164,16 +173,24 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
 
       ListMessages: ({ before, limit }) => store.messagesBefore(before, limit),
 
-      SendUserMessage: ({ text, id, workstream, attachments }) =>
+      ListThread: ({ messageId }) =>
+        Effect.gen(function* () {
+          const root = yield* threadRoot(messageId)
+          return { root, replies: yield* store.replies(root.id) }
+        }),
+
+      SendUserMessage: ({ text, id, workstream, attachments, replyTo }) =>
         Effect.gen(function* () {
           if (id !== undefined) {
             const posted = yield* core.message(id)
             if (Option.isSome(posted) && posted.value._tag === "Text") return posted.value
           }
           const project = yield* core.project.pipe(Effect.orDie)
-          // A workstream the agent has since let go of, or never had, is left off rather than refusing their words.
-          const into =
-            workstream === undefined ? undefined : (yield* core.status).workstreams?.find((w) => w.id === workstream)
+          const root = replyTo === undefined ? undefined : yield* threadRoot(replyTo)
+          // A reply goes into its thread's workstream. A workstream the agent has since let go of, or never had, is
+          // left off rather than refusing their words.
+          const wanted = root === undefined ? workstream : root.workstream
+          const into = wanted === undefined ? undefined : (yield* core.status).workstreams?.find((w) => w.id === wanted)
           const message = TextMessage.make({
             id: id ?? (yield* newMessageId()),
             projectId: project.id,
@@ -182,7 +199,8 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
             text,
             media: [],
             ...(attachments === undefined || attachments.length === 0 ? {} : { attachments }),
-            ...(into === undefined ? {} : { workstream: into.id })
+            ...(into === undefined ? {} : { workstream: into.id }),
+            ...(root === undefined ? {} : { replyTo: root.id })
           })
           yield* core.addMessage(message)
           yield* core.enqueue(
@@ -192,6 +210,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
                 messageId: message.id,
                 text,
                 ...(into === undefined ? {} : { workstream: { id: into.id, title: into.title } }),
+                ...(root === undefined ? {} : { thread: threadRefOf(root) }),
                 ...(message.attachments === undefined ? {} : { attachments: message.attachments })
               })
             )
@@ -209,7 +228,12 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
             })
           }
           if (answer._tag === "Choice" && !message.options.includes(answer.option)) {
-            return yield* new InvalidRequest({ message: `"${answer.option}" isn't one of this question's options.` })
+            return yield* new InvalidRequest({
+              message:
+                message.revisedAt === undefined
+                  ? `"${answer.option}" isn't one of this question's options.`
+                  : "Dream changed this question since you opened it. Take another look."
+            })
           }
           const previous = message.state._tag === "Answered" ? message.state.answer : undefined
           // The same answer again (a retry after a lost response) changes nothing and doesn't wake the agent twice.
@@ -592,9 +616,51 @@ export const AgentHandlers = SandboxRpcs.toLayer(
         return { workstream: id }
       })
 
+    /**
+     * `--work` and `--reply-to` together: a reply goes into its thread (the first message of `replyTo`'s), and into
+     * that message's workstream, which a `--work` has to match.
+     */
+    const placeFor = (workstream: WorkstreamId | undefined, replyTo: Message["id"] | undefined) =>
+      Effect.gen(function* () {
+        if (replyTo === undefined) return yield* labelFor(workstream)
+        const target = yield* findMessage(replyTo)
+        const root =
+          target.replyTo === undefined
+            ? target
+            : yield* findMessage(target.replyTo).pipe(Effect.orElseSucceed(() => target))
+        const thread = { replyTo: root.id }
+        if (root.workstream === undefined) return { ...(yield* labelFor(workstream)), ...thread }
+        if (workstream !== undefined && workstream !== root.workstream) {
+          return yield* new InvalidRequest({
+            message:
+              `${root.id} is in workstream ${root.workstream}, and a reply goes in its thread's workstream; ` +
+              "leave out --work, or send it outside the thread."
+          })
+        }
+        return { workstream: root.workstream, ...thread }
+      })
+
     const workstreams = Effect.gen(function* () {
       return workstreamsOf(yield* core.status, yield* core.openAsks)
     })
+
+    /** `--show`: checked against the options, media resolved, in the order of the options whatever the flags'. */
+    const resolvePreviews = (
+      options: ReadonlyArray<string>,
+      previews: ReadonlyArray<{ readonly option: string; readonly media: ReadonlyArray<MediaId> }>
+    ) =>
+      Effect.gen(function* () {
+        const problem = questionPreviewsProblem(options, previews)
+        if (problem !== undefined) return yield* new InvalidRequest({ message: problem })
+        const resolved: Array<QuestionPreview> = []
+        for (const option of options) {
+          const preview = previews.find((p) => p.option === option)
+          if (preview === undefined) continue
+          const [first, ...rest] = yield* resolveMedia(preview.media, true)
+          if (first !== undefined) resolved.push({ option, media: [first, ...rest] })
+        }
+        return resolved
+      })
 
     /** Replaces one workstream (or adds it) and saves the card, which reaches the phone as `StatusChanged`. */
     const saveWorkstream = (status: StatusCard, next: Workstream) =>
@@ -671,10 +737,10 @@ export const AgentHandlers = SandboxRpcs.toLayer(
           return yield* route(messageId, workstreamId)
         }),
 
-      SendMessage: ({ text, media, notify, workstream }) =>
+      SendMessage: ({ text, media, notify, workstream, replyTo }) =>
         Effect.gen(function* () {
           const current = yield* project
-          const label = yield* labelFor(workstream)
+          const label = yield* placeFor(workstream, replyTo)
           const refs = yield* resolveMedia(media)
           const notificationId = notify ? yield* newNotificationId() : undefined
           const message = TextMessage.make({
@@ -692,20 +758,11 @@ export const AgentHandlers = SandboxRpcs.toLayer(
           return message
         }),
 
-      AskQuestion: ({ question, options, why, context, meanwhile, previews, workstream }) =>
+      AskQuestion: ({ question, options, why, context, meanwhile, previews, workstream, replyTo }) =>
         Effect.gen(function* () {
           const current = yield* project
-          const label = yield* labelFor(workstream)
-          const problem = previews === undefined ? undefined : questionPreviewsProblem(options, previews)
-          if (problem !== undefined) return yield* new InvalidRequest({ message: problem })
-          // In the order of the options, whatever order the flags came in.
-          const resolved: Array<QuestionPreview> = []
-          for (const option of options) {
-            const preview = previews?.find((p) => p.option === option)
-            if (preview === undefined) continue
-            const [first, ...rest] = yield* resolveMedia(preview.media, true)
-            if (first !== undefined) resolved.push({ option, media: [first, ...rest] })
-          }
+          const label = yield* placeFor(workstream, replyTo)
+          const resolved = previews === undefined ? [] : yield* resolvePreviews(options, previews)
           const notificationId = yield* newNotificationId()
           const message = QuestionMessage.make({
             id: yield* newMessageId(),
@@ -727,6 +784,50 @@ export const AgentHandlers = SandboxRpcs.toLayer(
           return message
         }),
 
+      ReviseQuestion: ({ messageId, question, options, why, context, meanwhile, previews }) =>
+        Effect.gen(function* () {
+          const message = yield* findMessage(messageId)
+          if (message._tag !== "Question") return yield* notFound("question", messageId)
+          if (message.state._tag !== "Open") {
+            return yield* new InvalidRequest({
+              message:
+                message.state._tag === "Answered"
+                  ? "They already answered this question; if it needs another decision, ask a new one."
+                  : "This question was withdrawn; ask a new one instead."
+            })
+          }
+          const nextOptions = options ?? message.options
+          // Previews of options that stay are kept, in the order of the options, unless `--show` replaces them all.
+          const nextPreviews =
+            previews === undefined
+              ? nextOptions.flatMap((option) => message.previews?.filter((p) => p.option === option) ?? [])
+              : yield* resolvePreviews(nextOptions, previews)
+          const patched = (current: string | undefined, value: string | null | undefined) =>
+            value === undefined ? current : value === null || value.trim() === "" ? undefined : value
+          const nextWhy = patched(message.why, why)
+          const nextContext = patched(message.context, context)
+          const nextMeanwhile = patched(message.meanwhile, meanwhile)
+          const { why: _w, context: _c, meanwhile: _m, previews: _p, revisedAt: _r, ...rest } = message
+          const revised = QuestionMessage.make({
+            ...rest,
+            question: question ?? message.question,
+            options: nextOptions,
+            ...(nextWhy === undefined ? {} : { why: nextWhy }),
+            ...(nextContext === undefined ? {} : { context: nextContext }),
+            ...(nextMeanwhile === undefined ? {} : { meanwhile: nextMeanwhile }),
+            ...(nextPreviews.length === 0 ? {} : { previews: nextPreviews }),
+            revisedAt: yield* DateTime.now
+          })
+          const reads = (q: QuestionMessage) =>
+            JSON.stringify([q.question, q.options, q.why, q.context, q.meanwhile, q.previews?.map((p) => p.media)])
+          if (reads(revised) === reads(message)) {
+            return yield* new InvalidRequest({ message: "That's how the question already reads; nothing changed." })
+          }
+          yield* core.changeMessage(revised)
+          yield* notifier.asksChanged
+          return revised
+        }),
+
       WithdrawQuestion: ({ messageId }) =>
         Effect.gen(function* () {
           const message = yield* findMessage(messageId)
@@ -745,7 +846,7 @@ export const AgentHandlers = SandboxRpcs.toLayer(
           return withdrawn
         }),
 
-      RequestAccess: ({ request, why, context, when, workstream }) =>
+      RequestAccess: ({ request, why, context, when, workstream, replyTo }) =>
         Effect.gen(function* () {
           // An old dreamd doesn't check the host, and a card for a host no request goes to can never work.
           const problem =
@@ -761,7 +862,7 @@ export const AgentHandlers = SandboxRpcs.toLayer(
             })
           }
           const current = yield* project
-          const label = yield* labelFor(workstream)
+          const label = yield* placeFor(workstream, replyTo)
           const notificationId = when === undefined ? yield* newNotificationId() : undefined
           const message = AccessMessage.make({
             id: yield* newMessageId(),

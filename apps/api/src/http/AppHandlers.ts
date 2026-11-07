@@ -304,7 +304,13 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
           )
         }),
 
-      SendMessage: ({ projectId, text, requestId, workstream, attachments: attachmentIds = [] }) =>
+      ListThread: ({ projectId, messageId }) =>
+        Effect.gen(function* () {
+          yield* owned(projectId)
+          return yield* clients.use(projectId, (client) => client.ListThread({ messageId }))
+        }),
+
+      SendMessage: ({ projectId, text, requestId, workstream, replyTo, attachments: attachmentIds = [] }) =>
         Effect.gen(function* () {
           const userId = yield* me
           yield* owned(projectId)
@@ -318,6 +324,7 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
               text,
               id,
               ...(workstream === undefined ? {} : { workstream }),
+              ...(replyTo === undefined ? {} : { replyTo }),
               ...(attached.length === 0 ? {} : { attachments: attached })
             })
           )
