@@ -1,9 +1,8 @@
 /**
- * A small model's instructions for a progress line, and the follow-up when a line comes back too long, for
- * `compare.ts` (and a later Worker-side summariser on Dream's own key, if the founder wants one). The window
- * (`src/progress/Window.ts`) is the only other thing it sees.
+ * The small model's instructions for a progress line (`CliSummarizer.ts`, and `scripts/progress-eval/compare.ts`),
+ * and the follow-up when a line comes back too long. The window (`Window.ts`) is the only other thing it sees.
  */
-import { targetChars } from "../../src/progress/Line.ts"
+import { targetChars } from "./Line.ts"
 
 /** Marks the request, so the fake model servers know what's being asked (`scripts/fake-*.ts`). */
 export const marker = "dream-progress-line"

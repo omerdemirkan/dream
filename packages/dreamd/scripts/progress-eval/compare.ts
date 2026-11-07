@@ -18,7 +18,7 @@ import { writeFileSync } from "node:fs"
 import { check } from "../../src/progress/Line.ts"
 import { scoreLine } from "./criteria.ts"
 import { evaluate } from "./eval.ts"
-import { firstAsk, retryAsk, system, type Turn } from "./prompt.ts"
+import { firstAsk, retryAsk, system, type Turn } from "../../src/progress/Prompt.ts"
 
 const claudeKey = process.env.ANTHROPIC_API_KEY
 const openaiKey = process.env.OPENAI_API_KEY

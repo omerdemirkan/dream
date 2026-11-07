@@ -3,15 +3,15 @@
  * their screen now, and the turn's last few steps. Never the conversation: only this turn, and only its tail.
  *
  * The window is the last `windowSteps` steps, oldest first, each with how long ago it began. The two newest thoughts
- * keep up to 600 characters (they say best what the agent is up to and why); older ones shrink to 160. If it's still
+ * keep up to 400 characters (they say best what the agent is up to and why); older ones shrink to 120. If it's still
  * over `windowChars`, the oldest steps go first.
  */
 import { clip, filesText, type Step } from "./Steps.ts"
 
-/** Steps in a window. Twelve covers a few minutes of busy work, or the whole stretch since a long command started. */
-export const windowSteps = 12
-/** The most a window renders to, about 1,000 tokens. */
-export const windowChars = 4000
+/** Steps in a window. Ten covers a few minutes of busy work, or the whole stretch since a long command started. */
+export const windowSteps = 10
+/** The most a window renders to, about 750 tokens. */
+export const windowChars = 3000
 
 export interface WindowInput {
   /** What started the turn, as one short line ("They wrote: …"). */
@@ -69,7 +69,7 @@ export const renderStep = (step: Step, now: number, thoughtMax: number) => {
 const renderSteps = (steps: ReadonlyArray<Step>, now: number) => {
   const thoughts = steps.flatMap((step, index) => (step.kind === "thought" ? [index] : []))
   const recent = new Set(thoughts.slice(-2))
-  return steps.map((step, index) => renderStep(step, now, recent.has(index) ? 600 : 160))
+  return steps.map((step, index) => renderStep(step, now, recent.has(index) ? 400 : 120))
 }
 
 export const render = (input: WindowInput): string => {

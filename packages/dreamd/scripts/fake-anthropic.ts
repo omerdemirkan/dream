@@ -182,24 +182,41 @@ createServer((request, response) => {
       return
     }
     // A progress line (`scripts/progress-eval`): too long the first time, so the retry is exercised, then one that fits.
-    if (typeof body.system === "string" && body.system.includes("dream-progress-line")) {
+    // Claude Code sends its system prompt as blocks; the API takes a string too.
+    const system =
+      typeof body.system === "string"
+        ? body.system
+        : Array.isArray(body.system)
+          ? body.system.map((block: { text?: string }) => block.text ?? "").join("\n")
+          : ""
+    if (system.includes("dream-progress-line")) {
       const retry = (body.messages ?? []).length > 1
+      const messageChars = (body.messages ?? []).reduce((n, m) => n + textOf(m).length, 0)
       console.log(
         JSON.stringify({
           at: new Date().toISOString(),
           path,
+          client: request.headers["user-agent"],
           model: body.model,
-          did: retry ? "progress-line retry" : "progress-line"
+          did: retry ? "progress-line retry" : "progress-line",
+          // What one summary costs to send: the CLI's own additions show up here.
+          systemChars: system.length,
+          messageChars,
+          tools: body.tools?.length ?? 0,
+          bodyBytes: Buffer.concat(chunks).length,
+          thinking: (body as { thinking?: unknown }).thinking,
+          effort: body.output_config?.effort
         })
       )
-      response.writeHead(200, { "content-type": "application/json" })
+      const stream = body.stream === true
+      response.writeHead(200, { "content-type": stream ? "text/event-stream" : "application/json" })
       response.end(
         render(
           body.model ?? "claude-fake",
           text(
             retry ? "Checking the progress line" : "Checking every progress line the fake server was asked for today"
           ),
-          false,
+          stream,
           usageOf.side
         )
       )
