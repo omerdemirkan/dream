@@ -10,7 +10,7 @@
  * cap without an error, `startedAt` resets on resume, and setting the timeout
  * of a paused sandbox is a 404.
  */
-import { UpstreamFailure } from "@dream/domain"
+import { type ListedSandbox, UpstreamFailure } from "@dream/domain"
 import { Context, Data, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 import { ApiConfig, required } from "../Config.ts"
@@ -48,6 +48,14 @@ const SandboxInfo = Schema.Struct({
   endAt: Schema.optionalKey(Schema.String)
 })
 export type SandboxInfo = typeof SandboxInfo.Type
+
+/** A sandbox in the team's list, as much as cleaning up needs (the list carries no tokens or env). */
+const ListedRow = Schema.Struct({
+  sandboxID: Schema.String,
+  startedAt: Schema.DateTimeUtcFromString,
+  metadata: Schema.optionalKey(Schema.NullOr(Schema.Record(Schema.String, Schema.String)))
+})
+const ListedRows = Schema.Array(ListedRow)
 
 const TemplateAlias = Schema.Struct({ templateID: Schema.String })
 
@@ -96,6 +104,8 @@ export class E2B extends Context.Service<
      */
     readonly currentBuild: (template: string) => Effect.Effect<Option.Option<TemplateBuild>, UpstreamFailure>
     readonly pause: (sandboxId: string) => Effect.Effect<void, UpstreamFailure>
+    /** Every running or paused sandbox of the team (for the reaper). */
+    readonly list: Effect.Effect<ReadonlyArray<ListedSandbox>, UpstreamFailure>
     readonly kill: (sandboxId: string) => Effect.Effect<void, UpstreamFailure>
   }
 >()("@dream/api/E2B") {
@@ -239,6 +249,34 @@ export class E2B extends Context.Service<
         yield* okOrFail(response).pipe(Effect.mapError(failure("Pausing the sandbox")))
       })
 
+      const list = Effect.gen(function* () {
+        const http = yield* client
+        const all: Array<ListedSandbox> = []
+        let next: string | undefined
+        // E2B pages the list with a token header; a few pages is plenty for Dream's sandboxes.
+        for (let page = 0; page < 20; page++) {
+          const response = yield* HttpClientRequest.get("/v2/sandboxes").pipe(
+            HttpClientRequest.setUrlParams({
+              state: "running,paused",
+              limit: "100",
+              ...(next === undefined ? {} : { nextToken: next })
+            }),
+            http.execute,
+            Effect.flatMap(okOrFail),
+            Effect.mapError(failure("Listing sandboxes"))
+          )
+          const rows = yield* HttpClientResponse.schemaBodyJson(ListedRows)(response).pipe(
+            Effect.mapError(failure("Listing sandboxes"))
+          )
+          for (const row of rows) {
+            all.push({ sandboxId: row.sandboxID, startedAt: row.startedAt, metadata: row.metadata ?? {} })
+          }
+          next = response.headers["x-next-token"]
+          if (next === undefined || next === "" || rows.length === 0) break
+        }
+        return all
+      }).pipe(Effect.withSpan("E2B.list"))
+
       const kill = Effect.fn("E2B.kill")(function* (sandboxId: string) {
         const http = yield* client
         const response = yield* http
@@ -248,7 +286,7 @@ export class E2B extends Context.Service<
         yield* okOrFail(response).pipe(Effect.mapError(failure("Killing the sandbox")))
       })
 
-      return E2B.of({ create, connect, info, setTimeout, updateRules, currentBuild, pause, kill })
+      return E2B.of({ create, connect, info, setTimeout, updateRules, currentBuild, pause, list, kill })
     })
   )
 }

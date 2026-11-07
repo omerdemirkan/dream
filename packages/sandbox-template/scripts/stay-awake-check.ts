@@ -8,7 +8,7 @@
  *   node scripts/stay-awake-check.ts command <api url>         a scheduled `--run` command of 7 minutes finishes
  *   node scripts/stay-awake-check.ts websocket <api url>       a WebSocket used for 8 minutes stays open
  *   node scripts/stay-awake-check.ts requests <api url>        requests every 40 s for 7 minutes keep the sandbox up,
- *                                                              and it sleeps about 5 minutes after the last one
+ *                                                              and it sleeps a few minutes after the last one
  *   node scripts/stay-awake-check.ts loopback <api url>        a process in the sandbox polling its own app on
  *                                                              localhost doesn't keep it up
  *
@@ -25,6 +25,7 @@ import {
   CurrentProject,
   DaemonEnvFile,
   DefaultDaemonPort,
+  devSandboxMetadata,
   HttpRpcSerialization,
   type ProjectId,
   Routes,
@@ -45,6 +46,8 @@ const connection = {
   ...(process.env.HTTPS_PROXY === undefined ? {} : { proxy: process.env.HTTPS_PROXY })
 }
 const IdleMs = 5 * 60_000
+/** As the ProjectDO's `AwakeTail`: each `StayAwake` keeps the sandbox up this long. */
+const AwakeTailMs = 2 * 60_000
 const appPort = 3000
 const stamp = () => new Date().toISOString().slice(11, 19)
 const say = (line: string) => console.log(`${stamp()} ${line}`)
@@ -57,12 +60,12 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 /** What the ProjectDO's `stayAwake` does, but for archived projects and turns, which these sandboxes don't have. */
 const stayAwake = async (sandboxId: string, reason: string) => {
   const info = await Sandbox.getInfo(sandboxId, connection)
-  const until = Date.now() + IdleMs
+  const until = Date.now() + AwakeTailMs
   if (info.state !== "running") return say(`StayAwake ${reason} ${sandboxId}: ${info.state}, left alone`)
   if (info.endAt.getTime() >= until)
     return say(`StayAwake ${reason} ${sandboxId}: already up until ${info.endAt.toISOString()}`)
-  await Sandbox.setTimeout(sandboxId, IdleMs, connection)
-  say(`StayAwake ${reason} ${sandboxId}: ${info.endAt.toISOString()} -> 5 minutes from now`)
+  await Sandbox.setTimeout(sandboxId, AwakeTailMs, connection)
+  say(`StayAwake ${reason} ${sandboxId}: ${info.endAt.toISOString()} -> 2 minutes from now`)
 }
 
 const api = (port: number) => {
@@ -134,6 +137,7 @@ const setup = async (apiUrl: string, options: { readonly published: boolean }) =
   const sandbox = await Sandbox.create(templateName, {
     ...connection,
     timeoutMs: IdleMs,
+    metadata: devSandboxMetadata("stay-awake-check"),
     lifecycle: { onTimeout: "pause", autoResume: true },
     network: { allowPublicTraffic: false }
   })

@@ -1397,14 +1397,14 @@ describe("a project, end to end", () => {
       yield* cloud.close
     })
   )
-  it.live("StayAwake keeps an idle sandbox up five more minutes, but never shortens a turn's timeout", () =>
+  it.live("a turn's end leaves the sandbox up 90 s, and StayAwake two more minutes without shortening a turn's", () =>
     Effect.gen(function* () {
       const cloud = yield* makeCloud()
       const { project } = yield* setup(cloud)
       yield* cloud.alarm(project.id)
       const { sandbox, env } = envFileOf(cloud, project.id)
       const dreamd = yield* cloud.sandbox(env.DREAM_PROJECT_TOKEN)
-      const fiveMinutesOn = Effect.map(DateTime.now, (now) => DateTime.toEpochMillis(now) + 5 * 60_000)
+      const twoMinutesOn = Effect.map(DateTime.now, (now) => DateTime.toEpochMillis(now) + 2 * 60_000)
 
       // A turn's keepalive set 15 minutes: StayAwake leaves that alone, and doesn't ask E2B anything.
       yield* dreamd.ReportTurn({ state: "started", eventIds: [] })
@@ -1412,13 +1412,22 @@ describe("a project, end to end", () => {
       yield* dreamd.StayAwake({ reason: "command" })
       assert.strictEqual(sandbox.timeoutSeconds, 15 * 60)
       assert.strictEqual(sandbox.timeoutsSet, duringTurn)
+      const ended = yield* DateTime.now
       yield* dreamd.ReportTurn({ state: "finished", eventIds: [] })
-      assert.strictEqual(sandbox.timeoutSeconds, 5 * 60)
+      // The turn's tail: 90 s, which the phone sees as when it sleeps.
+      assert.strictEqual(sandbox.timeoutSeconds, 90)
+      const activity = (yield* cloud.phone.ListProjects()).find((p) => p.project.id === project.id)?.activity
+      assert.isTrue(
+        activity?.state === "idle" &&
+          activity.awakeUntil !== undefined &&
+          DateTime.toEpochMillis(activity.awakeUntil) - DateTime.toEpochMillis(ended) <= 91_000
+      )
 
-      // Three minutes later the app is still in use: five minutes from now.
-      sandbox.endAt = DateTime.subtract(sandbox.endAt, { minutes: 3 })
-      const before = yield* fiveMinutesOn
+      // A minute later the app is in use: two minutes from now.
+      sandbox.endAt = DateTime.subtract(sandbox.endAt, { minutes: 1 })
+      const before = yield* twoMinutesOn
       yield* dreamd.StayAwake({ reason: "app" })
+      assert.strictEqual(sandbox.timeoutSeconds, 120)
       assert.isAtLeast(DateTime.toEpochMillis(sandbox.endAt), before)
 
       // E2B already has it up for longer (a wake bought more): left as it is.
@@ -1507,6 +1516,8 @@ describe("sandbox refresh", () => {
         const commit = run.findIndex((c) => c.includes("bash /opt/dream-refresh.sh commit"))
         assert.isTrue(stage >= 0 && stage < activate && activate < commit, run.join("\n"))
         assert.strictEqual(sandbox.release, "r2")
+        // Held up for five minutes while it ran, then back to a turn's tail.
+        assert.deepStrictEqual(sandbox.timeoutHistory.slice(-2), [300, 90])
         const record = yield* core.sandbox
         assert.strictEqual(record.templateBuild, "b2")
         assert.strictEqual(record.release, "r2")

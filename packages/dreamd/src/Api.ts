@@ -21,8 +21,9 @@ import {
   type TurnUsage,
   type UsageSnapshot
 } from "@dream/domain"
+import { NodeHttpClient } from "@effect/platform-node"
 import { Cause, Context, Data, type DateTime, Effect, Layer, Redacted, Ref, Schedule } from "effect"
-import { FetchHttpClient, Headers } from "effect/http"
+import { Headers } from "effect/http"
 import { RpcClient, RpcMiddleware } from "effect/rpc"
 import { DreamdConfig } from "./Config.ts"
 import type { DreamQuestion } from "./harness/PersonChannel.ts"
@@ -44,8 +45,8 @@ export type Report =
 
 /** Why dreamd asks to keep the sandbox up. */
 export type AwakeReason = "command" | "app" | "relay"
-/** What dreamd woke for and has finished, when it asks to sleep. */
-export type SleepReason = "command" | "relay"
+/** What dreamd was awake for and has finished, when it asks to sleep: a scheduled command, a relay delivery, an app visit. */
+export type SleepReason = "command" | "relay" | "app"
 
 /** A call made for the agent didn't go through. */
 export class ApiError extends Data.TaggedError("ApiError")<{ readonly message: string }> {}
@@ -56,8 +57,11 @@ export const layerClient = Layer.unwrap(
     const config = yield* DreamdConfig
     const bearer = `Bearer ${Redacted.value(config.projectToken)}`
     return Layer.mergeAll(
+      // A new connection per call. A paused sandbox's open connections are dead when it wakes, but its timers
+      // only count awake time, so a pool would hand the first call after a long sleep a dead socket that hangs
+      // for half a minute (seen on a scheduled check's Sleep), keeping the sandbox up that long.
       RpcClient.layerProtocolHttp({ url: `${config.apiUrl}${Routes.sandbox}` }).pipe(
-        Layer.provide([FetchHttpClient.layer, HttpRpcSerialization])
+        Layer.provide([NodeHttpClient.layerNodeHttpOptions({ keepAlive: false }), HttpRpcSerialization])
       ),
       RpcMiddleware.layerClient(SandboxAuth, ({ request, next }) =>
         next({ ...request, headers: Headers.set(request.headers, "authorization", bearer) })
@@ -80,7 +84,10 @@ export class Api extends Context.Service<
     readonly reportTask: (report: TaskReport) => Effect.Effect<void>
     /** Once, with no retries: the caller asks again a minute later. A Worker older than `StayAwake` fails it. */
     readonly stayAwake: (reason: AwakeReason) => Effect.Effect<void, ApiError>
-    /** Once, with no retries. A Worker older than `Sleep` fails it, and the sandbox sleeps on its timeout. */
+    /**
+     * Once, with no retries. A Worker older than `Sleep` fails it, and the sandbox sleeps on its timeout. No answer
+     * is the usual outcome (the sandbox is paused first), and succeeds.
+     */
     readonly sleep: (reason: SleepReason, checkedAt: DateTime.Utc) => Effect.Effect<void, ApiError>
     /** `dream ask` on the agent's behalf. */
     readonly askQuestion: (question: DreamQuestion) => Effect.Effect<MessageId, ApiError>
@@ -124,7 +131,14 @@ export class Api extends Context.Service<
           ),
         sleep: (reason, checkedAt) =>
           client.Sleep({ reason, checkedAt }).pipe(
-            Effect.timeout("30 seconds"),
+            // The API pauses the sandbox before it answers, so this usually gets no answer: the call sits frozen
+            // with everything else and gives up some seconds after the next wake. That's success.
+            Effect.timeoutOption("15 seconds"),
+            Effect.flatMap((answered) =>
+              answered._tag === "None"
+                ? Effect.logDebug("No answer to Sleep; the sandbox was paused first")
+                : Effect.void
+            ),
             Effect.catchCause((cause) =>
               Effect.fail(new ApiError({ message: Cause.pretty(cause).split("\n")[0] ?? "failed" }))
             )

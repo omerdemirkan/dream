@@ -16,10 +16,18 @@
  *   logs <projectId> [lines]              tail dreamd's log in the project's sandbox (default 80)
  *   exec <projectId> "<shell command>"    run a command in the project's sandbox and print its output
  *   wait <projectId> [minutes]            wait until the agent is idle (no turn running) and print new messages
+ *   done [--archive] [--keep <id>...]     end the QA run: delete (or archive) every project `idea` created in it, so
+ *                                         their scheduled wakes stop costing machine time. `--keep` spares some.
+ *
+ * Projects created with `idea` are noted in QA_STATE (default ~/.dream-qa/projects.txt) until `done`. Every QA run
+ * should end with `done`: a forgotten project checking every 15 minutes kept a sandbox up eight hours a day (Nov 2026).
  *
  * The session is a dev sign-in as QA_EMAIL (default the founder's invited email), minted on demand.
  * It never prints secrets; the agent's sandbox holds only placeholders anyway.
  */
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { homedir } from "node:os"
+import { dirname, join } from "node:path"
 import { Sandbox } from "e2b"
 
 const Api = process.env.DREAM_API_URL ?? "https://dream.omer.build"
@@ -29,6 +37,15 @@ const Proxy = process.env.HTTPS_PROXY
 process.env.E2B_API_KEY ??= "e2b_placeholder_injected_by_proxy"
 
 type Json = any
+
+/** The projects this QA run created, one id per line. */
+const StateFile = process.env.QA_STATE ?? join(homedir(), ".dream-qa", "projects.txt")
+const noted = (): Array<string> =>
+  existsSync(StateFile) ? readFileSync(StateFile, "utf8").split("\n").filter(Boolean) : []
+const note = (projectId: string) => {
+  mkdirSync(dirname(StateFile), { recursive: true })
+  appendFileSync(StateFile, `${projectId}\n`)
+}
 
 const cf = async (path: string, init?: RequestInit): Promise<Json> => {
   const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${Account}${path}`, {
@@ -138,7 +155,36 @@ const main = async () => {
     }
     case "idea": {
       const p = await rpc("CreateProject", { idea: a })
-      return console.log(p.id, p.publicUrl ?? "")
+      note(p.id)
+      console.log(p.id, p.publicUrl ?? "")
+      return console.error(`(noted for \`qa.ts done\`, which deletes this run's projects; ${noted().length} so far)`)
+    }
+    case "done": {
+      const args = process.argv.slice(3)
+      const archive = args.includes("--archive")
+      const keepAt = args.indexOf("--keep")
+      const keep = new Set(keepAt === -1 ? [] : args.slice(keepAt + 1))
+      const left: Array<string> = []
+      for (const projectId of noted()) {
+        if (keep.has(projectId)) {
+          left.push(projectId)
+          console.log(`${projectId}  kept`)
+          continue
+        }
+        try {
+          await rpc(archive ? "ArchiveProject" : "DeleteProject", { projectId })
+          console.log(`${projectId}  ${archive ? "archived" : "deleted"}`)
+        } catch (e: any) {
+          if (String(e?.message ?? e).includes("NotFound")) {
+            console.log(`${projectId}  already gone`)
+            continue
+          }
+          left.push(projectId)
+          console.log(`${projectId}  failed: ${String(e?.message ?? e).slice(0, 200)}`)
+        }
+      }
+      writeFileSync(StateFile, left.map((id) => `${id}\n`).join(""))
+      return
     }
     case "say":
       return console.log((await rpc("SendMessage", { projectId: a, text: b })).id)

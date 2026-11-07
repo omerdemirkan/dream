@@ -7,10 +7,13 @@
  * starts a turn. That event is sent only when the finding differs from the
  * last one sent, so a breakage the agent can't fix doesn't wake it over and
  * over; a healthy load clears it. The person never hears about this.
+ *
+ * The load reaches the app through the public URL, so to the kernel it looks like someone using the app. `selfCheck`
+ * says when one is running or just ran, so keeping the sandbox awake (`Awake`) can leave that traffic out.
  */
 import { randomUUID } from "node:crypto"
 import { AgentEvent, EventId } from "@dream/domain"
-import { Context, DateTime, Effect, FileSystem, Layer, Option, Path, Ref, Schema } from "effect"
+import { Clock, Context, DateTime, Effect, FileSystem, Layer, Option, Path, Ref, Schema } from "effect"
 import { Api } from "./Api.ts"
 import { pageCheck } from "./cli/Format.ts"
 import { PageCheck, type PageLoad } from "./cli/PageCheck.ts"
@@ -40,6 +43,14 @@ export const brokenKey = (load: PageLoad): string | undefined => {
   ])
 }
 
+/** dreamd's own load of the published URL: running now, and when the last one ended (epoch milliseconds). */
+export interface SelfCheck {
+  readonly running: boolean
+  readonly endedMs: number | undefined
+}
+
+export const noSelfCheck: SelfCheck = { running: false, endedMs: undefined }
+
 export class Published extends Context.Service<
   Published,
   {
@@ -49,6 +60,8 @@ export class Published extends Context.Service<
     readonly port: Effect.Effect<Option.Option<number>>
     /** Load the published URL, if there is one, and tell the agent if it newly looks broken. */
     readonly checkAfterTurn: Effect.Effect<void>
+    /** Whether that load is running now, and when the last one ended. */
+    readonly selfCheck: Effect.Effect<SelfCheck>
   }
 >()("@dream/dreamd/Published") {
   static readonly layer = Layer.effect(
@@ -71,6 +84,7 @@ export class Published extends Context.Service<
         )
       )
       const state = yield* Ref.make(Option.getOrUndefined(loaded))
+      const self = yield* Ref.make(noSelfCheck)
       const save = (next: PublishedState | undefined) =>
         Effect.gen(function* () {
           yield* Ref.set(state, next)
@@ -121,9 +135,14 @@ export class Published extends Context.Service<
             const current = yield* Ref.get(state)
             if (current?.port !== port) yield* save({ port })
           }),
-        checkAfterTurn: check.pipe(
-          Effect.catchCause((cause) => Effect.logWarning("Couldn't check the published URL", cause))
-        )
+        checkAfterTurn: Ref.update(self, (s) => ({ ...s, running: true })).pipe(
+          Effect.andThen(check),
+          Effect.catchCause((cause) => Effect.logWarning("Couldn't check the published URL", cause)),
+          Effect.ensuring(
+            Effect.flatMap(Clock.currentTimeMillis, (endedMs) => Ref.set(self, { running: false, endedMs }))
+          )
+        ),
+        selfCheck: Ref.get(self)
       })
     })
   )
@@ -132,6 +151,7 @@ export class Published extends Context.Service<
   static readonly layerNone = Layer.succeed(Published, {
     port: Effect.succeed(Option.none()),
     noted: () => Effect.void,
-    checkAfterTurn: Effect.void
+    checkAfterTurn: Effect.void,
+    selfCheck: Effect.succeed(noSelfCheck)
   })
 }

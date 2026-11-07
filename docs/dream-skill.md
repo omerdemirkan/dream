@@ -208,7 +208,7 @@ are active, the Status card shows a row for each in place of `--now`.
 
 - `dream publish --port <port>` gives a port a stable public URL, `https://<slug>-<random>.<domain>`. A request to it
   wakes the sandbox. From their phone it opens in Safari.
-  - The sandbox wakes in under a second and stays up for a few minutes after the last request. Then your server is
+  - The sandbox wakes in under a second and stays up for a minute or two after the last request. Then your server is
     frozen with everything else, and its open connections close.
   - Publishing then loads the URL from this sandbox and tells you what it answers and any page errors; running it again
     re-checks. Dream also loads it when each of your turns ends, and wakes you when that finds a new error status,

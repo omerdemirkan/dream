@@ -22,7 +22,7 @@ import { Harness, type HarnessError, type TurnResult, TurnOutcome } from "../src
 import type { TurnHandlers } from "../src/harness/Turn.ts"
 import { Inbox } from "../src/Inbox.ts"
 import { Outreach } from "../src/Outreach.ts"
-import { Published } from "../src/Published.ts"
+import { noSelfCheck, Published } from "../src/Published.ts"
 import { baseLayer, tempDir, usageReset, userMessage } from "./support.ts"
 
 type Script = (prompt: string, handlers: TurnHandlers) => Effect.Effect<TurnResult, HarnessError>
@@ -142,7 +142,8 @@ describe("Agent", () => {
         published: Layer.succeed(Published, {
           port: Effect.succeed(Option.none()),
           noted: () => Effect.void,
-          checkAfterTurn: Ref.update(checks, (n) => n + 1)
+          checkAfterTurn: Ref.update(checks, (n) => n + 1),
+          selfCheck: Effect.succeed(noSelfCheck)
         })
       })
       yield* Queue.offer(turns, () => Effect.succeed(completed()))

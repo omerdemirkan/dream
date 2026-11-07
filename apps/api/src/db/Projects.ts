@@ -188,6 +188,8 @@ export class Projects extends Context.Service<
     /** Archives the project (`at`) or restores it (`undefined`). Only its DO calls this. */
     readonly setArchived: (id: ProjectId, at: DateTime.Utc | undefined) => Effect.Effect<void>
     readonly projectIdsFor: (userId: UserId) => Effect.Effect<ReadonlyArray<ProjectId>>
+    /** The sandbox every project records as its own (for the reaper, which never touches these). */
+    readonly sandboxIds: Effect.Effect<ReadonlySet<string>>
     /** Replace the projection of one project (its row and its open asks). */
     readonly project: (projection: ProjectProjection) => Effect.Effect<void>
     /** The deck: open asks of their projects but the archived ones. */
@@ -312,6 +314,11 @@ export class Projects extends Context.Service<
           decodeRows(Schema.Struct({ id: ProjectId })),
           Effect.map((rows) => rows.map((row) => row.id))
         )
+
+      const sandboxIds = sql`SELECT sandbox_id FROM projects WHERE sandbox_id IS NOT NULL`.pipe(
+        decodeRows(Schema.Struct({ sandbox_id: Schema.String })),
+        Effect.map((rows) => new Set(rows.map((row) => row.sandbox_id)) as ReadonlySet<string>)
+      )
 
       const project = Effect.fn("Projects.project")(function* (projection: ProjectProjection) {
         const p = projection.project
@@ -440,6 +447,7 @@ export class Projects extends Context.Service<
         archived,
         setArchived,
         projectIdsFor,
+        sandboxIds,
         project,
         openAsks,
         remove,

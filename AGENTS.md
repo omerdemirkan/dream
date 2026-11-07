@@ -169,11 +169,14 @@ the other workstreams to agree first.
   The top-level agent's model and effort come from `src/harness/Fleet.ts` (each provider's flagship, effort high;
   the agent picks each subagent's model and effort itself), unless the operator overrides them for a QA run
   (`DREAM_AGENT_MODEL`, `DREAM_CODEX_AGENT_MODEL`, `DREAM_AGENT_EFFORT` Worker secrets).
-  E2B pauses a sandbox five minutes after it woke whatever runs in it, so between turns dreamd asks the ProjectDO
-  to keep it up (`StayAwake`, about once a minute) while a scheduled `--run` command runs, a relay delivery is under
-  way, or the published app is in use (`src/Awake.ts`); a turn's keepalive covers turns. The other way round, once
-  the command or delivery it woke for is done and nothing else needs the sandbox, dreamd asks for it to sleep now
-  (`Sleep`), so a scheduled check costs seconds rather than five minutes. dreamd posts relay deliveries to the app on
+  E2B pauses a sandbox when its timeout runs out, whatever runs in it: a wake gets five minutes, and the end of a
+  turn 90 seconds (`TurnTail` in `SandboxManager.ts`; it resumes in under a second). So between turns dreamd asks
+  the ProjectDO to keep it up (`StayAwake`, about once a minute, two minutes each) while a scheduled `--run` command
+  runs, a relay delivery is under way, or the published app is in use (`src/Awake.ts`); a turn's keepalive covers
+  turns. The other way round, once the command, delivery or app visit it was awake for is done and nothing else needs
+  the sandbox, dreamd asks for it to sleep now (`Sleep`), so a scheduled check costs seconds rather than five minutes
+  and a visit about a minute and a half after its last request. Machine time is the bulk of Dream's E2B bill:
+  `node packages/sandbox-template/scripts/costs.ts` prints it per day and cause. dreamd posts relay deliveries to the app on
   localhost, signed with `~/.dream/relay.key` (`src/Relays.ts`).
   A scheduled task (`dream wake --task`) runs like a `--run` command, but in a new harness session of its own, on the
   model and effort the agent picked, from its brief and `taskPrompt` (`docs/task-context.md`; `src/Tasks.ts`). Each
@@ -192,8 +195,8 @@ the other workstreams to agree first.
   break its adapter (Codex 0.166.0 did; Codex stays on 0.165.0 until the adapter catches up). Rerun the pins script
   after bumping an adapter; a test fails until the manifests match the adapter's again.
 - **Sandbox refresh.** A sandbox keeps the template build it was created from, so the ProjectDO brings it up to the
-  template's current build between turns (`apps/api/src/e2b/Refresh.ts`): before the next delivery, and a minute after
-  each turn. It copies `/opt/dream` and `~/.ai-sdk-harness/.harness-bootstrap` over from a short-lived donor sandbox
+  template's current build between turns (`apps/api/src/e2b/Refresh.ts`): before the next delivery, and 20 seconds
+  after each turn (holding the sandbox up while it runs). It copies `/opt/dream` and `~/.ai-sdk-harness/.harness-bootstrap` over from a short-lived donor sandbox
   of the template, and the new build's `files/refresh.sh` swaps them in and restarts dreamd, rolling back if the new
   dreamd doesn't come up. The project, `~/.dream`, `~/.claude`, `~/.codex` and processes outside dreamd's tree stay.
   Builds are tagged `release-<hash of /opt/dream>`, so a rebuild of the same source refreshes nothing; system
@@ -226,6 +229,11 @@ the other workstreams to agree first.
   after changing any of them. Existing sandboxes pick the new build up between turns (Sandbox refresh, above).
   To roll every sandbox back, make an older build current again:
   `bun run template:build promote <release>` (releases are the build's `release-…` tags).
-- End-to-end checks against the live API: `node packages/sandbox-template/scripts/qa.ts` (see its header).
+- End-to-end checks against the live API: `node packages/sandbox-template/scripts/qa.ts` (see its header). End every
+  QA run with `qa.ts done`, which deletes the projects the run created: a forgotten one with a frequent schedule keeps
+  a sandbox up for hours a day.
+- Throwaway sandboxes (checks, probes, scripts) carry `devSandboxMetadata(<script>)` from `@dream/domain`, and the
+  Worker's maintenance kills any without an owner that started over an hour ago (`apps/api/src/e2b/Reaper.ts`).
+  `reaper: "skip"` in a sandbox's metadata spares a long experiment.
 - The iPhone app's JavaScript: `node apps/mobile/scripts/updates.ts publish` from main (rollback and status too;
   see apps/mobile/README.md). Native changes still need a TestFlight build, and `publish` says so.

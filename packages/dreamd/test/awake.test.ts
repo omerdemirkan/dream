@@ -3,9 +3,17 @@ import { Clock, Context, Effect, Fiber, Layer, Option, PubSub, Ref, Stream } fro
 import { TestClock } from "effect/testing"
 import { Agent } from "../src/Agent.ts"
 import { Api, ApiError, type Report } from "../src/Api.ts"
-import { AppTraffic, Awake, nothingLeft, type PortTraffic, portTraffic, type SleepCheck } from "../src/Awake.ts"
+import {
+  AppTraffic,
+  Awake,
+  nothingLeft,
+  type PortTraffic,
+  portTraffic,
+  type SleepCheck,
+  sleepVerdict
+} from "../src/Awake.ts"
 import { Commands } from "../src/Commands.ts"
-import { Published } from "../src/Published.ts"
+import { noSelfCheck, Published, type SelfCheck } from "../src/Published.ts"
 import { RelayForwarder } from "../src/Relays.ts"
 
 // Port 3000 is 0BB8. A listener; through E2B's proxy (from 10.12.0.134), a request that just closed and an open
@@ -47,6 +55,7 @@ const setup = (options: { readonly api?: Layer.Layer<Api> } = {}) =>
     const lastTurnEnded = yield* Ref.make(Option.none<number>())
     const port = yield* Ref.make(Option.none<number>())
     const traffic = yield* Ref.make(quiet)
+    const self = yield* Ref.make<SelfCheck>(noSelfCheck)
     const context = yield* Layer.build(
       Awake.layer.pipe(
         Layer.provide([
@@ -78,7 +87,12 @@ const setup = (options: { readonly api?: Layer.Layer<Api> } = {}) =>
           ),
           Layer.succeed(
             Published,
-            Published.of({ port: Ref.get(port), noted: () => Effect.void, checkAfterTurn: Effect.void })
+            Published.of({
+              port: Ref.get(port),
+              noted: () => Effect.void,
+              checkAfterTurn: Effect.void,
+              selfCheck: Ref.get(self)
+            })
           ),
           AppTraffic.layerTest(traffic)
         ])
@@ -122,6 +136,7 @@ const setup = (options: { readonly api?: Layer.Layer<Api> } = {}) =>
       lastTurnEnded,
       port,
       traffic,
+      self,
       asked,
       sleeps,
       pass,
@@ -153,7 +168,7 @@ describe("staying awake", () => {
     }).pipe(Effect.scoped)
   )
 
-  it.effect("keeps asking while the app gets requests, and a quiet open connection counts for two hours", () =>
+  it.effect("keeps asking while the app gets requests, and a quiet open connection counts for twenty minutes", () =>
     Effect.gen(function* () {
       const { port, traffic, asked, pass } = yield* setup()
       // Nothing is published: its traffic isn't looked at.
@@ -167,15 +182,15 @@ describe("staying awake", () => {
       assert.isAtLeast(whileRequested, 9)
       assert.isTrue((yield* asked).every((reason) => reason === "app"))
 
-      // Requests stop, and a WebSocket stays open: it counts for two hours from the last request, then not.
+      // Requests stop, and a WebSocket stays open: it counts for twenty minutes from the last request, then not.
       yield* Ref.set(traffic, { open: new Set(["ws"]), recentlyClosed: 0 })
-      yield* pass(115)
+      yield* pass(18)
       const whileOpen = (yield* asked).length
-      assert.isAtLeast(whileOpen - whileRequested, 110)
-      yield* pass(30)
+      assert.isAtLeast(whileOpen - whileRequested, 16)
+      yield* pass(5)
       const capped = (yield* asked).length
-      assert.isAtMost(capped - whileOpen, 6)
-      yield* pass(30)
+      assert.isAtMost(capped - whileOpen, 3)
+      yield* pass(10)
       assert.strictEqual((yield* asked).length, capped)
 
       // A new connection is a new request.
@@ -233,11 +248,19 @@ describe("whether anything is left", () => {
     assert.isFalse(nothingLeft({ ...idle, turnRunning: true }))
     assert.isFalse(nothingLeft({ ...idle, queued: 2 }))
     assert.isFalse(nothingLeft({ ...idle, appInUse: true }))
-    // Used, or a turn ended, within five minutes: the sandbox keeps its own timeout.
-    assert.isFalse(nothingLeft({ ...idle, lastAppUseMs: idle.nowMs - 4 * 60_000 }))
-    assert.isTrue(nothingLeft({ ...idle, lastAppUseMs: idle.nowMs - 6 * 60_000 }))
+    // The app's last request seen within half a minute, or a turn ended within 100 s: not yet.
+    assert.isFalse(nothingLeft({ ...idle, lastAppUseMs: idle.nowMs - 20_000 }))
+    assert.isTrue(nothingLeft({ ...idle, lastAppUseMs: idle.nowMs - 31_000 }))
     assert.isFalse(nothingLeft({ ...idle, lastTurnEndedMs: idle.nowMs - 60_000 }))
-    assert.isTrue(nothingLeft({ ...idle, lastTurnEndedMs: idle.nowMs - 5 * 60_000 }))
+    assert.isTrue(nothingLeft({ ...idle, lastTurnEndedMs: idle.nowMs - 101_000 }))
+  })
+
+  it("waits when only time stands in the way, and drops the ask when there's work", () => {
+    assert.strictEqual(sleepVerdict(idle), "now")
+    assert.strictEqual(sleepVerdict({ ...idle, lastAppUseMs: idle.nowMs - 20_000 }), "wait")
+    assert.strictEqual(sleepVerdict({ ...idle, lastTurnEndedMs: idle.nowMs - 60_000 }), "wait")
+    assert.strictEqual(sleepVerdict({ ...idle, appInUse: true }), "drop")
+    assert.strictEqual(sleepVerdict({ ...idle, turnRunning: true, lastTurnEndedMs: idle.nowMs - 60_000 }), "drop")
   })
 })
 
@@ -291,27 +314,93 @@ describe("going back to sleep", () => {
     }).pipe(Effect.scoped)
   )
 
-  it.effect("doesn't ask while someone uses the app, or within five minutes of a turn", () =>
+  it.effect("waits out a turn that just ended, then asks", () =>
     Effect.gen(function* () {
-      const { runCommand, sleeps, seconds, pass, port, traffic, lastTurnEnded } = yield* setup()
-      yield* Ref.set(port, Option.some(3000))
-      yield* Ref.set(traffic, { open: new Set<string>(), recentlyClosed: 1 })
-      yield* pass(1)
-      yield* Ref.set(traffic, quiet)
-      yield* runCommand(1)
-      yield* seconds(10)
-      assert.deepStrictEqual(yield* sleeps, [])
-
-      yield* pass(10)
+      const { runCommand, sleeps, seconds, pass, lastTurnEnded } = yield* setup()
       yield* Ref.set(lastTurnEnded, Option.some(yield* Clock.currentTimeMillis))
       yield* runCommand(1)
       yield* seconds(10)
       assert.deepStrictEqual(yield* sleeps, [])
+      // The API keeps the sandbox up 90 s after a turn; dreamd asks once 100 s have passed, at its next look.
+      yield* pass(1)
+      assert.deepStrictEqual(yield* sleeps, [])
+      yield* pass(1)
+      assert.deepStrictEqual(yield* sleeps, ["command"])
+    }).pipe(Effect.scoped)
+  )
 
-      yield* pass(6)
+  it.effect("asks to sleep about a minute and a half after a visit's last request", () =>
+    Effect.gen(function* () {
+      const { sleeps, asked, pass, port, traffic } = yield* setup()
+      yield* Ref.set(port, Option.some(3000))
+      yield* pass(0.5)
+      // A request, which the kernel keeps in TIME_WAIT for a minute.
+      yield* Ref.set(traffic, { open: new Set<string>(), recentlyClosed: 1 })
+      yield* pass(1)
+      yield* Ref.set(traffic, quiet)
+      assert.isAtLeast((yield* asked).length, 1)
+      assert.deepStrictEqual(yield* sleeps, [])
+      yield* pass(0.5)
+      assert.deepStrictEqual(yield* sleeps, ["app"])
+      // Once per visit.
+      yield* pass(5)
+      assert.deepStrictEqual(yield* sleeps, ["app"])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect("doesn't ask while someone keeps using the app, and asks once they stop", () =>
+    Effect.gen(function* () {
+      const { runCommand, sleeps, seconds, pass, port, traffic } = yield* setup()
+      yield* Ref.set(port, Option.some(3000))
+      yield* Ref.set(traffic, { open: new Set<string>(), recentlyClosed: 1 })
+      yield* pass(0.5)
+      // A command finishes mid-visit: no ask while the app is in use.
       yield* runCommand(1)
       yield* seconds(10)
+      yield* pass(3)
+      assert.deepStrictEqual(yield* sleeps, [])
+      yield* Ref.set(traffic, quiet)
+      yield* pass(1)
+      // One ask, naming the command (it outranks the visit).
       assert.deepStrictEqual(yield* sleeps, ["command"])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect("leaves out the traffic of dreamd's own look at the published URL", () =>
+    Effect.gen(function* () {
+      const { sleeps, asked, pass, port, traffic, self } = yield* setup()
+      yield* Ref.set(port, Option.some(3000))
+      yield* pass(0.5)
+      // The look is running: its connection is open.
+      yield* Ref.set(self, { running: true, endedMs: undefined })
+      yield* Ref.set(traffic, { open: new Set(["check"]), recentlyClosed: 0 })
+      yield* pass(0.5)
+      // It ended, and its connection sits in TIME_WAIT for a minute.
+      yield* Ref.set(self, { running: false, endedMs: yield* Clock.currentTimeMillis })
+      yield* Ref.set(traffic, { open: new Set<string>(), recentlyClosed: 1 })
+      yield* pass(1)
+      yield* Ref.set(traffic, quiet)
+      yield* pass(2)
+      assert.deepStrictEqual(yield* asked, [])
+      assert.deepStrictEqual(yield* sleeps, [])
+      // Afterwards a request is someone's visit again.
+      yield* Ref.set(traffic, { open: new Set<string>(), recentlyClosed: 1 })
+      yield* pass(0.5)
+      assert.deepStrictEqual(yield* asked, ["app"])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect("asks to stay awake right after a turn ends, when there's work, without waiting a minute", () =>
+    Effect.gen(function* () {
+      const { busy, asked, pass, seconds, lastTurnEnded } = yield* setup()
+      yield* Ref.set(busy, true)
+      yield* pass(0.5)
+      assert.lengthOf(yield* asked, 1)
+      // During the turn the API ignored that ask; once the turn ends, the next look asks again.
+      yield* seconds(5)
+      yield* Ref.set(lastTurnEnded, Option.some(yield* Clock.currentTimeMillis))
+      yield* seconds(25)
+      assert.lengthOf(yield* asked, 2)
     }).pipe(Effect.scoped)
   )
 
@@ -322,6 +411,31 @@ describe("going back to sleep", () => {
       yield* pass(2)
       assert.isAtLeast((yield* asked).length, 2)
       assert.isTrue((yield* asked).every((reason) => reason === "relay"))
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect("doesn't wait for Sleep's answer, which a paused sandbox never gets", () =>
+    Effect.gen(function* () {
+      const calls = yield* Ref.make(0)
+      const awake = yield* Ref.make(0)
+      const hanging = Layer.succeed(Api, {
+        ...Context.get(yield* Layer.build(Api.layerTest(yield* Ref.make<ReadonlyArray<Report>>([]))), Api),
+        stayAwake: () => Ref.update(awake, (n) => n + 1),
+        sleep: () => Ref.update(calls, (n) => n + 1).pipe(Effect.andThen(Effect.never))
+      })
+      const { runCommand, seconds, busy } = yield* setup({ api: hanging })
+      yield* runCommand(1)
+      yield* seconds(10)
+      assert.strictEqual(yield* Ref.get(calls), 1)
+      // The next wake's work is looked at right away, not after the first ask gives up.
+      const before = yield* Ref.get(awake)
+      yield* Ref.set(busy, true)
+      yield* seconds(61)
+      assert.isAbove(yield* Ref.get(awake), before)
+      yield* Ref.set(busy, false)
+      yield* runCommand(1)
+      yield* seconds(10)
+      assert.strictEqual(yield* Ref.get(calls), 2)
     }).pipe(Effect.scoped)
   )
 

@@ -11,7 +11,7 @@
  */
 import { readFileSync } from "node:fs"
 import { NodeRuntime } from "@effect/platform-node"
-import { DaemonEnvFile, DefaultDaemonPort } from "@dream/domain"
+import { DaemonEnvFile, DefaultDaemonPort, devSandboxMetadata } from "@dream/domain"
 import { Sandbox } from "e2b"
 import { Effect } from "effect"
 import { templateName } from "../src/index.ts"
@@ -47,7 +47,7 @@ const smoke = Effect.gen(function* () {
   const envFile = process.argv[2]
   const started = Date.now()
   const sandbox = yield* Effect.tryPromise(() =>
-    Sandbox.create(templateName, { ...connection, timeoutMs: 15 * 60_000 })
+    Sandbox.create(templateName, { ...connection, timeoutMs: 15 * 60_000, metadata: devSandboxMetadata("smoke") })
   )
   yield* Effect.logInfo(`Created sandbox ${sandbox.sandboxId} in ${Date.now() - started} ms`)
   const run = (command: string) =>

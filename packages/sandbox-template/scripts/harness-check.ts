@@ -8,7 +8,7 @@
  *
  *   node scripts/harness-check.ts [template[:tag]]     (default: the current dream-sandbox build)
  */
-import { DaemonEnvFile, DefaultDaemonPort } from "@dream/domain"
+import { DaemonEnvFile, DefaultDaemonPort, devSandboxMetadata } from "@dream/domain"
 import { Sandbox } from "e2b"
 import { templateName } from "../src/index.ts"
 
@@ -193,7 +193,11 @@ const connection = {
 
 /** A sandbox of `template` (e.g. `dream-sandbox:release-…`), checked and killed. */
 export const checkTemplate = async (template: string): Promise<ReadonlyArray<HarnessResult>> => {
-  const sandbox = await Sandbox.create(template, { ...connection, timeoutMs: 20 * 60_000 })
+  const sandbox = await Sandbox.create(template, {
+    ...connection,
+    timeoutMs: 20 * 60_000,
+    metadata: devSandboxMetadata("harness-check", "harness-check")
+  })
   try {
     return await checkHarnesses(sandbox)
   } finally {
