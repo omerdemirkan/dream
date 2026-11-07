@@ -196,7 +196,7 @@ function ChatActivity(props: { readonly state: ProjectState }) {
     pausedUntil: state.status.pausedUntil,
     now
   })
-  const row = chatRowOf(presence, state.messages, now)
+  const row = chatRowOf(presence, state.messages, now, state.status.now)
   return row ? <ChatActivityRow row={row} /> : null
 }
 

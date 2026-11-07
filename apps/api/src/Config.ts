@@ -66,6 +66,11 @@ export const ApiConfigSchema = Config.all({
   agentModel: optionalString("DREAM_AGENT_MODEL"),
   codexAgentModel: optionalString("DREAM_CODEX_AGENT_MODEL"),
   agentEffort: Config.option(Config.schema(ReasoningEffort, "DREAM_AGENT_EFFORT")),
+  /**
+   * Whether dreamd reports what a long turn is doing (a progress line and liveness, shown under "Working") while
+   * someone watches; written to dreamd's env as `DREAM_PROGRESS_LINE=on`. Off unless DREAM_PROGRESS_LINE is "true".
+   */
+  progressLine: Config.Boolean("DREAM_PROGRESS_LINE").pipe(Config.withDefault(false)),
   /** How dreamd is started in a new sandbox (run with `bash -lc`). */
   daemonCommand: Config.NonEmptyString("DREAMD_COMMAND").pipe(Config.withDefault("dreamd")),
   apnsKeyId: optionalString("APNS_KEY_ID"),
@@ -135,6 +140,7 @@ export class ApiConfig extends Context.Service<ApiConfig, ApiConfigShape>()("@dr
         agentModel: Option.none(),
         codexAgentModel: Option.none(),
         agentEffort: Option.none(),
+        progressLine: false,
         daemonCommand: "dreamd",
         apnsKeyId: Option.some("KEYID12345"),
         apnsTeamId: Option.some("TEAMID1234"),

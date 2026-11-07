@@ -33,6 +33,7 @@ import { Agent } from "./Agent.ts"
 import { DreamdConfig } from "./Config.ts"
 import { Inbox } from "./Inbox.ts"
 import { Outreach } from "./Outreach.ts"
+import { Progress } from "./progress/Progress.ts"
 import { Published } from "./Published.ts"
 import { RelayForwarder } from "./Relays.ts"
 import { Shutdown } from "./Shutdown.ts"
@@ -49,6 +50,7 @@ const DaemonHandlers = DaemonRpcs.toLayer(
     const shutdown = yield* Shutdown
     const config = yield* DreamdConfig
     const relays = yield* RelayForwarder
+    const progress = yield* Progress
     const envHash = Option.match(config.envHash, { onNone: () => ({}), onSome: (envHash) => ({ envHash }) })
     const release = Option.match(yield* readRelease(), { onNone: () => ({}), onSome: (release) => ({ release }) })
     return {
@@ -69,6 +71,7 @@ const DaemonHandlers = DaemonRpcs.toLayer(
           }
           return yield* relays.forward(request)
         }),
+      SetWatching: ({ watching }) => progress.setWatching(watching),
       Health: () => agent.status.pipe(Effect.map((status) => ({ version, ...status, ...envHash, ...release })))
     }
   })
@@ -146,6 +149,24 @@ export const publishedPorts = (body: string): ReadonlyArray<number> =>
       Option.match(decodePublishLine(line), { onNone: () => [], onSome: ({ payload }) => [payload.port] })
     )
 
+const NowLine = Schema.fromJsonString(
+  Schema.Struct({
+    _tag: Schema.Literal("Request"),
+    tag: Schema.Literals(["UpdateStatus", "StartWorkstream", "UpdateWorkstream"]),
+    payload: Schema.Struct({ now: Schema.optionalKey(Schema.NullOr(Schema.String)) })
+  })
+)
+const decodeNowLine = Schema.decodeUnknownOption(NowLine)
+
+/** The now sentences `dream status --now` and `dream work … --now` set in an NDJSON request body. */
+export const nowSentences = (body: string): ReadonlyArray<string> =>
+  body.split("\n").flatMap((line) =>
+    Option.match(decodeNowLine(line), {
+      onNone: () => [],
+      onSome: ({ payload }) => (typeof payload.now === "string" && payload.now.trim().length > 0 ? [payload.now] : [])
+    })
+  )
+
 const proxy = HttpRouter.add(
   "POST",
   Routes.sandbox,
@@ -154,6 +175,7 @@ const proxy = HttpRouter.add(
     const client = yield* HttpClient.HttpClient
     const outreach = yield* Outreach
     const published = yield* Published
+    const progress = yield* Progress
     const request = yield* HttpServerRequest.HttpServerRequest
     const body = yield* request.text
     const tags = requestedTags(body)
@@ -170,7 +192,13 @@ const proxy = HttpRouter.add(
       .pipe(
         Effect.tap((response) =>
           response.status < 300
-            ? Effect.andThen(outreach.record(tags), Effect.forEach(publishedPorts(body), published.noted))
+            ? Effect.andThen(
+                outreach.record(tags),
+                Effect.andThen(
+                  Effect.forEach(publishedPorts(body), published.noted),
+                  Effect.forEach(nowSentences(body), progress.statusNow)
+                )
+              )
             : Effect.void
         ),
         Effect.map((response) =>

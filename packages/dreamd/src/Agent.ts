@@ -31,6 +31,7 @@ import { type QuestionOutcome, replyFromFinalText } from "./harness/PersonChanne
 import type { TurnHandlers } from "./harness/Turn.ts"
 import { Inbox, type InboxState, queuedCount } from "./Inbox.ts"
 import { Outreach } from "./Outreach.ts"
+import { Progress } from "./progress/Progress.ts"
 import { Published } from "./Published.ts"
 import * as Usage from "./Usage.ts"
 
@@ -70,6 +71,7 @@ export class Agent extends Context.Service<
       const outreach = yield* Outreach
       const published = yield* Published
       const attachments = yield* Attachments
+      const progress = yield* Progress
       const provider: ModelProvider = harness.name === "claude-code" ? "claude" : "chatgpt"
       const running = yield* Ref.make(false)
       const lastTurnEndedMs = yield* Ref.make(Option.none<number>())
@@ -140,7 +142,8 @@ export class Agent extends Context.Service<
           Effect.gen(function* () {
             yield* Ref.update(usage, (previous) => Usage.merge(previous, reading))
             yield* api.reportUsage(Usage.toSnapshot(provider, yield* Ref.get(usage), yield* DateTime.now))
-          })
+          }),
+        observe: progress.observe
       }
 
       /**
@@ -170,6 +173,7 @@ export class Agent extends Context.Service<
         const { timeZone } = yield* inbox.state
         yield* Ref.set(running, true)
         yield* api.reportTurn("started", yield* Ref.get(taken))
+        yield* progress.turnStarted(events)
         yield* Effect.logInfo("Turn started", { events: yield* Ref.get(taken) })
 
         const missingAttachments = yield* attachments.fetch(events)
@@ -181,6 +185,7 @@ export class Agent extends Context.Service<
             return yield* harness.turn(prompt, handlers)
           })
         ).pipe(Effect.exit)
+        yield* progress.turnEnded
         if (Exit.isSuccess(exit)) yield* replyIfSilent(exit.value, reachedBefore, yield* Ref.get(fromPerson))
 
         const ids = yield* Ref.get(taken)
@@ -214,6 +219,7 @@ export class Agent extends Context.Service<
       }).pipe(
         Effect.ensuring(
           Effect.gen(function* () {
+            yield* progress.turnEnded
             if (yield* Ref.getAndSet(running, false)) {
               yield* Ref.set(lastTurnEndedMs, Option.some(yield* Clock.currentTimeMillis))
             }

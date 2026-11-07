@@ -43,7 +43,7 @@ import { LiveActivityContent } from "../LiveActivity.ts"
 import { BrowserSession, MacSshAccess, MacStatus } from "../Machines.ts"
 import { MediaContentType, MediaRef, MediaUploadTarget } from "../Media.ts"
 import { AccessMessage, AccessRequest, Message, QuestionMessage, TextMessage } from "../Message.ts"
-import { ProjectPhase } from "../Project.ts"
+import { ProgressText, ProjectPhase } from "../Project.ts"
 import { Relay, RelaySource, RelayTarget } from "../Relay.ts"
 import { Milestone, StatusCard } from "../Status.ts"
 import { TurnUsage, UsageSnapshot } from "../Usage.ts"
@@ -404,6 +404,18 @@ export class SandboxRpcs extends RpcGroup.make(
    * model, which the ledger counts for the project like a turn.
    */
   Rpc.make("ReportTask", { payload: TaskReport.fields }),
+  /**
+   * What the running turn is doing (see `TurnProgress`), shown under "Working" in Chat and on Home until the turn
+   * ends or the next report replaces it. Ignored when no turn is running. dreamd only, at most about once a minute.
+   * Added after the first release: an older Worker fails it as an unknown request, and dreamd carries on.
+   */
+  Rpc.make("ReportProgress", {
+    payload: {
+      line: Schema.optionalKey(ProgressText),
+      activeAt: Schema.DateTimeUtc,
+      waitingSince: Schema.optionalKey(Schema.DateTimeUtc)
+    }
+  }),
   /**
    * Keep the sandbox up: a scheduled `--run` command is running, the published app is in use, or the app is taking
    * a relay's delivery ("relay", added after the first release). dreamd sends it about once a minute while any

@@ -158,7 +158,14 @@ const nextLocal = (now: DateTime.Utc, hours: number, minutes: number) => {
 
 /** What each sample project's agent is up to when the world loads (Deck v3, A+B+C Home). */
 const initialActivity = (slug: string, working: boolean, now: DateTime.Utc): AgentActivity => {
-  if (working) return { state: "working", since: DateTime.subtract(now, { minutes: 2 }) }
+  if (working) {
+    // What dreamd would report for a watched turn (`TurnProgress`), so Chat and Home show the progress line.
+    return {
+      state: "working",
+      since: DateTime.subtract(now, { minutes: 2 }),
+      progress: { line: "Plotting your squat sessions", activeAt: DateTime.subtract(now, { seconds: 20 }), at: now }
+    }
+  }
   switch (slug) {
     case "morning-brief":
       return { state: "idle", since: DateTime.subtract(now, { hours: 7 }), nextWakeAt: nextLocal(now, 6, 55) }

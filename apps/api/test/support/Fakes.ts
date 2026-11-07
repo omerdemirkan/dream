@@ -53,6 +53,8 @@ export class FakeWorld {
     envHash: string | undefined
   }> = []
   readonly pushes: Array<{ readonly token: string; readonly kind: string; readonly payload: unknown }> = []
+  /** What dreamd was told about who's watching (`SetWatching`). */
+  readonly watching: Array<{ readonly sandboxId: string; readonly watching: boolean }> = []
   readonly processes: Array<{ sandboxId: string; command: string; pty: boolean }> = []
   readonly inputs: Array<{ sandboxId: string; pid: number; text: string }> = []
   readonly browserSessions = new Map<string, { status: string; startedAt: string; endedAt?: string }>()
@@ -342,6 +344,8 @@ export const fakeDaemon = (world: FakeWorld) =>
           world.delivered.push({ sandboxId: sandbox.sandboxId, events, timeZone, envHash })
           return events.map((event) => event.id)
         }),
+      setWatching: (sandbox, _token, watching) =>
+        Effect.sync(() => void world.watching.push({ sandboxId: sandbox.sandboxId, watching })),
       forwardRelay: (sandbox, _token, request) =>
         Effect.gen(function* () {
           if (world.deliverFails) return yield* new UpstreamFailure({ service: "dreamd", message: "down" })

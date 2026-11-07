@@ -200,6 +200,7 @@ export const WorkerSandboxHandlers = SandboxRpcs.toLayer(
       RestartRelay: (payload) => forward((c) => c.RestartRelay(payload)),
       ReportTurn: (payload) => forward((c) => c.ReportTurn(payload)),
       ReportTask: (payload) => forward((c) => c.ReportTask(payload)),
+      ReportProgress: (payload) => forward((c) => c.ReportProgress(payload)),
       StayAwake: (payload) => forward((c) => c.StayAwake(payload)),
       Sleep: (payload) => forward((c) => c.Sleep(payload))
     }

@@ -92,7 +92,9 @@ export const DaemonEnv = {
    * Optional: what the ProjectDO calls this file's settings (a hash). dreamd reports it back in `Health`, so the
    * DO knows the dreamd answering is the one that read this file.
    */
-  envHash: "DREAM_ENV_HASH"
+  envHash: "DREAM_ENV_HASH",
+  /** Optional: "on" lets dreamd report what a turn is doing (`TurnProgress`) while someone watches. Off unless set. */
+  progressLine: "DREAM_PROGRESS_LINE"
 } as const
 
 export const DefaultDaemonPort = 4747

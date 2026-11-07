@@ -16,6 +16,8 @@ import { Clock, Context, DateTime, Deferred, Duration, Effect, Layer, Option, Qu
 import { FetchHttpClient } from "effect/http"
 import { TestClock } from "effect/testing"
 import { Agent, backoff } from "../src/Agent.ts"
+import { Progress } from "../src/progress/Progress.ts"
+import { Summarizer } from "../src/progress/Summarizer.ts"
 import { Api, type Report } from "../src/Api.ts"
 import { Attachments } from "../src/Attachments.ts"
 import { Harness, type HarnessError, type TurnResult, TurnOutcome } from "../src/harness/Harness.ts"
@@ -43,8 +45,10 @@ const setup = (
     const log = yield* Ref.make<ReadonlyArray<string>>([])
     const reports = yield* Ref.make<ReadonlyArray<Report>>([])
     const layer = Agent.layer.pipe(
+      Layer.provideMerge(Progress.layer),
       Layer.provideMerge(
         Layer.mergeAll(
+          Summarizer.modelFree,
           Harness.layerTest({
             turns,
             log,

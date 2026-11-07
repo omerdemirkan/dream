@@ -26,6 +26,8 @@ export interface DreamdConfigShape extends Config.Success<typeof DaemonConfig> {
   readonly codexBaseUrl: Option.Option<string>
   /** The key relay deliveries are signed with (`RelayKeyPath` in a sandbox); dreamd makes it if it's missing. */
   readonly relayKeyPath: string
+  /** Whether dreamd reports what turns are doing (`DaemonEnv.progressLine` is "on"; see `progress/Progress.ts`). */
+  readonly progressLine: boolean
 }
 
 const LocalConfig = Config.all({
@@ -35,7 +37,8 @@ const LocalConfig = Config.all({
   model: Config.option(Config.NonEmptyString(DaemonEnv.model)),
   effort: Config.option(Config.schema(ReasoningEffort, DaemonEnv.effort)),
   envHash: Config.option(Config.NonEmptyString(DaemonEnv.envHash)),
-  codexBaseUrl: Config.option(Config.NonEmptyString("DREAM_CODEX_BASE_URL"))
+  codexBaseUrl: Config.option(Config.NonEmptyString("DREAM_CODEX_BASE_URL")),
+  progressLine: Config.String(DaemonEnv.progressLine).pipe(Config.withDefault("off"))
 })
 
 export class DreamdConfig extends Context.Service<DreamdConfig, DreamdConfigShape>()("@dream/dreamd/DreamdConfig") {
@@ -76,6 +79,7 @@ const load = (provider: ConfigProvider.ConfigProvider, envFile: string) =>
       effort: local.effort,
       envHash: local.envHash,
       codexBaseUrl: local.codexBaseUrl,
-      relayKeyPath: `${local.home}/.dream/relay.key`
+      relayKeyPath: `${local.home}/.dream/relay.key`,
+      progressLine: local.progressLine.trim().toLowerCase() === "on"
     })
   })

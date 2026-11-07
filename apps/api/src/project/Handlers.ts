@@ -922,6 +922,7 @@ export const AgentHandlers = SandboxRpcs.toLayer(
 
       ReportTask: (report) => sandbox.taskFinished(report),
       ReportTurn: ({ state, usage }) => (state === "started" ? sandbox.turnStarted : sandbox.turnFinished(usage)),
+      ReportProgress: (report) => sandbox.reportProgress(report),
       StayAwake: () => sandbox.stayAwake,
       Sleep: ({ reason, checkedAt }) => sandbox.sleep(reason, checkedAt)
     }
@@ -932,6 +933,12 @@ export const LiveHandlers = ProjectLiveRpcs.toLayer(
   Effect.gen(function* () {
     const live = yield* LiveFeed
     const core = yield* Core
-    return { Subscribe: () => live.subscribe(core.snapshot) }
+    const sandbox = yield* SandboxManager
+    // dreamd reports what a turn is doing only while someone watches: it hears when the first phone comes and the
+    // last one goes (forked, so the feed never waits on the sandbox).
+    const watchersChanged = Effect.forkDetach(sandbox.watchersChanged)
+    return {
+      Subscribe: () => live.subscribe(core.snapshot, Effect.asVoid(watchersChanged))
+    }
   })
 )

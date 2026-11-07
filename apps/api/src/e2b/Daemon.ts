@@ -44,6 +44,12 @@ export class Daemon extends Context.Service<
         readonly deliveries: readonly [RelayForward, ...Array<RelayForward>]
       }
     ) => Effect.Effect<RelayForwardResult, UpstreamFailure | DaemonRestarting>
+    /** Whether anyone is watching the project (`DaemonRpcs.SetWatching`). An older dreamd refuses it. */
+    readonly setWatching: (
+      sandbox: SandboxAccess,
+      daemonToken: string,
+      watching: boolean
+    ) => Effect.Effect<void, UpstreamFailure>
     readonly health: (
       sandbox: SandboxAccess,
       daemonToken: string
@@ -123,7 +129,13 @@ export class Daemon extends Context.Service<
           Effect.mapError(failure("Checking dreamd"))
         )
 
-      return Daemon.of({ deliver, forwardRelay, health })
+      const setWatching = (sandbox: SandboxAccess, daemonToken: string, watching: boolean) =>
+        withClient(sandbox, daemonToken, (client) => client.SetWatching({ watching })).pipe(
+          Effect.timeout("10 seconds"),
+          Effect.mapError(failure("Telling dreamd who's watching"))
+        )
+
+      return Daemon.of({ deliver, forwardRelay, setWatching, health })
     })
   )
 }

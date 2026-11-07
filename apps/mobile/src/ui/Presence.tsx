@@ -174,7 +174,12 @@ function BounceDot(props: { readonly delay: number }) {
   return <Animated.View style={[{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: color.t2 }, style]} />
 }
 
-function Bubble(props: { readonly children: ReactNode; readonly two?: boolean; readonly label: string }) {
+function Bubble(props: {
+  readonly children: ReactNode
+  readonly two?: boolean
+  readonly wide?: boolean
+  readonly label: string
+}) {
   return (
     <View
       accessible
@@ -186,7 +191,7 @@ function Bubble(props: { readonly children: ReactNode; readonly two?: boolean; r
         alignItems: props.two ? "flex-start" : "center",
         gap: 11,
         minHeight: 40,
-        maxWidth: "86%",
+        maxWidth: props.wide ? "100%" : "86%",
         paddingVertical: props.two ? 11 : 9,
         paddingLeft: 14,
         paddingRight: 16,
@@ -222,16 +227,38 @@ function RowDot(props: { readonly starting: boolean }) {
   )
 }
 
-function WorkingRow(props: { readonly since: DateTime.Utc | undefined }) {
+/**
+ * "Working · 35m", and under it what the turn is doing when dreamd has said (`progressNote`): the row widens to
+ * the full column for it, and the line stays on one line, as dreamd sized it.
+ */
+function WorkingRow(props: {
+  readonly since: DateTime.Utc | undefined
+  readonly note: { readonly text: string; readonly quiet: boolean } | undefined
+}) {
   const now = useTickingNow(props.since !== undefined)
   const elapsed = props.since ? elapsedLabel(props.since, now) : undefined
+  const head = elapsed ? `Working, ${elapsed}` : "Working"
   return (
-    <Bubble label={elapsed ? `Working, ${elapsed}` : "Working"}>
+    <Bubble
+      two={props.note !== undefined}
+      wide={props.note !== undefined}
+      label={props.note ? `${head}. ${props.note.text}` : head}
+    >
       <RowDot starting={false} />
-      <Text style={{ fontSize: 15, letterSpacing: -0.15, color: color.t2 }}>
-        <Text style={{ color: color.t1, fontWeight: "600" }}>Working</Text>
-        {elapsed ? ` · ${elapsed}` : ""}
-      </Text>
+      <View style={{ flexShrink: 1 }}>
+        <Text style={{ fontSize: 15, letterSpacing: -0.15, color: color.t2 }}>
+          <Text style={{ color: color.t1, fontWeight: "600" }}>Working</Text>
+          {elapsed ? ` · ${elapsed}` : ""}
+        </Text>
+        {props.note ? (
+          <Text
+            numberOfLines={1}
+            style={{ fontSize: 14, lineHeight: 19, color: props.note.quiet ? color.t3 : color.t2, marginTop: 2 }}
+          >
+            {props.note.text}
+          </Text>
+        ) : null}
+      </View>
     </Bubble>
   )
 }
@@ -267,7 +294,7 @@ export function ChatActivityRow(props: { readonly row: ChatRow }) {
         </Bubble>
       )
     case "Working":
-      return <WorkingRow since={row.since} />
+      return <WorkingRow since={row.since} note={row.note} />
     case "Done":
       return (
         <View

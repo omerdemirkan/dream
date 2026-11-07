@@ -36,6 +36,8 @@ export interface TurnHandlers {
    * so the turn's "before" can be fresh. Called at most once a turn, and never waited for.
    */
   readonly firstUsage?: (reading: UsageReading) => Effect.Effect<void>
+  /** Sees every part of the turn's stream, as it comes (progress lines are written from them). */
+  readonly observe?: (part: Part) => Effect.Effect<void>
 }
 
 /** Questions one turn may send; past that the model is told to use `dream ask`, which it can pace itself. */
