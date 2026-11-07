@@ -2,7 +2,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Result } from "effect"
 import { measure } from "../src/cli/MediaInfo.ts"
-import { mediaType, parseShow } from "../src/cli/Parse.ts"
+import { captionOf, mediaType, parseShow } from "../src/cli/Parse.ts"
 
 const bytes = (...parts: ReadonlyArray<ReadonlyArray<number> | string>) =>
   new Uint8Array(
@@ -81,6 +81,14 @@ describe("dream ask --show", () => {
     )
     assert.isTrue(Result.isFailure(parseShow("Calendar first")))
     assert.isTrue(Result.isFailure(parseShow("=a.png")))
+  })
+
+  it("captions each file with its name, leaving out what only orders them", () => {
+    assert.strictEqual(captionOf("shots/a-1-opening-the-site.png"), "Opening the site")
+    assert.strictEqual(captionOf("2_the_clash.jpg"), "The clash")
+    assert.strictEqual(captionOf("calm-voice.mp3"), "Calm voice")
+    assert.isUndefined(captionOf("shots/b.mp4"))
+    assert.isUndefined(captionOf("a-1.png"))
   })
 
   it("takes audio only for previews", () => {

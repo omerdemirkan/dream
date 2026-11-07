@@ -166,3 +166,16 @@ export const iconImageProblem = (
     return `${file} is ${width}×${height}; make it at least ${IconMinPixels}×${IconMinPixels} so it's sharp.`
   return undefined
 }
+
+/**
+ * A file's name as a caption, without the letters and numbers that only order the files: "a-2-the-clash.png" reads
+ * "The clash". Nothing for a name that's only those ("b.mp4").
+ */
+export const captionOf = (file: string): string | undefined => {
+  const name = (file.split("/").pop() ?? "")
+    .replace(/\.[^.]+$/, "")
+    .replace(/^((?:[a-z]|\d+)(?:[-_ .]+|$))+/i, "")
+    .replace(/[-_]+/g, " ")
+    .trim()
+  return name === "" ? undefined : name.charAt(0).toUpperCase() + name.slice(1)
+}

@@ -185,18 +185,6 @@ const filesFor = (pattern: string) =>
     return matches.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
   })
 
-/** A file's name as a caption: "2-the-clash.png" → "The clash". */
-const captionOf = (file: string) => {
-  const name = file
-    .split("/")
-    .pop()!
-    .replace(/\.[^.]+$/, "")
-    .replace(/^[a-z]?\d*[-_ ]+/i, "")
-    .replace(/[-_]+/g, " ")
-    .trim()
-  return name === "" ? undefined : name.charAt(0).toUpperCase() + name.slice(1)
-}
-
 const workFlag = Flag.String("work").pipe(
   Flag.withDescription(
     "The workstream it belongs to (ws_…, from `dream work`). It carries that workstream's label in Chat; a question or access request makes its row wait on them while it's open."
@@ -336,7 +324,7 @@ const ask = Command.make(
       const previews = yield* Effect.forEach(expanded, ({ option, media: paths }) =>
         Effect.gen(function* () {
           const [first, ...rest] = yield* Effect.forEach(paths, (file) =>
-            Effect.map(upload(file, captionOf(file), true), (m) => m.id)
+            Effect.map(upload(file, Parse.captionOf(file), true), (m) => m.id)
           )
           return { option, media: [first!, ...rest] as const }
         })
