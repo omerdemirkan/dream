@@ -33,7 +33,7 @@ Dimensions every event has when they apply: `project`, `payer` (`dream`, or `per
 | `sandbox_run` | `e2b:<E2B event id>` | `ms`, `vcpus`, `memory_mb` | `sandbox`, `execution`, `template`, `cause` (`project`, `refresh`, `sign-in`, `dev`, `harness-check`), `ended` (`paused`/`killed`), `kill_reason` |
 | `browser_session` | `browserbase:<session id>` | `ms`, `proxy_bytes` | `session` |
 | `mac_session` | `namespace:<instance id>` | `ms`, `vcpus`, `memory_mb` | `instance` |
-| `model_request` | `openai:<OpenAI id>`: the response's (Responses, a realtime `response.done`), the completion's (Chat), `<item id>:transcription` (a realtime input transcription), `<response id>:image_gen` (the image tool), the call's or Live session's (a session metered by its length); else `openai:<x-request-id>` (embeddings, images, speech, transcription) | `input_tokens`, `cached_input_tokens`, `output_tokens`, `reasoning_tokens`, `input_audio_tokens`, `cached_audio_tokens`, `output_audio_tokens`, `input_image_tokens`, `output_image_tokens`, `characters`, `audio_ms`, `session_ms`, `web_search_calls` | `provider` (`openai`), `endpoint` (`responses`, `chat`, `embeddings`, `images`, `speech`, `transcription`, `realtime`, `live`), `model`, `service_tier`, `estimated` (`true` when a quantity was inferred: speech without usage, a call metered by its length) |
+| `model_request` | `openai:<OpenAI id>`: the response's (Responses, a realtime `response.done`), the completion's (Chat), `<item id>:transcription` (a realtime input transcription), `<response id>:image_gen` (the image tool), the call's or Live session's (a session metered by its length); else `openai:<x-request-id>` (embeddings, images, speech, transcription) | `input_tokens`, `cached_input_tokens`, `output_tokens`, `reasoning_tokens`, `input_audio_tokens`, `cached_audio_tokens`, `output_audio_tokens`, `input_image_tokens`, `cached_image_tokens`, `output_image_tokens`, `characters`, `audio_ms`, `session_ms`, `web_search_calls`, `images` | `provider` (`openai`), `endpoint` (`responses`, `chat`, `embeddings`, `images`, `speech`, `transcription`, `realtime`, `live`), `model`, `service_tier`, `size` and `quality` (images priced per image), `estimated` (`true` when a quantity was inferred: speech without usage, a transcript in text, srt or vtt, a call metered by its length) |
 | `storage_day` | `r2:<project id>:<YYYY-MM-DD>` | `bytes` (stored at the end of the UTC day) | |
 | `email_sent` | `email:<message id>` | `recipients` | |
 
@@ -44,15 +44,21 @@ OpenAI's token counts nest the way OpenAI reports them, and the price book price
 every input token (cached, audio and image ones included), `cached_input_tokens` the cached ones of every modality,
 with `cached_audio_tokens` the audio ones among them; `input_audio_tokens` and `input_image_tokens` are the audio and
 image ones among `input_tokens` (cached included); `output_tokens` is every output token, with `reasoning_tokens`,
-`output_audio_tokens` and `output_image_tokens` among them. A model without a separate price for a modality
+`output_audio_tokens` and `output_image_tokens` among them; `cached_image_tokens` are the image ones among
+`cached_input_tokens` (and `input_image_tokens`), priced at the book's `cachedImageInput`. A model without a separate price for a modality
 (transcription) bills it at its text price. Speech estimated without usage should send `characters` for tts-1 and
 tokens for the token-priced voices; the book prices whatever quantities are there. The gateway does exactly that: `characters` always,
 and for a token-priced voice `input_tokens` at about four characters a token and `output_tokens` =
 `output_audio_tokens` at about 1,250 a minute of speech and 900 characters a minute, `estimated: true`; speech that
 reports usage (`stream_format: "sse"`) has its output tokens counted as audio. The image tool's model isn't
 reported, so its event says `gpt-image (tool)` (priced at 0 until the book knows it); a realtime input
-transcription whose session didn't name its model says `realtime-transcription`. OpenAI reports no cost, so these
-events never carry `cost_usd`.
+transcription whose session didn't name its model says `realtime-transcription`. An image model's output is image
+tokens, so when its usage doesn't break them out, `output_image_tokens` = `output_tokens`. dall-e-2 and dall-e-3
+report no usage: their events carry `images` (how many were asked for) with `size` and `quality`, priced per image
+(`perImage` in the book). A transcript asked for as `text`, `srt` or `vtt` carries no usage either: its `audio_ms`
+comes from the subtitles' last timestamp or, for text, from the words at about 150 a minute, and the token-priced
+models also get `input_tokens` = `input_audio_tokens` at one per 100 ms and `output_tokens` at four characters each,
+all `estimated`. OpenAI reports no cost, so these events never carry `cost_usd`.
 
 **The sink today is D1** (`meter_events`, `MeterD1`): one row per event, the event exactly as above (quantities and
 dimensions as JSON columns, `project` and `owner` also as columns for queries) plus columns that exist only for the
@@ -157,8 +163,13 @@ on a response id only for the project that made it, from `openai_objects` in D1)
 WebRTC, its WebSocket, and `hangup`/`content` for its project; SIP phone calls are refused). Everything else (files,
 uploads, vector stores, conversations, batches, fine-tuning, containers, assistants, threads, evals, custom voices,
 videos, `/organization`, the legacy realtime session mints) is a 404 whose message says what Dream supports.
-Requests carry a `safety_identifier` (or `OpenAI-Safety-Identifier`) derived from the project, so OpenAI's abuse
-checks see projects apart.
+A Responses request (and `input_tokens`) may not reach what OpenAI stored for another project: `conversation`,
+`item_reference` inputs, `file_id`s, `vector_store_ids` and container ids are refused (nothing a project makes
+through the gateway is stored as any of them), and `previous_response_id` must name a response this project made.
+A realtime WebSocket's query keeps only `model` and `intent`; `call_id`, which would attach to a WebRTC call, is
+refused (Dream's sideband is the only one), and ids in paths are a strict set of characters, so nothing encoded
+reaches OpenAI's path. Every request carries a `safety_identifier` (or `OpenAI-Safety-Identifier`) from the project
+that no app can choose: an app's own is hashed and appended, so its end users stay apart within the project.
 
 **How it meters.** From what comes back, without holding it: bodies stream through to the app while a copy is read
 (`openai/Sse.ts`), JSON for `usage` and `tool_usage`, event streams for their final event (`response.completed`,
@@ -172,11 +183,16 @@ offer has to go to the gateway's `/realtime/calls` (the one route open to the pu
 wrapped secrets), and the gateway attaches a sideband (`?call_id=`) from `OpenAICallDO`, which meters the call until
 it ends. A GPT-Live WebRTC session gets the same sideband at `/live/sessions/{id}/attach`. A sideband that sees no
 usage at all records the call's length (`session_ms`, `estimated`). Response ids are the transaction ids, so a
-response metered by both its stream and a later poll counts once; background responses nobody watched to the end are
-looked up and metered by the five-minute maintenance (`sweepBackgroundResponses`) for a day.
+response metered by both its stream and a later poll counts once. Every stored response (and every background one) is
+recorded unmetered when it's made, and whatever its stream, the app's polls or the JSON answer don't meter, the
+five-minute maintenance does (`sweepBackgroundResponses`): two minutes on, it looks the response up, then again at
+growing intervals (up to an hour) while it isn't done, each row at its own `next_check_ms`, and gives up after a day.
+Recording ownership and metering never fail a call: if D1 refuses, the answer still goes back (and at worst the
+project's later reads of that response are refused).
 
-Not metered: a stream the app hangs up on before its last event (OpenAI bills what it generated; the gateway never
-sees the usage), and a sideband's call when `OpenAICallDO` restarts mid-call (a deploy).
+Not metered: a `store: false` stream the app hangs up on before its last event (OpenAI bills what it generated, and
+with nothing stored the gateway can't look it up), and a sideband's call when `OpenAICallDO` restarts mid-call (a
+deploy).
 
 **Off by default.** `DREAM_AI_GATEWAY_ENABLED` (a plain binding from `.env`, like `DREAM_EMAIL_ENABLED`). Off, the
 host answers 404, sandboxes get neither the variables nor the egress rule, and the agent isn't told: dreamd installs

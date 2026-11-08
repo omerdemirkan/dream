@@ -27,6 +27,11 @@
 
 ## Infra behaviors (from research, verify again during build)
 - E2B: lifecycle onTimeout:"pause" + autoResume:true; HTTP to exposed port resumes paused sandbox.
+- E2B egress rules (checked 2026-11-08 in a sandbox): a rule's header transform applies to HTTPS and to WebSocket
+  upgrades alike. Hosts with a rule are re-signed with E2B's CA, which the system bundle trusts (curl, Python's
+  urllib) but Node, Bun and Python's requests/httpx don't, so dreamd sets NODE_EXTRA_CA_CERTS, SSL_CERT_FILE and
+  REQUESTS_CA_BUNDLE to /etc/ssl/certs/ca-certificates.crt for every process it starts, under every harness: without
+  them a Node app can't reach any connected service's host, nor Dream's AI gateway.
   Public URL https://<port>-<id>.e2b.app; allowPublicTraffic:false requires e2b-traffic-access-token header.
   E2B network rules can transform requests at egress (header injection) — verify.
 - Infisical Agent Vault: HTTPS_PROXY forward proxy, sandbox holds session token, proxy injects real creds.
