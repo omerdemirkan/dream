@@ -52,6 +52,10 @@ export const Routes = {
   testflightGrant: "/admin/testflight/grants",
   /** GET with the operator's `x-dream-dev-secret`: `TestflightBuilds`, read by the Worker itself. */
   testflightBuilds: "/admin/testflight/builds",
+  /** POST a `ClientErrorBatch` from the app (no session needed; rate-limited per address). */
+  clientErrors: "/client-errors",
+  /** GET with the operator's `x-dream-dev-secret`: the latest client error reports (`?limit=`, `?kind=`). */
+  clientErrorsAdmin: "/admin/client-errors",
   /** GET: the Expo Updates protocol (v1) manifest endpoint, the app's `updates.url`. */
   updatesManifest: "/updates/manifest",
   /** GET an update asset by its `AssetHash` (public and immutable, like the bundle inside the app). */

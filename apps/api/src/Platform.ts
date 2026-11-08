@@ -12,6 +12,7 @@ import { Browserbase } from "./brokers/Browserbase.ts"
 import { Namespace } from "./brokers/Namespace.ts"
 import { ApiConfig } from "./Config.ts"
 import { ChatGpt } from "./connect/ChatGpt.ts"
+import { ClientErrors } from "./db/ClientErrors.ts"
 import { Connections } from "./db/Connections.ts"
 import { DesktopLinks } from "./db/DesktopLinks.ts"
 import { Attachments } from "./db/Attachments.ts"
@@ -68,6 +69,7 @@ export const databaseLayer = (d1: D1Database) =>
     MacActivityLog.layer,
     DesktopLinks.layer,
     RateLimits.layer,
+    ClientErrors.layer,
     MeterD1,
     OpenAIObjects.layer
   ).pipe(Layer.provide(D1Client.layer({ db: d1 }).pipe(Layer.orDie)))

@@ -49,6 +49,7 @@ import { useStagedAttachments } from "../../ui/Attachments.tsx"
 import { ChatComposer } from "../../ui/Composer.tsx"
 import { HoldMenu } from "../../ui/HoldMenu.tsx"
 import { ThreadView } from "../../ui/Thread.tsx"
+import { LayerBoundary } from "../../ui/ErrorBoundary.tsx"
 import { useOpenMessage, usePlanMissing, useProject, useRequestId } from "../../ui/hooks.ts"
 import { useOpenOptions } from "../../ui/Options.tsx"
 import { IconButton } from "../../ui/kit.tsx"
@@ -411,13 +412,15 @@ function Project(props: {
       />
       <AppNotificationsSheet projectId={props.projectId} title={project?.title ?? ""} />
       {state && thread ? (
-        <ThreadView
-          key={thread.messageId}
-          state={state}
-          open={thread}
-          label={labelOf(state.messages, thread.messageId, labels)}
-          onClose={() => setThread(Option.none())}
-        />
+        <LayerBoundary closes={threadOpenAtom}>
+          <ThreadView
+            key={thread.messageId}
+            state={state}
+            open={thread}
+            label={labelOf(state.messages, thread.messageId, labels)}
+            onClose={() => setThread(Option.none())}
+          />
+        </LayerBoundary>
       ) : null}
       <HoldMenu projectId={props.projectId} />
     </View>

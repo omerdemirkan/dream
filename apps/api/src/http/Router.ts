@@ -26,6 +26,7 @@ import {
   submitDesktopAccess
 } from "./DesktopPage.ts"
 import { gateway } from "./Gateway.ts"
+import { readClientErrors, receiveClientErrors } from "./ClientErrors.ts"
 import { macActivity } from "./MacActivity.ts"
 import { receiveE2bWebhook, registerE2bWebhook } from "./Metering.ts"
 import { OpenAIGateway } from "@dream/domain"
@@ -104,6 +105,7 @@ export const route = (raw: Request) =>
     if (path === Routes.app && request.method === "POST") return yield* appRpc
     if (path === Routes.sandbox && request.method === "POST") return yield* sandboxRpc
     if (path === Routes.e2bWebhook && request.method === "POST") return yield* receiveE2bWebhook
+    if (path === Routes.clientErrors && request.method === "POST") return yield* receiveClientErrors(request)
 
     const live = /^\/projects\/([^/]+)\/live$/.exec(path)
     if (live !== null) {
@@ -193,6 +195,10 @@ export const route = (raw: Request) =>
     if (path === Routes.macActivity && request.method === "GET") {
       if (!operator()) return HttpServerResponse.text("Forbidden", { status: 403 })
       return yield* macActivity(url)
+    }
+    if (path === Routes.clientErrorsAdmin && request.method === "GET") {
+      if (!operator()) return HttpServerResponse.text("Forbidden", { status: 403 })
+      return yield* readClientErrors(url)
     }
     if (path === Routes.testflightBuilds && request.method === "GET") {
       if (!operator()) return HttpServerResponse.text("Forbidden", { status: 403 })

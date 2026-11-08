@@ -5,6 +5,7 @@
 export * from "./Agent.ts"
 export * from "./AgentEvent.ts"
 export * from "./AppNotifications.ts"
+export * from "./ClientErrors.ts"
 export * from "./Auth.ts"
 export * from "./Connections.ts"
 export * from "./Costs.ts"

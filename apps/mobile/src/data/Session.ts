@@ -16,6 +16,9 @@ export interface SignedIn {
 
 const Keys = { token: "dream.session.token", user: "dream.session.user", deviceId: "dream.device.id" } as const
 
+/** Where the session token is kept, for the crash reporter, which reads it without the data layer. */
+export const sessionTokenKey = Keys.token
+
 const UserJson = Schema.fromJsonString(Schema.toCodecJson(User))
 const decodeUser = Schema.decodeUnknownOption(UserJson)
 const encodeUser = Schema.encodeSync(UserJson)
