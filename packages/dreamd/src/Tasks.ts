@@ -186,7 +186,7 @@ export class Tasks extends Context.Service<
             resumed: false,
             startedAt
           })
-        )
+        ).pipe(Effect.map((settled) => settled.usage))
         yield* fs.remove(scratch, { recursive: true }).pipe(Effect.ignore)
 
         const lastReading = yield* Ref.get(last)

@@ -17,6 +17,10 @@
  * Attachments in the events are copied into the sandbox before the prompt
  * that names them (see `Attachments.ts`).
  *
+ * The prompt also says what the previous turn used, session by session
+ * (`harness/TurnUsage.ts`), kept in `last-turn.json` so it survives a
+ * restart: the agent can't see its own spending otherwise.
+ *
  * After a completed turn with nothing else queued, the published URL is
  * loaded, and a new breakage there becomes an event for the agent (see
  * `Published.ts`).
@@ -29,15 +33,31 @@
  */
 import { renderSteerPrompt, renderTurnPrompt } from "@dream/agent-context"
 import { randomUUID } from "node:crypto"
-import { type AgentEvent, EventId, type ModelProvider, type TurnState } from "@dream/domain"
-import { Clock, Context, DateTime, Duration, Effect, Exit, Layer, Option, Ref, Stream } from "effect"
+import { type AgentEvent, EventId, type ModelProvider, type TurnState, type UsageWindow } from "@dream/domain"
+import {
+  Clock,
+  Context,
+  DateTime,
+  Duration,
+  Effect,
+  Exit,
+  FileSystem,
+  Layer,
+  Option,
+  Path,
+  Ref,
+  Schema,
+  Stream
+} from "effect"
 import { Api } from "./Api.ts"
 import { Attachments } from "./Attachments.ts"
+import { DreamdConfig } from "./Config.ts"
 import * as Background from "./harness/Background.ts"
 import { Harness, type TurnResult, TurnOutcome } from "./harness/Harness.ts"
 import { type QuestionOutcome, replyFromFinalText } from "./harness/PersonChannel.ts"
 import type { TurnHandlers } from "./harness/Turn.ts"
 import { Inbox, type InboxState, queuedCount } from "./Inbox.ts"
+import * as JsonFile from "./JsonFile.ts"
 import { Outreach } from "./Outreach.ts"
 import { Progress } from "./progress/Progress.ts"
 import { Published } from "./Published.ts"
@@ -56,6 +76,37 @@ export const agentOnly = (event: AgentEvent): boolean =>
   event._tag === "PublishedUrlBroken" ||
   event._tag === "BackgroundStopped" ||
   (event._tag === "WakeDue" && (event.run !== undefined || event.task !== undefined))
+
+/** What the last turn used (`LastTurn` in `@dream/agent-context`), as `last-turn.json` keeps it. */
+const LastTurnFile = Schema.Struct({
+  startedAt: Schema.DateTimeUtc,
+  endedAt: Schema.DateTimeUtc,
+  priced: Schema.Boolean,
+  sessions: Schema.Array(
+    Schema.Struct({
+      own: Schema.Boolean,
+      description: Schema.optionalKey(Schema.String),
+      model: Schema.optionalKey(Schema.String),
+      effort: Schema.optionalKey(Schema.String),
+      steps: Schema.Finite,
+      peakContext: Schema.Finite,
+      cost: Schema.Finite,
+      recached: Schema.Finite
+    })
+  ),
+  weekly: Schema.optionalKey(Schema.Struct({ before: Schema.Finite, after: Schema.Finite }))
+})
+
+/** The weekly window's rise across a turn, when both readings are of the same window (it didn't reset meanwhile). */
+const weeklyRise = (before: UsageWindow | undefined, after: UsageWindow | undefined) => {
+  if (before === undefined || after === undefined) return undefined
+  const resets = [before.resetsAt, after.resetsAt].map((at) =>
+    at === undefined ? undefined : DateTime.toEpochMillis(at)
+  )
+  const [from, to] = resets
+  if (from !== undefined && to !== undefined && Math.abs(from - to) > 30 * 60_000) return undefined
+  return { before: before.usedPercent, after: after.usedPercent }
+}
 
 const hasQueued = (state: InboxState) => state.entries.some((entry) => entry.state === "queued")
 const hasQueuedReset = (state: InboxState) =>
@@ -81,7 +132,15 @@ export class Agent extends Context.Service<
       const published = yield* Published
       const attachments = yield* Attachments
       const progress = yield* Progress
+      const config = yield* DreamdConfig
+      const fs = yield* FileSystem.FileSystem
+      const path = yield* Path.Path
       const provider: ModelProvider = harness.name === "claude-code" ? "claude" : "chatgpt"
+      const lastTurnFile = JsonFile.make(LastTurnFile, path.join(config.stateDir, "last-turn.json"))
+      const onDisk = <A, E>(effect: Effect.Effect<A, E, FileSystem.FileSystem | Path.Path>) =>
+        effect.pipe(Effect.provideService(FileSystem.FileSystem, fs), Effect.provideService(Path.Path, path))
+      /** The weekly window as the running turn's first model call left it. */
+      const weeklyAtStart = yield* Ref.make<UsageWindow | undefined>(undefined)
       const running = yield* Ref.make(false)
       const lastTurnEndedMs = yield* Ref.make(Option.none<number>())
       const usage = yield* Ref.make<Usage.UsageReading>({})
@@ -176,6 +235,7 @@ export class Agent extends Context.Service<
           ),
         firstUsage: (reading) =>
           Effect.gen(function* () {
+            yield* Ref.set(weeklyAtStart, reading.weekly)
             yield* Ref.update(usage, (previous) => Usage.merge(previous, reading))
             yield* api.reportUsage(Usage.toSnapshot(provider, yield* Ref.get(usage), yield* DateTime.now))
           }),
@@ -200,6 +260,27 @@ export class Agent extends Context.Service<
           )
         })
 
+      /** Keep what the turn used for the next one's prompt; a turn that used nothing leaves nothing to say. */
+      const keepLastTurn = (startedAt: DateTime.Utc, result: TurnResult | undefined, reading: Usage.UsageReading) =>
+        Effect.gen(function* () {
+          if (result?.spend === undefined) {
+            if (yield* fs.exists(lastTurnFile.path)) yield* fs.remove(lastTurnFile.path)
+            return
+          }
+          const weekly = weeklyRise(yield* Ref.get(weeklyAtStart), reading.weekly)
+          yield* onDisk(
+            lastTurnFile.write({
+              startedAt,
+              endedAt: yield* DateTime.now,
+              priced: result.spend.priced,
+              sessions: result.spend.sessions,
+              ...(weekly === undefined ? {} : { weekly })
+            })
+          )
+        }).pipe(
+          Effect.catch((error) => Effect.logWarning("Couldn't keep what the turn used", { error: String(error) }))
+        )
+
       /** Run one turn with everything queued. Returns whether it should be retried. */
       const turn = Effect.gen(function* () {
         const held = yield* Ref.getAndSet(heldStop, Option.none())
@@ -209,13 +290,23 @@ export class Agent extends Context.Service<
         const taken = yield* Ref.make<ReadonlyArray<EventId>>(events.map((event) => event.id))
         const fromPerson = yield* Ref.make(!events.every(agentOnly))
         const { timeZone } = yield* inbox.state
+        const startedAt = yield* DateTime.now
+        yield* Ref.set(weeklyAtStart, undefined)
         yield* Ref.set(running, true)
         yield* api.reportTurn("started", yield* Ref.get(taken))
         yield* progress.turnStarted(events)
         yield* Effect.logInfo("Turn started", { events: yield* Ref.get(taken) })
 
         const missingAttachments = yield* attachments.fetch(events)
-        const prompt = renderTurnPrompt({ events, now: yield* DateTime.now, timeZone, missingAttachments })
+        const lastTurn = yield* onDisk(lastTurnFile.read).pipe(
+          Effect.map(Option.getOrUndefined),
+          Effect.catch((error) =>
+            Effect.logWarning("Couldn't read what the last turn used", { error: error.message }).pipe(
+              Effect.as(undefined)
+            )
+          )
+        )
+        const prompt = renderTurnPrompt({ events, now: yield* DateTime.now, timeZone, missingAttachments, lastTurn })
         const reachedBefore = yield* outreach.count
         const exit = yield* Effect.scoped(
           Effect.gen(function* () {
@@ -246,6 +337,7 @@ export class Agent extends Context.Service<
           yield* api.reportUsage(Usage.toSnapshot(provider, reading, yield* DateTime.now))
         }
         yield* api.reportTurn("finished", ids, result?.turnUsage)
+        yield* keepLastTurn(startedAt, result, reading)
         yield* Ref.set(running, false)
         yield* Ref.set(lastTurnEndedMs, Option.some(yield* Clock.currentTimeMillis))
 

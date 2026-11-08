@@ -62,6 +62,8 @@ export interface TurnResult {
   readonly finalText?: string
   /** What the turn used of the model, for `ReportTurn`, when the harness said anything about it. */
   readonly turnUsage?: TurnUsage
+  /** Each session's part in the turn, for the next turn's prompt (`LastTurn` in `@dream/agent-context`). */
+  readonly spend?: { readonly priced: boolean; readonly sessions: ReadonlyArray<Tokens.SessionSpend> }
   /** Background work that was still running when the turn ended, and so stopped with it (`Background.ts`). */
   readonly backgroundStopped?: Background.Stopped
 }
@@ -539,7 +541,7 @@ const make = Effect.fnUntraced(function* ({
     // Claude Code's session as the turn reported it, or as the adapter keeps it; Codex's root thread.
     const counted = yield* Ref.get(tally)
     const reported = name === "claude-code" ? Option.fromUndefinedOr(counted.claudeSessionId) : Option.none()
-    const turnUsage = yield* provide(
+    const settled = yield* provide(
       Tokens.settle({
         harness: name,
         home: config.home,
@@ -571,7 +573,8 @@ const make = Effect.fnUntraced(function* ({
         : reading,
       progressed: yield* Ref.get(progressed),
       finalText: yield* Ref.get(finalText),
-      ...Option.match(turnUsage, { onNone: () => ({}), onSome: (turnUsage) => ({ turnUsage }) }),
+      ...Option.match(settled.usage, { onNone: () => ({}), onSome: (turnUsage) => ({ turnUsage }) }),
+      ...(settled.sessions.length === 0 ? {} : { spend: { priced: settled.priced, sessions: settled.sessions } }),
       ...Option.match(backgroundStopped, { onNone: () => ({}), onSome: (stopped) => ({ backgroundStopped: stopped }) })
     } satisfies TurnResult
   })

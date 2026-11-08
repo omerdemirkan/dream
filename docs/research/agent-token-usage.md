@@ -223,3 +223,53 @@ The first call's own use is then lost to "Outside Dream", a fraction of a point 
   reason to read heavy references in a subagent instead.
 - **`BASH_MAX_OUTPUT_LENGTH` and file-read limits.** Outputs were already small.
 - **The turn prompt (`renderTurnPrompt`).** A few hundred tokens: the time and the events. Nothing to cut.
+
+# Follow-up: a day of building (2026-11-08)
+
+Anki Voice (`prj_fc22f93d…`, an iPhone app with CarPlay, built on the Mac) and Arabic conversation partner
+(`prj_50afbb83…`, a web app), from the transcripts in both sandboxes (copied out read-only, 18:46 Nov 7 to 05:27
+Nov 8 UTC) and `turn_usage`. Same method and list prices as above. Anki Voice: 1,203 steps, $71.8. Arabic: 387 steps,
+$18.4. The weekly window went from 49% to 55% while both worked (20:54–04:51), about $13 of list-price use a point;
+that's lower per dollar than the Nov 6 turns ($4–8), so the ratio isn't stable enough to put in the prompt.
+
+## Where it went
+
+- **Subagents, not the top level.** Anki Voice's top level spent 10% ($7.0, 129 steps, context up to 182k), Arabic's
+  17%. The earlier finding (the top level doing the work) didn't recur.
+- **Long subagent sessions.** Eight Anki Voice subagents ran 60–150 steps each, six of them past 200k tokens: 79% of
+  the day. A step cost $0.029 under 50k of context, $0.064 at 100–200k and $0.112 past 200k. Two sessions were sent
+  their next round (review findings, "resume after a time limit") with `SendMessage` and kept growing (the design
+  session reached 257k over 151 steps).
+- **Cache lapses while waiting on the Mac: 20% of Anki Voice's day ($14.5).** Subagents' cache writes are 5-minute
+  (top level: 1-hour). Builds, tests and screenshot runs on the Mac took 5–10 minutes, waited on with
+  `until dream mac ssh -- 'grep -q DONE …'; do sleep …; done`, so the next step re-wrote the whole 100–250k session at
+  1.25× input instead of reading it at 0.1×: 27 times in subagents, up to $1.28 a step on Opus. Arabic (no Mac): $1.1,
+  6%. Waiting in rounds under four minutes would have cost about $1.1 instead of $13. A 1-hour subagent TTL would save
+  $6.9 net on Anki Voice but cost $1.7 more on Arabic (all writes at 2× instead of 1.25×), so it wasn't changed.
+- **By kind:** Anki Voice 39% cache reads, 38% cache writes, 24% output; Arabic 40%, 27%, 32%. Reasoning was ~40% of
+  the builders' output at high effort (29% at medium).
+- **Models.** Anki Voice: Opus/high subagents (three design directions, adopting one, UI fixes, code review) $36.1,
+  Sonnet/high $25.4, Sonnet/medium $2.2, Opus/medium reviewers $1.0. Arabic: Sonnet/high builders $12.6.
+- **Offering versions.** One Opus/high session built and shot all three design directions ($11.3); with the review and
+  fixes the round came to about $15.6. Adopting the pick app-wide and two fix rounds cost another $20.
+- **Screenshots** (189 in Anki Voice, ≈2,500 tokens each; ≈1,700 for web pages): about 5%. **Whole files read** at the
+  start of fix-up sessions (several 20–30k-character `cat`s, carried 80–130 steps): 11–13%.
+- **Dream's 3-hour limit** stopped two Anki Voice turns with subagents mid-work; the agent restarted them from WIP
+  commits. The progress line (Haiku) was 15 calls, negligible.
+
+## What changed
+
+- `system/step-cost.md`, `system/subagent-models.md`, `skill/mac.md` (waiting on the Mac), and the cost of a round of
+  versions in `system/offering-versions.md`, with the magnitudes above.
+- The agent couldn't see any of this: `dream usage` shows only the subscription's windows. Each turn's prompt now opens
+  with what the last turn used (`renderLastTurn` in `@dream/agent-context`, from `TurnUsage.settle` in dreamd): its
+  cost at list prices, the weekly window's movement, and each session's share, steps and largest context, with the
+  share lost to lapsed caches when it's over 10%. Replayed on Anki Voice's 00:01–03:06 turn it reads: "Your last turn
+  ran 3 h 5 min and came to about $29 at API prices. … Subagents: "Fix final UI review findings" (opus, high) 34%,
+  101 steps, up to 258k; … About 32% of it went to sending sessions afresh after a pause had let their cache lapse."
+
+## Also seen
+
+- `turn_usage.cost_usd` is null for turns Dream stopped at its 3-hour limit (the stream ends without a `finish`, so no
+  running cost), and the next turn's rise then covers all of them ($62.73 on Anki Voice's 03:06 turn). `Shares.ts`
+  falls back to token weights when a group lacks costs, so the shares hold; the per-turn dollar figure doesn't.
