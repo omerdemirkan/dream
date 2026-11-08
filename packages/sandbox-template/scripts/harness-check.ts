@@ -137,7 +137,10 @@ const skillProblems = async (sandbox: Sandbox, harness: HarnessResult["harness"]
   const installed = new Set(names.split("\n").filter((name) => name !== ""))
   // dream-openai comes only with Dream's AI gateway, which this check's dreamd isn't given (gateway-check.ts is).
   const missing = skillNames.filter((name) => name !== "dream-openai" && !installed.has(name))
-  return missing.length === 0 ? [] : [`${harness} doesn't have ${missing.join(", ")} in ${dir}`]
+  return [
+    ...(missing.length === 0 ? [] : [`${harness} doesn't have ${missing.join(", ")} in ${dir}`]),
+    ...(installed.has("dream-openai") ? [`${harness} has dream-openai without the AI gateway`] : [])
+  ]
 }
 
 /** One line for each fake: Claude Code's subagent runs on Haiku at low effort, Codex's on its own model at low. */
