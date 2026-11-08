@@ -252,12 +252,15 @@ export const projectUsageAtom = Atom.family((projectId: ProjectId) =>
 )
 
 /** Their limits on a project's usage, both at once; returns the sheet as it is now. */
-export const setUsageLimitsFn = appRuntime.fn(
-  Effect.fn(function* (input: { readonly projectId: ProjectId; readonly limits: UsageLimits }) {
-    const usages = yield* ProjectUsages
-    return yield* usages.setLimits(input.projectId, input.limits).pipe(withWriteTimeout)
-  })
-)
+export const setUsageLimitsFn = appRuntime
+  .fn(
+    Effect.fn(function* (input: { readonly projectId: ProjectId; readonly limits: UsageLimits }) {
+      const usages = yield* ProjectUsages
+      return yield* usages.setLimits(input.projectId, input.limits).pipe(withWriteTimeout)
+    })
+  )
+  // Kept alive: a limit typed as the sheet closes is saved after it's gone.
+  .pipe(Atom.keepAlive)
 
 export const loadEarlierFn = appRuntime.fn(
   Effect.fn(function* (projectId: ProjectId) {

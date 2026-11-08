@@ -82,6 +82,8 @@ export const makeCloud = (
     readonly noEmail?: boolean
     /** A real sender in place of the recording fake (scripts/desktop-check.ts). */
     readonly email?: SendEmailBinding
+    /** Providers in place of the fakes, given the fake world (scripts/usage-limits-check.ts reaches a real dreamd). */
+    readonly services?: (world: FakeWorld) => ReturnType<typeof fakeServices>
   } = {}
 ) =>
   Effect.gen(function* () {
@@ -89,7 +91,7 @@ export const makeCloud = (
     const { d1, db } = makeD1(undefined, options.databasePath)
     const scope = yield* Scope.make()
     const config = ApiConfig.layerTest(configOverrides)
-    const services = fakeServices(world)
+    const services = options.services?.(world) ?? fakeServices(world)
     const instances = new Map<string, Promise<ProjectInstance>>()
     const relayInstances = new Map<string, Promise<ProjectInstance>>()
     /** Discord and a WebSocket feed, as relays reach them; the bot token Discord accepts is `discord-bot-token`. */

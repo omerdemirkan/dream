@@ -362,6 +362,17 @@ function LimitField(props: {
     setText(value === undefined ? "" : String(value))
     props.onChange(value)
   }
+  // Closing the sheet mid-edit unmounts the field before it hears it lost focus: save what was typed then.
+  const latest = useRef({ text, value: row.value, onChange: props.onChange })
+  latest.current = { text, value: row.value, onChange: props.onChange }
+  useEffect(
+    () => () => {
+      if (!editing.current) return
+      const value = parseLimit(latest.current.text)
+      if (value !== latest.current.value) latest.current.onChange(value)
+    },
+    []
+  )
   return (
     <View style={{ paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: color.line }}>
       <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", rowGap: 6 }}>
