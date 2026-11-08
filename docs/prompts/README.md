@@ -164,7 +164,7 @@ Its description (34 words, in [frontmatter.yaml](skills/dream-machines/frontmatt
 | 3 | [Browsers](skills/dream-machines/browsers.md) | The local headless Chromium and Playwright, and `dream browser` for a real Chrome in the cloud. | 147 |
 | 4 | [A Mac](skills/dream-machines/mac.md) | `dream mac`: renting a Mac with Xcode and simulators, running commands, copying files, and what's on it. | 241 |
 
-### The `dream-usage` skill, 187 words
+### The `dream-usage` skill, 231 words
 
 A skill (`SKILL.md`): the harness lists its name and description on every turn, and the agent or a task's session reads the rest when it judges it needs it.
 
@@ -172,7 +172,7 @@ Its description (31 words, in [frontmatter.yaml](skills/dream-usage/frontmatter.
 
 | # | Section | Covers | Words |
 | --- | --- | --- | --- |
-| 1 | [Usage](skills/dream-usage/usage.md) | `dream usage`: their subscription's windows, this project's share of the week, and the limits they set on it. | 187 |
+| 1 | [Usage](skills/dream-usage/usage.md) | `dream usage`: their subscription's windows, this project's share of the week, the limits they set on it, and what Dream paid to run it. | 231 |
 
 ### Task prompt, 432 words
 

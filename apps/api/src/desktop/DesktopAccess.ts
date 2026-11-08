@@ -31,6 +31,7 @@ import { type DesktopLinkRow, DesktopLinks } from "../db/DesktopLinks.ts"
 import { Projects } from "../db/Projects.ts"
 import { Users } from "../db/Users.ts"
 import { Mailer } from "../email/Mailer.ts"
+import { Meter } from "../metering/Meter.ts"
 import { Access } from "../integrations/Access.ts"
 import { utf8 } from "../lib/Bytes.ts"
 import { randomToken } from "../lib/Ids.ts"
@@ -134,6 +135,7 @@ export class DesktopAccess extends Context.Service<
       const clients = yield* ProjectClients
       const access = yield* Access
       const mailer = yield* Mailer
+      const meter = yield* Meter
 
       const getAccess = (projectId: ProjectId, messageId: MessageId) =>
         clients.use(projectId, (client) => client.GetAccess({ messageId }))
@@ -188,6 +190,16 @@ export class DesktopAccess extends Context.Service<
             })
           )
           .pipe(Effect.tapError(() => links.revoke(id, now)))
+        yield* meter.record([
+          {
+            id: `email:${id}`,
+            owner: userId,
+            meter: "email_sent",
+            at: DateTime.makeUnsafe(now),
+            quantities: { recipients: 1 },
+            dimensions: { project: projectId, payer: "dream", provider: "cloudflare-email" }
+          }
+        ])
         return yield* setDesktop(projectId, messageId, { sentAt: DateTime.makeUnsafe(now), to })
       })
 

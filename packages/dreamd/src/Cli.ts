@@ -49,6 +49,7 @@ import {
   relayUrlProblem,
   StatusCard,
   TextMessage,
+  ProjectCosts,
   UsageLimitStanding,
   UsageSnapshot,
   Wake,
@@ -2117,8 +2118,12 @@ const machine = Command.make("machine", { json }, (input) =>
   ])
 )
 
-/** `dream usage --json`: the subscription, and the project's limits when the API knows them. */
-const UsageReport = Schema.Struct({ ...UsageSnapshot.fields, limits: Schema.optionalKey(UsageLimitStanding) })
+/** `dream usage --json`: the subscription, the project's limits, and what Dream paid for it, when the API knows them. */
+const UsageReport = Schema.Struct({
+  ...UsageSnapshot.fields,
+  limits: Schema.optionalKey(UsageLimitStanding),
+  costs: Schema.optionalKey(ProjectCosts)
+})
 
 const usage = Command.make("usage", { json }, (input) =>
   Effect.gen(function* () {
@@ -2129,15 +2134,25 @@ const usage = Command.make("usage", { json }, (input) =>
       Effect.map(Option.some),
       Effect.catchCause(() => Effect.succeed(Option.none<UsageLimitStanding>()))
     )
-    const report = Option.match(standing, {
-      onNone: () => snapshot,
-      onSome: (limits) => ({ ...snapshot, limits })
-    })
-    yield* show(input.json, UsageReport, report, Format.usage(snapshot, yield* now, Option.getOrUndefined(standing)))
+    // What Dream paid to run the project; an API from before metering doesn't know it.
+    const costs = yield* dream.GetProjectCosts().pipe(
+      Effect.map(Option.some),
+      Effect.catchCause(() => Effect.succeed(Option.none<ProjectCosts>()))
+    )
+    const report = {
+      ...snapshot,
+      ...Option.match(standing, { onNone: () => ({}), onSome: (limits) => ({ limits }) }),
+      ...Option.match(costs, { onNone: () => ({}), onSome: (costs) => ({ costs }) })
+    }
+    const text = [
+      Format.usage(snapshot, yield* now, Option.getOrUndefined(standing)),
+      ...Option.match(costs, { onNone: () => [], onSome: (costs) => ["", Format.costs(costs)] })
+    ].join("\n")
+    yield* show(input.json, UsageReport, report, text)
   })
 ).pipe(
   Command.withDescription(
-    "Their subscription's five-hour and weekly windows, this project's share of the week, and the limits they set on it."
+    "Their subscription's five-hour and weekly windows, this project's share of the week and the limits they set on it, then what Dream paid this month to run the project (sandbox time, browsers, Macs and the rest), estimated at list prices."
   )
 )
 

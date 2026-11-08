@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs"
 import { assert, describe, it } from "@effect/vitest"
+import type { ProjectCosts, ProjectId } from "@dream/domain"
 import { DateTime, Option } from "effect"
 import * as Format from "../src/cli/Format.ts"
 import { fromClaudeRaw, fromCodexRollout, isCodexUsageLimitMessage, merge, toSnapshot } from "../src/Usage.ts"
@@ -155,5 +156,47 @@ describe("dream usage", () => {
   it("says when there are no limits, and shows the windows alone from an API that predates them", () => {
     assert.include(Format.usage(snapshot, now, { limits: {}, week }), "They've set no usage limits on this project.")
     assert.notInclude(Format.usage(snapshot, now), "limits")
+  })
+})
+
+describe("what Dream paid, in `dream usage`", () => {
+  const period = (usd: number, lines: ProjectCosts["month"]["lines"]) => ({
+    from: now,
+    to: now,
+    usd,
+    lines,
+    models: []
+  })
+  const report = (month: ProjectCosts["month"], lastMonth = period(0, [])): ProjectCosts => ({
+    projectId: "prj_a" as ProjectId,
+    month,
+    lastMonth,
+    days: []
+  })
+
+  it("says the month, what it went to, and what their own key paid", () => {
+    const text = Format.costs(
+      report(
+        period(3.19, [
+          { center: "openai", payer: "dream", usd: 3, quantity: 12, unit: "request" },
+          { center: "openai", payer: "person", usd: 2, quantity: 1, unit: "request" },
+          { center: "sandbox", payer: "dream", usd: 0.17, quantity: 1.24, unit: "hour" },
+          { center: "browser", payer: "dream", usd: 0.002, quantity: 1, unit: "minute" }
+        ]),
+        period(0.6, [])
+      )
+    )
+    assert.strictEqual(
+      text,
+      [
+        "Dream has paid about $3.19 to run this project this month, at list prices. Last month: $0.60.",
+        "OpenAI $3.00 (12 calls), this sandbox $0.17 (1.2 hours), browsers under a cent (1 minute).",
+        "Their own OpenAI key paid $2.00 more (1 call)."
+      ].join("\n")
+    )
+  })
+
+  it("says so when Dream paid nothing yet", () => {
+    assert.strictEqual(Format.costs(report(period(0, []))), "Dream has paid nothing to run this project this month.")
   })
 })

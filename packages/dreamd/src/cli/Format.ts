@@ -4,6 +4,8 @@
  * Times are UTC, with how far away they are.
  */
 import type {
+  CostLine,
+  ProjectCosts,
   UsageLimitStanding,
   AccessMessage,
   AppLink,
@@ -368,6 +370,54 @@ export const usageLimits = (standing: UsageLimitStanding, now: DateTime.Utc): Re
     lines.push(`Paused: ${which}. Nothing new starts until they raise or clear it${reset}.`)
   }
   return lines
+}
+
+/** Dollars as the person would say them: cents, or "under a cent". */
+export const dollars = (usd: number) => (usd > 0 && usd < 0.005 ? "under a cent" : `$${usd.toFixed(2)}`)
+
+const costNames: Record<CostLine["center"], string> = {
+  sandbox: "this sandbox",
+  browser: "browsers",
+  mac: "Macs",
+  openai: "OpenAI",
+  storage: "media storage",
+  email: "email"
+}
+
+const amount = (line: CostLine) => {
+  const n = line.unit === "hour" ? Math.round(line.quantity * 10) / 10 : Math.round(line.quantity)
+  switch (line.unit) {
+    case "hour":
+      return ` (${n} ${n === 1 ? "hour" : "hours"})`
+    case "minute":
+      return ` (${plural(n, "minute")})`
+    case "request":
+      return ` (${plural(n, "call")})`
+    case "message":
+      return ` (${plural(n, "email")})`
+    case "gbMonth":
+      return ""
+  }
+}
+
+/** What Dream paid to run the project this month, for `dream usage`. Kept apart from their subscription's lines. */
+export const costs = (report: ProjectCosts): string => {
+  const { month, lastMonth } = report
+  const last = lastMonth.usd > 0 ? ` Last month: ${dollars(lastMonth.usd)}.` : ""
+  const paid = month.lines.filter((line) => line.payer === "dream")
+  const theirs = month.lines.filter((line) => line.payer === "person")
+  const lines = [
+    paid.length === 0
+      ? `Dream has paid nothing to run this project this month.${last}`
+      : `Dream has paid about ${dollars(month.usd)} to run this project this month, at list prices.${last}`
+  ]
+  if (paid.length > 0) {
+    lines.push(`${paid.map((line) => `${costNames[line.center]} ${dollars(line.usd)}${amount(line)}`).join(", ")}.`)
+  }
+  for (const line of theirs) {
+    lines.push(`Their own OpenAI key paid ${dollars(line.usd)} more${amount(line)}.`)
+  }
+  return lines.join("\n")
 }
 
 const clip = (text: string, max = 200) => {

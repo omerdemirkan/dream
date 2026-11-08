@@ -156,6 +156,9 @@ describe("finishing access on a computer", () => {
       assert.strictEqual(mail.from.email, "dream@mail.dream.test")
       assert.strictEqual(mail.subject, "Add your Stripe key")
       assert.include(mail.text, "works once, for 30 minutes")
+      // Metered to the project: one message.
+      const metered = cloud.db.prepare("SELECT meter, project_id, units FROM meter_events").all()
+      assert.deepStrictEqual(metered, [{ meter: "email_sent", project_id: project.id, units: 1 }])
       const url = emailedLink(cloud)
       assert.include(mail.html, `href="${url}"`)
       const link = new URL(url)
