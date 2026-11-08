@@ -147,6 +147,13 @@ describe("app notifications", () => {
         })
       )
       assert.strictEqual(push.id, sent.id)
+      // The project's log says what became of it, for `dream logs --source notify`.
+      const logged = (yield* dreamd.ReadLog({ sources: ["notify"] })).entries.at(-1)
+      assert.strictEqual(logged?.name, "fare-watch")
+      assert.strictEqual(
+        logged?.text,
+        'Fare watch: "Lisbon dropped to $412: Round trip May 14–21, down $90 since Monday." sent, to their iPhone'
+      )
 
       // Without a page of its own, a tap goes to the app's page from setup.
       const plain = yield* dreamd.SendAppNotification(send("Porto is $388."))
