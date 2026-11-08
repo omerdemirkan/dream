@@ -138,7 +138,7 @@ export const centerOf: Record<MeterName, CostCenter> = {
   sandbox_run: "sandbox",
   browser_session: "browser",
   mac_session: "mac",
-  openai_request: "models",
+  model_request: "models",
   storage_day: "storage",
   email_sent: "email"
 }
@@ -255,7 +255,7 @@ const priceFromBook = (event: MeterEvent): Priced => {
       const messages = get("recipients") || 1
       return { center, payer, usd: messages * EmailPrices.message, units: messages }
     }
-    case "openai_request": {
+    case "model_request": {
       const model = event.dimensions.model
       const known = modelPrice(model)
       if (known === undefined) return { center, payer, usd: 0, units: 1, unknownModel: model ?? "(none)" }

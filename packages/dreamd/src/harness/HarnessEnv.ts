@@ -3,8 +3,13 @@
  * starts) see: this sandbox's environment without dreamd's tokens, plus the
  * placeholder model credential each harness needs. The real credential is
  * added at egress (`ModelEgress`); nothing here can refresh it.
+ *
+ * Dream's AI gateway (`OpenAIGateway`), while it's on, is for the agent's commands and apps, never a harness's own
+ * model traffic: `commandEnv` carries its variables, and each harness passes them only to what it runs
+ * (`sessionEnv`, and Codex's `shell_environment_policy` in `Harness.ts`).
  */
-import { DaemonEnv, type Harness } from "@dream/domain"
+import { DaemonEnv, type Harness, OpenAIGateway } from "@dream/domain"
+import { Option } from "effect"
 
 /** Any value works: E2B's egress rule replaces the whole header. */
 export const placeholderCredential = "dream-placeholder"
@@ -46,10 +51,10 @@ export const agentEnv = (
 export const systemCaBundle = "/etc/ssl/certs/ca-certificates.crt"
 
 /**
- * E2B's egress decrypts and re-signs HTTPS to every host with a rule (the model's, a connected service's) with its
- * own CA, which the system trusts and curl uses. Node, Bun and Python's `requests` and `httpx` bring their own roots
- * and refuse it, so the agent's apps couldn't reach those hosts; pointing them at the system bundle fixes that. A
- * value already set is kept.
+ * E2B's egress decrypts and re-signs HTTPS to every host with a rule (the model's, a connected service's, the AI
+ * gateway's) with its own CA, which the system trusts and curl uses. Node, Bun and Python's `requests` and `httpx`
+ * bring their own roots and refuse it, so the agent's apps couldn't reach those hosts; pointing them at the system
+ * bundle fixes that. A value already set is kept.
  */
 const systemTrust = (processEnv: Readonly<Record<string, string | undefined>>): Record<string, string> =>
   Object.fromEntries(
@@ -57,6 +62,30 @@ const systemTrust = (processEnv: Readonly<Record<string, string | undefined>>): 
       .filter((name) => processEnv[name] === undefined)
       .map((name) => [name, systemCaBundle])
   )
+
+/** What the agent's commands and apps get to call Dream's AI gateway with any OpenAI SDK, while it's on. */
+export const gatewayEnv = (openaiBaseUrl: Option.Option<string>): Record<string, string> =>
+  Option.match(openaiBaseUrl, {
+    onNone: () => ({}),
+    onSome: (url) => ({ OPENAI_BASE_URL: url, OPENAI_API_KEY: OpenAIGateway.placeholderKey })
+  })
+
+/** The environment of a command dreamd runs itself (`dream wake --run`): the agent's, with the gateway's variables. */
+export const commandEnv = (
+  processEnv: Readonly<Record<string, string | undefined>>,
+  config: { readonly home: string; readonly socket: string; readonly openaiBaseUrl: Option.Option<string> }
+): Record<string, string> => ({ ...agentEnv(processEnv, config), ...gatewayEnv(config.openaiBaseUrl) })
+
+/**
+ * The environment a harness process runs in. Claude Code reads neither gateway variable, so it carries them to
+ * its Bash tool and everything that starts. Codex gets the agent's plain environment: its commands get the
+ * variables through `shell_environment_policy.set` instead (`Harness.ts`), so its own process never holds them.
+ */
+export const sessionEnv = (
+  harness: Harness,
+  processEnv: Readonly<Record<string, string | undefined>>,
+  config: { readonly home: string; readonly socket: string; readonly openaiBaseUrl: Option.Option<string> }
+): Record<string, string> => (harness === "claude-code" ? commandEnv(processEnv, config) : agentEnv(processEnv, config))
 
 /**
  * How each harness authenticates, given to its adapter as an explicit

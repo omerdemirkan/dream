@@ -11,6 +11,7 @@
  *   DREAM_R2_ENABLED   "true" once R2 is enabled on the account (media storage)
  *   DREAM_EMAIL_ENABLED "true" once the account can send email (Workers Paid; the token needs Email Sending: Edit)
  *   DREAM_OPERATORS    comma-separated emails of the people who see everyone's costs in the app (docs/metering.md)
+ *   DREAM_AI_GATEWAY_ENABLED "true" to serve Dream's AI gateway at openai.<domain> (needs the OPENAI_API_KEY secret)
  *   ALCHEMY_STATE      "cloudflare" to keep state in the account's alchemy state store (its API token needs
  *                      Secrets Store access); otherwise state is local in .alchemy/ and a fresh machine
  *                      re-imports the deployed resources with `--adopt`.

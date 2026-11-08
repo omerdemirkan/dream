@@ -20,6 +20,9 @@ import { AppLinks } from "./links/AppLinks.ts"
 import { type PlatformOverrides, platformLayer } from "./Platform.ts"
 import { type ProjectFetch, ProjectDirectory } from "./project/Client.ts"
 import { noRelays } from "./relay/RelayClients.ts"
+import { ClientSecrets } from "./openai/ClientSecrets.ts"
+import { sweepBackgroundResponses } from "./openai/Gateway.ts"
+import { AfterResponse, CallSideband, OpenAIUpstream } from "./openai/Runtime.ts"
 
 export interface WorkerBindings {
   readonly d1: D1Database
@@ -30,10 +33,27 @@ export interface WorkerBindings {
   readonly forwardLive: LiveForwarder["Service"]["forward"]
   /** Cloudflare Email Service, once the deployment sends email. */
   readonly email?: SendEmailBinding | undefined
+  /** Work after the response (workerd's `waitUntil`); forked when absent. */
+  readonly afterResponse?: AfterResponse["Service"]["run"] | undefined
+  /** Starts a WebRTC call's sideband (`OpenAICallDO`). */
+  readonly attachSideband?: CallSideband["Service"]["attach"] | undefined
 }
 
+/** Dream's OpenAI gateway's services (`openai/`); its platform parts can be replaced in tests. */
+const openaiLayer = (bindings: WorkerBindings, overrides: PlatformOverrides) =>
+  Layer.mergeAll(
+    ClientSecrets.layer,
+    overrides.openaiUpstream ?? OpenAIUpstream.layer,
+    bindings.afterResponse === undefined
+      ? AfterResponse.layerFork
+      : Layer.succeed(AfterResponse, AfterResponse.of({ run: bindings.afterResponse })),
+    bindings.attachSideband === undefined
+      ? CallSideband.layerNone
+      : Layer.succeed(CallSideband, CallSideband.of({ attach: bindings.attachSideband }))
+  )
+
 export const workerLayer = (bindings: WorkerBindings, overrides: PlatformOverrides = {}) =>
-  Layer.mergeAll(ConnectLinks.layer, DesktopAccess.layer).pipe(
+  Layer.mergeAll(ConnectLinks.layer, DesktopAccess.layer, openaiLayer(bindings, overrides)).pipe(
     Layer.provideMerge(Layer.mergeAll(ModelConnect.layer, Access.layer, AppLinks.layer, Mailer.layer(bindings.email))),
     Layer.provideMerge(
       platformLayer({ d1: bindings.d1, fetchProject: bindings.fetchProject, fetchRelay: noRelays }, overrides)
@@ -58,6 +78,7 @@ export const maintenance = Effect.gen(function* () {
   for (const { userId, integration, failure } of lapsed) yield* directory.integrationGone(userId, integration, failure)
   yield* modelConnect.cleanup
   yield* reaper.sweep
+  yield* sweepBackgroundResponses
 }).pipe(Effect.withSpan("maintenance"))
 
 /**

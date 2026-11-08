@@ -1,7 +1,7 @@
 # Metering what Dream pays for
 
 Dream pays providers to run each project: E2B for sandbox time (by far the largest), Browserbase for cloud browsers,
-Namespace for Macs, OpenAI for the calls the agent's apps make through Dream's gateway, and a little R2 and email.
+Namespace for Macs, OpenAI for the calls the agent's apps make through Dream's AI gateway, and a little R2 and email.
 This document is the design for metering all of it per project, showing it in the app, and later sending it to a
 usage-billing platform instead of keeping it in D1. Nothing here bills anyone or enforces a limit. Research
 behind it: `docs/research/metering.md`.
@@ -20,7 +20,7 @@ platform takes:
 | --- | --- |
 | `id` | Derived from the source, so a retry or a second path records nothing new (the idempotency key) |
 | `owner` | The Dream user who caused it, or `dream` (`OperatorOwner`) for checks and throwaway sandboxes |
-| `meter` | `sandbox_run`, `browser_session`, `mac_session`, `openai_request`, `storage_day`, `email_sent` |
+| `meter` | `sandbox_run`, `browser_session`, `mac_session`, `model_request`, `storage_day`, `email_sent` |
 | `at` | When the cost was incurred (a run's end, a request's completion) |
 | `quantities` | Raw amounts as numbers in their own units: milliseconds, tokens, bytes, characters; never Dream's prices (the one amount of money is `cost_usd`, what a provider reported charging) |
 | `dimensions` | Strings to group and filter by |
@@ -33,11 +33,15 @@ Dimensions every event has when they apply: `project`, `payer` (`dream`, or `per
 | `sandbox_run` | `e2b:<E2B event id>` | `ms`, `vcpus`, `memory_mb` | `sandbox`, `execution`, `template`, `cause` (`project`, `refresh`, `sign-in`, `dev`, `harness-check`), `ended` (`paused`/`killed`), `kill_reason` |
 | `browser_session` | `browserbase:<session id>` | `ms`, `proxy_bytes` | `session` |
 | `mac_session` | `namespace:<instance id>` | `ms`, `vcpus`, `memory_mb` | `instance` |
-| `openai_request` | `openai:<OpenAI id>` (response, completion, call or session id), else `openai:<x-request-id>` | `input_tokens`, `cached_input_tokens`, `output_tokens`, `reasoning_tokens`, `input_audio_tokens`, `cached_audio_tokens`, `output_audio_tokens`, `input_image_tokens`, `output_image_tokens`, `characters`, `audio_ms`, `session_ms`, `web_search_calls` | `endpoint` (`responses`, `chat`, `embeddings`, `images`, `speech`, `transcription`, `realtime`, `live`), `model`, `service_tier`, `estimated` (`true` when a quantity was inferred, e.g. speech without usage) |
+| `model_request` | `openai:<OpenAI id>`: the response's (Responses, a realtime `response.done`), the completion's (Chat), `<item id>:transcription` (a realtime input transcription), `<response id>:image_gen` (the image tool), the call's or Live session's (a session metered by its length); else `openai:<x-request-id>` (embeddings, images, speech, transcription) | `input_tokens`, `cached_input_tokens`, `output_tokens`, `reasoning_tokens`, `input_audio_tokens`, `cached_audio_tokens`, `output_audio_tokens`, `input_image_tokens`, `output_image_tokens`, `characters`, `audio_ms`, `session_ms`, `web_search_calls` | `provider` (`openai`), `endpoint` (`responses`, `chat`, `embeddings`, `images`, `speech`, `transcription`, `realtime`, `live`), `model`, `service_tier`, `estimated` (`true` when a quantity was inferred: speech without usage, a call metered by its length) |
 | `storage_day` | `r2:<project id>:<YYYY-MM-DD>` | `bytes` (stored at the end of the UTC day) | |
 | `email_sent` | `email:<message id>` | `recipients` | |
 
-Only the keys that apply are present. Provider rules such as Browserbase's one-minute minimum are pricing, so they
+Only the keys that apply are present. A `model_request`'s tokens are as OpenAI reports them: `input_tokens` includes
+the cached, audio and image input broken out beside it, `output_tokens` the reasoning and audio output, and
+`cached_audio_tokens` is part of `cached_input_tokens`. The image tool's model isn't reported, so its event says
+`gpt-image (tool)`; a realtime input transcription whose session didn't name its model says `realtime-transcription`.
+OpenAI reports no cost, so the price book prices these. Provider rules such as Browserbase's one-minute minimum are pricing, so they
 live in the price book, not in the quantities.
 
 OpenAI's token counts nest the way OpenAI reports them, and the price book prices them that way: `input_tokens` is
@@ -105,56 +109,78 @@ Mac "running"). **R2:** the hourly job records each project's bytes once its UTC
 Not metered: Cloudflare Workers, D1 and Durable Objects (account-level, not attributable), and plan fees (E2B Pro,
 Browserbase's plan, Namespace's). The operator's view says these are left out.
 
-## The OpenAI gateway
+## The AI gateway
 
-The apps the agent builds keep needing OpenAI: text, speech, realtime voice, images, embeddings, transcription.
-Dream now provides it: the apps use any OpenAI SDK as usual, Dream pays (or the person's own key does, below), and
-every call is metered to its project.
+The apps the agent builds keep needing a model API: text, speech, realtime voice, images, embeddings, transcription.
+Dream now provides OpenAI's: the apps use any OpenAI SDK as usual, Dream pays with its own key, and every call is
+metered to its project (center `models`, provider `openai`).
 
 **Address.** `https://openai.<domain>/v1` (`OpenAIGateway` in `packages/domain/src/Transport.ts`), the same paths as
 `https://api.openai.com/v1`. It's a host of the same Worker (the zone route already reaches it; published apps'
 hosts always have a dash, so `openai` can't collide), in its own module, `apps/api/src/openai/`, so it could move to a
-Worker of its own.
+Worker of its own. Its connection to OpenAI is one service (`OpenAIUpstream`), the only place another upstream would
+plug in.
 
-**No secret in the sandbox.** dreamd gives the agent's shell and every app it starts `OPENAI_BASE_URL` (the gateway)
-and `OPENAI_API_KEY=dream-openai-placeholder`. The project's E2B egress rules gain one for the gateway's host that
-replaces `Authorization` with the project's gateway credential (derived from the project id with the Worker's signing
-key, so the gateway verifies it statelessly and it is not the project token). So nothing in the sandbox can leak the
-credential into a published page, and like every other credential it's swapped in on the way out.
+**No secret in the sandbox.** dreamd gives the agent's commands and the apps they start `OPENAI_BASE_URL` (the
+gateway) and `OPENAI_API_KEY=dream-openai-placeholder`. The project's E2B egress rules gain one for the gateway's host
+that replaces `Authorization` with the project's gateway credential (an HS256 token of the project and its owner,
+with the Worker's signing key and no expiry, so it's the same on every push and the gateway checks it statelessly; it
+is not the project token, and deleting the project revokes it). Egress transforms apply to WebSocket upgrades too
+(checked on real E2B, 2026-11-08), so realtime sockets work the same way.
 
-**Not the agent.** The harnesses keep running on the person's subscription. Codex reads neither variable for its own
-model traffic (it uses `CODEX_API_KEY` and its config), so dreamd passes them to the Codex process's commands through
-`shell_environment_policy.set`, not to Codex itself; Claude Code ignores them, so its process env carries them to its
-Bash tool. The gateway also refuses any request that identifies as Codex (`originator: codex_*`). A real-E2B check
-proves a turn on each harness still reaches its model host and nothing else.
+E2B re-signs HTTPS to every host with a rule with its own CA, which the system trusts but Node, Bun and Python's
+`requests`/`httpx` don't: a plain `fetch` from Node to such a host failed with "unable to verify the first
+certificate" (checked on E2B). dreamd now sets `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE` and `REQUESTS_CA_BUNDLE` to the
+system bundle for every process it starts, which fixes this for the gateway and for every connected service's host.
 
-**Whose key.** If the person connected an OpenAI key of their own (a Key access for api.openai.com, which projects
-already use directly), the gateway uses theirs and meters the call with `payer: person`; otherwise Dream's
-(`OPENAI_API_KEY` Worker secret) with `payer: dream`. Removing their key moves their projects onto Dream's. Apps that
-call api.openai.com directly keep working on their key through its egress rule, unmetered.
+**Not the agent.** The harnesses keep running on the person's subscription. Codex never gets the variables in its own
+environment (its model base URL comes from the adapter's `OPENAI_BASE_URL`, which they'd collide with); its commands
+get them through `shell_environment_policy.set`. Claude Code reads neither, so its process carries them to its Bash
+tool. `--run` commands get them from dreamd, and a scheduled task's session is set up like the agent's. The gateway
+also refuses any request that identifies as Codex (`originator` or `User-Agent` starting `codex`).
+`packages/sandbox-template/scripts/gateway-check.ts` checks all of it in a sandbox of a build against a public
+fake-openai (`packages/dreamd/scripts/fake-openai.ts`).
 
-**What it forwards.** An allowlist, because one key shared by every project would let one project read another's
-stored data: `POST /responses` (and `GET`/`DELETE`/`cancel` on a response id only for the project that created it),
-`POST /chat/completions` (with `store` false; never the stored-completions list), `POST /embeddings`,
+**Whose key.** Always Dream's (`OPENAI_API_KEY` Worker secret), `payer: dream`. A person's own OpenAI key (a Key
+access for api.openai.com) is untouched: apps that call api.openai.com directly keep using it through its egress
+rule, unmetered, and it never routes through the gateway.
+
+**What it forwards** (`openai/Endpoints.ts`). An allowlist, because one key shared by every project would let one
+project read another's stored data: `POST /responses` (with `GET`, `DELETE`, `POST …/cancel` and `GET …/input_items`
+on a response id only for the project that made it, from `openai_objects` in D1) and `POST /responses/input_tokens`,
+`POST /chat/completions` (always sent with `store: false`; never the stored-completions list), `POST /embeddings`,
 `POST /moderations`, `POST /images/generations|edits`, `POST /audio/speech|transcriptions|translations`,
-`GET /models`, and realtime: `GET /realtime` (WebSocket), `POST /realtime/client_secrets`, `POST /realtime/calls`,
-and GPT-Live's `/live/sessions`. Everything else (files, vector stores, conversations, batches, fine-tuning,
-containers, assistants, evals, uploads, voices, videos, `/organization`) is a 404 that says what Dream supports.
+`GET /models[/id]`, realtime (`GET /realtime` as a WebSocket, `POST /realtime/client_secrets`,
+`POST /realtime/calls`, `POST /realtime/calls/{id}/hangup` for its project), and GPT-Live (`POST /live/sessions` for
+WebRTC, its WebSocket, and `hangup`/`content` for its project; SIP phone calls are refused). Everything else (files,
+uploads, vector stores, conversations, batches, fine-tuning, containers, assistants, threads, evals, custom voices,
+videos, `/organization`, the legacy realtime session mints) is a 404 whose message says what Dream supports.
+Requests carry a `safety_identifier` (or `OpenAI-Safety-Identifier`) derived from the project, so OpenAI's abuse
+checks see projects apart.
 
-**How it meters.** From what comes back, without holding the response: JSON bodies are read for `usage` (and
-`tool_usage`); streams are teed and the copy parsed for the final event (`response.completed`, chat's usage chunk,
-which the gateway asks for with `stream_options.include_usage`, `speech.audio.done`, `transcript.text.done`); TTS
-without usage is estimated from the input (`estimated: true`). A realtime WebSocket is proxied message by message and
-each `response.done` (and each input transcription) is metered. A WebRTC call can't be seen from the gateway, so a
-client secret minted through it is wrapped (the app gets a Dream secret, not OpenAI's), the browser's SDP offer must
-go to the gateway's `/realtime/calls` (it's the one route open to the public internet, with CORS, and only for wrapped
-secrets), and the gateway attaches a sideband to the call (`?call_id=`) from a Durable Object that meters it until it
-ends. Response ids are the transaction ids, so a background response metered by both its stream and a later poll
-counts once.
+**How it meters.** From what comes back, without holding it: bodies stream through to the app while a copy is read
+(`openai/Sse.ts`), JSON for `usage` and `tool_usage`, event streams for their final event (`response.completed`,
+`.incomplete`, `.failed`; chat's usage chunk, which the gateway asks for with `stream_options.include_usage` and
+takes out of the stream when the app didn't ask; `speech.audio.done`; `transcript.text.done`;
+`image_generation.completed`). Speech without usage (binary audio, tts-1) is its input's characters, `estimated`. A
+realtime WebSocket is proxied message by message and each `response.done` and each input transcription is metered.
+A WebRTC call can't be seen from the gateway, so a client secret minted through it is wrapped (the app gets a Dream
+secret, OpenAI's sealed inside with the project, which only the gateway opens; nothing is stored), the browser's SDP
+offer has to go to the gateway's `/realtime/calls` (the one route open to the public internet, with CORS, and only for
+wrapped secrets), and the gateway attaches a sideband (`?call_id=`) from `OpenAICallDO`, which meters the call until
+it ends. A GPT-Live WebRTC session gets the same sideband at `/live/sessions/{id}/attach`. A sideband that sees no
+usage at all records the call's length (`session_ms`, `estimated`). Response ids are the transaction ids, so a
+response metered by both its stream and a later poll counts once; background responses nobody watched to the end are
+looked up and metered by the five-minute maintenance (`sweepBackgroundResponses`) for a day.
 
-**Off by default.** `DREAM_OPENAI_GATEWAY_ENABLED` (a plain binding from `.env`, like `DREAM_EMAIL_ENABLED`). Off, the
-host answers 404, sandboxes get neither the variables nor the egress rule, and the agent isn't told about it. On
-without `OPENAI_API_KEY`, calls for people without their own key fail with a clear error.
+Not metered: a stream the app hangs up on before its last event (OpenAI bills what it generated; the gateway never
+sees the usage), and a sideband's call when `OpenAICallDO` restarts mid-call (a deploy).
+
+**Off by default.** `DREAM_AI_GATEWAY_ENABLED` (a plain binding from `.env`, like `DREAM_EMAIL_ENABLED`). Off, the
+host answers 404, sandboxes get neither the variables nor the egress rule, and the agent isn't told: dreamd installs
+the `openai` skill (`docs/prompts/openai/`) only while `DREAM_OPENAI_BASE_URL` is in its env, and its listing in the
+harness's skills is the agent's pointer to it. Turning it on reaches a running sandbox between turns (the env file and
+the rules are pushed together). On without `OPENAI_API_KEY`, every call answers 503 "isn't configured".
 
 ## Reading it back
 
@@ -200,6 +226,8 @@ usage is known).
 
 ## The agent
 
-The system prompt's Recurring work and the skill learn that the apps can call OpenAI through Dream with the usual SDK
-variables, that Dream pays and meters it per project, and that the person can see it. `dream usage` prints what the
+While the AI gateway is on, the agent and every task's session get the `openai` skill (`docs/prompts/openai/`): the
+apps can call OpenAI through Dream with the usual SDK variables, Dream pays and meters it per project, and the person
+can see it. The system prompt doesn't mention the gateway, so a project without it hears nothing; the skill's listing
+is the pointer. `dream usage` prints what the
 project cost this month. No rules: the agent weighs cost like any other judgment.

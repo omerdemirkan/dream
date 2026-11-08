@@ -55,7 +55,8 @@ export type PromptName = keyof typeof prompts
 
 /**
  * Dream's skills, each a directory under docs/prompts/skills/ named as the skill, with its frontmatter (name and
- * description) in `frontmatter.yaml`. The agent and every task's session get all of them, in this order.
+ * description) in `frontmatter.yaml`. The agent and every task's session get all of them, in this order, but for
+ * `dream-openai`, which they get only while Dream's AI gateway is on.
  */
 export const skillSections = {
   "dream-chat": ["chat", "messages", "email", "questions", "threads", "status", "workstreams", "live-activity"],
@@ -65,7 +66,9 @@ export const skillSections = {
   "dream-notify": ["notify"],
   "dream-links": ["links"],
   "dream-machines": ["machines", "machine", "browsers", "mac"],
-  "dream-usage": ["usage"]
+  "dream-usage": ["usage"],
+  /** Only while Dream's AI gateway is on: dreamd leaves it out otherwise (`packages/dreamd/src/harness/Skill.ts`). */
+  "dream-openai": ["gateway"]
 } as const satisfies Record<string, ReadonlyArray<string>>
 
 export type SkillName = keyof typeof skillSections

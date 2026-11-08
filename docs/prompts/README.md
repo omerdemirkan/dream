@@ -7,8 +7,9 @@ directory of sections:
   turn: who it is, who the person is and what they see, what good looks like, the world it works in, and how it works
   as an orchestrator. It deliberately has no procedures.
 - `skills/<name>/` is one skill each (`dream-chat`, `dream-access`, `dream-hosting`, `dream-wake`, `dream-notify`,
-  `dream-links`, `dream-machines`, `dream-usage`): what one part of `dream` does for the person and when it's worth
-  using. The harness lists every skill's name and description on every turn, and the agent reads a skill's body when
+  `dream-links`, `dream-machines`, `dream-usage`, and `dream-openai`, which dreamd installs only while Dream's AI
+  gateway is on, so the agent hears of the gateway only when it's there): what one part of `dream` does for the person
+  and when it's worth using. The harness lists every skill's name and description on every turn, and the agent reads a skill's body when
   it judges it needs it, so detail that matters only in some situations lives here rather than in the system prompt.
   Flags belong to `dream <command> --help`, generated from the CLI's own descriptions (`packages/dreamd/src/Cli.ts`),
   so a skill names a flag where it explains when or why to use it and leaves the full list to `--help`.
@@ -173,6 +174,16 @@ Its description (31 words, in [frontmatter.yaml](skills/dream-usage/frontmatter.
 | # | Section | Covers | Words |
 | --- | --- | --- | --- |
 | 1 | [Usage](skills/dream-usage/usage.md) | `dream usage`: their subscription's windows, this project's share of the week, the limits they set on it, and what Dream paid to run it. | 231 |
+
+### The `dream-openai` skill, 338 words
+
+A skill (`SKILL.md`): the harness lists its name and description on every turn, and the agent or a task's session reads the rest when it judges it needs it.
+
+Its description (41 words, in [frontmatter.yaml](skills/dream-openai/frontmatter.yaml)): Dream provides OpenAI's API to this project's apps and pays for it — text, speech, realtime voice, images, embeddings, transcription — with no key to ask them for. Read it before an app calls OpenAI or needs a model API key.
+
+| # | Section | Covers | Words |
+| --- | --- | --- | --- |
+| 1 | [OpenAI through Dream](skills/dream-openai/gateway.md) | OpenAI's API through Dream for the apps you build: the variables, what's there and what isn't, browsers and realtime voice, and what it costs whom. | 338 |
 
 ### Task prompt, 432 words
 

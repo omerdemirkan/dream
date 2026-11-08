@@ -29,6 +29,7 @@ import { projectLayer } from "../../src/project/Layer.ts"
 import { Scheduler } from "../../src/project/Scheduler.ts"
 import type { SendEmailBinding } from "../../src/email/Mailer.ts"
 import { workerLayer } from "../../src/WorkerLayer.ts"
+import type { CallSideband, OpenAIUpstream } from "../../src/openai/Runtime.ts"
 import { ProjectClients } from "../../src/project/Client.ts"
 import type { RelayFetch } from "../../src/relay/RelayClients.ts"
 import { DiscordEndpoints } from "../../src/relay/Discord.ts"
@@ -84,6 +85,9 @@ export const makeCloud = (
     readonly email?: SendEmailBinding
     /** Providers in place of the fakes, given the fake world (scripts/usage-limits-check.ts reaches a real dreamd). */
     readonly services?: (world: FakeWorld) => ReturnType<typeof fakeServices>
+    /** OpenAI as the gateway reaches it, where meter events go, and the WebRTC sideband (openai.test.ts). */
+    readonly openaiUpstream?: Layer.Layer<OpenAIUpstream>
+    readonly attachSideband?: CallSideband["Service"]["attach"]
   } = {}
 ) =>
   Effect.gen(function* () {
@@ -191,9 +195,10 @@ export const makeCloud = (
         r2: options.media,
         updates: options.updates,
         fetchProject,
-        forwardLive: () => Effect.die("no live in tests")
+        forwardLive: () => Effect.die("no live in tests"),
+        attachSideband: options.attachSideband
       },
-      { services, config }
+      { services, config, openaiUpstream: options.openaiUpstream }
     )
     const workerContext = yield* Layer.buildWithScope(worker, scope)
 

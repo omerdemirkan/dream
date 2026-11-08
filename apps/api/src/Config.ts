@@ -136,7 +136,17 @@ export const ApiConfigSchema = Config.all({
         .map((email) => email.trim().toLowerCase())
         .filter((email) => email.length > 0)
     )
-  )
+  ),
+  /**
+   * Dream's AI gateway for the apps the agent builds (`openai/`, docs/metering.md): "true" turns on
+   * `openai.<domain>`, the variables dreamd gives the agent's commands and the egress rule that carries each
+   * project's gateway credential. A plain binding from the deploying shell's `.env`, like DREAM_EMAIL_ENABLED.
+   */
+  aiGatewayEnabled: Config.Boolean("DREAM_AI_GATEWAY_ENABLED").pipe(Config.withDefault(false)),
+  /** Dream's OpenAI platform key, which every call through the gateway uses. */
+  openaiApiKey: optionalSecret("OPENAI_API_KEY"),
+  /** Where the gateway sends what it forwards (a fake in checks), without `/v1`. */
+  openaiApiUrl: Config.NonEmptyString("OPENAI_API_URL").pipe(Config.withDefault("https://api.openai.com"))
 })
 
 export type ApiConfigValues = typeof ApiConfigSchema extends Config.Config<infer A> ? A : never
@@ -196,7 +206,10 @@ export class ApiConfig extends Context.Service<ApiConfig, ApiConfigShape>()("@dr
         ascTestflightIssuerId: "00000000-0000-0000-0000-000000000000",
         ascTestflightBundleId: "build.omer.dream",
         appScheme: "dream",
-        operators: []
+        operators: [],
+        aiGatewayEnabled: false,
+        openaiApiKey: Option.some(Redacted.make("sk-dream-test")),
+        openaiApiUrl: "https://api.openai.test"
       }),
       ...overrides
     })

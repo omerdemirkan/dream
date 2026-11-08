@@ -4,8 +4,10 @@
  * dreamd configures the harnesses with placeholders; the agent's own code
  * uses the placeholders named in each `AccessConnected` event.
  */
-import { type Harness, IntegrationAccess, ModelEgress, type UserId } from "@dream/domain"
-import { Effect, Context, Layer, Option } from "effect"
+import { type Harness, IntegrationAccess, ModelEgress, OpenAIGateway, type ProjectId, type UserId } from "@dream/domain"
+import { Effect, Context, Layer, Option, Redacted } from "effect"
+import { Tokens } from "../auth/Tokens.ts"
+import { ApiConfig } from "../Config.ts"
 import { idTokenClaims } from "../connect/ChatGpt.ts"
 import { Connections } from "../db/Connections.ts"
 import type { NetworkRules } from "../e2b/E2B.ts"
@@ -37,7 +39,7 @@ export const hashRules = (rules: NetworkRules): Effect.Effect<string> =>
 export class SandboxCredentials extends Context.Service<
   SandboxCredentials,
   {
-    readonly setup: (userId: UserId, harness: Harness) => Effect.Effect<SandboxSetup>
+    readonly setup: (userId: UserId, harness: Harness, projectId: ProjectId) => Effect.Effect<SandboxSetup>
   }
 >()("@dream/api/SandboxCredentials") {
   static readonly layer = Layer.effect(
@@ -47,12 +49,18 @@ export class SandboxCredentials extends Context.Service<
       const store = yield* CredentialStore
       const providers = yield* OAuthProviders
       const directory = yield* ProjectDirectory
+      const config = yield* ApiConfig
+      const tokens = yield* Tokens
 
       // Told apart from this delivery: this project's own DO may be the one asking.
       const lapsed = ({ userId, integration, failure }: ConnectionLapsed) =>
         directory.integrationGone(userId, integration, failure).pipe(Effect.forkDetach, Effect.asVoid)
 
-      const setup = Effect.fn("SandboxCredentials.setup")(function* (userId: UserId, harness: Harness) {
+      const setup = Effect.fn("SandboxCredentials.setup")(function* (
+        userId: UserId,
+        harness: Harness,
+        projectId: ProjectId
+      ) {
         const rules: Record<string, ReturnType<typeof header>> = {}
 
         // Integrations first, so the model's own hosts win any overlap.
@@ -120,6 +128,12 @@ export class SandboxCredentials extends Context.Service<
               )
             }
           }
+        }
+
+        // Dream's OpenAI gateway, for the agent's apps: the project's own credential, which only egress holds.
+        if (config.aiGatewayEnabled) {
+          const token = Redacted.value(yield* tokens.openaiGateway(projectId, userId))
+          rules[OpenAIGateway.host(config.domain)] = header(OpenAIGateway.headers({ token }))
         }
 
         return { rules, rulesHash: yield* hashRules(rules) }

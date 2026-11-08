@@ -11,7 +11,7 @@ import { Context, Duration, Effect, Fiber, FiberSet, FileSystem, Layer, Option, 
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
 import { Api } from "./Api.ts"
 import { DreamdConfig } from "./Config.ts"
-import { agentEnv } from "./harness/HarnessEnv.ts"
+import { commandEnv } from "./harness/HarnessEnv.ts"
 import { Hold } from "./Hold.ts"
 import { Inbox, type RunResult, type WakeDueEvent } from "./Inbox.ts"
 import { Tasks } from "./Tasks.ts"
@@ -47,7 +47,7 @@ export class Commands extends Context.Service<
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
       const fs = yield* FileSystem.FileSystem
       yield* fs.makeDirectory(config.workDir, { recursive: true }).pipe(Effect.orDie)
-      const env = agentEnv(process.env, config)
+      const env = commandEnv(process.env, config)
       const running = yield* Ref.make<ReadonlySet<string>>(new Set())
       const fibers = yield* FiberSet.make()
       const done = yield* PubSub.unbounded<void>()

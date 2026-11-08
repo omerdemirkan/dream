@@ -32,3 +32,13 @@ export const all: Effect.Effect<ReadonlyArray<Skill>> = Effect.suspend(() =>
     })
   )
 )
+
+/** Dream's AI gateway's skill, which only a sandbox with the gateway on gets. */
+export const OpenAISkill = "dream-openai"
+
+/** The skills this sandbox gets: all of them, but `dream-openai` only while Dream's AI gateway is on. */
+export const offered = (
+  skills: ReadonlyArray<Skill>,
+  config: { readonly openaiBaseUrl: Option.Option<string> }
+): ReadonlyArray<Skill> =>
+  Option.isSome(config.openaiBaseUrl) ? skills : skills.filter((skill) => skill.name !== OpenAISkill)

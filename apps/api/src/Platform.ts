@@ -42,6 +42,8 @@ import { MeterD1 } from "./metering/MeterD1.ts"
 import { CostReport } from "./metering/Report.ts"
 import { StorageMeter } from "./metering/Storage.ts"
 import { UsageReport } from "./usage/ProjectUsage.ts"
+import { OpenAIObjects } from "./openai/Objects.ts"
+import type { OpenAIUpstream } from "./openai/Runtime.ts"
 
 export interface PlatformBindings {
   readonly d1: D1Database
@@ -64,7 +66,8 @@ export const databaseLayer = (d1: D1Database) =>
     TurnUsageLog.layer,
     DesktopLinks.layer,
     RateLimits.layer,
-    MeterD1
+    MeterD1,
+    OpenAIObjects.layer
   ).pipe(Layer.provide(D1Client.layer({ db: d1 }).pipe(Layer.orDie)))
 
 /** The ledger's readers and feeders, over D1 and the services above it. */
@@ -92,6 +95,8 @@ export const servicesLayer = Layer.mergeAll(
 export interface PlatformOverrides {
   readonly services?: typeof servicesLayer | undefined
   readonly config?: Layer.Layer<ApiConfig> | undefined
+  /** The OpenAI gateway's connection to OpenAI (WorkerLayer.ts). */
+  readonly openaiUpstream?: Layer.Layer<OpenAIUpstream> | undefined
 }
 
 export const platformLayer = (bindings: PlatformBindings, overrides: PlatformOverrides = {}) => {

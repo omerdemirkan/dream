@@ -24,6 +24,8 @@ export interface DreamdConfigShape extends Config.Success<typeof DaemonConfig> {
   readonly envHash: Option.Option<string>
   /** For testing: where Codex sends model requests instead of the ChatGPT backend. */
   readonly codexBaseUrl: Option.Option<string>
+  /** Dream's AI gateway for the agent's apps, while it's on (`DaemonEnv.openaiBaseUrl`; see `harness/HarnessEnv.ts`). */
+  readonly openaiBaseUrl: Option.Option<string>
   /** The key relay deliveries are signed with (`RelayKeyPath` in a sandbox); dreamd makes it if it's missing. */
   readonly relayKeyPath: string
   /** Whether dreamd reports what turns are doing (`DaemonEnv.progressLine`; see `progress/Progress.ts`). */
@@ -43,6 +45,7 @@ const LocalConfig = Config.all({
   effort: Config.option(Config.schema(ReasoningEffort, DaemonEnv.effort)),
   envHash: Config.option(Config.NonEmptyString(DaemonEnv.envHash)),
   codexBaseUrl: Config.option(Config.NonEmptyString("DREAM_CODEX_BASE_URL")),
+  openaiBaseUrl: Config.option(Config.NonEmptyString(DaemonEnv.openaiBaseUrl)),
   progressLine: Config.String(DaemonEnv.progressLine).pipe(Config.withDefault("off")),
   backgroundQuiet: Config.option(Config.Duration("DREAM_BACKGROUND_QUIET")),
   backgroundLong: Config.option(Config.Duration("DREAM_BACKGROUND_LONG"))
@@ -86,6 +89,7 @@ const load = (provider: ConfigProvider.ConfigProvider, envFile: string) =>
       effort: local.effort,
       envHash: local.envHash,
       codexBaseUrl: local.codexBaseUrl,
+      openaiBaseUrl: local.openaiBaseUrl,
       relayKeyPath: `${local.home}/.dream/relay.key`,
       progressLine: ["on", "model-free"].includes(local.progressLine.trim().toLowerCase()),
       progressModel: local.progressLine.trim().toLowerCase() === "on",

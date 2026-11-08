@@ -94,7 +94,7 @@ describe("the price book", () => {
   it("knows a dated snapshot, and records a model it doesn't know at 0", () => {
     assert.deepStrictEqual(modelPrice("gpt-6.1-sol-2026-10-01"), modelPrice("gpt-6.1-sol"))
     const unknown = price(
-      event({ meter: "openai_request", quantities: { input_tokens: 1000 }, dimensions: { model: "gpt-9-nova" } })
+      event({ meter: "model_request", quantities: { input_tokens: 1000 }, dimensions: { model: "gpt-9-nova" } })
     )
     assert.strictEqual(unknown.usd, 0)
     assert.strictEqual(unknown.units, 1)
@@ -102,7 +102,7 @@ describe("the price book", () => {
     // A cost the provider reported is the event's cost, known model or not.
     const reported = price(
       event({
-        meter: "openai_request",
+        meter: "model_request",
         quantities: { input_tokens: 1_000_000, cost_usd: 0.4321 },
         dimensions: { model: "anthropic/some-model" }
       })
@@ -110,7 +110,7 @@ describe("the price book", () => {
     assert.strictEqual(reported.usd, 0.4321)
     assert.isUndefined(reported.unknownModel)
     const person = price(
-      event({ meter: "openai_request", dimensions: { model: "gpt-6-luna", payer: "person" }, quantities: {} })
+      event({ meter: "model_request", dimensions: { model: "gpt-6-luna", payer: "person" }, quantities: {} })
     )
     assert.strictEqual(person.payer, "person")
   })
@@ -416,14 +416,14 @@ describe("the cost report", () => {
       event({ id: "b", meter: "browser_session", at: now, quantities: { ms: 600_000 } }),
       event({
         id: "c",
-        meter: "openai_request",
+        meter: "model_request",
         at: now,
         quantities: { input_tokens: 1_000_000, output_tokens: 100_000 },
         dimensions: { project: PROJECT, payer: "dream", model: "gpt-6.1-sol" }
       }),
       event({
         id: "d",
-        meter: "openai_request",
+        meter: "model_request",
         at: now,
         quantities: { input_tokens: 1_000_000 },
         dimensions: { project: PROJECT, payer: "person", model: "gpt-6.1-sol" }

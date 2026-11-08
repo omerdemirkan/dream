@@ -163,6 +163,11 @@ the other workstreams to agree first.
   decrypted only inside the Worker. The key and the operator keys (E2B, Browserbase, Namespace, APNs, Google client
   secret) are Worker secrets. Rows reference a secret id, and domain records never carry one. It is deployed at
   https://dream.omer.build (see Deploying below); R2 media storage is on (`DREAM_R2_ENABLED=true`).
+  Dream's AI gateway (`apps/api/src/openai/`, docs/metering.md) serves OpenAI's API at `openai.<domain>/v1` to the
+  apps the agent builds, on Dream's `OPENAI_API_KEY`, metered per project (`model_request`), behind
+  `DREAM_AI_GATEWAY_ENABLED`; sandboxes reach it with a placeholder key and a per-project credential egress adds,
+  and WebRTC calls are metered by a sideband (`OpenAICallDO`). `apps/api/scripts/gateway-smoke.ts` makes real calls
+  through it; `packages/sandbox-template/scripts/gateway-check.ts` checks it from a sandbox on each harness.
   `@cloudflare/vitest-pool-workers` needs Vitest 4 and `@effect/vitest` 4.1.2 needs Vitest 5, so test Worker logic
   in Node against layers and fakes.
 - **Sandbox runtime.** dreamd reads `DaemonConfig` (env set by the ProjectDO at sandbox creation). The `dream` CLI maps

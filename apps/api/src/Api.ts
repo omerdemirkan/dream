@@ -14,6 +14,7 @@
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import type { D1Database, R2Bucket } from "@cloudflare/workers-types"
 import type { ProjectId } from "@dream/domain"
+import { RuntimeContext } from "alchemy/RuntimeContext"
 import { Config, Effect, Option } from "effect"
 import type { HttpClientRequest } from "effect/http"
 import * as HttpServerRequest from "effect/http/HttpServerRequest"
@@ -23,6 +24,8 @@ import { route } from "./http/Router.ts"
 import type { ProjectFetch } from "./project/Client.ts"
 import ProjectDO from "./ProjectDO.ts"
 import RelayDO from "./RelayDO.ts"
+import OpenAICallDO, { SidebandPath } from "./OpenAICallDO.ts"
+import { UpstreamFailure } from "@dream/domain"
 import { hourlyMetering, maintenance, type WorkerBindings, workerLayer } from "./WorkerLayer.ts"
 import { Database, Media, Updates } from "./Resources.ts"
 
@@ -48,6 +51,12 @@ export const EmailEnabled = Config.Boolean("DREAM_EMAIL_ENABLED").pipe(Config.wi
 /** Emails of the people who see everyone's costs in the app, comma-separated (read at runtime by Config.ts). */
 export const Operators = Config.String("DREAM_OPERATORS").pipe(Config.withDefault(""))
 
+/**
+ * Dream's AI gateway (`openai.<domain>`, OpenAI's API on Dream's key) for the apps the agent builds: "true" turns it
+ * on. A plain binding, so a deploy without it leaves it off and the host answering 404.
+ */
+export const AiGatewayEnabled = Config.Boolean("DREAM_AI_GATEWAY_ENABLED").pipe(Config.withDefault(false))
+
 export default class Api extends Cloudflare.Worker<Api>()(
   "Api",
   Effect.gen(function* () {
@@ -70,13 +79,18 @@ export default class Api extends Cloudflare.Worker<Api>()(
         logs: { enabled: true, invocationLogs: true, persist: true, headSamplingRate: 1 },
         redactQueryString: true
       },
-      env: { DREAM_API_HOST: apiHost, ...(operators.trim() === "" ? {} : { DREAM_OPERATORS: operators }) }
+      env: {
+        DREAM_API_HOST: apiHost,
+        DREAM_AI_GATEWAY_ENABLED: String(yield* AiGatewayEnabled),
+        ...(operators.trim() === "" ? {} : { DREAM_OPERATORS: operators })
+      }
     }
   }),
   Effect.gen(function* () {
     const projects = yield* ProjectDO
     // Bound so the Worker exports the class; ProjectDOs reach relays through the env, and the Worker never does.
     yield* RelayDO
+    const calls = yield* OpenAICallDO
     const database = yield* Cloudflare.D1.QueryDatabase(Database)
     const r2Enabled = yield* R2Enabled
     const media = r2Enabled ? yield* Cloudflare.R2.ReadWriteBucket(Media) : undefined
@@ -108,8 +122,31 @@ export default class Api extends Cloudflare.Worker<Api>()(
           projects
             .getByName(projectId)
             .fetch(HttpServerRequest.fromWeb(request))
-            .pipe(Effect.catch(() => Effect.succeed(HttpServerResponse.text("Unavailable", { status: 503 }))))
-      } satisfies WorkerBindings
+            .pipe(Effect.catch(() => Effect.succeed(HttpServerResponse.text("Unavailable", { status: 503 })))),
+        attachSideband: (request) =>
+          calls
+            .getByName(request.id)
+            .fetch(
+              HttpServerRequest.fromWeb(
+                new Request(`https://openai-call${SidebandPath}`, { method: "POST", body: JSON.stringify(request) })
+              )
+            )
+            .pipe(
+              Effect.flatMap((response) =>
+                response.status < 300
+                  ? Effect.void
+                  : Effect.fail(new UpstreamFailure({ service: "OpenAI", message: `sideband ${response.status}` }))
+              ),
+              Effect.catchTag("UpstreamFailure", Effect.fail),
+              Effect.catch((error) =>
+                Effect.fail(
+                  error instanceof UpstreamFailure
+                    ? error
+                    : new UpstreamFailure({ service: "OpenAI", message: "couldn't reach the sideband" })
+                )
+              )
+            )
+      } satisfies Omit<WorkerBindings, "afterResponse">
     })
 
     yield* Cloudflare.Workers.cron("*/5 * * * *", () =>
@@ -128,7 +165,11 @@ export default class Api extends Cloudflare.Worker<Api>()(
       fetch: Effect.gen(function* () {
         const raw = yield* Cloudflare.Request
         const b = yield* bindings
-        return yield* route(raw).pipe(Effect.provide(workerLayer(b)))
+        const context = yield* Cloudflare.WorkerExecutionContext
+        const runtime = yield* RuntimeContext
+        const afterResponse = (effect: Effect.Effect<void>) =>
+          context.waitUntil(effect).pipe(Effect.provideService(RuntimeContext, runtime))
+        return yield* route(raw).pipe(Effect.provide(workerLayer({ ...b, afterResponse })))
       }).pipe(
         Effect.catchCause((cause) =>
           Effect.logError("request failed", cause).pipe(

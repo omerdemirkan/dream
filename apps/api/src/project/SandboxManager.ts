@@ -24,6 +24,7 @@
 import {
   AgentEvent,
   DaemonEnv,
+  OpenAIGateway,
   DaemonEnvFile,
   DefaultDaemonPort,
   DefaultDaemonSocket,
@@ -149,6 +150,8 @@ export const daemonSettings = (options: {
   readonly codexAgentModel: Option.Option<string>
   readonly agentEffort: Option.Option<ReasoningEffort>
   readonly progressLine?: "off" | "model" | "model-free"
+  /** Dream's OpenAI gateway (`OpenAIGateway.baseUrl`), while it's on. */
+  readonly openaiBaseUrl?: string | undefined
 }): Record<string, string> => {
   const model = options.harness === "claude-code" ? options.agentModel : options.codexAgentModel
   return {
@@ -164,7 +167,8 @@ export const daemonSettings = (options: {
       ? { [DaemonEnv.progressLine]: "on" }
       : options.progressLine === "model-free"
         ? { [DaemonEnv.progressLine]: "model-free" }
-        : {})
+        : {}),
+    ...(options.openaiBaseUrl === undefined ? {} : { [DaemonEnv.openaiBaseUrl]: options.openaiBaseUrl })
   }
 }
 
@@ -405,7 +409,8 @@ export class SandboxManager extends Context.Service<
             agentModel: config.agentModel,
             codexAgentModel: config.codexAgentModel,
             agentEffort: config.agentEffort,
-            progressLine: config.progressLine
+            progressLine: config.progressLine,
+            openaiBaseUrl: config.aiGatewayEnabled ? OpenAIGateway.baseUrl(config.domain) : undefined
           })
         }))
 
@@ -461,6 +466,8 @@ export class SandboxManager extends Context.Service<
           const health = yield* daemon.health(access, daemonToken)
           if (health.turn === "running") return
           yield* Effect.logInfo("dreamd's settings changed; rewriting its env file", { sandboxId: access.sandboxId })
+          // A setting can come with an egress rule (the OpenAI gateway's), which must be there when dreamd says so.
+          yield* refreshRules
           yield* restartDaemon(access, daemonToken)
         }).pipe(Effect.catch((error) => Effect.logWarning("couldn't refresh dreamd's env file", error.message)))
 
@@ -498,7 +505,7 @@ export class SandboxManager extends Context.Service<
       const create = Effect.gen(function* () {
         const project = yield* core.project.pipe(Effect.orDie)
         const daemonToken = randomToken(40)
-        const setup = yield* credentials.setup(project.ownerId, project.harness)
+        const setup = yield* credentials.setup(project.ownerId, project.harness, project.id)
         yield* update((r) => ({ ...r, status: "creating" }))
         // The build it's about to get (unknown if the lookup fails; then the first refresh check settles it).
         const build = yield* e2b
@@ -558,7 +565,7 @@ export class SandboxManager extends Context.Service<
         Effect.gen(function* () {
           if (record.access === undefined) return
           const project = yield* core.project.pipe(Effect.orDie)
-          const setup = yield* credentials.setup(project.ownerId, project.harness)
+          const setup = yield* credentials.setup(project.ownerId, project.harness, project.id)
           if (setup.rulesHash === record.rulesHash && !record.rulesDirty) return
           if (resume) yield* e2b.connect(record.access.sandboxId, Duration.toSeconds(IdleTimeout)).pipe(Effect.ignore)
           const updated = yield* e2b.updateRules(record.access.sandboxId, setup.rules)
@@ -1368,7 +1375,7 @@ export class SandboxManager extends Context.Service<
                 .connect(old.sandboxId, Duration.toSeconds(RefreshTimeout))
                 .pipe(Effect.mapError((error) => new MoveFailed({ step: "wake", message: error.message })))
               yield* refreshIfDue(old, record.daemonToken!)
-              const setup = yield* credentials.setup(project.ownerId, project.harness)
+              const setup = yield* credentials.setup(project.ownerId, project.harness, project.id)
               const target = yield* mover.copy({
                 from: old,
                 template: templateFor(wanted.to),

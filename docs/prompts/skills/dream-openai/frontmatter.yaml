@@ -1,0 +1,2 @@
+name: dream-openai
+description: Dream provides OpenAI's API to this project's apps and pays for it — text, speech, realtime voice, images, embeddings, transcription — with no key to ask them for. Read it before an app calls OpenAI or needs a model API key.

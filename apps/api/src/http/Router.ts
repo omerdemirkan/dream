@@ -27,6 +27,8 @@ import {
 } from "./DesktopPage.ts"
 import { gateway } from "./Gateway.ts"
 import { receiveE2bWebhook, registerE2bWebhook } from "./Metering.ts"
+import { OpenAIGateway } from "@dream/domain"
+import { openaiGateway } from "../openai/Gateway.ts"
 import { downloadAttachmentForSandbox, downloadMedia, uploadAttachment, uploadMedia } from "./Media.ts"
 import { homePage, privacyPage } from "./PublicPages.ts"
 import { SandboxAuthServer, WorkerSandboxHandlers } from "./SandboxHandlers.ts"
@@ -84,6 +86,8 @@ export const route = (raw: Request) =>
     const host = url.hostname.toLowerCase()
 
     if (host !== config.apiHost) {
+      // Published apps' hosts always have a dash, so this one is never an app's.
+      if (host === OpenAIGateway.host(config.domain)) return yield* openaiGateway(raw)
       if (host.endsWith(`.${config.domain}`)) return yield* gateway(host, raw)
       return HttpServerResponse.text("Not found", { status: 404 })
     }

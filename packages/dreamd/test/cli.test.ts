@@ -25,8 +25,9 @@ import {
 import { requestedSecret } from "../src/cli/Secrets.ts"
 import { invalidInvocation } from "../src/cli/Usage.ts"
 import { publishedPorts, requestedTags } from "../src/Servers.ts"
+import * as Skill from "../src/harness/Skill.ts"
 import { parseSkill } from "../src/harness/Skill.ts"
-import { agentEnv, harnessAuth, harnessEnv } from "../src/harness/HarnessEnv.ts"
+import { agentEnv, commandEnv, harnessAuth, harnessEnv, sessionEnv } from "../src/harness/HarnessEnv.ts"
 
 const now = DateTime.makeUnsafe("2026-11-05T10:00:00Z")
 const at = (input: string) => Result.map(parseAt(input, now), DateTime.formatIso)
@@ -128,6 +129,38 @@ describe("the harness environment", () => {
       OPENAI_BASE_URL: "https://chatgpt.com/backend-api/codex"
     })
   })
+
+  it("gives the AI gateway's variables to commands and Claude Code's tools, never to Codex itself", () => {
+    const on = {
+      home: "/home/user",
+      socket: "/tmp/dreamd.sock",
+      openaiBaseUrl: Option.some("https://openai.dream.test/v1")
+    }
+    const gateway = { OPENAI_BASE_URL: "https://openai.dream.test/v1", OPENAI_API_KEY: "dream-openai-placeholder" }
+    assert.deepInclude(commandEnv({ PATH: "/usr/bin" }, on), gateway)
+    assert.deepInclude(sessionEnv("claude-code", { PATH: "/usr/bin" }, on), gateway)
+    const codex = sessionEnv("codex", { PATH: "/usr/bin" }, on)
+    assert.isUndefined(codex.OPENAI_BASE_URL)
+    assert.isUndefined(codex.OPENAI_API_KEY)
+    const off = commandEnv({ PATH: "/usr/bin" }, { ...on, openaiBaseUrl: Option.none() })
+    assert.isUndefined(off.OPENAI_BASE_URL)
+    // Node, Bun and Python trust the system's CAs, E2B's egress CA among them; a value already set stays.
+    assert.strictEqual(off.NODE_EXTRA_CA_CERTS, "/etc/ssl/certs/ca-certificates.crt")
+    assert.strictEqual(commandEnv({ SSL_CERT_FILE: "/mine.pem" }, on).SSL_CERT_FILE, "/mine.pem")
+  })
+
+  it("offers the dream-openai skill only while the gateway is on", () =>
+    Effect.gen(function* () {
+      const all = yield* Skill.all
+      const off = Skill.offered(all, { openaiBaseUrl: Option.none() })
+      const on = Skill.offered(all, { openaiBaseUrl: Option.some("https://openai.dream.test/v1") })
+      assert.notInclude(
+        off.map((skill) => skill.name),
+        "dream-openai"
+      )
+      assert.include(on.find((skill) => skill.name === "dream-openai")?.content, "OPENAI_BASE_URL")
+      assert.strictEqual(on.length, off.length + 1)
+    }).pipe(Effect.runSync))
 
   it("installs every skill with its name, description and body", () => {
     const parsed = skills.map((markdown) => Option.getOrThrow(parseSkill(markdown)))

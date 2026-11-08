@@ -20,8 +20,8 @@ export const MeterName = Schema.Literals([
   "browser_session",
   /** One Namespace Mac, once it was destroyed. */
   "mac_session",
-  /** One OpenAI call through Dream's gateway: an HTTP request, or one billed unit of a realtime session. */
-  "openai_request",
+  /** One model call through Dream's AI gateway (`provider` says whose): an HTTP request, or one billed unit of a realtime session. */
+  "model_request",
   /** A day of media kept in R2 for a project (a gauge: one event per project per UTC day). */
   "storage_day",
   /** One email Dream sent on a project's behalf. */

@@ -37,7 +37,7 @@ import * as Usage from "../Usage.ts"
 import * as Background from "./Background.ts"
 import { withPinnedCli } from "./Bridges.ts"
 import { codexContextWindow, topLevel } from "./Fleet.ts"
-import { agentEnv, harnessAuth } from "./HarnessEnv.ts"
+import { gatewayEnv, harnessAuth, sessionEnv } from "./HarnessEnv.ts"
 import { killAllNow, makeLocalSandboxSession, makeSpawned, stopAll } from "./LocalSandbox.ts"
 import { claudeSettings } from "./PersonChannel.ts"
 import * as Session from "./Session.ts"
@@ -174,7 +174,11 @@ const writeClaudeSettings = (file: string) => {
  */
 export const makeAdapter = (
   name: HarnessName,
-  config: { readonly codexBaseUrl: Option.Option<string>; readonly progressLine?: boolean },
+  config: {
+    readonly codexBaseUrl: Option.Option<string>
+    readonly openaiBaseUrl: Option.Option<string>
+    readonly progressLine?: boolean
+  },
   effort: ReasoningEffort
 ) => {
   const auth = {
@@ -199,7 +203,17 @@ export const makeAdapter = (
       )
     : withPinnedCli(
         "codex",
-        createCodex({ auth, reasoningEffort: effort, codexConfig: { model_context_window: codexContextWindow } })
+        createCodex({
+          auth,
+          reasoningEffort: effort,
+          codexConfig: {
+            model_context_window: codexContextWindow,
+            // The AI gateway's variables reach only the commands Codex runs, not Codex (see `HarnessEnv.ts`).
+            ...(Option.isSome(config.openaiBaseUrl)
+              ? { shell_environment_policy: { set: gatewayEnv(config.openaiBaseUrl) } }
+              : {})
+          }
+        })
       )
 }
 
@@ -234,14 +248,15 @@ const make = Effect.fnUntraced(function* ({
   )
   const name = config.harness
   if (name === "claude-code") yield* provide(writeClaudeSettings(path.join(config.home, ".claude", "settings.json")))
-  const env = agentEnv(process.env, config)
+  const env = sessionEnv(name, process.env, config)
+  const offered = Skill.offered(skills, config)
   const { model, effort } = topLevel(name, config)
   yield* Effect.logInfo(`The agent runs on ${name}, model ${model}, effort ${effort}`)
 
   const agent = new HarnessAgent({
     harness: makeAdapter(name, config, effort),
     instructions,
-    skills,
+    skills: offered,
     sandboxConfig: { workDir: "." },
     permissionMode: "allow-all",
     model
@@ -345,7 +360,7 @@ const make = Effect.fnUntraced(function* ({
     )
 
   // New guidance (a template refresh restarted dreamd with a new prompt or skills) carries over before the next turn.
-  const guidance = Session.guidanceOf(instructions, skills)
+  const guidance = Session.guidanceOf(instructions, offered)
   const carried = yield* Session.carryOver(yield* Ref.get(state), guidance, {
     newSessionId: `dream-${config.projectId}-${Date.now()}`,
     handoff: Effect.flatMap(savedString("threadId"), (threadId) =>

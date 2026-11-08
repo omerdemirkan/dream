@@ -6,6 +6,7 @@
  * - upload: a one-media-file PUT to the Worker
  * - attachment: the PUT of one photo or file they attach
  * - connect: a `CreateConnectLink` page (single use, recorded in D1 by `jti`)
+ * - openai: a project's credential for Dream's OpenAI gateway, which only egress adds (`OpenAIGateway`)
  */
 import { ConnectLinkProvider, MediaContentType, MediaId, ProjectId, UserId } from "@dream/domain"
 import { Clock, Context, Data, Duration, Effect, Layer, Redacted, Schema } from "effect"
@@ -72,6 +73,17 @@ const ConnectClaims = Schema.Struct({
   jti: Schema.String,
   exp: Schema.Number
 })
+/**
+ * No `iat` or `exp`: the same project always gets the same credential, so the egress rules that carry it hash the
+ * same and aren't pushed again. Deleting the project revokes it (the gateway looks the project up).
+ */
+const OpenAIGatewayClaims = Schema.Struct({
+  iss: Schema.Literal(issuer),
+  typ: Schema.Literal("openai"),
+  sub: UserId,
+  pid: ProjectId
+})
+
 export interface ConnectTicket {
   readonly userId: UserId
   readonly provider: ConnectLinkProvider
@@ -116,6 +128,10 @@ export class Tokens extends Context.Service<
       claims: Omit<ConnectTicket, "expiresAtMs">
     ) => Effect.Effect<{ readonly token: string; readonly expiresAtMs: number }>
     readonly verifyConnectTicket: (token: string) => Effect.Effect<ConnectTicket, InvalidToken>
+    readonly openaiGateway: (projectId: ProjectId, userId: UserId) => Effect.Effect<Redacted.Redacted<string>>
+    readonly verifyOpenAIGateway: (
+      token: string
+    ) => Effect.Effect<{ readonly projectId: ProjectId; readonly userId: UserId }, InvalidToken>
   }
 >()("@dream/api/Tokens") {
   static readonly layer = Layer.effect(
@@ -201,6 +217,12 @@ export class Tokens extends Context.Service<
               ticketId: claims.jti,
               expiresAtMs: claims.exp * 1000
             }))
+          ),
+        openaiGateway: (projectId, userId) =>
+          Effect.map(signHs256(key, { iss: issuer, typ: "openai", sub: userId, pid: projectId }), Redacted.make),
+        verifyOpenAIGateway: (token) =>
+          verify(token, OpenAIGatewayClaims).pipe(
+            Effect.map((claims) => ({ projectId: claims.pid, userId: claims.sub }))
           )
       })
     })

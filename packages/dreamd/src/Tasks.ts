@@ -18,7 +18,7 @@ import type { TaskFailure, TaskOutcome, TurnUsage, WakeTask, WakeId } from "@dre
 import { Cause, Context, DateTime, Duration, Effect, Exit, FileSystem, Layer, Option, Path, Ref, Stream } from "effect"
 import { DreamdConfig } from "./Config.ts"
 import { makeAdapter } from "./harness/Harness.ts"
-import { agentEnv } from "./harness/HarnessEnv.ts"
+import { sessionEnv } from "./harness/HarnessEnv.ts"
 import { makeLocalSandboxSession, makeSpawned, stopAll } from "./harness/LocalSandbox.ts"
 import * as Skill from "./harness/Skill.ts"
 import { drive, type Part, type TurnHandlers } from "./harness/Turn.ts"
@@ -82,11 +82,11 @@ export class Tasks extends Context.Service<
       const config = yield* DreamdConfig
       const fs = yield* FileSystem.FileSystem
       const path = yield* Path.Path
-      const skills = yield* Skill.all
+      const skills = Skill.offered(yield* Skill.all, config)
       const provide = <A, E>(effect: Effect.Effect<A, E, FileSystem.FileSystem | Path.Path>) =>
         effect.pipe(Effect.provideService(FileSystem.FileSystem, fs), Effect.provideService(Path.Path, path))
       const name = config.harness
-      const env = agentEnv(process.env, config)
+      const env = sessionEnv(name, process.env, config)
       // Every process a task's session starts stops when dreamd does.
       const spawned = makeSpawned()
       yield* Effect.addFinalizer(() => Effect.promise(() => stopAll(spawned)))
