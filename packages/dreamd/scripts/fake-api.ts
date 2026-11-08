@@ -434,6 +434,7 @@ const Handlers = SandboxRpcs.toLayer(
       GetMacSsh: () => log("GetMacSsh", {}).pipe(Effect.andThen(unavailable("Namespace"))),
       StopMac: () => log("StopMac", {}).pipe(Effect.andThen(unavailable("Namespace"))),
       GetUsageLimits: () => log("GetUsageLimits", {}).pipe(Effect.as({ limits: {} })),
+      GetProjectCosts: () => Effect.die("GetProjectCosts: not faked yet"),
       GetUsage: () =>
         log("GetUsage", {}).pipe(
           Effect.andThen(Ref.get(usage)),

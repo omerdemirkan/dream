@@ -310,6 +310,10 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
           return yield* usageReport.projectUsage(project)
         }),
       GetAccountUsage: ({ provider }) => Effect.flatMap(me, (userId) => usageReport.accountUsage(userId, provider)),
+      // Placeholders until the cost report lands (docs/metering.md).
+      GetProjectCosts: ({ projectId }) =>
+        Effect.andThen(owned(projectId), Effect.die("GetProjectCosts: not built yet")),
+      GetAccountCosts: () => Effect.die("GetAccountCosts: not built yet"),
 
       ListMessages: ({ projectId, before, limit }) =>
         Effect.gen(function* () {

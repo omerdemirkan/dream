@@ -256,6 +256,7 @@ export const WorkerSandboxHandlers = SandboxRpcs.toLayer(
           return connection.value.usage_json
         }),
       GetUsageLimits: () => forward((c) => c.GetUsageLimits()),
+      GetProjectCosts: () => Effect.die("GetProjectCosts: not built yet"),
       ReportUsage: (payload) => forward((c) => c.ReportUsage(payload)),
       AddRelay: (payload) => forwardUnlessLeaking(payload, (c) => c.AddRelay(payload)),
       ListRelays: () => forward((c) => c.ListRelays()),

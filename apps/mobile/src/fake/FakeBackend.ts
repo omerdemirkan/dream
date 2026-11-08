@@ -833,6 +833,9 @@ export class FakeBackend extends Context.Service<
             yield* applyLimits(record)
             return projectUsage(record.project.id, yield* DateTime.now)
           }),
+        // Placeholders until the fixtures for costs land (docs/metering.md).
+        GetProjectCosts: () => Effect.die("GetProjectCosts: no fixtures yet"),
+        GetAccountCosts: () => Effect.die("GetAccountCosts: no fixtures yet"),
         GetAccountUsage: ({ provider }) =>
           Effect.gen(function* () {
             const connected = connections.some((c) => c.status === "connected" && c.provider === provider)

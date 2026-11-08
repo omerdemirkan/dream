@@ -1113,6 +1113,8 @@ export const AgentHandlers = SandboxRpcs.toLayer(
       RestartRelay: ({ relayId }) => relays.restart(relayId),
 
       GetUsageLimits: () => limiter.standing,
+      // Served by the Worker from D1 (SandboxHandlers), never forwarded here.
+      GetProjectCosts: () => Effect.die("GetProjectCosts is served by the Worker"),
       // A finished turn or task is credited its share of the week: check before dreamd hears back and starts more.
       ReportTask: (report) => Effect.andThen(sandbox.taskFinished(report), limiter.check),
       ReportTurn: ({ state, usage }) =>
