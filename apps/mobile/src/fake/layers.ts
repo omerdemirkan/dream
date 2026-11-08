@@ -18,6 +18,6 @@ export const LiveProjectsFake = Layer.effect(
   LiveProjects,
   Effect.gen(function* () {
     const backend = yield* FakeBackend
-    return LiveProjects.of({ subscribe: backend.subscribe })
+    return LiveProjects.of({ subscribe: backend.live })
   })
 )

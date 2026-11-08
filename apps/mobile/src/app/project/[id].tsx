@@ -31,7 +31,14 @@ import { dotOf, headerLine, presenceOf } from "../../data/presence.ts"
 import type { ProjectState } from "../../data/projectState.ts"
 import { draftKey } from "../../data/Replies.ts"
 import { useViewingProject } from "../../platform/viewing.ts"
-import { clearDraftFn, draftAtom, projectsAtom, sendMessageFn } from "../../state/atoms.ts"
+import {
+  clearDraftFn,
+  draftAtom,
+  projectConnectionAtom,
+  projectsAtom,
+  reconnectProjectsFn,
+  sendMessageFn
+} from "../../state/atoms.ts"
 import {
   appNotificationsSheetAtom,
   declineAtom,
@@ -58,6 +65,7 @@ import { RoadmapSheet, StatusCardPin } from "../../ui/StatusCard.tsx"
 import { labelsOf } from "../../ui/statusView.ts"
 import { ProjectCostsSection } from "../../ui/Costs.tsx"
 import { UsageBadge, UsageSheet } from "../../ui/Usage.tsx"
+import { WaitingCard, WaitingLine } from "../../ui/Waiting.tsx"
 import { ProjectAgent } from "../../ui/Advanced.tsx"
 import { color, gutter } from "../../ui/theme.ts"
 
@@ -127,7 +135,13 @@ function Project(props: {
   const open = useOpenMessage()
   // While this screen is in front, its own notifications stay quiet: what they'd say arrives here anyway.
   useViewingProject(props.projectId)
+  // What it showed last this session, at once, until the live connection's snapshot replaces it.
   const state = useProject(props.projectId)
+  const connection = Option.getOrElse(
+    AsyncResult.value(useAtomValue(projectConnectionAtom(props.projectId))),
+    () => "connecting" as const
+  )
+  const retry = useAtomSet(reconnectProjectsFn)
   const summaries = Option.getOrUndefined(AsyncResult.value(useAtomValue(projectsAtom)))
   const project = state?.project ?? summaries?.find((s) => s.project.id === props.projectId)?.project
   const send = useAction(sendMessageFn)
@@ -303,6 +317,7 @@ function Project(props: {
             offset={{ opened: keyboardOffset }}
             style={{ paddingHorizontal: 16, paddingBottom: composerBottom, paddingTop: 10 }}
           >
+            <WaitingLine connection={connection} onRetry={() => retry()} />
             <ChatComposer
               busy={send.busy}
               draft={draft?.text}
@@ -387,7 +402,11 @@ function Project(props: {
               onScope={writeTo}
             />
           </View>
-        ) : null}
+        ) : (
+          <View style={{ marginTop: gap }}>
+            <WaitingCard connection={connection} title={project?.title} onRetry={() => retry()} />
+          </View>
+        )}
         <View
           pointerEvents="none"
           style={{

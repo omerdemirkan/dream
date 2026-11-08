@@ -94,6 +94,16 @@ const sections: ReadonlyArray<{ readonly title: string; readonly jumps: Readonly
         to: "/project/prj_cabin?tab=chat"
       },
       {
+        title: "Lift Log · live connection slow",
+        scenarios: ["reset", "live-slow"],
+        to: "/project/prj_liftlog"
+      },
+      {
+        title: "Lift Log · live connection down",
+        scenarios: ["reset", "live-down"],
+        to: "/project/prj_liftlog"
+      },
+      {
         title: "Cabin · next write times out",
         scenarios: ["reset", "stall-next-write"],
         to: "/project/prj_cabin?tab=chat"

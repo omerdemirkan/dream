@@ -240,9 +240,14 @@ export const createProjectFn = appRuntime.fn(
 // A project
 // ---------------------------------------------------------------------------
 
-/** The live state of one project; `None` until its first snapshot. */
+/** The live state of one project: what it showed last this session, else `None` until its first snapshot. */
 export const projectAtom = Atom.family((projectId: ProjectId) =>
   appRuntime.atom(Stream.unwrap(ProjectStates.useSync((states) => states.state(projectId))))
+)
+
+/** How a project's live connection is doing (`Connection`). */
+export const projectConnectionAtom = Atom.family((projectId: ProjectId) =>
+  appRuntime.atom(Stream.unwrap(ProjectStates.useSync((states) => states.connection(projectId))))
 )
 
 /** The header's usage figures for a project; `undefined` while none are known. */

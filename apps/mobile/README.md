@@ -111,7 +111,9 @@ computer, then opened there), `vague-access`, `question-context` (see the messag
 which rest-timer sound to use, with the sounds to play),
 `unsupported-message`, `now-two-lines` and `now-three-lines` (Lift Log's now sentence on two lines, and cut at two), `long-chat` (an afternoon of Lift Log messages to read back through: open
 `/project/prj_liftlog?land=msg_long8` and the Status card folds to one line), `stall-next-write` (the next answer, message, new idea, key or decline hangs until the app
-gives up after 25 s; the retry goes through), `archived` (Recipe Scaler and Morning Brief are archived: off Home,
+gives up after 25 s; the retry goes through), `live-slow` (each live connection takes 6 s to send its snapshot: a project
+opened for the first time shows the waiting card, one opened before shows what it showed last and "Catching up"),
+`live-down` (no live connection gets through: "Can’t reach Dream" after a few seconds; `reset` brings it back), `archived` (Recipe Scaler and Morning Brief are archived: off Home,
 listed under Archived in Settings). `attachments-sent` adds a message to Lift Log with two photos and a PDF, and the agent's
 reply. `no-projects` is a new person's Home: no projects and no app links, so the words and the drawn arrow lead to the input.
 

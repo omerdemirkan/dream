@@ -7,6 +7,8 @@
  * close or failure means: wait a little, fetch a new URL, subscribe again. The
  * first event of every subscription is a `Snapshot`, which replaces what the
  * phone holds. Events this build doesn't know are skipped (`Tolerant.ts`).
+ * Each drop is passed on as `Dropped`, so the screen can tell a connection
+ * that keeps failing from one on its way.
  */
 import { type ProjectEvent, type ProjectId, SocketRpcSerialization } from "@dream/domain"
 import { Context, Effect, Layer, Schedule, Stream } from "effect"
@@ -15,11 +17,17 @@ import { Socket } from "effect/socket"
 import { AppClient } from "./AppClient.ts"
 import { PhoneProjectLiveRpcs } from "./Tolerant.ts"
 
+/** A connection that failed or ended; the stream connects again after it. */
+export const Dropped = { _tag: "Dropped" } as const
+
+/** What a project's live stream carries: its events, and the drops between connections. */
+export type LiveSignal = ProjectEvent | typeof Dropped
+
 export class LiveProjects extends Context.Service<
   LiveProjects,
   {
     /** Never fails: it reconnects until the stream is no longer consumed. */
-    readonly subscribe: (projectId: ProjectId) => Stream.Stream<ProjectEvent>
+    readonly subscribe: (projectId: ProjectId) => Stream.Stream<LiveSignal>
   }
 >()("@dream/mobile/LiveProjects") {
   static readonly layerSocket = Layer.effect(
@@ -51,8 +59,10 @@ export class LiveProjects extends Context.Service<
       return LiveProjects.of({
         subscribe: (projectId) =>
           connectOnce(projectId).pipe(
+            Stream.map((event): LiveSignal => event),
             // A clean end (the DO finished the stream) is treated like a drop.
             Stream.concat(Stream.fail("ended" as const)),
+            Stream.catchCause(() => Stream.succeed(Dropped).pipe(Stream.concat(Stream.fail("dropped" as const)))),
             Stream.retry(
               Schedule.min([Schedule.exponential("500 millis", 2), Schedule.spaced("15 seconds")]).pipe(
                 Schedule.jittered

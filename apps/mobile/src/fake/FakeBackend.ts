@@ -63,6 +63,7 @@ import { Context, DateTime, Duration, Effect, Layer, Option, PubSub, Redacted, S
 import { Headers } from "effect/http"
 import type { Rpc, RpcGroup } from "effect/rpc"
 import { defaultPlan } from "../data/plans.ts"
+import { Dropped, type LiveSignal } from "../data/LiveProjects.ts"
 import { accountCostsOf, type CostsMode, projectCostsOf } from "./costs.ts"
 import { TolerantMessage } from "../data/Tolerant.ts"
 import {
@@ -121,6 +122,8 @@ export const Scenario = [
   "options-sounds",
   "unsupported-message",
   "stall-next-write",
+  "live-slow",
+  "live-down",
   "activity-sent",
   "activity-starting",
   "activity-working",
@@ -223,6 +226,8 @@ export class FakeBackend extends Context.Service<
     /** `AppRpcs` handlers over this backend's state. */
     readonly handlers: Context.Context<AppHandlers>
     readonly subscribe: (projectId: ProjectId) => Stream.Stream<ProjectEvent>
+    /** `subscribe` as the phone's live connection sees it, through `live-slow` and `live-down`. */
+    readonly live: (projectId: ProjectId) => Stream.Stream<LiveSignal>
     readonly pushes: Stream.Stream<FakePush>
     readonly scenario: (name: Scenario) => Effect.Effect<void>
     /** Sets how long the simulated agent takes to respond (zero in tests). */
@@ -243,6 +248,8 @@ export class FakeBackend extends Context.Service<
           stallNextWrite = false
           return Effect.never
         })
+      // `live-slow`: each live connection takes a while to send its snapshot. `live-down`: none get through.
+      let liveFault: "none" | "slow" | "down" = "none"
       let counter = 0
       const nextId = (prefix: string) => `${prefix}_fake${++counter}`
       /** Attachments started with `CreateAttachmentUpload`; the fake takes them as uploaded at once. */
@@ -1454,6 +1461,7 @@ export class FakeBackend extends Context.Service<
         switch (name) {
           case "reset":
             stallNextWrite = false
+            liveFault = "none"
             return yield* load(makeWorld(now))
           case "links-empty":
             links = []
@@ -1708,6 +1716,12 @@ export class FakeBackend extends Context.Service<
           case "stall-next-write":
             stallNextWrite = true
             return
+          case "live-slow":
+            liveFault = "slow"
+            return
+          case "live-down":
+            liveFault = "down"
+            return
           case "declined-reason": {
             // Cabin's calendar request, declined with a reason (the card says what they said).
             const cabin = Array.from(records.values()).find((r) => r.project.slug === "cabin")
@@ -1881,18 +1895,32 @@ export class FakeBackend extends Context.Service<
 
       const handlerServices = yield* Layer.build(handlers)
 
+      const subscribe = (projectId: ProjectId) =>
+        Stream.unwrap(
+          Effect.gen(function* () {
+            const record = records.get(projectId)
+            if (!record) return Stream.never
+            // Subscribe before taking the snapshot so no change falls between them.
+            const subscription = yield* PubSub.subscribe(record.events)
+            return Stream.make(snapshotOf(record)).pipe(Stream.concat(Stream.fromSubscription(subscription)))
+          })
+        )
+      const live = (projectId: ProjectId): Stream.Stream<LiveSignal> =>
+        Stream.suspend(() =>
+          liveFault === "down"
+            ? Stream.make(Dropped).pipe(
+                Stream.concat(Stream.fromEffectDrain(Effect.sleep("2 seconds"))),
+                Stream.concat(Stream.suspend(() => live(projectId)))
+              )
+            : liveFault === "slow"
+              ? Stream.fromEffectDrain(Effect.sleep("6 seconds")).pipe(Stream.concat(subscribe(projectId)))
+              : subscribe(projectId)
+        )
+
       return FakeBackend.of({
         handlers: handlerServices,
-        subscribe: (projectId) =>
-          Stream.unwrap(
-            Effect.gen(function* () {
-              const record = records.get(projectId)
-              if (!record) return Stream.never
-              // Subscribe before taking the snapshot so no change falls between them.
-              const subscription = yield* PubSub.subscribe(record.events)
-              return Stream.make(snapshotOf(record)).pipe(Stream.concat(Stream.fromSubscription(subscription)))
-            })
-          ),
+        subscribe,
+        live,
         pushes: Stream.fromPubSub(pushes),
         scenario,
         setPace: (input) => Effect.sync(() => void (pace = Duration.fromInputUnsafe(input)))

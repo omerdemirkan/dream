@@ -13,7 +13,7 @@ import { Rpc, RpcGroup, RpcServer } from "effect/rpc"
 import { Socket, SocketServer } from "effect/socket"
 import { TestClock } from "effect/testing"
 import { AppClient } from "../src/data/AppClient.ts"
-import { LiveProjects } from "../src/data/LiveProjects.ts"
+import { LiveProjects, type LiveSignal } from "../src/data/LiveProjects.ts"
 import { SecureStorage } from "../src/data/SecureStorage.ts"
 import { unsupportedText } from "../src/data/Tolerant.ts"
 import { Session } from "../src/data/Session.ts"
@@ -136,7 +136,7 @@ const memorySockets = Effect.gen(function* () {
 })
 
 describe("LiveProjects over a WebSocket", () => {
-  it.effect("streams snapshot then changes, and resubscribes with a fresh ticket after a drop", () =>
+  it.effect("streams snapshot then changes, and says so after a drop and resubscribes with a fresh ticket", () =>
     Effect.gen(function* () {
       const { urls, servers, constructor, socketServer } = yield* memorySockets
 
@@ -173,7 +173,7 @@ describe("LiveProjects over a WebSocket", () => {
         yield* session.signIn({ token: signedIn.sessionToken, user: signedIn.user })
 
         const live = yield* LiveProjects
-        const events: Array<ProjectEvent["_tag"]> = []
+        const events: Array<LiveSignal["_tag"]> = []
         const fiber = yield* live.subscribe(projectId).pipe(
           Stream.runForEach((event) => Effect.sync(() => events.push(event._tag))),
           Effect.forkChild
@@ -190,7 +190,14 @@ describe("LiveProjects over a WebSocket", () => {
         yield* settle("1 second")
         assert.strictEqual(urls.length, 2)
         assert.notStrictEqual(urls[0], urls[1])
-        assert.deepStrictEqual(events, ["Snapshot", "StatusChanged", "WorkingChanged", "ActivityChanged", "Snapshot"])
+        assert.deepStrictEqual(events, [
+          "Snapshot",
+          "StatusChanged",
+          "WorkingChanged",
+          "ActivityChanged",
+          "Dropped",
+          "Snapshot"
+        ])
         yield* Fiber.interrupt(fiber)
       }).pipe(Effect.provide(layer))
     })
@@ -235,7 +242,7 @@ describe("LiveProjects over a WebSocket", () => {
         const session = yield* Session
         const signedIn = yield* app.DevSignIn({ email: "ada@example.com", secret: Redacted.make("x") })
         yield* session.signIn({ token: signedIn.sessionToken, user: signedIn.user })
-        const events: Array<ProjectEvent> = []
+        const events: Array<LiveSignal> = []
         const fiber = yield* (yield* LiveProjects).subscribe(projectId).pipe(
           Stream.runForEach((event) => Effect.sync(() => events.push(event))),
           Effect.forkChild
