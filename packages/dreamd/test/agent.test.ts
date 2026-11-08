@@ -253,6 +253,55 @@ describe("Agent", () => {
     }).pipe(Effect.scoped)
   )
 
+  it.effect(
+    "opens the next turn's prompt with what the last one used, and drops it after a turn that used nothing",
+    () =>
+      Effect.gen(function* () {
+        const { turns, inbox, logged, idle } = yield* setup()
+        const resetsAt = DateTime.add(yield* DateTime.now, { days: 4 })
+        yield* Queue.offer(turns, (_prompt, handlers) =>
+          Effect.gen(function* () {
+            yield* handlers.firstUsage?.({ weekly: { usedPercent: 49, resetsAt } }) ?? Effect.void
+            return {
+              ...completed(),
+              usage: { weekly: { usedPercent: 52, resetsAt } },
+              spend: {
+                priced: true,
+                sessions: [
+                  { own: true, steps: 40, peakContext: 180_000, cost: 3, recached: 0 },
+                  {
+                    own: false,
+                    description: "Build the app",
+                    model: "sonnet",
+                    effort: "high",
+                    steps: 120,
+                    peakContext: 240_000,
+                    cost: 9,
+                    recached: 0
+                  }
+                ]
+              }
+            }
+          })
+        )
+        yield* Queue.offer(turns, () => Effect.succeed(completed()))
+        yield* Queue.offer(turns, () => Effect.succeed(completed()))
+        yield* inbox.deliver([userMessage(1)])
+        yield* logged(1)
+        yield* idle
+        yield* inbox.deliver([userMessage(2)])
+        const [first, second] = yield* logged(2)
+        assert.notInclude(first, "Your last turn")
+        assert.include(second, "and came to about $12 at API prices.")
+        assert.include(second, "Their weekly window went from 49% to 52% while it ran")
+        assert.include(second, 'Subagents: "Build the app" (sonnet, high) 75%, 120 steps, up to 240k.')
+        yield* idle
+        yield* inbox.deliver([userMessage(3)])
+        const [, , third] = yield* logged(3)
+        assert.notInclude(third, "Your last turn")
+      }).pipe(Effect.scoped)
+  )
+
   it.effect("stops at a usage limit and waits for the reset", () =>
     Effect.gen(function* () {
       const { turns, inbox, log, logged, reports } = yield* setup()

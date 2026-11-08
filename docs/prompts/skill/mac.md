@@ -12,6 +12,10 @@ and `dream mac stop` when you're done.
 - `dream mac cp <src>... mac:<dst>` and `dream mac cp mac:<src>... <dst>` copy files and directories (paths after
   `mac:` are relative to its home). `dream mac ssh` passes stdin through, so `tar c . | dream mac ssh -- tar x -C app`
   works too.
+- Builds, test runs and simulator screenshots here often take five to ten minutes. A session's cache lapses after
+  about five minutes without a step, and the step after that sends the whole session again at ten or more times the
+  price, so a long job costs less waited on in rounds of a few minutes (a polling loop under `timeout 240`) than in
+  one wait until it's done.
 - There's no GUI session, so `screencapture` fails. `xcrun simctl io booted screenshot <file>` and `recordVideo
   <file>` capture the simulator.
 - It has Homebrew, so tools such as XcodeGen are a `brew install` away.

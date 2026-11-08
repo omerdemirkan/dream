@@ -13,6 +13,36 @@ export { dreamSkill, systemPrompt, taskPrompt } from "./generated/prompts.ts"
 /** Where the skill goes: `<skills dir>/dream/SKILL.md` for Claude Code and Codex. */
 export const dreamSkillName = "dream"
 
+/** One session that worked in a turn: the agent's own, or a subagent's. */
+export interface SessionSpend {
+  readonly own: boolean
+  /** A subagent's description, as the agent gave it. */
+  readonly description?: string | undefined
+  /** The model, as the agent named it or as the provider reports it. */
+  readonly model?: string | undefined
+  readonly effort?: string | undefined
+  /** Model calls. */
+  readonly steps: number
+  /** The most context one of its steps sent, in tokens. */
+  readonly peakContext: number
+  /** What it cost: dollars at list prices, or (`LastTurn.priced` false) a unit common to the turn's sessions. */
+  readonly cost: number
+  /** The part of `cost` spent sending the session afresh after a pause had let its cache lapse. */
+  readonly recached: number
+}
+
+/** What the previous turn used, which the next turn's prompt opens with (`renderLastTurn`). */
+export interface LastTurn {
+  readonly startedAt: DateTime.Utc
+  readonly endedAt: DateTime.Utc
+  /** Whether `cost` is in dollars (it isn't for a provider whose prices dreamd doesn't know). */
+  readonly priced: boolean
+  /** Every session with a step in the turn, the agent's own included. */
+  readonly sessions: ReadonlyArray<SessionSpend>
+  /** Their weekly window (used percent) at the turn's first model call and at its end, when both were read. */
+  readonly weekly?: { readonly before: number; readonly after: number } | undefined
+}
+
 export interface TurnPromptInput {
   /** The events that woke the agent, in any order; they are shown oldest first. */
   readonly events: ReadonlyArray<AgentEvent>
@@ -21,11 +51,13 @@ export interface TurnPromptInput {
   readonly timeZone?: string | undefined
   /** Attachments dreamd couldn't copy into the sandbox, so the prompt doesn't point at a missing file. */
   readonly missingAttachments?: ReadonlySet<MediaId> | undefined
+  /** What the previous turn used; the prompt says so after the time. */
+  readonly lastTurn?: LastTurn | undefined
 }
 
 const byTime = Order.mapInput(DateTime.Order, (event: AgentEvent) => event.at)
 
-const render = (heading: string, { events, now, timeZone, missingAttachments }: TurnPromptInput): string => {
+const render = (heading: string, { events, now, timeZone, missingAttachments, lastTurn }: TurnPromptInput): string => {
   const zone = timeZone ?? "UTC"
   const clock = DateTime.format(now, {
     locale: "en-US",
@@ -38,12 +70,13 @@ const render = (heading: string, { events, now, timeZone, missingAttachments }: 
     sorted.length === 0
       ? "Nothing new has arrived."
       : sorted.map((event) => renderAgentEvent(event, { timeZone: zone, missingAttachments })).join("\n\n")
-  return `It's ${clock} where they are (${zone}).\n\n${heading}:\n\n${body}\n`
+  const spent = lastTurn === undefined ? "" : renderLastTurn(lastTurn)
+  return `It's ${clock} where they are (${zone}).\n\n${spent === "" ? "" : `${spent}\n\n`}${heading}:\n\n${body}\n`
 }
 
 /**
- * The user-turn prompt that starts a turn: the current time where they are,
- * then what woke the agent.
+ * The user-turn prompt that starts a turn: the current time where they are, what the last turn used, then what
+ * woke the agent.
  */
 export const renderTurnPrompt = (input: TurnPromptInput): string => render("What woke you", input)
 
@@ -51,8 +84,91 @@ export const renderTurnPrompt = (input: TurnPromptInput): string => render("What
  * Input given to a turn that's already running (Claude Code and Codex both
  * accept it mid-turn), for events that arrive while the agent works.
  */
-export const renderSteerPrompt = (input: TurnPromptInput): string =>
+export const renderSteerPrompt = ({ lastTurn: _, ...input }: TurnPromptInput): string =>
   render("This arrived while you were working", input)
+
+const tokens = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : `${Math.round(n / 1000)}k`)
+
+const dollars = (n: number) => (n < 1 ? `$${n.toFixed(2)}` : n < 10 ? `$${n.toFixed(1)}` : `$${Math.round(n)}`)
+
+const span = (startedAt: DateTime.Utc, endedAt: DateTime.Utc) => {
+  const minutes = Math.max(
+    1,
+    Math.round((DateTime.toEpochMillis(endedAt) - DateTime.toEpochMillis(startedAt)) / 60_000)
+  )
+  if (minutes < 60) return `${minutes} min`
+  const hours = Math.floor(minutes / 60)
+  return minutes % 60 === 0 ? `${hours} h` : `${hours} h ${minutes % 60} min`
+}
+
+const sum = (sessions: ReadonlyArray<SessionSpend>, of: (session: SessionSpend) => number) =>
+  sessions.reduce((total, session) => total + of(session), 0)
+
+const sized = (steps: number, peakContext: number, unit = "") =>
+  `${steps} ${steps === 1 ? "step" : "steps"}, up to ${tokens(peakContext)}${unit}`
+
+const subagentName = ({ description, model, effort }: SessionSpend) => {
+  const how = [model, effort].filter((part) => part !== undefined && part !== "").join(", ")
+  const name = description === undefined ? "a subagent" : `"${description}"`
+  return how === "" ? name : `${name} (${how})`
+}
+
+/**
+ * What the previous turn used, session by session, since the agent can't see its own spending otherwise: the total
+ * in dollars at list prices when they're known, each session's share with its steps and the most context it sent,
+ * and, when it's large, the share spent re-sending sessions whose cache had lapsed. The system prompt's Usage
+ * section tells the agent what this paragraph is.
+ */
+export const renderLastTurn = ({ startedAt, endedAt, priced, sessions, weekly }: LastTurn): string => {
+  const total = sum(sessions, (session) => session.cost)
+  if (total <= 0) return ""
+  const share = (cost: number) => {
+    const percent = (100 * cost) / total
+    return percent < 1 ? "under 1%" : `${Math.round(percent)}%`
+  }
+  const own = sessions.filter((session) => session.own)
+  const subagents = sessions.filter((session) => !session.own).sort((a, b) => b.cost - a.cost)
+  const ownSize = sized(
+    sum(own, (session) => session.steps),
+    Math.max(0, ...own.map((session) => session.peakContext)),
+    " tokens of context"
+  )
+  const rest = subagents.slice(3)
+  const parts = [
+    `Your last turn ran ${span(startedAt, endedAt)}${priced ? ` and came to about ${dollars(total)} at API prices` : ""}.`,
+    ...(weekly !== undefined && weekly.after > weekly.before
+      ? [
+          `Their weekly window went from ${Math.round(weekly.before)}% to ${Math.round(weekly.after)}% while it ran, which counts anything else on their plan meanwhile.`
+        ]
+      : []),
+    ...(own.length === 0
+      ? []
+      : subagents.length === 0
+        ? [`It was all your own session: ${ownSize}.`]
+        : [`Your own session was ${share(sum(own, (session) => session.cost))} of it: ${ownSize}.`]),
+    ...(subagents.length === 0
+      ? []
+      : [
+          `Subagents: ${[
+            ...subagents
+              .slice(0, 3)
+              .map(
+                (session) =>
+                  `${subagentName(session)} ${share(session.cost)}, ${sized(session.steps, session.peakContext)}`
+              ),
+            ...(rest.length === 0
+              ? []
+              : [`${rest.length} more, ${share(sum(rest, (session) => session.cost))} together`])
+          ].join("; ")}.`
+        ]),
+    ...(sum(sessions, (session) => session.recached) / total >= 0.1
+      ? [
+          `About ${share(sum(sessions, (session) => session.recached))} of it went to sending sessions afresh after a pause had let their cache lapse.`
+        ]
+      : [])
+  ]
+  return parts.join(" ")
+}
 
 export interface TaskPromptInput {
   /** The wake's reason, as the agent gave it. */

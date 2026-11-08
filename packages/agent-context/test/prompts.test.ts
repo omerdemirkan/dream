@@ -7,6 +7,8 @@ import { fileURLToPath } from "node:url"
 import { buildPrompts, withMap } from "../src/extract.ts"
 import {
   dreamSkill,
+  type LastTurn,
+  renderLastTurn,
   renderSteerPrompt,
   renderTaskPrompt,
   renderTurnPrompt,
@@ -143,6 +145,90 @@ This arrived while you were working:
 > Can the charts show estimated 1RM, not just the weight?
 `
     )
+  })
+})
+
+describe("renderLastTurn", () => {
+  const session = (cost: number, more: Partial<LastTurn["sessions"][number]> = {}) => ({
+    own: false,
+    steps: 20,
+    peakContext: 60_000,
+    cost,
+    recached: 0,
+    ...more
+  })
+  const turn = (sessions: LastTurn["sessions"], more: Partial<LastTurn> = {}): LastTurn => ({
+    startedAt: DateTime.makeUnsafe("2026-11-07T20:54:00Z"),
+    endedAt: DateTime.makeUnsafe("2026-11-08T00:01:00Z"),
+    priced: true,
+    sessions,
+    ...more
+  })
+
+  it("says what each session cost, the largest subagents by name, and the rest together", () => {
+    const note = renderLastTurn(
+      turn(
+        [
+          session(2, { own: true, steps: 43, peakContext: 114_547 }),
+          session(11, {
+            description: "Three design directions",
+            model: "opus",
+            effort: "high",
+            steps: 151,
+            peakContext: 257_490,
+            recached: 1.5
+          }),
+          session(7, {
+            description: "Build the engine",
+            model: "sonnet",
+            effort: "high",
+            steps: 119,
+            peakContext: 234_695,
+            recached: 2.5
+          }),
+          session(0.2, { description: "Research", model: "sonnet", steps: 5 }),
+          session(0.3, { model: "sonnet" }),
+          session(0.1)
+        ],
+        { weekly: { before: 49, after: 52 } }
+      )
+    )
+    assert.strictEqual(
+      note,
+      'Your last turn ran 3 h 7 min and came to about $21 at API prices. Their weekly window went from 49% to 52% while it ran, which counts anything else on their plan meanwhile. Your own session was 10% of it: 43 steps, up to 115k tokens of context. Subagents: "Three design directions" (opus, high) 53%, 151 steps, up to 257k; "Build the engine" (sonnet, high) 34%, 119 steps, up to 235k; a subagent (sonnet) 1%, 20 steps, up to 60k; 2 more, 1% together. About 19% of it went to sending sessions afresh after a pause had let their cache lapse.'
+    )
+  })
+
+  it("keeps a small turn to a sentence, and leaves out dollars it doesn't know", () => {
+    assert.strictEqual(
+      renderLastTurn(
+        turn([session(0.24, { own: true, steps: 6, peakContext: 160_000 })], {
+          endedAt: DateTime.makeUnsafe("2026-11-07T20:55:10Z"),
+          weekly: { before: 55, after: 55 }
+        })
+      ),
+      "Your last turn ran 1 min and came to about $0.24 at API prices. It was all your own session: 6 steps, up to 160k tokens of context."
+    )
+    assert.strictEqual(
+      renderLastTurn(turn([session(40, { own: true }), session(10, { steps: 1 })], { priced: false })),
+      "Your last turn ran 3 h 7 min. Your own session was 80% of it: 20 steps, up to 60k tokens of context. Subagents: a subagent 20%, 1 step, up to 60k."
+    )
+    assert.strictEqual(renderLastTurn(turn([])), "")
+  })
+
+  it("comes after the time in the turn prompt, and not in input given mid-turn", () => {
+    const [message] = Fixtures.events
+    const input = {
+      events: [message!],
+      now: DateTime.makeUnsafe("2026-11-04T22:03:00Z"),
+      timeZone: "America/Los_Angeles",
+      lastTurn: turn([session(0.5, { own: true })])
+    }
+    assert.include(
+      renderTurnPrompt(input),
+      "(America/Los_Angeles).\n\nYour last turn ran 3 h 7 min and came to about $0.50 at API prices. It was all your own session: 20 steps, up to 60k tokens of context.\n\nWhat woke you:"
+    )
+    assert.notInclude(renderSteerPrompt(input), "Your last turn")
   })
 })
 
