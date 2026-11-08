@@ -3,7 +3,7 @@
  * what it was asked so tests can assert on it.
  */
 import { DaemonEnv, DaemonEnvFile, DaemonRestarting, UpstreamFailure } from "@dream/domain"
-import { DateTime, Effect, Layer, Option, Redacted, Stream } from "effect"
+import { DateTime, Duration, Effect, Layer, Option, Redacted, Stream } from "effect"
 import { Browserbase } from "../../src/brokers/Browserbase.ts"
 import { Namespace } from "../../src/brokers/Namespace.ts"
 import { ChatGpt } from "../../src/connect/ChatGpt.ts"
@@ -61,7 +61,20 @@ export class FakeWorld {
   readonly processes: Array<{ sandboxId: string; command: string; pty: boolean }> = []
   readonly inputs: Array<{ sandboxId: string; pid: number; text: string }> = []
   readonly browserSessions = new Map<string, { status: string; startedAt: string; endedAt?: string }>()
-  readonly macs = new Map<string, { status: string; labels?: Record<string, string> }>()
+  readonly macs = new Map<
+    string,
+    {
+      status: string
+      labels?: Record<string, string>
+      createdAt?: DateTime.Utc
+      destroyedAt?: DateTime.Utc
+      deadline?: DateTime.Utc
+    }
+  >()
+  /** What the Mac probe prints (`brokers/MacProbe.ts`); a string that starts with "fail" fails the command. */
+  macProbe = "self 99\ncpu 0.0\nsims 0\n"
+  /** Namespace's cap on a Mac's deadline, from its creation (the workspace policy). */
+  macMaxLifetime = Duration.hours(4)
   daemonHealthy = true
   deliverFails = false
   /** Deliveries dreamd refuses because it's restarting. */
@@ -439,18 +452,42 @@ export const fakeBrowserbase = (world: FakeWorld) =>
     })
   )
 
+/** A fake Mac as Namespace has it now: past its deadline, destroyed two seconds after it. */
+const settledMac = (world: FakeWorld, instanceId: string) =>
+  Effect.gen(function* () {
+    const mac = world.macs.get(instanceId)
+    if (mac?.deadline !== undefined && mac.status === "RUNNING") {
+      if (DateTime.isLessThanOrEqualTo(mac.deadline, yield* DateTime.now)) {
+        mac.status = "DESTROYED"
+        mac.destroyedAt = DateTime.add(mac.deadline, { seconds: 2 })
+      }
+    }
+    return mac
+  })
+
 export const fakeNamespace = (world: FakeWorld) =>
   Layer.succeed(
     Namespace,
     Namespace.of({
       start: (_labels, deadline) =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
           const instanceId = world.nextId("mac")
-          world.macs.set(instanceId, { status: "RUNNING" })
-          return { instanceId, status: "RUNNING", deadline }
+          const createdAt = yield* DateTime.now
+          const capped = DateTime.min(deadline, DateTime.addDuration(createdAt, world.macMaxLifetime))
+          world.macs.set(instanceId, { status: "RUNNING", createdAt, deadline: capped })
+          return { instanceId, status: "RUNNING", deadline: capped, createdAt }
         }),
       describe: (instanceId) =>
-        Effect.succeed({ instanceId, status: world.macs.get(instanceId)?.status ?? "DESTROYED" }),
+        Effect.gen(function* () {
+          const mac = yield* settledMac(world, instanceId)
+          return {
+            instanceId,
+            status: mac?.status ?? "DESTROYED",
+            deadline: mac?.deadline,
+            createdAt: mac?.createdAt,
+            destroyedAt: mac?.destroyedAt
+          }
+        }),
       list: Effect.sync(() =>
         [...world.macs.entries()]
           .filter(([, mac]) => mac.status !== "DESTROYED")
@@ -464,10 +501,30 @@ export const fakeNamespace = (world: FakeWorld) =>
           privateKey: "-----BEGIN OPENSSH PRIVATE KEY-----\nfake\n-----END OPENSSH PRIVATE KEY-----\n",
           hostKey: "ssh.test.namespace.so ecdsa-sha2-nistp256 AAAA"
         }),
-      extend: () => Effect.void,
+      extend: (instanceId, seconds) =>
+        Effect.gen(function* () {
+          const mac = world.macs.get(instanceId)
+          if (mac === undefined || mac.createdAt === undefined || mac.deadline === undefined) return undefined
+          const wanted = DateTime.add(yield* DateTime.now, { seconds })
+          const cap = DateTime.addDuration(mac.createdAt, world.macMaxLifetime)
+          mac.deadline = DateTime.min(DateTime.max(mac.deadline, wanted), cap)
+          return mac.deadline
+        }),
+      run: (instanceId) =>
+        Effect.gen(function* () {
+          const mac = yield* settledMac(world, instanceId)
+          if (mac === undefined || mac.status !== "RUNNING" || world.macProbe.startsWith("fail")) {
+            return yield* new UpstreamFailure({ service: "Namespace", message: `${instanceId} was destroyed` })
+          }
+          return { exitCode: 0, stdout: world.macProbe, stderr: "" }
+        }),
       destroy: (instanceId) =>
-        Effect.sync(() => {
-          world.macs.set(instanceId, { status: "DESTROYED" })
+        Effect.gen(function* () {
+          const mac = yield* settledMac(world, instanceId)
+          if (mac !== undefined && mac.status !== "DESTROYED") {
+            mac.status = "DESTROYED"
+            mac.destroyedAt = yield* DateTime.now
+          }
         })
     })
   )

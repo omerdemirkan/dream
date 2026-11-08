@@ -11,10 +11,14 @@ import {
   type ProjectId,
   QuestionAnswer,
   RequestId,
-  renderAgentEvent
+  renderAgentEvent,
+  Routes
 } from "@dream/domain"
-import { Context, DateTime, Effect, Exit, Fiber, Option, Redacted, Stream } from "effect"
+import { Context, DateTime, Effect, Exit, Fiber, Layer, Option, Redacted, Stream } from "effect"
+import * as HttpServerRequest from "effect/http/HttpServerRequest"
+import * as HttpServerResponse from "effect/http/HttpServerResponse"
 import { gateway } from "../src/http/Gateway.ts"
+import { route } from "../src/http/Router.ts"
 import { ProjectClients } from "../src/project/Client.ts"
 import { Core } from "../src/project/Core.ts"
 import { Store } from "../src/project/Store.ts"
@@ -1572,6 +1576,37 @@ describe("a project, end to end", () => {
       assert.closeTo(Number(metered[0]?.cost_usd), 0.008, 1e-9)
       assert.isTrue(metered.every((row) => row.project_id !== null && row.owner !== "dream"))
       assert.strictEqual(cloud.db.prepare("SELECT COUNT(*) AS n FROM usage_events").all()[0]?.n, 0)
+      const dimensions = JSON.parse(
+        String(
+          cloud.db.prepare("SELECT dimensions_json FROM meter_events WHERE meter = 'mac_session'").all()[0]
+            ?.dimensions_json
+        )
+      )
+      assert.strictEqual(dimensions.stop_reason, "explicit")
+      assert.strictEqual(dimensions.ended_by, "namespace")
+
+      // The operator reads the Mac's life back; only they can.
+      const ask = (headers: Record<string, string>) =>
+        Effect.gen(function* () {
+          const raw = new Request(`https://api.dream.test${Routes.macActivity}?project=${project.id}&entries=1`, {
+            headers
+          })
+          const response = yield* route(raw).pipe(
+            Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(raw)),
+            Effect.provide(Layer.succeedContext(cloud.workerContext))
+          )
+          const web = HttpServerResponse.toWeb(response)
+          return { status: web.status, body: yield* Effect.promise(() => web.text()) }
+        })
+      assert.strictEqual((yield* ask({})).status, 403)
+      const read = yield* ask({ "x-dream-dev-secret": "dev-secret" })
+      const activity = JSON.parse(read.body)
+      assert.strictEqual(activity.macs.length, 1)
+      assert.deepInclude(activity.macs[0], { reason: "explicit", sshSessions: 1, statusChecks: 0 })
+      assert.deepStrictEqual(
+        activity.entries.map((entry: { activity: { _tag: string } }) => entry.activity._tag),
+        ["Start", "Ssh", "Stop"]
+      )
       yield* cloud.close
     })
   )

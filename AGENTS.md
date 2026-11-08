@@ -168,6 +168,10 @@ the other workstreams to agree first.
   `DREAM_AI_GATEWAY_ENABLED`; sandboxes reach it with a placeholder key and a per-project credential egress adds,
   and WebRTC calls are metered by a sideband (`OpenAICallDO`). `apps/api/scripts/gateway-smoke.ts` makes real calls
   through it; `packages/sandbox-template/scripts/gateway-check.ts` checks it from a sandbox on each harness.
+  A rented Mac counts as in use only while something the agent runs is at work on it: the ProjectDO probes it every
+  five minutes through Namespace's command service (`brokers/MacProbe.ts`), stops it after 15 minutes without use or
+  soon after a turn ends with nothing running, and logs each Mac's life to D1 `mac_activity`
+  (GET `/admin/macs/activity`; see `apps/api/README.md`).
   `@cloudflare/vitest-pool-workers` needs Vitest 4 and `@effect/vitest` 4.1.2 needs Vitest 5, so test Worker logic
   in Node against layers and fakes.
 - **Sandbox runtime.** dreamd reads `DaemonConfig` (env set by the ProjectDO at sandbox creation). The `dream` CLI maps

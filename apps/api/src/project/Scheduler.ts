@@ -1,6 +1,6 @@
 /**
  * The ProjectDO's alarm: fires due wakes (as `WakeDue` events), delivers the
- * inbox, ends usage pauses, keeps a working sandbox awake, stops an idle Mac,
+ * inbox, ends usage pauses, keeps a working sandbox awake, checks a running Mac,
  * and settles finished browser sessions. Then points the alarm at the next
  * due thing.
  */
@@ -107,7 +107,7 @@ export class Scheduler extends Context.Service<Scheduler, { readonly run: Effect
               yield* sandbox.move
               break
             case "mac-idle":
-              yield* machines.macIdleCheck
+              yield* machines.macCheck
               break
             case "browser-sweep":
               yield* machines.sweepBrowsers

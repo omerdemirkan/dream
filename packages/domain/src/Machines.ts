@@ -21,9 +21,14 @@ export type MacState = typeof MacState.Type
 
 export const MacStatus = Schema.Struct({
   state: MacState,
-  /** Stops itself after this long without an SSH session. */
+  /** Stops itself after this long with nothing it runs at work: no ssh session, no build, no process of its own busy. */
   idleTimeoutMinutes: Schema.Int,
-  startedAt: Schema.optionalKey(Schema.DateTimeUtc)
+  startedAt: Schema.optionalKey(Schema.DateTimeUtc),
+  /**
+   * When the provider destroys it whatever runs on it: use keeps moving it later, up to the provider's limit on a
+   * Mac's lifetime. Added November 2026; older dreamds ignore it.
+   */
+  deadline: Schema.optionalKey(Schema.DateTimeUtc)
 })
 export type MacStatus = typeof MacStatus.Type
 

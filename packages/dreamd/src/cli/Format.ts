@@ -302,7 +302,13 @@ export const browser = (session: BrowserSession): string =>
 export const mac = (status: MacStatus, now: DateTime.Utc): string =>
   status.state === "stopped"
     ? "No Mac is running. `dream mac start` rents one."
-    : `The Mac is ${status.state}${status.startedAt === undefined ? "" : ` (started ${time(status.startedAt, now)})`}; it stops after ${status.idleTimeoutMinutes} idle minutes. Run commands with \`dream mac ssh -- <cmd>\`.`
+    : [
+        `The Mac is ${status.state}${status.startedAt === undefined ? "" : ` (started ${time(status.startedAt, now)})`}; it stops after ${status.idleTimeoutMinutes} minutes with nothing running on it.`,
+        ...(status.deadline === undefined
+          ? []
+          : [`Namespace destroys it at ${time(status.deadline, now)} at the latest, whatever runs on it.`]),
+        "Run commands with `dream mac ssh -- <cmd>`."
+      ].join(" ")
 
 const machineName = (size: SandboxSize) =>
   `the ${size} machine (${SandboxSizes[size].cpus} CPUs, ${SandboxSizes[size].memoryGb} GB)`

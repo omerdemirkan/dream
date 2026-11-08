@@ -26,6 +26,7 @@ import {
   submitDesktopAccess
 } from "./DesktopPage.ts"
 import { gateway } from "./Gateway.ts"
+import { macActivity } from "./MacActivity.ts"
 import { receiveE2bWebhook, registerE2bWebhook } from "./Metering.ts"
 import { OpenAIGateway } from "@dream/domain"
 import { devCredential, devEvents } from "../openai/Dev.ts"
@@ -188,6 +189,10 @@ export const route = (raw: Request) =>
     if (path === Routes.openaiDevEvents && request.method === "GET") {
       if (!operator()) return HttpServerResponse.text("Forbidden", { status: 403 })
       return yield* devEvents(url.searchParams.get("project"))
+    }
+    if (path === Routes.macActivity && request.method === "GET") {
+      if (!operator()) return HttpServerResponse.text("Forbidden", { status: 403 })
+      return yield* macActivity(url)
     }
     if (path === Routes.testflightBuilds && request.method === "GET") {
       if (!operator()) return HttpServerResponse.text("Forbidden", { status: 403 })

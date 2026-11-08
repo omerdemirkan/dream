@@ -556,9 +556,9 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
           yield* alarm.reschedule
           yield* relays.stopAll
           yield* sandbox.destroy
-          yield* machines.stopMac.pipe(
-            Effect.catch((error) => Effect.logWarning("couldn't stop the deleted project's Mac", error.message))
-          )
+          yield* machines
+            .stopMac("deleted")
+            .pipe(Effect.catch((error) => Effect.logWarning("couldn't stop the deleted project's Mac", error.message)))
           const current = yield* core.projectOption
           if (Option.isSome(current)) {
             yield* notifier.withdraw(yield* store.unwithdrawnNotifications)
@@ -587,9 +587,9 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
           yield* relays.stopAll
           yield* sandbox.pause
           // Nothing will use a Mac it rented; don't leave it running until it idles out.
-          yield* machines.stopMac.pipe(
-            Effect.catch((error) => Effect.logWarning("couldn't stop the archived project's Mac", error.message))
-          )
+          yield* machines
+            .stopMac("archived")
+            .pipe(Effect.catch((error) => Effect.logWarning("couldn't stop the archived project's Mac", error.message)))
           // A lock screen saying the agent is at work would be wrong from now on.
           yield* notifier
             .endLive(undefined)
@@ -1098,7 +1098,7 @@ export const AgentHandlers = SandboxRpcs.toLayer(
       StartMac: () => machines.startMac,
       GetMac: () => machines.mac,
       GetMacSsh: () => machines.macSsh,
-      StopMac: () => machines.stopMac,
+      StopMac: () => machines.stopMac("explicit"),
 
       ReportUsage: ({ usage }) =>
         Effect.gen(function* () {

@@ -75,6 +75,11 @@ export const Routes = {
   openaiDevCredential: "/admin/openai/dev-credential",
   /** GET `?project=prj_dev_…` with `x-dream-dev-secret`: what the gateway metered for that dev pseudo-project. */
   openaiDevEvents: "/admin/openai/dev-events",
+  /**
+   * GET `?project=prj_…` or `?instance=<id>` with `x-dream-dev-secret`: each Mac's life from its activity log (starts,
+   * ssh sessions, what ran on it at each check, its stop and why). Added November 2026.
+   */
+  macActivity: "/admin/macs/activity",
   /** POST from E2B: a sandbox lifecycle event, signed with `e2b-signature` (docs/metering.md). Added November 2026. */
   e2bWebhook: "/webhooks/e2b",
   /**

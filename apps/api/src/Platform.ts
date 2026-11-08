@@ -22,6 +22,7 @@ import { Secrets } from "./db/Secrets.ts"
 import { TestflightGrants } from "./db/TestflightGrants.ts"
 import { TestflightIdentity } from "./db/TestflightIdentity.ts"
 import { TurnUsageLog } from "./db/TurnUsage.ts"
+import { MacActivityLog } from "./db/MacActivity.ts"
 import { UpdateStore } from "./db/Updates.ts"
 import { Users } from "./db/Users.ts"
 import { Daemon } from "./e2b/Daemon.ts"
@@ -64,6 +65,7 @@ export const databaseLayer = (d1: D1Database) =>
     TestflightIdentity.layer,
     UpdateStore.layer,
     TurnUsageLog.layer,
+    MacActivityLog.layer,
     DesktopLinks.layer,
     RateLimits.layer,
     MeterD1,

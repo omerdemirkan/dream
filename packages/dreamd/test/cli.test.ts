@@ -9,7 +9,16 @@ import { CliOutput, Command } from "effect/cli"
 import { FetchHttpClient } from "effect/http"
 import { dream } from "../src/Cli.ts"
 import { Dream } from "../src/cli/Client.ts"
-import { accessRequested, integrations, linkAdded, pageCheck, relay, relayAdded, status } from "../src/cli/Format.ts"
+import {
+  accessRequested,
+  integrations,
+  linkAdded,
+  mac,
+  pageCheck,
+  relay,
+  relayAdded,
+  status
+} from "../src/cli/Format.ts"
 import * as Fx from "@dream/domain/fixtures"
 import { PageCheck, PageLoad } from "../src/cli/PageCheck.ts"
 import {
@@ -75,6 +84,24 @@ describe("dream mac cp", () => {
     assert.isTrue(Result.isFailure(planCopy(["mac:a", "mac:b"])))
     assert.isTrue(Result.isFailure(planCopy(["mac:a", "b", "c"])))
     assert.isTrue(Result.isFailure(planCopy(["mac:a"])))
+  })
+})
+
+describe("dream mac", () => {
+  it("says what stops it, and when Namespace will at the latest", () => {
+    const now = DateTime.makeUnsafe("2026-11-08T10:00:00Z")
+    const text = mac(
+      {
+        state: "running",
+        idleTimeoutMinutes: 15,
+        startedAt: DateTime.makeUnsafe("2026-11-08T09:30:00Z"),
+        deadline: DateTime.makeUnsafe("2026-11-08T13:30:00Z")
+      },
+      now
+    )
+    assert.include(text, "it stops after 15 minutes with nothing running on it")
+    assert.include(text, "Namespace destroys it at 2026-11-08T13:30Z")
+    assert.notInclude(mac({ state: "running", idleTimeoutMinutes: 15 }, now), "Namespace")
   })
 })
 

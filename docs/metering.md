@@ -32,7 +32,7 @@ Dimensions every event has when they apply: `project`, `payer` (`dream`, or `per
 | --- | --- | --- | --- |
 | `sandbox_run` | `e2b:<E2B event id>` | `ms`, `vcpus`, `memory_mb` | `sandbox`, `execution`, `template`, `cause` (`project`, `refresh`, `sign-in`, `dev`, `harness-check`), `ended` (`paused`/`killed`), `kill_reason` |
 | `browser_session` | `browserbase:<session id>` | `ms`, `proxy_bytes` | `session` |
-| `mac_session` | `namespace:<instance id>` | `ms`, `vcpus`, `memory_mb` | `instance` |
+| `mac_session` | `namespace:<instance id>` | `ms`, `vcpus`, `memory_mb`, `idle_ms` (its last use to its end), `ssh_sessions` | `instance`, `stop_reason` (`explicit`, `idle`, `turn-ended`, `deadline`, `provider-gone`, `archived`, `deleted`), `ended_by` (`namespace` when the end is Namespace's `destroyedAt`, else `dream`) |
 | `model_request` | `openai:<OpenAI id>`: the response's (Responses, a realtime `response.done`), the completion's (Chat), `<item id>:transcription` (a realtime input transcription), `<response id>:image_gen` (the image tool), the call's or Live session's (a session metered by its length); else `openai:<x-request-id>` (embeddings, images, speech, transcription) | `input_tokens`, `cached_input_tokens`, `output_tokens`, `reasoning_tokens`, `input_audio_tokens`, `cached_audio_tokens`, `output_audio_tokens`, `input_image_tokens`, `cached_image_tokens`, `output_image_tokens`, `characters`, `audio_ms`, `session_ms`, `web_search_calls`, `images` | `provider` (`openai`), `endpoint` (`responses`, `chat`, `embeddings`, `images`, `speech`, `transcription`, `realtime`, `live`), `model`, `service_tier`, `size` and `quality` (images priced per image), `estimated` (`true` when a quantity was inferred: speech without usage, a transcript in text, srt or vtt, a call metered by its length) |
 | `storage_day` | `r2:<project id>:<YYYY-MM-DD>` | `bytes` (stored at the end of the UTC day) | |
 | `email_sent` | `email:<message id>` | `recipients` | |
@@ -107,9 +107,11 @@ E2B still has, for the first deploy. The secret is sealed with the master key in
 
 **Browserbase:** when a session ends (stopped, or found ended by the sweep), `GET /v1/sessions/{id}` gives
 `startedAt`, `endedAt` and `proxyBytes`; Machines records a `browser_session`. **Namespace:** when a Mac is destroyed
-(stopped, idle, or past its deadline), a `mac_session` with its shape and minutes from start to destruction (capped at
-the deadline, which Machines now moves forward with each ssh extension; past it, a failed destroy no longer keeps the
-Mac "running"). **R2:** the hourly job records each project's bytes once its UTC day has ended, summed from D1's
+(stopped, idle, or past its deadline), a `mac_session` with its shape and minutes from Namespace's `createdAt` to its
+`destroyedAt` (read back after the destroy; only when Namespace can't be read, to when Dream saw it end, capped at the
+deadline Namespace last answered). Each Mac's activity, from the start through every ssh session, deadline extension
+and check of what ran on it to its stop, is in D1 `mac_activity` (`apps/api/src/db/MacActivity.ts`), which
+GET `/admin/macs/activity?project=…` (or `?instance=…`) summarizes per Mac: minutes, idle tail, busy checks, tools seen. **R2:** the hourly job records each project's bytes once its UTC day has ended, summed from D1's
 `media` and `attachments` rows (uploaded ones, with a project); the updates bucket is Dream's and isn't metered.
 **Email:** each send, as one message ($0.35 per 1,000): an `EmailAccessLink` and each email the agent sends
 (`SandboxRpcs.SendEmail`).

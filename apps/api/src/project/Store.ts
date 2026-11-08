@@ -124,9 +124,16 @@ export type LiveActivityRecord = typeof LiveActivityRecord.Type
 export const MacRecord = Schema.Struct({
   state: Schema.Literals(["starting", "running", "stopped"]),
   instanceId: Schema.optionalKey(Schema.String),
+  /** When it was running, as Dream saw it. */
   startedAt: Schema.optionalKey(Schema.DateTimeUtc),
+  /** Namespace's creation time, where its billing starts. */
+  createdAt: Schema.optionalKey(Schema.DateTimeUtc),
+  /** Its last real use: the start, an ssh session, or a check that saw something the agent runs at work. */
   lastUsedAt: Schema.optionalKey(Schema.DateTimeUtc),
-  deadline: Schema.optionalKey(Schema.DateTimeUtc)
+  /** Namespace's deadline, as it last answered. */
+  deadline: Schema.optionalKey(Schema.DateTimeUtc),
+  /** ssh credentials issued (one per `dream mac ssh` or `dream mac cp`). */
+  sshCount: Schema.optionalKey(Schema.Int)
 })
 export type MacRecord = typeof MacRecord.Type
 

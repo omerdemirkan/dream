@@ -43,9 +43,13 @@ Deployed with alchemy from `infra/alchemy.run.ts`; live at `https://dream.omer.b
 - **Live Activity.** `dream live start` sends push-to-start to every device with a token; `RegisterLiveActivity` adds
   the activity's update token (and sends the current content at once). While an ask is open the content gets
   `needsYou` and the update goes out at priority 10.
-- **Mac.** Namespace macOS 26.x, 4 vCPU / 7 GB, created with a 90-minute deadline that `GetMacSsh` keeps 30 minutes
-  ahead; destroyed after 20 minutes without `GetMac`/`GetMacSsh` (the CLI should call `GetMac` every few minutes during
-  a long ssh session). Minutes go to `usage_events`.
+- **Mac.** Namespace macOS 27.x, 4 vCPU / 7 GB, created with a 90-minute deadline that use keeps 30 minutes ahead,
+  up to Namespace's cap on a Mac's lifetime (four hours from creation on Dream's plan). Every five minutes the ProjectDO
+  runs a probe on it through Namespace's command service (`brokers/MacProbe.ts`): an open ssh session, a build tool, or
+  the agent's own processes using CPU count as use, a booted simulator and `GetMac` don't. It's destroyed after 15
+  minutes without use (a start, a `GetMacSsh`, a busy probe), or 3 minutes after its last use once no turn is running
+  and nothing is queued or due. Each Mac's activity goes to D1 `mac_activity` (GET `/admin/macs/activity`), and its
+  minutes, from Namespace's `createdAt` to `destroyedAt`, to `meter_events` with `stop_reason` and `idle_ms`.
 
 ## Operating it
 
