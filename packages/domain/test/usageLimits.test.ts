@@ -75,10 +75,7 @@ describe("UsageLimitsChanged", () => {
     const text = renderAgentEvent(event({ projectWeekPercent: 30, planLeftPercent: 10 }, {}), {
       timeZone: "America/Los_Angeles"
     })
-    assert.include(
-      text,
-      "They set the usage limits on this project: this project may use up to 30% of their plan's week"
-    )
+    assert.include(text, "They set the usage limits on this project: it may use up to 30% of their plan's week")
     assert.include(text, "Dream stops it when the plan has 10% of its week left")
     assert.include(text, "it has used about 21%, and the plan has 38% left; the week resets Mon, Nov 9, 8:00 AM.")
     assert.include(text, "`dream usage`")

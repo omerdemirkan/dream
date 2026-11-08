@@ -342,7 +342,7 @@ const renderUsageLimits = (
     return "They cleared the usage limits on this project, so it runs on their plan as before, up to the plan's own limits."
   }
   const parts = [
-    ...(cap === undefined ? [] : [`this project may use up to ${cap}% of their plan's week`]),
+    ...(cap === undefined ? [] : [`it may use up to ${cap}% of their plan's week`]),
     ...(floor === undefined
       ? []
       : [`Dream stops it when the plan has ${floor}% of its week left, so their other work keeps some room`])
