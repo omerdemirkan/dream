@@ -191,12 +191,13 @@ function ConnectionBanner(props: {
       missing.reason === "removed"
         ? `${name} isn’t connected.`
         : `Your ${name} sign-in ${missing.reason === "expired" ? "expired" : "stopped working"}.`
+    const [only] = missing.waiting
     const waiting =
-      missing.waiting === 0
+      missing.waiting.length === 0
         ? ""
-        : missing.waiting === 1
-          ? " A project is waiting."
-          : ` ${missing.waiting} projects are waiting.`
+        : missing.waiting.length === 1
+          ? ` ${only} is waiting.`
+          : ` ${missing.waiting.length} projects are waiting.`
     return (
       <Pressable
         key={missing.provider}

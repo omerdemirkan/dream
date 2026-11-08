@@ -173,9 +173,10 @@ const paused = (presence: Extract<Presence, { _tag: "Paused" }>, context: LineCo
   strong: false
 })
 
-const noPlan = (context: LineContext): StateLine => ({
+/** Home's row has room to say why; the header, beside the usage ring, says what it needs. */
+const noPlan = (context: LineContext, short: boolean): StateLine => ({
   lead: "Paused",
-  rest: `${planName(context.harness)} isn’t connected`,
+  rest: short ? `needs ${planName(context.harness)}` : `${planName(context.harness)} isn’t connected`,
   strong: false,
   need: true
 })
@@ -213,7 +214,7 @@ export const homeLine = (
     case "Paused":
       return paused(presence, context)
     case "NoPlan":
-      return noPlan(context)
+      return noPlan(context, false)
   }
   if (context.openAsks > 0) return { lead: "Waiting for you", rest: context.headline, strong: false, need: true }
   if (presence._tag === "Awake") {
@@ -241,7 +242,7 @@ export const headerLine = (
     case "Paused":
       return paused(presence, context)
     case "NoPlan":
-      return noPlan(context)
+      return noPlan(context, true)
   }
   if (presence._tag !== "Unknown" && sentPending(messages, now)) {
     return presence._tag === "Awake"

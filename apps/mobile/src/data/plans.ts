@@ -61,7 +61,8 @@ export interface MissingPlan {
   readonly provider: ModelProvider
   /** `expired`/`failed`: its sign-in stopped working; `removed`: they disconnected it. */
   readonly reason: "expired" | "failed" | "removed"
-  readonly waiting: number
+  /** The projects on it, which wait. */
+  readonly waiting: ReadonlyArray<string>
 }
 
 export const missingPlans = (
@@ -72,11 +73,11 @@ export const missingPlans = (
   const connected = connectedPlans(connections)
   return PlanOrder.flatMap((provider): Array<MissingPlan> => {
     if (connected.includes(provider)) return []
-    const waiting = projects.filter((s) => providerOf(s.project.harness) === provider).length
+    const waiting = projects.filter((s) => providerOf(s.project.harness) === provider).map((s) => s.project.title)
     const broken = connections.find((c) => c.provider === provider && (c.status === "expired" || c.status === "failed"))
     // A sign-in under way isn't missing, and a plan nothing runs on needs no banner unless its sign-in broke.
     if (connections.some((c) => c.provider === provider && c.status === "pending")) return []
-    if (broken === undefined && waiting === 0) return []
+    if (broken === undefined && waiting.length === 0) return []
     return [
       {
         provider,

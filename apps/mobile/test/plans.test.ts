@@ -72,10 +72,10 @@ describe("plans", () => {
 
   it("gives Home one banner per plan their projects wait for", () => {
     assert.deepStrictEqual(missingPlans([claude], [onClaude, onChatGpt]), [
-      { provider: "chatgpt", reason: "removed", waiting: 1 }
+      { provider: "chatgpt", reason: "removed", waiting: ["Lift Log"] }
     ])
     assert.deepStrictEqual(missingPlans([claude, connection("chatgpt", "expired")], [onClaude]), [
-      { provider: "chatgpt", reason: "expired", waiting: 0 }
+      { provider: "chatgpt", reason: "expired", waiting: [] }
     ])
     // A plan nothing runs on, or one being signed in to, needs no banner.
     assert.deepStrictEqual(missingPlans([claude], [onClaude]), [])
@@ -125,9 +125,18 @@ describe("a project waiting for its plan", () => {
     const presence = presenceOf({ activity: idle, working: false, pausedUntil: undefined, planMissing: true, now })
     assert.strictEqual(presence._tag, "NoPlan")
     assert.strictEqual(dotOf(presence), "paused")
-    const line = { lead: "Paused", rest: "ChatGPT isn’t connected", strong: false, need: true }
-    assert.deepStrictEqual(homeLine(presence, { ...context, headline: undefined }), line)
-    assert.deepStrictEqual(headerLine(presence, { ...context, messages: [] }), line)
+    assert.deepStrictEqual(homeLine(presence, { ...context, headline: undefined }), {
+      lead: "Paused",
+      rest: "ChatGPT isn’t connected",
+      strong: false,
+      need: true
+    })
+    assert.deepStrictEqual(headerLine(presence, { ...context, messages: [] }), {
+      lead: "Paused",
+      rest: "needs ChatGPT",
+      strong: false,
+      need: true
+    })
     assert.isUndefined(chatRowOf(presence, [], now))
   })
 
