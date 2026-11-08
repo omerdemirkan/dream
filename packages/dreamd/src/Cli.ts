@@ -25,6 +25,11 @@ import {
   LinkTitleMaxLength,
   linkUrlProblem,
   LiveActivityContent,
+  LogDir,
+  LogEntry,
+  LogLimits,
+  type LogSource,
+  LogSources,
   MachineInfo,
   MacStatus,
   ProjectLink,
@@ -59,17 +64,18 @@ import {
   Workstreams,
   WorkstreamTitleMaxLength
 } from "@dream/domain"
-import { Cause, Console, DateTime, Effect, FileSystem, Option, Path, Redacted, Result, Schema } from "effect"
+import { Cause, Config, Console, DateTime, Effect, FileSystem, Option, Path, Redacted, Result, Schema } from "effect"
 import { Argument, CliError, Command, Flag } from "effect/cli"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
 import { glob } from "node:fs/promises"
-import { Dream, newerThanApi, userFacing } from "./cli/Client.ts"
+import { describeError, Dream, isUnknownToApi, newerThanApi, userFacing } from "./cli/Client.ts"
 import * as Format from "./cli/Format.ts"
 import { measure } from "./cli/MediaInfo.ts"
 import { PageCheck, PageLoad } from "./cli/PageCheck.ts"
 import * as Parse from "./cli/Parse.ts"
 import * as Secrets from "./cli/Secrets.ts"
+import { byTime, readLogFiles } from "./Log.ts"
 
 // ---------------------------------------------------------------------------
 // Shared pieces
@@ -2118,6 +2124,109 @@ const machine = Command.make("machine", { json }, (input) =>
   ])
 )
 
+// ---------------------------------------------------------------------------
+// The project's log
+// ---------------------------------------------------------------------------
+
+/** The sources only the ProjectDO's half has, and those both halves can. */
+const remoteSources: ReadonlyArray<LogSource> = ["gateway", "notify", "relay", "dream"]
+const localSources: ReadonlyArray<LogSource> = LogSources.filter((source) => source !== "gateway" && source !== "notify")
+
+/** `dream logs --json`: the entries, and a note when Dream's half couldn't be read. */
+const LogReport = Schema.Struct({ entries: Schema.Array(LogEntry), note: Schema.optionalKey(Schema.String) })
+
+const logs = Command.make(
+  "logs",
+  {
+    source: Flag.String("source").pipe(
+      Flag.withDescription(
+        `Only these sources, comma-separated or repeated: ${LogSources.join(", ")}. gateway is every request to your published URL (status, time, or why it never reached the app); app is what your servers write to their output (see below); run and task are scheduled commands and tasks with their output; relay is relay deliveries and failures; notify is what your apps' notifications did; machine is memory, swap and disk (its minute-by-minute readings show only when you ask for machine); dream is Dream itself: dreamd starting and stopping, refreshes, sleeps and wakes, turns, background work it stopped, the check after each turn, alerts it sent you.`
+      ),
+      Flag.atLeast(0)
+    ),
+    name: Flag.String("name").pipe(
+      Flag.withDescription(
+        "Only entries about this one thing: an app log's name (web for ~/logs/web.log), a wake (wak_…), a relay (rly_…), or an app that notifies."
+      ),
+      Flag.optional
+    ),
+    since: Flag.String("since").pipe(
+      Flag.withDescription("Only entries from this time on: a span back from now (30m, 2h, 1d) or an ISO time (…Z)."),
+      Flag.optional
+    ),
+    errors: Flag.Boolean("errors").pipe(
+      Flag.withDescription("Only warnings and errors: server errors, slow or failed requests, failed runs, an app's error lines."),
+      Flag.withDefault(false)
+    ),
+    limit: Flag.Int("limit").pipe(
+      Flag.withDescription(`The latest this many entries (default ${LogLimits.shown}, at most ${LogLimits.read}).`),
+      Flag.optional
+    ),
+    json
+  },
+  (input) =>
+    Effect.gen(function* () {
+      const dream = yield* Dream
+      const sources = [...new Set(input.source.flatMap((each) => each.split(",")).map((each) => each.trim()))].filter(
+        (each) => each.length > 0
+      )
+      const unknown = sources.filter((each) => !LogSources.includes(each as LogSource))
+      if (unknown.length > 0) {
+        return yield* fail(`No log source ${unknown.join(", ")}. The sources are ${LogSources.join(", ")}.`)
+      }
+      const asked = sources.length === 0 ? undefined : (sources as ReadonlyArray<LogSource>)
+      const since = Option.isNone(input.since) ? undefined : yield* fromResult(Parse.parseSince(input.since.value, yield* now))
+      const limit = Math.max(1, Math.min(Option.getOrElse(input.limit, () => LogLimits.shown), LogLimits.read))
+      const query = defined({
+        since,
+        errors: input.errors ? true : undefined,
+        name: Option.getOrUndefined(input.name),
+        limit
+      })
+      const dir = yield* Config.NonEmptyString("DREAM_LOG_DIR").pipe(Config.withDefault(LogDir))
+      const local = (asked ?? LogSources).filter((source) => localSources.includes(source))
+      const here = local.length === 0 ? [] : yield* readLogFiles(dir, { ...query, sources: local })
+      const remote = (asked ?? LogSources).filter((source) => remoteSources.includes(source))
+      let note: string | undefined
+      const there =
+        remote.length === 0
+          ? []
+          : yield* dream.ReadLog({ ...query, sources: remote }).pipe(
+              Effect.map(({ entries }) => entries),
+              Effect.catchCause((cause) =>
+                Effect.sync(() => {
+                  const defect = Cause.squash(cause)
+                  note = isUnknownToApi(defect)
+                    ? "Dream's half of the log (requests to your published URL, notifications, relay connections, refreshes) needs a newer Dream; this is the sandbox's half."
+                    : `Couldn't read Dream's half of the log (requests to your published URL, notifications, relay connections, refreshes): ${describeError(defect)}`
+                  return [] as ReadonlyArray<LogEntry>
+                })
+              )
+            )
+      // Minute-by-minute machine readings only when machine is asked for.
+      const routine = (entry: LogEntry) =>
+        entry.source === "machine" && entry.sample !== undefined && entry.level === "info" && !asked?.includes("machine")
+      const entries = [...here, ...there]
+        .filter((entry) => !routine(entry))
+        .sort(byTime)
+        .slice(-limit)
+      const text = [
+        entries.length === 0 ? "Nothing in the log matches." : Format.logEntries(entries),
+        ...(note === undefined ? [] : ["", note])
+      ].join("\n")
+      yield* show(input.json, LogReport, { entries, ...(note === undefined ? {} : { note }) }, text)
+    })
+).pipe(
+  Command.withDescription(
+    "The project's log: requests to your published app, your servers' output, scheduled commands and tasks, relays, notifications, the machine, and Dream's own events, oldest first, in UTC. Your servers' output gets in when it goes to a file under ~/logs (e.g. `>> ~/logs/web.log 2>&1`), or to any file, for a server listening on a port. It lives in ~/.dream/logs/<source>.jsonl and with Dream, and outlasts sleeps and refreshes."
+  ),
+  Command.withExamples([
+    { command: "dream logs --errors --since 1h", description: "What went wrong in the last hour, from every source" },
+    { command: "dream logs --source gateway,app", description: "Requests to the published app beside its output" },
+    { command: "dream logs --source run --name wak_…", description: "Each run of one scheduled command" }
+  ])
+)
+
 /** `dream usage --json`: the subscription, the project's limits, and what Dream paid for it, when the API knows them. */
 const UsageReport = Schema.Struct({
   ...UsageSnapshot.fields,
@@ -2158,7 +2267,7 @@ const usage = Command.make("usage", { json }, (input) =>
 
 export const dream = Command.make("dream").pipe(
   Command.withDescription(
-    "Reach the person and Dream from this sandbox: messages, email, questions, access, notifications from your apps, status, workstreams, wake-ups, relays, publishing, app links on their Home, a browser, a Mac, usage, and this machine's size."
+    "Reach the person and Dream from this sandbox: messages, email, questions, access, notifications from your apps, status, workstreams, wake-ups, relays, publishing, app links on their Home, a browser, a Mac, usage, this machine's size, and the project's log."
   ),
   Command.withSubcommands([
     message,
@@ -2177,6 +2286,7 @@ export const dream = Command.make("dream").pipe(
     browser,
     mac,
     usage,
-    machine
+    machine,
+    logs
   ])
 )

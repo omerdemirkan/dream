@@ -27,6 +27,25 @@ export const parseAt = (input: string, now: DateTime.Utc): Result.Result<DateTim
   )
 }
 
+/** `dream logs --since`: an ISO 8601 time with a zone, or a span back from now ("30m", "2h", "1d"). */
+export const parseSince = (input: string, now: DateTime.Utc): Result.Result<DateTime.Utc, string> => {
+  const text = input.trim().replace(/\s+ago$/i, "").replace(/^-/, "")
+  if (/^(\d+(?:\.\d+)?[smhdw])+$/i.test(text.replace(/\s+/g, ""))) {
+    let millis = 0
+    for (const [, amount, unit] of text.replace(/\s+/g, "").matchAll(/(\d+(?:\.\d+)?)([smhdw])/gi)) {
+      millis += Number(amount) * (units[unit!.toLowerCase()] ?? 0)
+    }
+    return Result.succeed(DateTime.subtractDuration(now, Duration.millis(millis)))
+  }
+  if (/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(text) && /(Z|[+-]\d{2}:?\d{2})$/i.test(text)) {
+    const parsed = DateTime.make(text)
+    if (parsed._tag === "Some") return Result.succeed(DateTime.toUtc(parsed.value))
+  }
+  return Result.fail(
+    `Can't read --since "${input}". Use a span back from now like 30m, 2h, 1d, or an ISO time with a zone (…Z).`
+  )
+}
+
 /** `--cron`: five fields, checked here so a typo fails before it's scheduled. */
 export const checkCron = (expression: string): Result.Result<string, string> =>
   expression.trim().split(/\s+/).length === 5 && Result.isSuccess(Cron.parse(expression))

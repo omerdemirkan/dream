@@ -21,7 +21,8 @@ const MoveScript = "/opt/dream/sandbox/move.mjs"
 /**
  * Left out of the copy: the new sandbox's template has the current harnesses, and caches refill. dreamd's env file
  * too: the new dreamd starts when the caller writes its own (with a new daemon token), not halfway through the unpack.
- * And dreamd's logs, which start afresh in the new sandbox.
+ * And dreamd's own process log, which starts afresh in the new sandbox; the project's log beside it
+ * (`<source>.jsonl`, `dream logs`) comes over.
  */
 export const excluded = [
   "./.ai-sdk-harness/.harness-bootstrap",
@@ -30,8 +31,9 @@ export const excluded = [
   "./.bun/install/cache",
   `./${DaemonEnvFile.replace("/home/user/", "")}`,
   // The new sandbox's dreamd already holds its log open (it waits for the env file from boot); replacing the file
-  // under it would hide everything it writes.
-  "./.dream/logs"
+  // under it would hide everything it writes. It writes nothing else there before its env file comes.
+  "./.dream/logs/dreamd.log",
+  "./.dream/logs/dreamd.log.1"
 ]
 
 /** In the old sandbox, as root: pack the home directory beside it, failing early when the disk can't hold it. */

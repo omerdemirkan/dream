@@ -15,6 +15,7 @@ import { NodeServices } from "@effect/platform-node"
 import { Duration, Effect, Fiber, FileSystem, Layer, Option, Path, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { Agent } from "./Agent.ts"
+import { AppLogs } from "./AppLogs.ts"
 import { Api } from "./Api.ts"
 import { Attachments } from "./Attachments.ts"
 import { AppTraffic, Awake } from "./Awake.ts"
@@ -24,6 +25,9 @@ import { DreamdConfig } from "./Config.ts"
 import { Harness } from "./harness/Harness.ts"
 import { Tasks } from "./Tasks.ts"
 import { Inbox } from "./Inbox.ts"
+import * as Lifecycle from "./Lifecycle.ts"
+import { ProjectLog } from "./Log.ts"
+import { Machine } from "./Machine.ts"
 import { Outreach } from "./Outreach.ts"
 import { Hold } from "./Hold.ts"
 import { Progress } from "./progress/Progress.ts"
@@ -79,6 +83,10 @@ export const main = Effect.gen(function* () {
   const awake = yield* Awake
   const progress = yield* Progress
   const shutdown = yield* Shutdown
+  const machine = yield* Machine
+  const appLogs = yield* AppLogs
+  const life = yield* Lifecycle.make
+  yield* life.started
   yield* Effect.logInfo("dreamd started", {
     version,
     release: Option.getOrUndefined(yield* readRelease()),
@@ -90,11 +98,14 @@ export const main = Effect.gen(function* () {
     envHash: Option.getOrUndefined(config.envHash)
   })
   const work = yield* Effect.forkDetach(
-    Effect.all([agent.run, commands.run, awake.run, progress.run], { concurrency: "unbounded" })
+    Effect.all([agent.run, commands.run, awake.run, progress.run, machine.run, appLogs.run, life.watch], {
+      concurrency: "unbounded"
+    })
   )
   const stop = (reason: string) =>
     Effect.gen(function* () {
       yield* shutdown.begin(reason)
+      yield* life.stopping(reason)
       const stopped = yield* Fiber.interrupt(work).pipe(Effect.timeoutOption(shutdown.grace))
       if (Option.isNone(stopped)) {
         yield* Effect.logWarning(
@@ -113,7 +124,7 @@ export const layerWith = <E, R>(
   Layer.mergeAll(DaemonServer, SocketServer).pipe(
     Layer.provideMerge(Awake.layer),
     Layer.provideMerge(Layer.mergeAll(Agent.layer, Commands.layer)),
-    Layer.provideMerge(Layer.mergeAll(Published.layer, Progress.layer)),
+    Layer.provideMerge(Layer.mergeAll(Published.layer, Progress.layer, Machine.layer, AppLogs.layer)),
     Layer.provideMerge(
       Layer.mergeAll(
         Inbox.layer,
@@ -123,7 +134,8 @@ export const layerWith = <E, R>(
         Attachments.layer.pipe(Layer.provide(FetchHttpClient.layer)),
         base
       )
-    )
+    ),
+    Layer.provideMerge(ProjectLog.layer)
   )
 
 /** Everything `main` needs, given the config and the platform. */

@@ -28,6 +28,7 @@ import {
   PubSub,
   Ref,
   Schema,
+  Semaphore,
   Stream
 } from "effect"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
@@ -38,6 +39,7 @@ import { Hold } from "./Hold.ts"
 import { Inbox, type RunResult, type WakeDueEvent } from "./Inbox.ts"
 import * as JsonFile from "./JsonFile.ts"
 import { ProjectLog } from "./Log.ts"
+import { Machine } from "./Machine.ts"
 import { Tasks } from "./Tasks.ts"
 import * as Usage from "./Usage.ts"
 
@@ -119,6 +121,7 @@ export class Commands extends Context.Service<
       const fs = yield* FileSystem.FileSystem
       const path = yield* Path.Path
       const log = yield* ProjectLog
+      const machine = yield* Machine
       yield* fs.makeDirectory(config.workDir, { recursive: true }).pipe(Effect.orDie)
       const failuresFile = JsonFile.make(RunFailures, path.join(config.stateDir, "run-failures.json"))
       const provide = <A, E>(effect: Effect.Effect<A, E, FileSystem.FileSystem | Path.Path>) =>
@@ -126,7 +129,7 @@ export class Commands extends Context.Service<
       const failures = yield* Ref.make(
         Option.getOrElse(yield* provide(failuresFile.read).pipe(Effect.orElseSucceed(() => Option.none())), () => ({}))
       )
-      const failureLock = yield* Effect.makeSemaphore(1)
+      const failureLock = yield* Semaphore.make(1)
       /** Records the run and says whether its result should wake the agent. */
       const decide = (wakeId: WakeId, result: RunResult) =>
         failureLock.withPermits(1)(
@@ -181,7 +184,10 @@ export class Commands extends Context.Service<
           const task = event.task
           if (task === undefined) return
           const { timeZone } = yield* inbox.state
+          const window = `task-${event.id}`
+          yield* machine.begin(window)
           const result = yield* tasks.run({ eventId: event.id, wakeId: event.wakeId, why: event.why, task, timeZone })
+          const machineUse = yield* machine.end(window)
           const took = DateTime.toEpochMillis(result.endedAt) - DateTime.toEpochMillis(result.startedAt)
           yield* log.note(
             "task",
@@ -210,7 +216,8 @@ export class Commands extends Context.Service<
               : { before: Usage.toSnapshot(provider, result.firstReading, result.startedAt) }),
             ...(result.lastReading === undefined
               ? {}
-              : { after: Usage.toSnapshot(provider, result.lastReading, result.endedAt) })
+              : { after: Usage.toSnapshot(provider, result.lastReading, result.endedAt) }),
+            ...(machineUse === undefined ? {} : { machine: machineUse })
           })
           yield* inbox.taskFinished(event.id, result.failure)
         })

@@ -4,18 +4,24 @@ import { Api, type Report } from "../src/Api.ts"
 import { Commands } from "../src/Commands.ts"
 import { Hold } from "../src/Hold.ts"
 import { Inbox } from "../src/Inbox.ts"
+import { ProjectLog } from "../src/Log.ts"
+import { Machine } from "../src/Machine.ts"
 import { type TaskRunInput, Tasks } from "../src/Tasks.ts"
 import { baseLayer, tempDir, wakeWithCommand, wakeWithTask } from "./support.ts"
 
-const setup = (script: Parameters<typeof Tasks.layerTest>[0]["script"] = () => Effect.die("no tasks here")) =>
+const setup = (
+  script: Parameters<typeof Tasks.layerTest>[0]["script"] = () => Effect.die("no tasks here"),
+  dir = tempDir()
+) =>
   Effect.gen(function* () {
     const reports = yield* Ref.make<ReadonlyArray<Report>>([])
     const asked = yield* Ref.make<ReadonlyArray<TaskRunInput>>([])
     const context = yield* Layer.build(
       Commands.layer.pipe(
         Layer.provideMerge(Layer.mergeAll(Tasks.layerTest({ script, log: asked }), Api.layerTest(reports))),
-        Layer.provideMerge(Layer.merge(Inbox.layer, Hold.layer)),
-        Layer.provideMerge(baseLayer(tempDir()))
+        Layer.provideMerge(Layer.mergeAll(Inbox.layer, Hold.layer, Machine.layerNone)),
+        Layer.provideMerge(ProjectLog.layer),
+        Layer.provideMerge(baseLayer(dir))
       )
     )
     const inbox = Context.get(context, Inbox)

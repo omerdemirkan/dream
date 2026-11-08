@@ -1,3 +1,4 @@
+import { ProjectLog } from "../src/Log.ts"
 import { assert, describe, it } from "@effect/vitest"
 import type { AgentEvent } from "@dream/domain"
 import { Context, Effect, Layer, Ref } from "effect"
@@ -33,6 +34,7 @@ const setup = (dir: string, loads: Ref.Ref<ReadonlyArray<PageLoad>>) =>
     const context = yield* Layer.build(
       Published.layer.pipe(
         Layer.provideMerge(Layer.mergeAll(Api.layerTest(reports), PageCheck.layerTest(next), Inbox.layer)),
+        Layer.provideMerge(ProjectLog.layer),
         Layer.provideMerge(baseLayer(dir))
       )
     )

@@ -61,6 +61,7 @@ import { Hold } from "./Hold.ts"
 import { Inbox, type InboxState, queuedCount } from "./Inbox.ts"
 import * as JsonFile from "./JsonFile.ts"
 import { ProjectLog } from "./Log.ts"
+import { Machine } from "./Machine.ts"
 import { Outreach } from "./Outreach.ts"
 import { Progress } from "./progress/Progress.ts"
 import { Published } from "./Published.ts"
@@ -159,6 +160,7 @@ export class Agent extends Context.Service<
       const attachments = yield* Attachments
       const progress = yield* Progress
       const log = yield* ProjectLog
+      const machine = yield* Machine
       const config = yield* DreamdConfig
       const fs = yield* FileSystem.FileSystem
       const path = yield* Path.Path
@@ -326,6 +328,8 @@ export class Agent extends Context.Service<
         const startedAt = yield* DateTime.now
         yield* Ref.set(weeklyAtStart, undefined)
         yield* Ref.set(running, true)
+        const window = `turn-${DateTime.toEpochMillis(startedAt)}`
+        yield* machine.begin(window)
         yield* api.reportTurn("started", yield* Ref.get(taken))
         yield* progress.turnStarted(events)
         yield* Effect.logInfo("Turn started", { events: yield* Ref.get(taken) })
@@ -370,7 +374,7 @@ export class Agent extends Context.Service<
         if (Object.keys(reading).length > 0) {
           yield* api.reportUsage(Usage.toSnapshot(provider, reading, yield* DateTime.now))
         }
-        yield* api.reportTurn("finished", ids, result?.turnUsage)
+        yield* api.reportTurn("finished", ids, result?.turnUsage, yield* machine.end(window))
         yield* keepLastTurn(startedAt, result, reading)
         yield* Ref.set(running, false)
         yield* Ref.set(lastTurnEndedMs, Option.some(yield* Clock.currentTimeMillis))

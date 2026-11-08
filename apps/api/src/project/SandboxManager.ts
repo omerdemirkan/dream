@@ -48,6 +48,7 @@ import {
   sizeForCpus,
   type TaskReport,
   type TaskRun,
+  type MachineUse,
   type TurnUsage,
   UpstreamFailure,
   type UsageSnapshot
@@ -275,7 +276,7 @@ export class SandboxManager extends Context.Service<
     /** A phone subscribed to the live feed, or left it: dreamd hears whether anyone is watching. */
     readonly watchersChanged: Effect.Effect<void>
     /** A turn finished, with the tokens it used (none from older dreamd builds): recorded, and the header updated. */
-    readonly turnFinished: (usage?: TurnUsage | undefined) => Effect.Effect<void>
+    readonly turnFinished: (usage?: TurnUsage | undefined, machine?: MachineUse | undefined) => Effect.Effect<void>
     /**
      * dreamd reported where the subscription stands. Early in a turn, a reading replaces the turn's "before" when
      * that one is stale (see `freshBefore`).
@@ -1198,7 +1199,12 @@ export class SandboxManager extends Context.Service<
        * after (now: dreamd reports usage just before it reports the turn finished), then sends the phone the
        * header's new figures. Never fails the report: a ledger problem is logged.
        */
-      const recordModelTurn = (record: SandboxRecord, ended: DateTime.Utc, usage: TurnUsage | undefined) =>
+      const recordModelTurn = (
+        record: SandboxRecord,
+        ended: DateTime.Utc,
+        usage: TurnUsage | undefined,
+        machine?: MachineUse | undefined
+      ) =>
         Effect.gen(function* () {
           if (record.turnStartedAt === undefined) return
           const project = yield* core.project.pipe(Effect.orDie)
@@ -1211,7 +1217,8 @@ export class SandboxManager extends Context.Service<
             endedAt: ended,
             usage,
             before: record.turnUsageBefore,
-            after: yield* latestUsage
+            after: yield* latestUsage,
+            machine
           })
           yield* live.publish(ProjectEvent.cases.Usage.make({ usage: yield* usageReport.glance(project) }))
         }).pipe(Effect.catchCause((cause) => Effect.logWarning("couldn't record the turn's usage", { cause })))
@@ -1229,7 +1236,8 @@ export class SandboxManager extends Context.Service<
             usage: report.usage,
             before: report.before,
             after: report.after ?? (yield* latestUsage),
-            wakeId: report.wakeId
+            wakeId: report.wakeId,
+            machine: report.machine
           })
           const wake = yield* store.wake(report.wakeId)
           if (Option.isSome(wake)) {
@@ -1250,7 +1258,7 @@ export class SandboxManager extends Context.Service<
           yield* live.publish(ProjectEvent.cases.Usage.make({ usage: yield* usageReport.glance(project) }))
         }).pipe(Effect.catchCause((cause) => Effect.logWarning("couldn't record the task's run", { cause })))
 
-      const turnFinished = (usage?: TurnUsage | undefined) =>
+      const turnFinished = (usage?: TurnUsage | undefined, machine?: MachineUse | undefined) =>
         Effect.gen(function* () {
           const record = yield* core.sandbox
           const now = yield* DateTime.now
@@ -1275,7 +1283,7 @@ export class SandboxManager extends Context.Service<
               .withPermits(1)(e2b.setTimeout(record.access.sandboxId, Duration.toSeconds(TurnTail)))
               .pipe(Effect.ignore)
           }
-          yield* recordModelTurn(record, now, usage)
+          yield* recordModelTurn(record, now, usage, machine)
         })
 
       const pause = Effect.gen(function* () {

@@ -7,10 +7,24 @@
  *
  * Point dreamd at it with DREAM_API_URL=http://127.0.0.1:<port>. It accepts
  * the project token "dev-project-token".
+ *
+ * It also stands in for the gateway, roughly: once something is published, `/gw/<path>` on its port goes to the
+ * published port, each request goes in the log `dream logs` reads (`ReadLog`), and the published URL it hands out
+ * is `FAKE_PUBLIC_URL` (e.g. http://127.0.0.1:8787/gw) when that's set. With `FAKE_DAEMON_URL` and
+ * `FAKE_DAEMON_TOKEN`, three server errors outside a turn make it tell the agent once, as the ProjectDO would (an
+ * `Alert` with `noticed`). The real rules are the ProjectDO's (`apps/api/src/project/ProjectLog.ts`).
  */
+import { randomUUID } from "node:crypto"
 import { createServer } from "node:http"
 import { availableParallelism } from "node:os"
 import {
+  AgentEvent,
+  DaemonAuth,
+  DaemonRpcs,
+  EventId,
+  type LogEntry,
+  LogLimits,
+  matchesLogQuery,
   type AccessMessage,
   type AppLink,
   type AppNotification,
@@ -46,8 +60,8 @@ import {
 } from "@dream/domain"
 import { NodeHttpServer, NodeRuntime } from "@effect/platform-node"
 import { DateTime, Effect, Layer, Option, Ref, Schema } from "effect"
-import { Headers, HttpRouter, HttpServerResponse } from "effect/http"
-import { RpcServer } from "effect/rpc"
+import { FetchHttpClient, Headers, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { RpcClient, RpcMiddleware, RpcServer } from "effect/rpc"
 
 const port = Number(process.argv[2] ?? 8787)
 const projectId = "prj_dev" as ProjectId
@@ -57,6 +71,81 @@ const log = (rpc: string, payload: unknown) =>
   Effect.sync(() => console.log(JSON.stringify({ at: new Date().toISOString(), rpc, payload })))
 const encode = <S extends Schema.Codec<unknown, unknown, never, never>>(schema: S, value: S["Type"]) =>
   Schema.encodeUnknownSync(Schema.toCodecJson(schema))(value)
+
+// The fake gateway's state: the published port, its log, whether a turn is running, and the errors outside turns.
+let publishedPort: number | undefined
+let turnRunning = false
+let alerted = false
+const gatewayLog: Array<LogEntry> = []
+const serverErrors: Array<string> = []
+
+/** Tell dreamd, as the ProjectDO would, once three requests failed with server errors outside a turn. */
+const tellAgent = (reason: string) =>
+  Effect.gen(function* () {
+    const url = process.env.FAKE_DAEMON_URL
+    const token = process.env.FAKE_DAEMON_TOKEN
+    if (url === undefined || token === undefined) return
+    const client = yield* RpcClient.make(DaemonRpcs)
+    const at = yield* DateTime.now
+    yield* client.Deliver({
+      events: [AgentEvent.cases.Alert.make({ id: EventId.make(`evt_${randomUUID()}`), at, reason, noticed: "server-errors" })]
+    })
+    yield* log("TroubleNoticed", { reason })
+  }).pipe(
+    Effect.scoped,
+    Effect.provide(
+      RpcClient.layerProtocolHttp({ url: `${process.env.FAKE_DAEMON_URL}${Routes.daemon}` }).pipe(
+        Layer.provide([FetchHttpClient.layer, HttpRpcSerialization])
+      )
+    ),
+    Effect.provide(
+      RpcMiddleware.layerClient(DaemonAuth, ({ request, next }) =>
+        next({
+          ...request,
+          headers: Headers.set(request.headers, "authorization", `Bearer ${process.env.FAKE_DAEMON_TOKEN ?? ""}`)
+        })
+      )
+    ),
+    Effect.catchCause((cause) => Effect.logWarning("Couldn't tell the agent", cause))
+  )
+
+const Gateway = HttpRouter.add(
+  "*",
+  "/gw/*",
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest
+    const url = new URL(request.url, "http://fake")
+    const path = `${url.pathname.replace(/^\/gw/, "") || "/"}${url.search}`
+    const started = Date.now()
+    if (publishedPort === undefined) return HttpServerResponse.text("Not published yet", { status: 404 })
+    const response = yield* Effect.tryPromise(() =>
+      fetch(`http://127.0.0.1:${publishedPort}${path}`, { method: request.method, redirect: "manual" })
+    ).pipe(Effect.option)
+    const at = yield* DateTime.now
+    const ms = Date.now() - started
+    if (Option.isNone(response)) {
+      gatewayLog.push({ at, source: "gateway", level: "warn", text: `${request.method} ${path} never reached the app: nothing answered` })
+      return HttpServerResponse.text("Waking up", { status: 503 })
+    }
+    const status = response.value.status
+    const text = `${request.method} ${path} → ${status} in ${ms} ms`
+    gatewayLog.push({ at, source: "gateway", level: status >= 500 ? "error" : ms >= 3000 ? "warn" : "info", text })
+    if (status >= 500 && !turnRunning) serverErrors.push(text)
+    if (serverErrors.length >= 3 && !alerted) {
+      alerted = true
+      yield* Effect.forkDetach(
+        tellAgent(
+          `Your published app answered ${serverErrors.length} requests with server errors outside your turns, so ` +
+            `whoever was using it saw them fail. The latest:\n${serverErrors.slice(-5).map((line) => `- ${line}`).join("\n")}`
+        )
+      )
+    }
+    return HttpServerResponse.text(yield* Effect.promise(() => response.value.text()), {
+      status,
+      contentType: response.value.headers.get("content-type") ?? "text/plain"
+    })
+  })
+)
 
 const Handlers = SandboxRpcs.toLayer(
   Effect.gen(function* () {
@@ -365,7 +454,16 @@ const Handlers = SandboxRpcs.toLayer(
         ),
       WakeNow: (payload) => log("WakeNow", payload),
       Publish: (payload) =>
-        log("Publish", payload).pipe(Effect.as({ url: `https://dev-${payload.port}.dream.example` })),
+        log("Publish", payload).pipe(
+          Effect.tap(() => Effect.sync(() => (publishedPort = payload.port))),
+          Effect.as({ url: process.env.FAKE_PUBLIC_URL ?? `https://dev-${payload.port}.dream.example` })
+        ),
+      ReadLog: (query) =>
+        log("ReadLog", query).pipe(
+          Effect.as({
+            entries: gatewayLog.filter((entry) => matchesLogQuery(entry, query)).slice(-(query.limit ?? LogLimits.read))
+          })
+        ),
       AddLink: (payload) =>
         Effect.gen(function* () {
           yield* log("AddLink", payload)
@@ -485,7 +583,8 @@ const Handlers = SandboxRpcs.toLayer(
           if (relay === undefined) return yield* new NotFound({ entity: "relay", id: relayId })
           return relay
         }),
-      ReportTurn: (payload) => log("ReportTurn", payload),
+      ReportTurn: (payload) =>
+        log("ReportTurn", payload).pipe(Effect.tap(() => Effect.sync(() => (turnRunning = payload.state === "started")))),
       ReportTask: (payload) =>
         log("ReportTask", encode(SandboxRpcs.requests.get("ReportTask")!.payloadSchema, payload)),
       ReportProgress: (payload) => log("ReportProgress", payload),
@@ -523,7 +622,8 @@ HttpRouter.serve(
     RpcServer.layerHttp({ group: SandboxRpcs, path: Routes.sandbox, protocol: "http" }).pipe(
       Layer.provide([Handlers, Auth, HttpRpcSerialization])
     ),
-    Uploads
+    Uploads,
+    Gateway
   ),
   { disableLogger: true }
 ).pipe(

@@ -1,9 +1,10 @@
 /**
  * The per-turn model usage ledger (D1 `turn_usage`): each turn's tokens and the subscription windows before and
- * after it, and each scheduled task's run (`wake_id`) the same way. Written by the ProjectDO when a turn or task finishes; read to estimate each project's share of a window
+ * after it, what it asked of the machine (memory and swap peaks, swapping, out-of-memory kills, free disk), and each scheduled task's run (`wake_id`) the same way. Written by the ProjectDO when a turn or task finishes; read to estimate each project's share of a window
  * (`usage/Shares.ts`).
  */
 import {
+  type MachineUse,
   ModelProvider,
   ProjectId,
   type TurnUsage,
@@ -60,6 +61,8 @@ export interface NewTurnUsage {
   readonly after?: UsageSnapshot | undefined
   /** A scheduled task's run (`dream wake --task`) rather than a turn of the project's own session. */
   readonly wakeId?: WakeId | undefined
+  /** What it asked of the machine, when dreamd reported it. */
+  readonly machine?: MachineUse | undefined
 }
 
 const ms = (at: DateTime.Utc | null): number | undefined => (at === null ? undefined : DateTime.toEpochMillis(at))
@@ -140,6 +143,7 @@ export class TurnUsageLog extends Context.Service<
       const record = Effect.fn("TurnUsageLog.record")(function* (turn: NewTurnUsage) {
         const now = yield* nowIso
         const tokens = turn.usage?.tokens
+        const machine = turn.machine
         const [fiveBefore, fiveBeforeResets] = windowColumns(turn.before?.fiveHour)
         const [weekBefore, weekBeforeResets] = windowColumns(turn.before?.weekly)
         const [fiveAfter, fiveAfterResets] = windowColumns(turn.after?.fiveHour)
@@ -149,14 +153,18 @@ export class TurnUsageLog extends Context.Service<
             input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, cost_usd, subagents,
             before_observed_at, five_hour_before_percent, five_hour_before_resets_at, weekly_before_percent,
             weekly_before_resets_at, after_observed_at, five_hour_after_percent, five_hour_after_resets_at,
-            weekly_after_percent, weekly_after_resets_at, wake_id, created_at)
+            weekly_after_percent, weekly_after_resets_at, wake_id, mem_peak_mb, mem_total_mb, swap_peak_mb,
+            swap_total_mb, swap_in_pages, swap_out_pages, oom_kills, disk_free_mb, created_at)
           VALUES (${turn.id}, ${turn.userId}, ${turn.projectId}, ${turn.provider},
             ${DateTime.formatIso(turn.startedAt)}, ${DateTime.formatIso(turn.endedAt)},
             ${orNull(tokens?.input)}, ${orNull(tokens?.cacheRead)}, ${orNull(tokens?.cacheWrite)},
             ${orNull(tokens?.output)}, ${orNull(turn.usage?.costUsd)}, ${orNull(turn.usage?.subagents)},
             ${isoOrNull(turn.before?.observedAt)}, ${fiveBefore}, ${fiveBeforeResets}, ${weekBefore},
             ${weekBeforeResets}, ${isoOrNull(turn.after?.observedAt)}, ${fiveAfter}, ${fiveAfterResets},
-            ${weekAfter}, ${weekAfterResets}, ${orNull(turn.wakeId)}, ${now})
+            ${weekAfter}, ${weekAfterResets}, ${orNull(turn.wakeId)}, ${orNull(machine?.memoryPeakMb)},
+            ${orNull(machine?.memoryTotalMb)}, ${orNull(machine?.swapPeakMb)}, ${orNull(machine?.swapTotalMb)},
+            ${orNull(machine?.swapInPages)}, ${orNull(machine?.swapOutPages)}, ${orNull(machine?.oomKills)},
+            ${orNull(machine?.diskFreeMb)}, ${now})
           ON CONFLICT (id) DO NOTHING`)
       })
 

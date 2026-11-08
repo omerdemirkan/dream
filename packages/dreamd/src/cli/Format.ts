@@ -16,6 +16,7 @@ import type {
   ProjectLinks,
   BrowserSession,
   Integration,
+  LogEntry,
   MachineInfo,
   MacStatus,
   MediaRef,
@@ -444,6 +445,28 @@ const listed = (noun: string, items: ReadonlyArray<string>) =>
       ]
 
 /** What a published URL answered when loaded from the sandbox (`dream publish`); at most 10 lines. */
+const levelMark = { info: "", warn: "warn  ", error: "ERROR " } as const
+
+/** Detail lines `dream logs` shows under an entry; `--json` has all of it. */
+export const LogDetailLines = 12
+
+/**
+ * `dream logs`: one line an entry, oldest first, in UTC, with its source (and name) and, for warnings and errors, a
+ * mark; then its detail, indented and shortened to its last lines.
+ */
+export const logEntries = (entries: ReadonlyArray<LogEntry>): string =>
+  entries
+    .map((entry) => {
+      const at = DateTime.formatIso(entry.at).replace(/^\d{4}-/, "").replace("T", " ").replace(/\.\d{3}Z$/, "Z")
+      const where = entry.name === undefined ? entry.source : `${entry.source} ${entry.name}`
+      const head = `${at}  ${where}  ${levelMark[entry.level]}${entry.text}`
+      if (entry.detail === undefined) return head
+      const lines = entry.detail.split("\n")
+      const shown = lines.length > LogDetailLines ? [`(${lines.length - LogDetailLines} lines before)`, ...lines.slice(-LogDetailLines)] : lines
+      return [head, ...shown.map((line) => `    ${line}`)].join("\n")
+    })
+    .join("\n")
+
 export const pageCheck = (load: PageLoad): string => {
   const how = load.via === "browser" ? "in Chromium" : "over HTTP (no browser, so page errors weren't checked)"
   if (load._tag === "Unreachable") return `Loading it from this sandbox ${how} failed: ${clip(load.message)}.`

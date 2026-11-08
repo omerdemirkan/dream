@@ -42,7 +42,7 @@ import {
 } from "../Ids.ts"
 import { AppLink, LinkColor, LinkIcon, LinkTitle, LinkUrl } from "../Links.ts"
 import { LiveActivityContent } from "../LiveActivity.ts"
-import { LogEntry, LogQuery } from "../Logs.ts"
+import { LogEntry, LogQuery, MachineUse } from "../Logs.ts"
 import { BrowserSession, MacSshAccess, MacStatus } from "../Machines.ts"
 import { MediaContentType, MediaRef, MediaUploadTarget } from "../Media.ts"
 import { AccessMessage, AccessRequest, Message, QuestionMessage, TextMessage } from "../Message.ts"
@@ -496,7 +496,9 @@ export class SandboxRpcs extends RpcGroup.make(
     payload: {
       state: Schema.Literals(["started", "finished"]),
       eventIds: Schema.Array(EventId),
-      usage: Schema.optionalKey(TurnUsage)
+      usage: Schema.optionalKey(TurnUsage),
+      /** What the turn asked of the machine. Added November 2026; older builds send none. */
+      machine: Schema.optionalKey(MachineUse)
     }
   }),
   /**

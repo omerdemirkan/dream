@@ -4,6 +4,7 @@
  */
 import { Schema } from "effect"
 import { WakeId } from "./Ids.ts"
+import { MachineUse } from "./Logs.ts"
 import { ReasoningEffort } from "./Project.ts"
 import { TurnUsage, UsageSnapshot } from "./Usage.ts"
 import { TimeZone } from "./User.ts"
@@ -62,7 +63,9 @@ export const TaskReport = Schema.Struct({
   wakeId: WakeId,
   ...TaskRun.fields,
   before: Schema.optionalKey(UsageSnapshot),
-  after: Schema.optionalKey(UsageSnapshot)
+  after: Schema.optionalKey(UsageSnapshot),
+  /** What the run asked of the machine. Added November 2026; older builds send none. */
+  machine: Schema.optionalKey(MachineUse)
 })
 export type TaskReport = typeof TaskReport.Type
 

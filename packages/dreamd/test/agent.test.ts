@@ -1,3 +1,5 @@
+import { ProjectLog } from "../src/Log.ts"
+import { Machine } from "../src/Machine.ts"
 import { existsSync, readFileSync } from "node:fs"
 import { createServer, type Server } from "node:http"
 import type { AddressInfo } from "node:net"
@@ -67,7 +69,8 @@ const setup = (
             : Attachments.layer.pipe(Layer.provide(FetchHttpClient.layer))
         )
       ),
-      Layer.provideMerge(Layer.merge(Inbox.layer, Hold.layer)),
+      Layer.provideMerge(Layer.mergeAll(Inbox.layer, Hold.layer, Machine.layerNone)),
+      Layer.provideMerge(ProjectLog.layer),
       Layer.provideMerge(
         options.attachments === undefined
           ? baseLayer(tempDir())

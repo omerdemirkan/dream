@@ -47,9 +47,34 @@ export const MachineSample = Schema.Struct({
   load1: Schema.Number,
   cpus: Schema.Int,
   /** Processes the kernel has killed for memory since the sandbox booted (`/proc/vmstat` `oom_kill`). */
-  oomKills: Schema.Int
+  oomKills: Schema.Int,
+  /**
+   * Pages swapped in and out since the sandbox booted (`/proc/vmstat` `pswpin`, `pswpout`); the change between two
+   * readings shows thrashing. Absent from readings before November 8, 2026.
+   */
+  swapInPages: Schema.optionalKey(Schema.Int),
+  swapOutPages: Schema.optionalKey(Schema.Int)
 })
 export type MachineSample = typeof MachineSample.Type
+
+/**
+ * What a turn or a task's run asked of the machine, from dreamd's readings while it ran (every few seconds): sent
+ * with `ReportTurn` and `ReportTask`, kept on the turn's row of the usage ledger. Sizes in MB; the swap counters are
+ * pages swapped in and out over the run (`pswpin`/`pswpout`), which show thrashing where the swap in use doesn't.
+ */
+export const MachineUse = Schema.Struct({
+  memoryPeakMb: Schema.Int,
+  memoryTotalMb: Schema.Int,
+  swapPeakMb: Schema.Int,
+  swapTotalMb: Schema.Int,
+  swapInPages: Schema.Int,
+  swapOutPages: Schema.Int,
+  /** Processes the kernel killed for memory during the run. */
+  oomKills: Schema.Int,
+  /** Free on the home directory's file system when it ended. */
+  diskFreeMb: Schema.Int
+})
+export type MachineUse = typeof MachineUse.Type
 
 export const LogEntry = Schema.Struct({
   at: Schema.DateTimeUtc,

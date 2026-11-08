@@ -5,12 +5,16 @@
  * kills something, the agent gets an `Alert` with `noticed` (once per problem, then not again before a cool-down;
  * `MachineRules`), so it hears about it before the person notices the app slowing down or falling over.
  *
+ * Between those readings it looks at memory and swap every few seconds, for what each turn and task's run asked of
+ * the machine (`MachineUse`: peaks, swapping, kills, free disk at the end), which dreamd reports with the run
+ * (`begin` and `end`).
+ *
  * Nothing runs while the sandbox sleeps, so neither does this: a reading covers the time the machine was in use.
  */
 import { randomUUID } from "node:crypto"
 import { cpus, loadavg } from "node:os"
 import { statfs } from "node:fs/promises"
-import { AgentEvent, EventId, type MachineSample, type Trouble } from "@dream/domain"
+import { AgentEvent, EventId, type MachineSample, type MachineUse, type Trouble } from "@dream/domain"
 import { Context, DateTime, Duration, Effect, FileSystem, Layer, Option, Path, Ref, Schema, Stream } from "effect"
 import { DreamdConfig } from "./Config.ts"
 import { Inbox } from "./Inbox.ts"
@@ -19,9 +23,13 @@ import { ProjectLog } from "./Log.ts"
 
 export const MachineRules = {
   every: Duration.minutes(1),
+  /** How often memory and swap are looked at for a run's peaks. */
+  glanceEvery: Duration.seconds(10),
   /** Memory is short when less than this share of it is available and swap is mostly used (or there's none)... */
   memoryAvailableBelow: 0.1,
   swapUsedAbove: 0.5,
+  /** Or this many pages swapped in since the last reading (about 8 MB a minute): it's thrashing. */
+  swapInPagesAbove: 2000,
   /** ...at this many readings in a row. */
   shortReadings: 2,
   /** The disk is nearly full below this share free, or this much. */
@@ -40,6 +48,8 @@ type MachineTrouble = Extract<Trouble, "memory" | "out-of-memory" | "disk">
 export const MachineState = Schema.Struct({
   /** The kernel's `oom_kill` count at the last reading. */
   oomKills: Schema.optionalKey(Schema.Int),
+  /** The kernel's `pswpin` count at the last reading. */
+  swapInPages: Schema.optionalKey(Schema.Int),
   /** Readings in a row that found memory short. */
   shortReadings: Schema.Int,
   /** When the agent was last told about each kind of trouble (epoch milliseconds). */
@@ -77,10 +87,13 @@ export const parseMeminfo = (text: string) => {
   }
 }
 
-/** `/proc/vmstat`'s `oom_kill`. */
-export const parseOomKills = (text: string): number => {
-  const match = /^oom_kill\s+(\d+)/m.exec(text)
-  return match === null ? 0 : Number(match[1])
+/** `/proc/vmstat`'s counters that matter here. */
+export const parseVmstat = (text: string) => {
+  const count = (name: string) => {
+    const match = new RegExp(`^${name}\\s+(\\d+)`, "m").exec(text)
+    return match === null ? 0 : Number(match[1])
+  }
+  return { oomKills: count("oom_kill"), swapInPages: count("pswpin"), swapOutPages: count("pswpout") }
 }
 
 /**
@@ -115,17 +128,24 @@ export const judgeSample = (
     )
   }
 
+  const swappedIn =
+    state.swapInPages === undefined || sample.swapInPages === undefined || sample.swapInPages < state.swapInPages
+      ? 0
+      : sample.swapInPages - state.swapInPages
   const memoryShort =
     sample.memoryTotalMb > 0 &&
     sample.memoryAvailableMb < sample.memoryTotalMb * MachineRules.memoryAvailableBelow &&
-    (sample.swapTotalMb === 0 || sample.swapUsedMb > sample.swapTotalMb * MachineRules.swapUsedAbove)
+    (sample.swapTotalMb === 0 ||
+      sample.swapUsedMb > sample.swapTotalMb * MachineRules.swapUsedAbove ||
+      swappedIn > MachineRules.swapInPagesAbove)
   const shortReadings = memoryShort ? state.shortReadings + 1 : 0
   if (shortReadings >= MachineRules.shortReadings) {
     tell(
       "memory",
       `The machine is short of memory: ${megabytes(sample.memoryAvailableMb)} of ${gb(sample.memoryTotalMb)} ` +
-        `available, with ${megabytes(sample.swapUsedMb)} of ${gb(sample.swapTotalMb)} of swap in use, for ` +
-        `${shortReadings} readings in a row. Everything slows down while it swaps, and when both run out the kernel ` +
+        `available, with ${megabytes(sample.swapUsedMb)} of ${gb(sample.swapTotalMb)} of swap in use` +
+        (swappedIn > 0 ? ` and ${swappedIn} pages swapped in over the last minute` : "") +
+        `, for ${shortReadings} readings in a row. Everything slows down while it swaps, and when both run out the kernel ` +
         "kills processes. `ps aux --sort=-rss | head` shows what's using it."
     )
   }
@@ -143,16 +163,46 @@ export const judgeSample = (
     )
   }
 
-  return { state: { oomKills: sample.oomKills, shortReadings, told }, troubles }
+  return {
+    state: {
+      oomKills: sample.oomKills,
+      ...(sample.swapInPages === undefined ? {} : { swapInPages: sample.swapInPages }),
+      shortReadings,
+      told
+    },
+    troubles
+  }
+}
+
+/** A run's window on the machine: the peaks and counters so far. */
+interface Window {
+  readonly memoryPeakMb: number
+  readonly swapPeakMb: number
+  readonly start: { readonly oomKills: number; readonly swapInPages: number; readonly swapOutPages: number }
+}
+
+/** A glance at memory and swap, between readings. */
+interface Glance {
+  readonly memoryTotalMb: number
+  readonly memoryUsedMb: number
+  readonly swapTotalMb: number
+  readonly swapUsedMb: number
+  readonly oomKills: number
+  readonly swapInPages: number
+  readonly swapOutPages: number
 }
 
 export class Machine extends Context.Service<
   Machine,
   {
-    /** Read the machine every `MachineRules.every`, forever. */
+    /** Glance every `MachineRules.glanceEvery` and read the machine every `MachineRules.every`, forever. */
     readonly run: Effect.Effect<never>
     /** One reading now, logged and judged. */
     readonly check: Effect.Effect<void>
+    /** A turn or task's run starts: its window on the machine opens. */
+    readonly begin: (id: string) => Effect.Effect<void>
+    /** It ended: what it asked of the machine, if its window was open. */
+    readonly end: (id: string) => Effect.Effect<MachineUse | undefined>
   }
 >()("@dream/dreamd/Machine") {
   static readonly layer = Layer.effect(
@@ -168,29 +218,64 @@ export class Machine extends Context.Service<
         effect.pipe(Effect.provideService(FileSystem.FileSystem, fs), Effect.provideService(Path.Path, path))
       const loaded = yield* provide(file.read).pipe(Effect.orElseSucceed(() => Option.none<MachineState>()))
       const state = yield* Ref.make(Option.getOrElse(loaded, () => initialMachineState))
+      const windows = yield* Ref.make(new Map<string, Window>())
 
       const read = (file: string) => fs.readFileString(file).pipe(Effect.orElseSucceed(() => ""))
+      const glance = Effect.gen(function* () {
+        const memory = parseMeminfo(yield* read("/proc/meminfo"))
+        return {
+          memoryTotalMb: memory.memoryTotalMb,
+          memoryUsedMb: Math.max(0, memory.memoryTotalMb - memory.memoryAvailableMb),
+          swapTotalMb: memory.swapTotalMb,
+          swapUsedMb: memory.swapUsedMb,
+          ...parseVmstat(yield* read("/proc/vmstat"))
+        } satisfies Glance
+      })
+      const disk = Effect.tryPromise(() => statfs(config.home)).pipe(
+        Effect.map((s) => ({
+          diskTotalMb: Math.round((s.blocks * s.bsize) / 1024 / 1024),
+          diskFreeMb: Math.round((s.bavail * s.bsize) / 1024 / 1024)
+        })),
+        Effect.orElseSucceed(() => ({ diskTotalMb: 0, diskFreeMb: 0 }))
+      )
       const sample = Effect.gen(function* () {
         const memory = parseMeminfo(yield* read("/proc/meminfo"))
-        const disk = yield* Effect.tryPromise(() => statfs(config.home)).pipe(
-          Effect.map((s) => ({
-            diskTotalMb: Math.round((s.blocks * s.bsize) / 1024 / 1024),
-            diskFreeMb: Math.round((s.bavail * s.bsize) / 1024 / 1024)
-          })),
-          Effect.orElseSucceed(() => ({ diskTotalMb: 0, diskFreeMb: 0 }))
-        )
         return {
           ...memory,
-          ...disk,
+          ...(yield* disk),
           load1: Math.round((loadavg()[0] ?? 0) * 100) / 100,
           cpus: cpus().length,
-          oomKills: parseOomKills(yield* read("/proc/vmstat"))
+          ...parseVmstat(yield* read("/proc/vmstat"))
         } satisfies MachineSample
       })
+
+      /** Raise the open windows' peaks to what `seen` shows. */
+      const widen = (seen: Glance) =>
+        Ref.update(windows, (all) => {
+          if (all.size === 0) return all
+          const next = new Map<string, Window>()
+          for (const [id, window] of all) {
+            next.set(id, {
+              ...window,
+              memoryPeakMb: Math.max(window.memoryPeakMb, seen.memoryUsedMb),
+              swapPeakMb: Math.max(window.swapPeakMb, seen.swapUsedMb)
+            })
+          }
+          return next
+        })
 
       const check = Effect.gen(function* () {
         const reading = yield* sample
         const now = yield* DateTime.now
+        yield* widen({
+          memoryTotalMb: reading.memoryTotalMb,
+          memoryUsedMb: Math.max(0, reading.memoryTotalMb - reading.memoryAvailableMb),
+          swapTotalMb: reading.swapTotalMb,
+          swapUsedMb: reading.swapUsedMb,
+          oomKills: reading.oomKills,
+          swapInPages: reading.swapInPages,
+          swapOutPages: reading.swapOutPages
+        })
         const judged = judgeSample(yield* Ref.get(state), reading, DateTime.toEpochMillis(now))
         yield* Ref.set(state, judged.state)
         yield* provide(file.write(judged.state)).pipe(Effect.ignore)
@@ -219,10 +304,78 @@ export class Machine extends Context.Service<
         }
       }).pipe(Effect.catchCause((cause) => Effect.logWarning("Couldn't read the machine", cause)))
 
+      const begin = (id: string) =>
+        glance.pipe(
+          Effect.flatMap((seen) =>
+            Ref.update(windows, (all) =>
+              new Map(all).set(id, {
+                memoryPeakMb: seen.memoryUsedMb,
+                swapPeakMb: seen.swapUsedMb,
+                start: { oomKills: seen.oomKills, swapInPages: seen.swapInPages, swapOutPages: seen.swapOutPages }
+              })
+            )
+          ),
+          Effect.catchCause((cause) => Effect.logWarning("Couldn't glance at the machine", cause))
+        )
+
+      const end = (id: string) =>
+        Effect.gen(function* () {
+          const seen = yield* glance
+          yield* widen(seen)
+          const window = (yield* Ref.get(windows)).get(id)
+          yield* Ref.update(windows, (all) => {
+            const next = new Map(all)
+            next.delete(id)
+            return next
+          })
+          if (window === undefined || seen.memoryTotalMb === 0) return undefined
+          // A count lower than at the start is a new sandbox's (a move): count from zero.
+          const since = (now: number, then: number) => (now >= then ? now - then : now)
+          return {
+            memoryPeakMb: window.memoryPeakMb,
+            memoryTotalMb: seen.memoryTotalMb,
+            swapPeakMb: window.swapPeakMb,
+            swapTotalMb: seen.swapTotalMb,
+            swapInPages: since(seen.swapInPages, window.start.swapInPages),
+            swapOutPages: since(seen.swapOutPages, window.start.swapOutPages),
+            oomKills: since(seen.oomKills, window.start.oomKills),
+            diskFreeMb: (yield* disk).diskFreeMb
+          } satisfies MachineUse
+        }).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("Couldn't glance at the machine", cause).pipe(Effect.as(undefined))
+          )
+        )
+
+      const glances = Stream.tick(MachineRules.glanceEvery).pipe(
+        Stream.runForEach(() =>
+          Effect.gen(function* () {
+            if ((yield* Ref.get(windows)).size === 0) return
+            yield* widen(yield* glance)
+          }).pipe(Effect.catchCause(() => Effect.void))
+        )
+      )
+      const readings = Stream.tick(MachineRules.every).pipe(Stream.runForEach(() => check))
+
       return Machine.of({
         check,
-        run: Stream.tick(MachineRules.every).pipe(Stream.runForEach(() => check), Effect.andThen(Effect.never))
+        begin,
+        end,
+        run: Effect.all([glances, readings], { concurrency: "unbounded", discard: true }).pipe(
+          Effect.andThen(Effect.never)
+        )
       })
+    })
+  )
+
+  /** Reads nothing and reports nothing: for tests that don't look at the machine. */
+  static readonly layerNone = Layer.succeed(
+    Machine,
+    Machine.of({
+      run: Effect.never,
+      check: Effect.void,
+      begin: () => Effect.void,
+      end: () => Effect.succeed(undefined)
     })
   )
 }

@@ -18,6 +18,7 @@ import {
   SandboxAuth,
   SandboxRpcs,
   type TaskReport,
+  type MachineUse,
   type TurnUsage,
   type UsageSnapshot
 } from "@dream/domain"
@@ -34,6 +35,7 @@ export type Report =
       readonly state: "started" | "finished"
       readonly eventIds: ReadonlyArray<EventId>
       readonly usage?: TurnUsage
+      readonly machine?: MachineUse
     }
   | { readonly _tag: "Usage"; readonly usage: UsageSnapshot }
   | { readonly _tag: "Task"; readonly task: TaskReport }
@@ -81,11 +83,12 @@ export const layerClient = Layer.unwrap(
 export class Api extends Context.Service<
   Api,
   {
-    /** `usage`, with "finished", is what the turn used of the model. */
+    /** `usage` and `machine`, with "finished", are what the turn used of the model and asked of the machine. */
     readonly reportTurn: (
       state: "started" | "finished",
       eventIds: ReadonlyArray<EventId>,
-      usage?: TurnUsage
+      usage?: TurnUsage,
+      machine?: MachineUse
     ) => Effect.Effect<void>
     readonly reportUsage: (usage: UsageSnapshot) => Effect.Effect<void>
     /** A scheduled task's session finished (`dream wake --task`). */
@@ -128,8 +131,16 @@ export class Api extends Context.Service<
           Effect.mapError((error) => new ApiError({ message: error.message }))
         )
       return Api.of({
-        reportTurn: (state, eventIds, usage) =>
-          report(`turn ${state}`, client.ReportTurn({ state, eventIds, ...(usage === undefined ? {} : { usage }) })),
+        reportTurn: (state, eventIds, usage, machine) =>
+          report(
+            `turn ${state}`,
+            client.ReportTurn({
+              state,
+              eventIds,
+              ...(usage === undefined ? {} : { usage }),
+              ...(machine === undefined ? {} : { machine })
+            })
+          ),
         reportUsage: (usage) => report("usage", client.ReportUsage({ usage })),
         reportTask: (task) => report("a task's run", client.ReportTask(task)),
         reportProgress: (progress) =>
@@ -180,12 +191,18 @@ export class Api extends Context.Service<
     Layer.succeed(
       Api,
       Api.of({
-        reportTurn: (state, eventIds, usage) =>
+        reportTurn: (state, eventIds, usage, machine) =>
           Ref.update(
             reports,
             (all): ReadonlyArray<Report> => [
               ...all,
-              { _tag: "Turn", state, eventIds, ...(usage === undefined ? {} : { usage }) }
+              {
+                _tag: "Turn",
+                state,
+                eventIds,
+                ...(usage === undefined ? {} : { usage }),
+                ...(machine === undefined ? {} : { machine })
+              }
             ]
           ),
         reportUsage: (usage) => Ref.update(reports, (all): ReadonlyArray<Report> => [...all, { _tag: "Usage", usage }]),

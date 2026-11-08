@@ -14,7 +14,7 @@ import {
   LogSources,
   matchesLogQuery
 } from "@dream/domain"
-import { Context, DateTime, Effect, FileSystem, Layer, Path, Ref, Schema } from "effect"
+import { Context, DateTime, Effect, FileSystem, Layer, Path, Ref, Schema, Semaphore } from "effect"
 import { DreamdConfig } from "./Config.ts"
 
 /** A source's file is moved aside past this size; with the one before it, a source keeps up to twice this. */
@@ -102,7 +102,7 @@ export class ProjectLog extends Context.Service<
         )
 
       // One writer at a time, so a rotation never races an append.
-      const lock = yield* Effect.makeSemaphore(1)
+      const lock = yield* Semaphore.make(1)
       const append = (entries: ReadonlyArray<LogEntry>) =>
         lock.withPermits(1)(
           Effect.forEach(
