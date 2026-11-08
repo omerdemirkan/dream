@@ -25,7 +25,7 @@ import {
 } from "../AppNotifications.ts"
 import { SandboxAuth } from "../Auth.ts"
 import { Integration } from "../Connections.ts"
-import { InvalidRequest, NotFound, UpstreamFailure } from "../Errors.ts"
+import { EmailLimitReached, InvalidRequest, NotFound, UpstreamFailure } from "../Errors.ts"
 import { MachineInfo, SandboxSize } from "../Sandbox.ts"
 import {
   AppId,
@@ -98,6 +98,24 @@ export class SandboxRpcs extends RpcGroup.make(
     },
     success: TextMessage,
     error: Schema.Union([NotFound, InvalidRequest])
+  }),
+  /**
+   * `dream email --subject "…" [--work id] [--reply-to message-id] "markdown"`: emails them the markdown, rendered
+   * into Dream's email, at the address on file from their sign-in (nobody else), for steps they'd rather follow on
+   * a computer. Chat gets a record of it (a `Text` with `email`), which is what it returns. `InvalidRequest` for a
+   * subject or body `agentEmailProblem` refuses, or an account with no address; `EmailLimitReached` past
+   * `AgentEmailLimits.perProjectPerDay`; `UpstreamFailure` when this deployment can't send email or the send failed
+   * (nothing was sent). Added in November 2026: an older API answers with "Unknown request tag".
+   */
+  Rpc.make("SendEmail", {
+    payload: {
+      subject: Schema.NonEmptyString,
+      markdown: Schema.NonEmptyString,
+      workstream: work,
+      replyTo
+    },
+    success: TextMessage,
+    error: Schema.Union([NotFound, InvalidRequest, EmailLimitReached, UpstreamFailure])
   }),
   /**
    * `dream ask "question" --option "…" … [--show "<option>=<files>"] [--why "…"] [--context "…"] [--meanwhile "…"]

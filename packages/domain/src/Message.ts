@@ -36,6 +36,37 @@ const MessageFields = {
 export const MessageAuthor = Schema.Literals(["agent", "user"])
 export type MessageAuthor = typeof MessageAuthor.Type
 
+/**
+ * What the agent emailed them (`dream email`): the subject, the address it went to (the one on file from their
+ * sign-in), and when. The message's `text` is the email's markdown, so Chat holds what the email says.
+ */
+export const SentEmail = Schema.Struct({
+  subject: Schema.NonEmptyString,
+  to: Schema.String,
+  sentAt: Schema.DateTimeUtc
+})
+export type SentEmail = typeof SentEmail.Type
+
+/**
+ * How much `dream email` takes: a subject on one line, the markdown, and how many a project sends in a day (a
+ * runaway loop shouldn't fill their inbox; a real walkthrough needs one or two).
+ */
+export const AgentEmailLimits = { subject: 150, markdown: 40_000, perProjectPerDay: 10 } as const
+
+/** Why an agent's email can't go as written, or `undefined` if it can. */
+export const agentEmailProblem = (subject: string, markdown: string): string | undefined => {
+  if (subject.trim().length === 0) return "The subject is empty."
+  if (/[\r\n]/.test(subject.trim())) return "The subject has to be one line."
+  if (subject.trim().length > AgentEmailLimits.subject) {
+    return `The subject is ${subject.trim().length} characters; keep it under ${AgentEmailLimits.subject}.`
+  }
+  if (markdown.trim().length === 0) return "The email is empty."
+  if (markdown.length > AgentEmailLimits.markdown) {
+    return `The email is ${markdown.length} characters; it takes at most ${AgentEmailLimits.markdown}.`
+  }
+  return undefined
+}
+
 export const TextMessage = Schema.TaggedStruct("Text", {
   ...MessageFields,
   from: MessageAuthor,
@@ -48,7 +79,12 @@ export const TextMessage = Schema.TaggedStruct("Text", {
    */
   attachments: Schema.optionalKey(Schema.Array(Attachment)),
   /** Their messages only: when Dream began delivering it to the agent's machine (the receipt under it reads "Seen"). */
-  seenAt: Schema.optionalKey(Schema.DateTimeUtc)
+  seenAt: Schema.optionalKey(Schema.DateTimeUtc),
+  /**
+   * The agent's messages only: this was also emailed to them (`dream email`), and `text` is what the email says.
+   * Added in November 2026; older apps ignore it and show the text as a message.
+   */
+  email: Schema.optionalKey(SentEmail)
 })
 export type TextMessage = typeof TextMessage.Type
 

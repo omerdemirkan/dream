@@ -7,21 +7,29 @@
 import {
   providerOf,
   AccessRequest,
+  AgentEmailLimits,
+  agentEmailProblem,
   CurrentProject,
+  EmailLimitReached,
   InvalidRequest,
   MediaRef,
   mediaKind,
   NotFound,
   SandboxAuth,
   SandboxRpcs,
-  Unauthorized
+  Unauthorized,
+  UpstreamFailure
 } from "@dream/domain"
-import { DateTime, Effect, Layer, Option } from "effect"
+import { Clock, DateTime, Duration, Effect, Layer, Option } from "effect"
 import type { RpcClientError } from "effect/rpc"
 import { Tokens } from "../auth/Tokens.ts"
 import { ApiConfig } from "../Config.ts"
 import { Connections, toIntegration } from "../db/Connections.ts"
 import { Projects } from "../db/Projects.ts"
+import { RateLimits } from "../db/RateLimits.ts"
+import { Users } from "../db/Users.ts"
+import { agentEmail } from "../email/AgentEmail.ts"
+import { Mailer } from "../email/Mailer.ts"
 import { Google } from "../integrations/Google.ts"
 import { KeyFiles } from "../integrations/KeyFiles.ts"
 import { AppLinks } from "../links/AppLinks.ts"
@@ -62,6 +70,9 @@ export const WorkerSandboxHandlers = SandboxRpcs.toLayer(
     const providers = yield* OAuthProviders
     const google = yield* Google
     const appLinks = yield* AppLinks
+    const users = yield* Users
+    const mailer = yield* Mailer
+    const rateLimits = yield* RateLimits
 
     const current = Effect.gen(function* () {
       return yield* CurrentProject
@@ -82,6 +93,52 @@ export const WorkerSandboxHandlers = SandboxRpcs.toLayer(
 
     return {
       SendMessage: (payload) => forwardUnlessLeaking(payload, (c) => c.SendMessage(payload)),
+      SendEmail: ({ subject, markdown, workstream, replyTo }) =>
+        Effect.gen(function* () {
+          const { projectId, userId } = yield* current
+          if (!mailer.enabled) {
+            return yield* new UpstreamFailure({
+              service: "Email",
+              message: "this Dream deployment can't send email, so nothing was sent; put the steps in Chat instead"
+            })
+          }
+          const problem = agentEmailProblem(subject, markdown)
+          if (problem !== undefined) return yield* new InvalidRequest({ message: problem })
+          yield* keyFiles.refuseLeak(userId, projectId, { subject, markdown })
+          const user = yield* users.find(userId)
+          const to = Option.match(user, { onNone: () => "", onSome: (u) => u.email })
+          if (to.length === 0) return yield* new InvalidRequest({ message: "Their account has no email address." })
+          const project = yield* projects.find(projectId)
+          yield* forward((c) =>
+            c.CheckEmailPlace({ ...(workstream ? { workstream } : {}), ...(replyTo ? { replyTo } : {}) })
+          )
+          const now = yield* Clock.currentTimeMillis
+          const limit = AgentEmailLimits.perProjectPerDay
+          if (!(yield* rateLimits.hit(`agent-email:${projectId}`, limit, Duration.toMillis(Duration.days(1)), now))) {
+            return yield* new EmailLimitReached({
+              limit,
+              message:
+                `This project has sent the ${limit} emails it can in a day, so this one wasn't sent; ` +
+                "put it in Chat, or send it once a day has passed since the first of them."
+            })
+          }
+          yield* mailer.send(
+            agentEmail({
+              to,
+              subject,
+              markdown,
+              project: Option.match(project, { onNone: () => "", onSome: (p) => p.title })
+            })
+          )
+          return yield* forward((c) =>
+            c.RecordEmail({
+              markdown,
+              email: { subject: subject.trim(), to, sentAt: DateTime.makeUnsafe(now) },
+              ...(workstream ? { workstream } : {}),
+              ...(replyTo ? { replyTo } : {})
+            })
+          )
+        }),
       AskQuestion: (payload) => forwardUnlessLeaking(payload, (c) => c.AskQuestion(payload)),
       ReviseQuestion: (payload) => forwardUnlessLeaking(payload, (c) => c.ReviseQuestion(payload)),
       WithdrawQuestion: (payload) => forward((c) => c.WithdrawQuestion(payload)),

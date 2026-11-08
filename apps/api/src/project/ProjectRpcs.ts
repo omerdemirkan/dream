@@ -30,6 +30,7 @@ import {
   RelayForwardResult,
   RelayId,
   QuestionMessage,
+  SentEmail,
   TextMessage,
   UpstreamFailure,
   UsageLimits,
@@ -118,6 +119,24 @@ export class ProjectRpcs extends RpcGroup.make(
   Rpc.make("SetAccessDesktop", {
     payload: { messageId: MessageId, desktop: AccessDesktop },
     success: AccessMessage,
+    error: Schema.Union([NotFound, InvalidRequest])
+  }),
+  /**
+   * `SendEmail`, served by the Worker, which holds the mailer: before it sends, whether `--work` and `--reply-to`
+   * place the record in Chat (so a bad flag sends nothing), then the record once the email went.
+   */
+  Rpc.make("CheckEmailPlace", {
+    payload: { workstream: Schema.optionalKey(WorkstreamId), replyTo: Schema.optionalKey(MessageId) },
+    error: Schema.Union([NotFound, InvalidRequest])
+  }),
+  Rpc.make("RecordEmail", {
+    payload: {
+      markdown: Schema.NonEmptyString,
+      email: SentEmail,
+      workstream: Schema.optionalKey(WorkstreamId),
+      replyTo: Schema.optionalKey(MessageId)
+    },
+    success: TextMessage,
     error: Schema.Union([NotFound, InvalidRequest])
   }),
   Rpc.make("DeclineAccess", {

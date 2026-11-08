@@ -44,3 +44,12 @@ export class UpstreamFailure extends Schema.TaggedError<UpstreamFailure>()("Upst
 export class DaemonRestarting extends Schema.TaggedError<DaemonRestarting>()("DaemonRestarting", {
   message: Schema.String
 }) {}
+
+/**
+ * The project sent as many emails as it may for now (`AgentEmailLimits`). `message` says when it can send again,
+ * written for the agent.
+ */
+export class EmailLimitReached extends Schema.TaggedError<EmailLimitReached>()("EmailLimitReached", {
+  message: Schema.String,
+  limit: Schema.Int
+}) {}

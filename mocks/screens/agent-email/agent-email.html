@@ -1,0 +1,53 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><meta name="supported-color-schemes" content="dark"><title>Set up Tide Clock in Apple Developer</title><style>@media (max-width:480px){.pad{padding-left:18px!important;padding-right:18px!important}.page{padding:12px 6px!important}}</style></head><body style="margin:0;padding:0;background:#0A0A0C"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0A0A0C"><tr><td align="center" class="page" style="padding:28px 12px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;background:#141417;border:1px solid #26262B;border-radius:20px"><tr><td class="pad" style="padding:28px 26px 8px;font-family:Inter,-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Helvetica,Arial,sans-serif;color:#F5F5F7"><p style="margin:0 0 6px;font-size:13px;color:#9A9AA0">Tide Clock · Dream</p><h1 style="margin:0 0 20px;font-size:23px;line-height:1.3;font-weight:650;color:#F5F5F7">Set up Tide Clock in Apple Developer</h1><div style="font-family:Inter,-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Helvetica,Arial,sans-serif"><p style="margin:0 0 14px;font-size:15.5px;line-height:1.6;color:#D9D9DE">Two things in Apple Developer so I can ship Tide Clock to TestFlight. It takes about ten minutes, and you need the <strong style="font-weight:650;color:#F5F5F7">Account Holder</strong> or <strong style="font-weight:650;color:#F5F5F7">Admin</strong> role.</p>
+<h3 style="margin:24px 0 10px;font-size:17px;line-height:1.35;font-weight:650;color:#F5F5F7">1. Register the app's identifier</h3>
+<ol style="margin:0 0 14px;padding:0 0 0 24px;font-size:15.5px;line-height:1.6;color:#D9D9DE">
+<li style="margin:0 0 8px;padding-left:2px">Open <a href="https://developer.apple.com/account/resources/identifiers/list" style="color:#FFB35C;text-decoration:underline;word-break:break-word" target="_blank" rel="noopener noreferrer">Certificates, Identifiers &amp; Profiles</a> <span style="color:#7A7A80;font-size:13px;white-space:nowrap">(developer.apple.com)</span> and sign in.</li>
+<li style="margin:0 0 8px;padding-left:2px">Click the blue <strong style="font-weight:650;color:#F5F5F7">+</strong> next to <em>Identifiers</em>, choose <strong style="font-weight:650;color:#F5F5F7">App IDs</strong>, then <strong style="font-weight:650;color:#F5F5F7">App</strong>, and click <strong style="font-weight:650;color:#F5F5F7">Continue</strong>.</li>
+<li style="margin:0 0 8px;padding-left:2px">Fill in:
+<ul style="margin:6px 0 0;padding:0 0 0 22px;font-size:15.5px;line-height:1.6;color:#D9D9DE">
+<li style="margin:0 0 8px;padding-left:2px"><strong style="font-weight:650;color:#F5F5F7">Description:</strong> <code style="font-family:'SF Mono',SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;font-size:13.5px;background:#1C1C21;border:1px solid #26262B;border-radius:6px;padding:1px 5px;color:#F5F5F7">Tide Clock</code></li>
+<li style="margin:0 0 8px;padding-left:2px"><strong style="font-weight:650;color:#F5F5F7">Bundle ID:</strong> choose <em>Explicit</em> and paste <code style="font-family:'SF Mono',SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;font-size:13.5px;background:#1C1C21;border:1px solid #26262B;border-radius:6px;padding:1px 5px;color:#F5F5F7">build.omer.tideclock</code></li>
+</ul>
+</li>
+<li style="margin:0 0 8px;padding-left:2px">Under <em>Capabilities</em>, tick <strong style="font-weight:650;color:#F5F5F7">Push Notifications</strong> and <strong style="font-weight:650;color:#F5F5F7">App Groups</strong>. Leave the rest.</li>
+<li style="margin:0 0 8px;padding-left:2px">Click <strong style="font-weight:650;color:#F5F5F7">Continue</strong>, then <strong style="font-weight:650;color:#F5F5F7">Register</strong>.</li>
+</ol>
+<h3 style="margin:24px 0 10px;font-size:17px;line-height:1.35;font-weight:650;color:#F5F5F7">2. Make an App Store Connect API key</h3>
+<p style="margin:0 0 14px;font-size:15.5px;line-height:1.6;color:#D9D9DE">This is what lets me upload builds without your password.</p>
+<ol style="margin:0 0 14px;padding:0 0 0 24px;font-size:15.5px;line-height:1.6;color:#D9D9DE">
+<li style="margin:0 0 8px;padding-left:2px">Go to <a href="https://appstoreconnect.apple.com/access/integrations/api" style="color:#FFB35C;text-decoration:underline;word-break:break-word" target="_blank" rel="noopener noreferrer">App Store Connect → Users and Access → Integrations</a> <span style="color:#7A7A80;font-size:13px;white-space:nowrap">(appstoreconnect.apple.com)</span>.</li>
+<li style="margin:0 0 8px;padding-left:2px">Click <strong style="font-weight:650;color:#F5F5F7">Generate API Key</strong> (or the <strong style="font-weight:650;color:#F5F5F7">+</strong> if you already have keys).</li>
+<li style="margin:0 0 8px;padding-left:2px">Name it <code style="font-family:'SF Mono',SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;font-size:13.5px;background:#1C1C21;border:1px solid #26262B;border-radius:6px;padding:1px 5px;color:#F5F5F7">Dream</code>, set <em>Access</em> to <strong style="font-weight:650;color:#F5F5F7">App Manager</strong>, and click <strong style="font-weight:650;color:#F5F5F7">Generate</strong>.</li>
+<li style="margin:0 0 8px;padding-left:2px">Download the <code style="font-family:'SF Mono',SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;font-size:13.5px;background:#1C1C21;border:1px solid #26262B;border-radius:6px;padding:1px 5px;color:#F5F5F7">.p8</code> file. Apple lets you download it <strong style="font-weight:650;color:#F5F5F7">only once</strong>.</li>
+</ol>
+<blockquote style="margin:0 0 14px;padding:2px 0 2px 14px;border-left:3px solid #26262B;color:#9A9AA0">
+<p style="margin:0 0 14px;font-size:15.5px;line-height:1.6;color:#D9D9DE">Don't paste the key into Chat. Open the request card in Dream and add it there; it goes straight to Dream, not to my machine.</p>
+</blockquote>
+<p style="margin:0 0 14px;font-size:15.5px;line-height:1.6;color:#D9D9DE">If the download button is greyed out, you've downloaded it before; revoke that key and make a new one.</p>
+<h3 style="margin:24px 0 10px;font-size:17px;line-height:1.35;font-weight:650;color:#F5F5F7">When you're done</h3>
+<p style="margin:0 0 14px;font-size:15.5px;line-height:1.6;color:#D9D9DE">Reply <strong style="font-weight:650;color:#F5F5F7">done</strong> in Dream. If Xcode asks you anything later, the team ID it wants is:</p>
+<pre style="margin:0 0 16px;padding:12px 14px;background:#1C1C21;border:1px solid #26262B;border-radius:10px;font-family:'SF Mono',SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;font-size:13px;line-height:1.55;color:#F5F5F7;white-space:pre-wrap;word-break:break-word;overflow-x:auto">Team ID: 7XQ2K9LM4P
+Bundle ID: build.omer.tideclock</pre>
+<hr style="border:0;border-top:1px solid #26262B;margin:22px 0">
+<table style="border-collapse:collapse;margin:0 0 16px;font-size:14.5px;line-height:1.5;color:#D9D9DE">
+<thead>
+<tr>
+<th style="border:1px solid #26262B;padding:7px 10px;text-align:left;font-weight:650;color:#F5F5F7">Step</th>
+<th style="border:1px solid #26262B;padding:7px 10px;text-align:left;font-weight:650;color:#F5F5F7">Where</th>
+<th style="border:1px solid #26262B;padding:7px 10px;text-align:left;font-weight:650;color:#F5F5F7">Time</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="border:1px solid #26262B;padding:7px 10px;vertical-align:top;overflow-wrap:anywhere">Identifier</td>
+<td style="border:1px solid #26262B;padding:7px 10px;vertical-align:top;overflow-wrap:anywhere">developer.apple.com</td>
+<td style="border:1px solid #26262B;padding:7px 10px;vertical-align:top;overflow-wrap:anywhere">3 min</td>
+</tr>
+<tr>
+<td style="border:1px solid #26262B;padding:7px 10px;vertical-align:top;overflow-wrap:anywhere">API key</td>
+<td style="border:1px solid #26262B;padding:7px 10px;vertical-align:top;overflow-wrap:anywhere">appstoreconnect.apple.com</td>
+<td style="border:1px solid #26262B;padding:7px 10px;vertical-align:top;overflow-wrap:anywhere">5 min</td>
+</tr>
+</tbody>
+</table>
+</div></td></tr><tr><td class="pad" style="padding:6px 26px 26px;font-family:Inter,-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Helvetica,Arial,sans-serif"><p style="margin:0;padding-top:16px;border-top:1px solid #26262B;font-size:13px;line-height:1.5;color:#7A7A80">The agent building Tide Clock wrote this in Dream and sent it to you. To answer it, reply in the Dream app; email replies don&#39;t reach it.</p></td></tr></table></td></tr></table></body></html>

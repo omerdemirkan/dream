@@ -101,6 +101,53 @@ export const workstreamsOf = (status: StatusCard, openAsks: ReadonlyArray<Messag
   )
 })
 
+/** Where a message from the agent goes in Chat: its workstream (`--work`) and thread (`--reply-to`). */
+const placing = (core: Core["Service"]) => {
+  const findMessage = (id: Message["id"]) =>
+    Effect.flatMap(core.message(id), (found) =>
+      Option.match(found, { onNone: () => Effect.fail(notFound("message", id)), onSome: Effect.succeed })
+    )
+
+  /** `--work`: the workstream has to be one of the project's. */
+  const labelFor = (id: WorkstreamId | undefined) =>
+    Effect.gen(function* () {
+      if (id === undefined) return {}
+      const status = yield* core.status
+      if (status.workstreams?.some((w) => w.id === id) !== true) {
+        return yield* new InvalidRequest({
+          message: `This project has no workstream ${id}; \`dream work list\` shows the ones it has.`
+        })
+      }
+      return { workstream: id }
+    })
+
+  /**
+   * `--work` and `--reply-to` together: a reply goes into its thread (the first message of `replyTo`'s), and into
+   * that message's workstream, which a `--work` has to match.
+   */
+  const placeFor = (workstream: WorkstreamId | undefined, replyTo: Message["id"] | undefined) =>
+    Effect.gen(function* () {
+      if (replyTo === undefined) return yield* labelFor(workstream)
+      const target = yield* findMessage(replyTo)
+      const root =
+        target.replyTo === undefined
+          ? target
+          : yield* findMessage(target.replyTo).pipe(Effect.orElseSucceed(() => target))
+      const thread = { replyTo: root.id }
+      if (root.workstream === undefined) return { ...(yield* labelFor(workstream)), ...thread }
+      if (workstream !== undefined && workstream !== root.workstream) {
+        return yield* new InvalidRequest({
+          message:
+            `${root.id} is in workstream ${root.workstream}, and a reply goes in its thread's workstream; ` +
+            "leave out --work, or send it outside the thread."
+        })
+      }
+      return { workstream: root.workstream, ...thread }
+    })
+
+  return { labelFor, placeFor }
+}
+
 export const ProjectHandlers = ProjectRpcs.toLayer(
   Effect.gen(function* () {
     const core = yield* Core
@@ -117,6 +164,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
     const relays = yield* Relays
     const appNotifications = yield* AppNotifications
     const limiter = yield* UsageLimiter
+    const { placeFor } = placing(core)
 
     const findMessage = (id: Message["id"]) =>
       Effect.flatMap(core.message(id), (found) =>
@@ -289,6 +337,25 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
           yield* notifier.withdrawFor(connected)
           yield* notifier.asksChanged
           return connected
+        }),
+
+      CheckEmailPlace: ({ workstream, replyTo }) => Effect.asVoid(placeFor(workstream, replyTo)),
+
+      RecordEmail: ({ markdown, email, workstream, replyTo }) =>
+        Effect.gen(function* () {
+          const current = yield* core.project.pipe(Effect.orDie)
+          const message = TextMessage.make({
+            id: yield* newMessageId(),
+            projectId: current.id,
+            createdAt: email.sentAt,
+            from: "agent",
+            text: markdown,
+            media: [],
+            email,
+            ...(yield* placeFor(workstream, replyTo))
+          })
+          yield* core.addMessage(message)
+          return message
         }),
 
       SetAccessDesktop: ({ messageId, desktop }) =>
@@ -627,42 +694,7 @@ export const AgentHandlers = SandboxRpcs.toLayer(
         return { status, workstream: found }
       })
 
-    /** `--work`: the workstream has to be one of the project's. */
-    const labelFor = (id: WorkstreamId | undefined) =>
-      Effect.gen(function* () {
-        if (id === undefined) return {}
-        const status = yield* core.status
-        if (status.workstreams?.some((w) => w.id === id) !== true) {
-          return yield* new InvalidRequest({
-            message: `This project has no workstream ${id}; \`dream work list\` shows the ones it has.`
-          })
-        }
-        return { workstream: id }
-      })
-
-    /**
-     * `--work` and `--reply-to` together: a reply goes into its thread (the first message of `replyTo`'s), and into
-     * that message's workstream, which a `--work` has to match.
-     */
-    const placeFor = (workstream: WorkstreamId | undefined, replyTo: Message["id"] | undefined) =>
-      Effect.gen(function* () {
-        if (replyTo === undefined) return yield* labelFor(workstream)
-        const target = yield* findMessage(replyTo)
-        const root =
-          target.replyTo === undefined
-            ? target
-            : yield* findMessage(target.replyTo).pipe(Effect.orElseSucceed(() => target))
-        const thread = { replyTo: root.id }
-        if (root.workstream === undefined) return { ...(yield* labelFor(workstream)), ...thread }
-        if (workstream !== undefined && workstream !== root.workstream) {
-          return yield* new InvalidRequest({
-            message:
-              `${root.id} is in workstream ${root.workstream}, and a reply goes in its thread's workstream; ` +
-              "leave out --work, or send it outside the thread."
-          })
-        }
-        return { workstream: root.workstream, ...thread }
-      })
+    const { labelFor, placeFor } = placing(core)
 
     const workstreams = Effect.gen(function* () {
       return workstreamsOf(yield* core.status, yield* core.openAsks)
@@ -781,6 +813,8 @@ export const AgentHandlers = SandboxRpcs.toLayer(
           if (notificationId !== undefined) yield* notifier.notify(message, notificationId, "message")
           return message
         }),
+
+      SendEmail: () => Effect.die("SendEmail is served by the Worker"),
 
       AskQuestion: ({ question, options, why, context, meanwhile, previews, workstream, replyTo }) =>
         Effect.gen(function* () {
