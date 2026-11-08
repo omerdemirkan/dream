@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dream · Settings · three directions</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Inter,-apple-system,system-ui,sans-serif;background:#E8E6E1;color:#17171a;-webkit-font-smoothing:antialiased;padding:40px 48px 72px}
+.k{font-size:12px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#8a877f}
+h1{font-size:42px;letter-spacing:-.04em;font-weight:700;margin-top:8px}
+.lede{max-width:780px;font-size:16px;line-height:1.5;color:#55534d;margin-top:10px}
+.lede + .lede{margin-top:8px}
+.today{display:flex;gap:28px;align-items:flex-start;margin-top:28px}
+.today figure{flex:none}
+.today ul{max-width:560px;font-size:15px;line-height:1.5;color:#55534d;list-style:none;margin-top:4px}
+.today li{padding:8px 0;border-top:1px solid rgba(0,0,0,.08)}
+.today li:first-child{border-top:0}
+.today li b{color:#17171a;font-weight:600}
+.grid{display:grid;grid-template-columns:repeat(3,300px);gap:28px}
+.dirs{margin-top:48px}
+.dir h2{font-size:22px;letter-spacing:-.03em}
+.dir h2 span{color:#8a877f;font-weight:500;margin-right:4px}
+.dir p{font-size:14px;line-height:1.45;color:#3d3b36;margin-top:6px}
+.dir p.gives{color:#7a776f}
+.dir p.gives b{color:#55534d;font-weight:600}
+h3{font-size:20px;letter-spacing:-.025em;margin:44px 0 14px}
+h3 span{color:#8a877f;font-weight:500}
+figure img{width:300px;border-radius:40px;display:block;box-shadow:0 0 0 7px #060607,0 24px 40px -20px rgba(30,24,12,.5)}
+.today figure img{width:260px;border-radius:36px}
+figcaption{font-size:13.5px;color:#55534d;line-height:1.45;margin-top:18px}
+figcaption b{display:block;color:#17171a;font-weight:600;font-size:13px;margin-bottom:2px}
+@media (max-width:1060px){
+  body{padding:28px 18px 56px}
+  h1{font-size:32px}
+  .today{flex-direction:column}
+  .dirs{position:static}
+  .grid{grid-template-columns:repeat(3,78vw);overflow-x:auto;scroll-snap-type:x mandatory;margin:0 -18px;padding:0 18px 10px;gap:22px}
+  .grid > *{scroll-snap-align:start}
+  figure img{width:78vw;max-width:340px;border-radius:12vw}
+  .dirs.grid{grid-template-columns:1fr;overflow:visible;margin:40px 0 0;padding:0}
+}
+</style>
+</head>
+<body>
+<div class="k">Dream · Settings · for the founder to pick</div>
+<h1>Three directions for Settings</h1>
+<p class="lede">Each direction reorganizes Settings and the screens it opens in its own way. All three use your real content, at iPhone width, in Dream’s own look. Values your screenshot doesn’t show are filled in. For example, ChatGPT reads “Connected” today because Dream doesn’t know its week yet, so these mocks give it 92% left.</p>
+<p class="lede">Below, the same screen appears across all three directions, one row per screen. A mix is fine too.</p>
+
+<div class="today">
+  <figure><img src="founder-settings-today.png" alt="Settings today"><figcaption><b>Today</b>Your screenshot.</figcaption></figure>
+  <ul>
+    <li><b>All three directions make these changes.</b></li>
+    <li>The two usage sections are called <b>Subscription usage</b> (what your Claude and ChatGPT plans have left, and each project’s share) and <b>Dream usage</b> (what Dream spends running your projects).</li>
+    <li>Each plan states one number, what’s left. The bar shows the rest, so “36% left” no longer sits next to “64% used”.</li>
+    <li>Claude and ChatGPT each get their own mark instead of the same sparkle.</li>
+    <li>Connected services lose the inline Replace and Disconnect buttons, so each one fits on two short lines. Its actions are a tap away.</li>
+    <li>Every “add” is a dashed tile shaped like what it adds.</li>
+  </ul>
+</div>
+
+<div class="grid dirs">
+  <div class="dir"><h2><span>A</span>One page</h2>
+    <p>Everything stays on Settings. Each plan, Dream usage, each service and each archived project is a card that opens in place, so nothing leads to a screen of its own.</p>
+    <p class="gives"><b>Gives up:</b> the page grows long and shifts as things open, and the 30-day chart and the full breakdown are squeezed into a card.</p></div>
+  <div class="dir"><h2><span>B</span>Index and pages</h2>
+    <p>Settings becomes a short index of one-line rows with the answer on the right. Every row opens a page built the same way: the figure, then the list, then the actions.</p>
+    <p class="gives"><b>Gives up:</b> nothing is drawn on Settings itself. Seeing the week’s bar or what Dream spent always takes a tap.</p></div>
+  <div class="dir"><h2><span>C</span>Usage and connections apart</h2>
+    <p>Settings separates what you use from what you’ve connected. Two tiles open one Usage screen that switches between the two kinds. Plans and services share one list, and each is managed in a sheet.</p>
+    <p class="gives"><b>Gives up:</b> plans appear twice, once as usage in a tile and again in the Connected list, and there’s a new Usage screen to build.</p></div>
+</div>
+
+<h3>Settings <span>· the first screen</span></h3>
+<div class="grid">
+  <figure><img src="A1-settings.png" alt=""><figcaption><b>A1 · One page</b>Every section is a card or a group of cards. Each plan says what’s left, with the reset under its bar. No row carries inline buttons.</figcaption></figure>
+  <figure><img src="B1-settings.png" alt=""><figcaption><b>B1 · Index and pages</b>One line per row, with the answer on the right. All of Settings fits on one screen, bottom included.</figcaption></figure>
+  <figure><img src="C1-settings.png" alt=""><figcaption><b>C1 · Usage and connections apart</b>Two tiles, one for each kind of usage. Below them is one list of everything connected, plans included, each with a line on who uses it.</figcaption></figure>
+</div>
+
+<h3>Subscription usage <span>· a plan, project by project</span></h3>
+<div class="grid">
+  <figure><img src="A2-subscription.png" alt=""><figcaption><b>A2 · One page</b>Tapping Claude opens it in place: what the two shades mean, each project’s share, then Reconnect and Remove. The “…” menu goes away.</figcaption></figure>
+  <figure><img src="B2-subscription.png" alt=""><figcaption><b>B2 · Index and pages</b>Claude’s page shows what’s left in large type, then the week’s bar and each project’s share, with Reconnect and Remove at the foot.</figcaption></figure>
+  <figure><img src="C2-subscription.png" alt=""><figcaption><b>C2 · Usage and connections apart</b>Both plans on one Usage screen, one after the other, with the switch to Dream usage on top. Reconnect and Remove are in the plan’s sheet under Connected.</figcaption></figure>
+</div>
+
+<h3>Dream usage <span>· what Dream spends</span></h3>
+<div class="grid">
+  <figure><img src="A3-dream-usage.png" alt=""><figcaption><b>A3 · One page</b>The card opens to the last 30 days, what Dream paid for, and each project. The operator’s Everyone view would still need its own page.</figcaption></figure>
+  <figure><img src="B3-dream-usage.png" alt=""><figcaption><b>B3 · Index and pages</b>Today’s detail page, renamed and respaced. “Everyone on this Dream” stays at its foot for the operator.</figcaption></figure>
+  <figure><img src="C3-dream-usage.png" alt=""><figcaption><b>C3 · Usage and connections apart</b>The same Usage screen, switched to Dream usage. Projects come first, since the usual question is which one costs what. Everyone sits at the foot for the operator.</figcaption></figure>
+</div>
+
+<h3>Managing a connected service <span>· AnkiWeb’s key file</span></h3>
+<div class="grid">
+  <figure><img src="A4-service.png" alt=""><figcaption><b>A4 · One page</b>AnkiWeb opens in place, with a sentence on where the key lives and its two actions. Replace swaps the buttons for the paste field right there.</figcaption></figure>
+  <figure><img src="B4-service.png" alt=""><figcaption><b>B4 · Index and pages</b>AnkiWeb’s page says where the key lives and links to the project that has it. Replace and Remove come last, with a note on what Remove does.</figcaption></figure>
+  <figure><img src="C4-service.png" alt=""><figcaption><b>C4 · Usage and connections apart</b>A sheet over Settings. A plan opens the same kind of sheet, with what’s left of its week, Reconnect and Remove.</figcaption></figure>
+</div>
+
+<h3>The bottom of Settings <span>· archived projects, account, updates</span></h3>
+<div class="grid">
+  <figure><img src="A5-bottom.png" alt=""><figcaption><b>A5 · One page</b>An archived project opens in place to Restore and Delete. Then come the account, an update when one is ready, and the version.</figcaption></figure>
+  <figure><img src="B5-archived.png" alt=""><figcaption><b>B5 · Index and pages</b>B1 already reaches the bottom, so this is the page that Archived projects opens. Restore is on each row, and a swipe deletes.</figcaption></figure>
+  <figure><img src="C5-bottom.png" alt=""><figcaption><b>C5 · Usage and connections apart</b>The account is one group: your name, Archived projects (a sheet) and Sign out. The update and the version come last.</figcaption></figure>
+</div>
+
+<h3>Other states <span>· a plan near its limit, one plan, no Dream spend yet</span></h3>
+<div class="grid">
+  <figure><img src="A6-states.png" alt=""><figcaption><b>A6 · One page</b>Near its limit, Claude turns amber and says what happens next. With one plan, Add ChatGPT is a dashed card in the plan’s shape. Before any spend, Dream usage explains itself in a sentence.</figcaption></figure>
+  <figure><img src="B6-states.png" alt=""><figcaption><b>B6 · Index and pages</b>The same states as one-line rows. The amber note sits under the group, and Add ChatGPT is a dashed row.</figcaption></figure>
+  <figure><img src="C6-states.png" alt=""><figcaption><b>C6 · Usage and connections apart</b>The subscription tile turns amber, with a ring. The Dream usage tile says nothing has been spent yet. Add ChatGPT is a dashed row under Connected.</figcaption></figure>
+</div>
+</body>
+</html>

@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dream · Settings · three directions · screens</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* Tokens from apps/mobile/src/ui/theme.ts (Deck v3). One phone per screen, 393 × 852 pt (rendered at 3×). */
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Inter,-apple-system,system-ui,sans-serif;background:#000;-webkit-font-smoothing:antialiased;display:flex;flex-wrap:wrap;gap:24px;padding:24px}
+.scr{--bg:#0A0A0C;--s1:#141417;--s2:#1D1D21;--s3:#28282D;--line:rgba(255,255,255,.08);--line2:rgba(255,255,255,.15);
+  --t1:#F5F5F7;--t2:rgba(245,245,247,.64);--t3:rgba(245,245,247,.40);
+  --need:#FFB35C;--need-ink:#1B1204;--need-bg:rgba(255,179,92,.12);--need-line:rgba(255,179,92,.34);
+  position:relative;width:393px;height:852px;overflow:hidden;background:var(--bg);color:var(--t1);font-size:16px;line-height:1.35;flex:none;isolation:isolate}
+.sb{position:absolute;top:0;left:0;right:0;height:54px;display:flex;justify-content:space-between;align-items:center;padding:14px 32px 0 50px;z-index:20}
+.sb::before{content:"";position:absolute;left:0;right:0;top:0;height:72px;background:linear-gradient(var(--bg) 62%,rgba(10,10,12,0));z-index:-1}
+.clock{font-weight:600;font-size:16.5px;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+.sbi{display:flex;gap:6px;align-items:center}
+.island{position:absolute;top:11px;left:50%;transform:translateX(-50%);width:124px;height:36px;border-radius:20px;background:#000;z-index:21}
+.hi{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:rgba(255,255,255,.88);z-index:25}
+.scroll{position:absolute;inset:0;overflow:hidden;padding:58px 20px 44px}
+.scroll.cont{padding-top:74px}
+
+/* icons */
+.i{display:inline-grid;place-items:center;width:var(--s,20px);height:var(--s,20px);flex:none}
+.i svg{width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+
+/* nav */
+.nav{display:flex;align-items:center;justify-content:space-between;height:44px;margin:0 -2px}
+.ib{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:var(--s1);border:1px solid var(--line);color:var(--t1)}
+.nav-t{font-size:15px;font-weight:600;color:var(--t2)}
+.nav .sp{width:40px}
+
+/* type */
+.lab{font-size:11px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--t3);margin:26px 4px 9px}
+.lab:first-child{margin-top:16px}
+.nav + .lab{margin-top:20px}
+.h{font-size:13px;font-weight:600;color:var(--t3);margin:22px 0 6px}
+.foot{font-size:12.5px;line-height:1.45;color:var(--t3);margin-top:12px}
+.t2{color:var(--t2)}.t3{color:var(--t3)}.need{color:var(--need)}
+.num{font-variant-numeric:tabular-nums}
+
+/* tiles (project and service icons) */
+.tile{width:30px;height:30px;border-radius:9px;background:var(--s2);border:1px solid var(--line);display:grid;place-items:center;color:var(--t2);flex:none}
+.tile.lg{width:48px;height:48px;border-radius:14px}
+.tile.dash{border:1px dashed var(--line2);background:transparent}
+.tile.claude{color:#E08A6B}
+.tile.gpt{color:#E9E9EC}
+
+/* cards and grouped lists */
+.card{background:var(--s1);border:1px solid var(--line);border-radius:22px;padding:14px 16px}
+.card + .card{margin-top:10px}
+.card.near{border-color:var(--need-line);background:radial-gradient(130% 55% at 50% 0%,rgba(255,179,92,.10),transparent 62%),var(--s1)}
+.addcard{border:1.5px dashed var(--line2);border-radius:22px;padding:14px 16px;display:flex;align-items:center;gap:12px;margin-top:10px}
+.group{background:var(--s1);border:1px solid var(--line);border-radius:20px;overflow:hidden}
+.gr{display:flex;align-items:center;gap:12px;padding:0 14px 0 14px;min-height:52px;position:relative}
+.gr + .gr::before{content:"";position:absolute;top:0;right:0;left:56px;height:1px;background:var(--line)}
+.gr.noic + .gr::before,.gr.noic::before{left:16px}
+.gr.tall{min-height:62px}
+.gr .tt{flex:1;min-width:0;padding:10px 0}
+.gr .t{font-size:16px;font-weight:500;letter-spacing:-.01em}
+.gr .s{font-size:13.5px;color:var(--t2);margin-top:1px;line-height:1.35}
+.gr .v{font-size:15px;color:var(--t2);display:flex;align-items:center;gap:8px;white-space:nowrap}
+.gr .v .i{color:var(--t3)}
+.gr.act .t{color:var(--t1);font-weight:500}
+.gfoot{font-size:12.5px;line-height:1.45;color:var(--t3);margin:8px 16px 0}
+
+.row{display:flex;align-items:center;gap:12px}
+.ttl{font-size:16px;font-weight:600;letter-spacing:-.01em}
+.sub{font-size:13.5px;color:var(--t2);line-height:1.38;margin-top:2px}
+.right{margin-left:auto;display:flex;align-items:center;gap:8px;white-space:nowrap}
+.hair{height:1px;background:var(--line);margin:14px 0}
+
+/* bars */
+.bar{display:flex;gap:2px;height:6px;border-radius:3px;background:rgba(255,255,255,.08);overflow:hidden}
+.bar i{display:block;height:100%;border-radius:3px}
+.bar .f{background:var(--t1)}
+.bar .o{background:rgba(255,255,255,.32)}
+.bar.near .f{background:var(--need)}
+.bar.thick{height:8px;border-radius:4px}
+.legend{display:flex;gap:16px;font-size:12.5px;color:var(--t3);margin-top:9px}
+.legend span{display:flex;align-items:center;gap:6px}
+.legend b{width:7px;height:7px;border-radius:2px;display:inline-block}
+
+/* share rows */
+.share{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.share:last-of-type{border-bottom:0}
+.share .tt{flex:1;min-width:0;display:flex;flex-direction:column;gap:7px}
+.share .nm{font-size:15px;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.share .mb{height:5px;border-radius:3px;background:rgba(255,255,255,.07);overflow:hidden}
+.share .mb i{display:block;height:100%;border-radius:3px;background:rgba(255,255,255,.32)}
+.share .amt{min-width:52px;text-align:right;font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+.share.sm{padding:8px 0}
+.share.sm .tile{width:26px;height:26px;border-radius:8px}
+
+/* cost rows */
+.cost{display:flex;align-items:baseline;gap:8px;padding:6px 0}
+.cost .nm{font-size:15px;letter-spacing:-.01em}
+.cost .d{font-size:13.5px;color:var(--t3)}
+.cost .amt{margin-left:auto;font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+.cost.m{padding:3px 0 3px 14px}
+.cost.m .nm{font-size:13.5px;color:var(--t2)}
+.cost.m .d{font-size:12.5px}
+.cost.m .amt{font-size:13.5px;font-weight:400;color:var(--t2)}
+
+/* the 30 days */
+.days{display:flex;align-items:flex-end;gap:1.5px}
+.days i{flex:1;border-radius:2px 2px 0 0;background:rgba(255,255,255,.32)}
+.days i.z{background:rgba(255,255,255,.09)}
+.days i.today{background:var(--t1)}
+.days.big{gap:3px}
+.axis{display:flex;justify-content:space-between;font-size:12px;color:var(--t3);margin-top:6px}
+
+.big{font-weight:700;letter-spacing:-.04em;font-variant-numeric:tabular-nums;line-height:1.1}
+
+/* buttons */
+.btn{height:46px;border-radius:23px;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:15.5px;letter-spacing:-.01em;background:var(--s2);border:1px solid var(--line);color:var(--t1);flex:1}
+.btn.w{background:var(--t1);color:#000;border-color:var(--t1)}
+.btn.sm{height:34px;border-radius:17px;font-size:14px;padding:0 14px;flex:none}
+.btns{display:flex;gap:10px}
+.field{height:48px;border-radius:14px;background:var(--s2);border:1px solid var(--line2);display:flex;align-items:center;padding:0 14px;gap:10px;font-size:16px;color:var(--t1);letter-spacing:.12em}
+
+/* ring */
+.ring{flex:none;display:block}
+
+/* segmented */
+.seg{display:flex;background:var(--s1);border:1px solid var(--line);border-radius:12px;padding:3px;margin-top:12px}
+.seg span{flex:1;text-align:center;font-size:14px;font-weight:600;color:var(--t2);padding:7px 0;border-radius:9px}
+.seg span.on{background:var(--s3);color:var(--t1)}
+
+/* C tiles */
+.duo{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}
+.duo .card{margin:0;padding:14px 14px 14px;border-radius:22px;min-height:164px;display:flex;flex-direction:column}
+.duo .card + .card{margin:0}
+.duo .k{font-size:13px;font-weight:600;color:var(--t2);display:flex;align-items:center;justify-content:space-between}
+.duo .k .i{color:var(--t3)}
+.pl{margin-top:auto}
+.pl + .pl{margin-top:12px}
+.pl .row{font-size:14px;justify-content:space-between;margin-bottom:7px}
+.pl .row b{font-weight:500}
+.pl .row span{color:var(--t2);font-variant-numeric:tabular-nums}
+
+/* sheet */
+.dim{position:absolute;inset:0;background:rgba(0,0,0,.6);z-index:30}
+.sheet{position:absolute;left:8px;right:8px;bottom:8px;background:#1B1B1F;border:1px solid var(--line2);border-radius:32px;padding:10px 20px 30px;z-index:31}
+.grab{width:36px;height:5px;border-radius:3px;background:rgba(255,255,255,.22);margin:0 auto 18px}
+
+.update{display:flex;align-items:center;gap:12px}
+.ver{font-size:12px;line-height:1.5;color:var(--t3);text-align:center;margin-top:24px}
+.callout{font-size:13.5px;line-height:1.42;color:var(--t2);margin-top:12px}
+.callout b{color:var(--need);font-weight:600}
+.empty{font-size:15px;line-height:1.42}
+.para{font-size:15px;line-height:1.45;color:var(--t2)}
+.avatar{width:44px;height:44px;border-radius:50%;background:linear-gradient(160deg,#3a3a42,#232328);display:grid;place-items:center;font-weight:600;font-size:17px;color:var(--t1);flex:none;border:1px solid var(--line)}
+.d-B .lab{margin-top:22px}
+.d-B .nav + .lab{margin-top:18px}
+.label{position:absolute;top:-22px;left:0;font:600 12px Inter;color:#888}
+</style>
+</head>
+<body>
+<script>
+// ───────────────────────── icons ─────────────────────────
+const IC = {
+  back:'<path d="M15 5l-7 7 7 7"/>',
+  chev:'<path d="M9 5l7 7-7 7"/>',
+  down:'<path d="M6 9l6 6 6-6"/>',
+  up:'<path d="M6 15l6-6 6 6"/>',
+  key:'<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3"/>',
+  file:'<path d="M7 3.5h7l4 4V20a.5.5 0 01-.5.5h-10.5A.5.5 0 016.5 20V4a.5.5 0 01.5-.5z"/><path d="M14 3.5V8h4"/><circle cx="11" cy="14" r="2"/><path d="M12.4 15.4l2.6 2.6"/>',
+  app:'<rect x="4" y="4" width="16" height="16" rx="4.5"/><path d="M9 16l3-8 3 8M10 13.5h4"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>',
+  claude:'<path d="M12 3.5v17M3.5 12h17M6 6l12 12M18 6L6 18" stroke-width="2.1"/>',
+  gpt:'<path d="M12 3.2l7.6 4.4v8.8L12 20.8l-7.6-4.4V7.6z"/><path d="M12 8.2l3.3 1.9v3.8L12 15.8l-3.3-1.9v-3.8z"/>',
+  chat:'<path d="M5 6h14a1 1 0 011 1v8a1 1 0 01-1 1h-7l-4 3.5V16H5a1 1 0 01-1-1V7a1 1 0 011-1z"/>',
+  dumbbell:'<path d="M6.5 7.5v9M17.5 7.5v9M3.5 10v4M20.5 10v4M6.5 12h11"/>',
+  sun:'<path d="M5 17a7 7 0 0114 0M2.5 17h19M12 4.5v2.5M5.4 8.4l1.7 1.7M18.6 8.4l-1.7 1.7"/>',
+  cabin:'<path d="M3.5 11.5L12 4l8.5 7.5M6 10v9.5h12V10M10 19.5v-5h4v5"/>',
+  pot:'<path d="M5 10h14v6a3 3 0 01-3 3H8a3 3 0 01-3-3zM3 10h18M9 6.5c0-1 1-1 1-2.5M14 6.5c0-1 1-1 1-2.5"/>',
+  train:'<rect x="6" y="3.5" width="12" height="13" rx="3"/><path d="M6 11h12M9 20l-1.5 1.5M15 20l1.5 1.5M9.5 14h.01M14.5 14h.01"/>',
+  globe:'<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.5 2.6 2.5 14.4 0 17M12 3.5c-2.5 2.6-2.5 14.4 0 17"/>',
+  coins:'<ellipse cx="12" cy="7" rx="7" ry="3"/><path d="M5 7v5c0 1.7 3.1 3 7 3s7-1.3 7-3V7M5 12v5c0 1.7 3.1 3 7 3s7-1.3 7-3v-5"/>'
+};
+const ico = (n, s = 20, extra = "") => `<i class="i" style="--s:${s}px;${extra}"><svg viewBox="0 0 24 24">${IC[n]}</svg></i>`;
+const STATUS = `<div class="island"></div><div class="sb"><span class="clock">12:21</span><span class="sbi">
+ <svg width="18" height="12" viewBox="0 0 18 12" fill="#fff"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1" fill-opacity=".35"/></svg>
+ <svg width="17" height="12" viewBox="0 0 17 12" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round"><path d="M1 4.2a11 11 0 0115 0M3.5 7a7.2 7.2 0 0110 0"/><circle cx="8.5" cy="10" r="1.3" fill="#fff" stroke="none"/></svg>
+ <svg width="27" height="13" viewBox="0 0 27 13" fill="none"><rect x=".5" y=".5" width="23" height="12" rx="3.5" stroke="#fff" stroke-opacity=".4"/><rect x="2" y="2" width="12" height="9" rx="2" fill="#fff"/><path d="M25 4.5v4c.8-.3 1.5-1.1 1.5-2s-.7-1.7-1.5-2z" fill="#fff" fill-opacity=".45"/></svg></span></div>`;
+
+// ───────────────────────── the person's world ─────────────────────────
+const P = {
+  arabic: { n: "Arabic conversation partner", i: "chat" },
+  lift: { n: "Lift Log", i: "dumbbell" },
+  brief: { n: "Morning Brief", i: "sun" },
+  cabin: { n: "Cabin", i: "cabin" }
+};
+// Claude's week: 64% used; 51 of it Dream's projects, 13 outside Dream.
+const claudeShares = [[P.arabic, 29], [P.lift, 17], [P.brief, 5]];
+const gptShares = [[P.cabin, 6]];
+const costs = [
+  ["Machine time", "61 hours", "$27.40"],
+  ["OpenAI", "1,480 requests", "$11.62", [["gpt-realtime-2.1-mini", "212 requests", "$8.10"], ["gpt-6.1-terra", "940 requests", "$2.91"], ["gpt-4o-mini-tts", "328 requests", "$0.61"]]],
+  ["Macs", "52 minutes", "$3.80"],
+  ["Cloud browsers", "1.4 hours", "$1.71"],
+  ["Storage", "", "$0.18"],
+  ["Email", "9 emails", "$0.10"]
+];
+const byProject = [[P.arabic, 23.06], [P.lift, 12.94], [P.brief, 4.36], [P.cabin, 3.85], [{ n: "Outside your projects", i: "globe", dash: true }, 0.6]];
+// The last 30 days, Oct 10 to today (Nov 8): nothing until they started on Nov 4.
+const days = [...Array(25).fill(0), 0.9, 2.6, 4.1, 2.4, 34.81];
+
+const tile = (p, cls = "") => `<span class="tile ${p.dash ? "dash" : ""} ${cls}">${ico(p.i, cls.includes("lg") ? 24 : 17)}</span>`;
+const planTile = (which, cls = "") => `<span class="tile ${which === "claude" ? "claude" : "gpt"} ${cls}">${ico(which, cls.includes("lg") ? 24 : 17)}</span>`;
+const bar = (f, o, cls = "") => `<div class="bar ${cls}"><i class="f" style="width:${f}%"></i>${o ? `<i class="o" style="width:${o}%"></i>` : ""}</div>`;
+const ring = (f, o, size = 22, near = false) => {
+  const r = (size - 4) / 2, c = 2 * Math.PI * r, w = 3;
+  const seg = (from, len, col) => len <= 0 ? "" : `<circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="${col}" stroke-width="${w}" stroke-dasharray="${(len / 100) * c} ${c}" stroke-dashoffset="${-(from / 100) * c}" stroke-linecap="butt" transform="rotate(-90 ${size / 2} ${size / 2})"/>`;
+  return `<svg class="ring" width="${size}" height="${size}"><circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="rgba(255,255,255,.1)" stroke-width="${w}"/>${seg(0, f, near ? "#FFB35C" : "#F5F5F7")}${seg(f + 1.5, o, "rgba(255,255,255,.38)")}</svg>`;
+};
+const dayBars = (h, cls = "", w) => {
+  const most = Math.max(...days);
+  return `<div class="days ${cls}" style="height:${h}px;${w ? `width:${w}px` : ""}">${days.map((d, i) => `<i class="${d === 0 ? "z" : i === days.length - 1 ? "today" : ""}" style="height:${d === 0 ? 2 : Math.max(3, (d / most) * h)}px"></i>`).join("")}</div>`;
+};
+const shareRows = (rows, outside, sm = false) => {
+  const largest = Math.max(...rows.map((r) => r[1]), outside ?? 0);
+  const one = (p, v) => `<div class="share ${sm ? "sm" : ""}">${tile(p)}<div class="tt"><span class="nm">${p.n}</span><div class="mb"><i style="width:${(v / largest) * 100}%"></i></div></div><span class="amt">${v}%</span></div>`;
+  return rows.map(([p, v]) => one(p, v)).join("") + (outside !== undefined ? one({ n: "Outside Dream", i: "globe", dash: true }, outside) : "");
+};
+const projectCosts = (sm = false) => {
+  const largest = byProject[0][1];
+  return byProject.map(([p, v]) => `<div class="share ${sm ? "sm" : ""}">${tile(p)}<div class="tt"><span class="nm">${p.n}</span><div class="mb"><i style="width:${(v / largest) * 100}%"></i></div></div><span class="amt">$${v.toFixed(2)}</span></div>`).join("");
+};
+const costRows = (models = true) => costs.map(([n, d, a, ms]) => `<div class="cost"><span class="nm">${n}</span>${d ? `<span class="d">${d}</span>` : ""}<span class="amt">${a}</span></div>${models && ms ? ms.map(([mn, md, ma]) => `<div class="cost m"><span class="nm">${mn}</span><span class="d">${md}</span><span class="amt">${ma}</span></div>`).join("") : ""}`).join("");
+const nav = (title) => `<div class="nav"><span class="ib">${ico("back", 20)}</span><span class="nav-t">${title}</span><span class="sp"></span></div>`;
+const ver = `<div class="ver">Dream 0.1.0 · dream.omer.build<br>Update 7c2e91a4 · Nov 8, 11:04 AM</div>`;
+const legend = (f, o) => `<div class="legend"><span><b style="background:#F5F5F7"></b>Your projects ${f}%</span><span><b style="background:rgba(255,255,255,.38)"></b>Outside Dream ${o}%</span></div>`;
+
+// ───────────────────────── A · One page ─────────────────────────
+const A = {};
+const aPlan = (which, name, left, f, o, resets, open = "") => `<div class="card">
+  <div class="row">${planTile(which)}<span class="ttl">${name}</span><span class="right"><span class="num" style="font-size:15px;font-weight:600">${left}% left</span>${ico(open ? "up" : "down", 16, "color:var(--t3)")}</span></div>
+  <div style="margin-top:14px">${bar(f, o)}</div>
+  <div class="row" style="margin-top:9px;font-size:13px;color:var(--t3)">Resets ${resets}</div>${open}</div>`;
+const aDream = (open = "") => `<div class="card">
+  <div class="row" style="align-items:flex-end;gap:16px"><div style="flex:1"><div class="big" style="font-size:28px">$44.81</div><div class="sub" style="margin-top:4px">so far in November</div></div>
+  ${open ? `<span style="align-self:flex-start">${ico("up", 16, "color:var(--t3)")}</span>` : `${dayBars(36, "", 108)}<span style="align-self:flex-start;margin-left:-6px">${ico("down", 16, "color:var(--t3)")}</span>`}</div>${open}</div>`;
+const aService = (icon, name, sub, open = "") => `<div class="gr tall"><span class="tile">${ico(icon, 17)}</span><div class="tt"><div class="t">${name}</div><div class="s">${sub}</div></div>${ico(open ? "up" : "down", 16, "color:var(--t3)")}</div>${open}`;
+const aServices = (openAnki) => `<div class="group">
+  ${aService("key", "OpenAI", "Every project can use it")}
+  ${aService("file", "AnkiWeb", "Only Arabic conversation partner", openAnki ? `<div style="padding:0 16px 16px 56px;margin-top:-4px"><p class="para" style="font-size:14px">The key file lives on that project’s computer, so no other project can reach it.</p><div class="btns" style="margin-top:14px"><span class="btn sm">Replace key file</span><span class="btn sm">Remove</span></div></div>` : "")}
+  ${aService("app", "Apple Developer", "Every project can use it")}</div>`;
+
+A[1] = `${nav("Settings")}
+  <div class="lab">Subscription usage</div>
+  ${aPlan("claude", "Claude", 36, 51, 13, "Wed 6:00 AM")}
+  ${aPlan("gpt", "ChatGPT", 92, 6, 2, "Sat 9:00 AM")}
+  <div class="lab">Dream usage</div>
+  ${aDream()}
+  <div class="lab">Connected services</div>
+  ${aServices(false)}
+  <div class="lab">Archived</div>
+  <div class="group">
+    <div class="gr noic"><div class="tt"><div class="t">Recipe Scaler</div></div><span class="v">Nov 2 ${ico("down", 16)}</span></div>
+    <div class="gr noic"><div class="tt"><div class="t">Train Times</div></div><span class="v">Oct 28 ${ico("down", 16)}</span></div>
+  </div>`;
+
+A[2] = `${nav("Settings")}
+  <div class="lab">Subscription usage</div>
+  ${aPlan("claude", "Claude", 36, 51, 13, "Wed 6:00 AM", `
+    ${legend(51, 13).replace('class="legend"', 'class="legend" style="margin-top:12px"')}
+    <div class="hair"></div>
+    <div style="font-size:13px;font-weight:600;color:var(--t3);margin-bottom:2px">This week, by project</div>
+    ${shareRows(claudeShares, 13, true)}
+    <div class="foot" style="margin-top:6px">Shares are estimates.</div>
+    <div class="btns" style="margin-top:14px"><span class="btn sm" style="flex:1">Reconnect</span><span class="btn sm" style="flex:1">Remove</span></div>`).replace("Resets Wed 6:00 AM", "Resets Wed 6:00 AM")}
+  ${aPlan("gpt", "ChatGPT", 92, 6, 2, "Sat 9:00 AM")}
+  <div class="lab">Dream usage</div>
+  ${aDream()}`;
+
+A[3] = `<div class="lab" style="margin-top:6px">Dream usage</div>
+  ${aDream(`
+    <div style="margin-top:18px">${dayBars(64, "big")}</div>
+    <div class="axis"><span>Oct 10</span><span>Today</span></div>
+    <div class="hair"></div>
+    <div style="font-size:13px;font-weight:600;color:var(--t3);margin-bottom:4px">What it paid for</div>
+    ${costRows(true)}
+    <div class="hair"></div>
+    <div style="font-size:13px;font-weight:600;color:var(--t3);margin-bottom:2px">By project</div>
+    ${projectCosts(true)}
+    <div class="foot">Estimates. None of this comes out of your subscriptions.</div>`)}`;
+
+A[4] = `<div class="lab" style="margin-top:6px">Dream usage</div>
+  ${aDream()}
+  <div class="lab">Connected services</div>
+  ${aServices(true)}
+  <div class="lab">Archived</div>
+  <div class="group">
+    <div class="gr noic"><div class="tt"><div class="t">Recipe Scaler</div></div><span class="v">Nov 2 ${ico("down", 16)}</span></div>
+    <div class="gr noic"><div class="tt"><div class="t">Train Times</div></div><span class="v">Oct 28 ${ico("down", 16)}</span></div>
+  </div>
+  <div class="lab">Account</div>
+  <div class="group">
+    <div class="gr tall noic"><div class="tt"><div class="t">Omer</div><div class="s">Signed in with Apple</div></div></div>
+    <div class="gr noic"><div class="tt"><div class="t">Sign out</div></div></div>
+  </div>`;
+
+A[5] = `<div class="lab" style="margin-top:6px">Connected services</div>
+  ${aServices(false)}
+  <div class="lab">Archived</div>
+  <div class="group">
+    <div class="gr tall noic"><div class="tt"><div class="t">Recipe Scaler</div><div class="s">Archived Nov 2</div><div class="btns" style="margin-top:12px"><span class="btn sm" style="flex:1">Restore</span><span class="btn sm" style="flex:1">Delete</span></div></div>${ico("up", 16, "color:var(--t3);align-self:flex-start;margin-top:14px")}</div>
+    <div class="gr noic"><div class="tt"><div class="t">Train Times</div></div><span class="v">Oct 28 ${ico("down", 16)}</span></div>
+  </div>
+  <div class="lab">Account</div>
+  <div class="group">
+    <div class="gr tall noic"><div class="tt"><div class="t">Omer</div><div class="s">Signed in with Apple</div></div></div>
+    <div class="gr noic"><div class="tt"><div class="t">Sign out</div></div></div>
+  </div>
+  <div class="card update" style="margin-top:12px"><div style="flex:1"><div class="ttl" style="font-size:15px">An update is ready</div><div class="sub">It takes a second to restart.</div></div><span class="btn sm w">Restart</span></div>
+  ${ver}`;
+
+A[6] = `${nav("Settings")}
+  <div class="lab">Subscription usage</div>
+  <div class="card near">
+    <div class="row">${planTile("claude")}<span class="ttl">Claude</span><span class="right"><span class="num need" style="font-size:15px;font-weight:600">9% left</span>${ico("down", 16, "color:var(--t3)")}</span></div>
+    <div style="margin-top:14px">${bar(78, 13, "near")}</div>
+    <p class="callout">It resets Wed 6:00 AM. If it runs out before then, your projects pause and pick up on their own.</p>
+  </div>
+  <div class="addcard"><span class="tile dash">${ico("plus", 17)}</span><div><div class="ttl">Add ChatGPT</div><div class="sub">Plus or Pro</div></div></div>
+  <div class="lab">Dream usage</div>
+  <div class="card"><div class="empty">Nothing yet this month.</div><div class="sub" style="margin-top:4px">What Dream spends running your projects shows up here.</div></div>
+  <div class="lab">Connected services</div>
+  ${aServices(false)}`;
+
+// ───────────────────────── B · Index and pages ─────────────────────────
+const B = {};
+const bPlanRow = (which, name, left, f, o, near = false) => `<div class="gr">${planTile(which)}<div class="tt"><div class="t">${name}</div></div><span class="v"><span class="num ${near ? "need" : ""}">${left}% left</span>${ring(f, o, 20, near)}${ico("chev", 13)}</span></div>`;
+const bServices = `<div class="group">
+    <div class="gr"><span class="tile">${ico("key", 17)}</span><div class="tt"><div class="t">OpenAI</div></div><span class="v">All projects ${ico("chev", 13)}</span></div>
+    <div class="gr"><span class="tile">${ico("file", 17)}</span><div class="tt"><div class="t">AnkiWeb</div></div><span class="v">One project ${ico("chev", 13)}</span></div>
+    <div class="gr"><span class="tile">${ico("app", 17)}</span><div class="tt"><div class="t">Apple Developer</div></div><span class="v">All projects ${ico("chev", 13)}</span></div>
+  </div>`;
+const bTail = `<div class="group" style="margin-top:20px">
+    <div class="gr noic"><div class="tt"><div class="t">Archived projects</div></div><span class="v">2 ${ico("chev", 13)}</span></div>
+    <div class="gr noic"><div class="tt"><div class="t">Omer</div><div class="s">Signed in with Apple</div></div><span class="v">${ico("chev", 13)}</span></div>
+  </div>
+  <div class="group" style="margin-top:12px">
+    <div class="gr noic"><div class="tt"><div class="t">Restart to update Dream</div></div><span class="v"><span style="width:7px;height:7px;border-radius:50%;background:var(--t1)"></span></span></div>
+  </div>
+  ${ver.replace("margin-top:24px", "margin-top:14px")}`;
+
+B[1] = `${nav("Settings")}
+  <div class="lab">Subscription usage</div>
+  <div class="group">${bPlanRow("claude", "Claude", 36, 51, 13)}${bPlanRow("gpt", "ChatGPT", 92, 6, 2)}</div>
+  <div class="lab">Dream usage</div>
+  <div class="group"><div class="gr"><span class="tile">${ico("coins", 17)}</span><div class="tt"><div class="t">November so far</div></div><span class="v"><span class="num" style="color:var(--t1);font-weight:600">$44.81</span>${ico("chev", 13)}</span></div></div>
+  <div class="lab">Connected services</div>
+  ${bServices}
+  ${bTail}`;
+
+B[2] = `${nav("Claude")}
+  <div style="margin-top:18px;display:flex;align-items:baseline;gap:8px"><span class="big" style="font-size:44px">36%</span><span style="font-size:16px;color:var(--t2)">of this week left</span></div>
+  <div style="font-size:14px;color:var(--t3);margin-top:4px">Resets Wed 6:00 AM</div>
+  <div style="margin-top:18px">${bar(51, 13, "thick")}</div>
+  ${legend(51, 13)}
+  <div class="h" style="margin-top:28px">By project</div>
+  ${shareRows(claudeShares, 13)}
+  <div class="foot">Shares are estimates.</div>
+  <div class="group" style="margin-top:30px">
+    <div class="gr noic"><div class="tt"><div class="t">Reconnect</div><div class="s">Sign in again, or with another account</div></div></div>
+    <div class="gr noic"><div class="tt"><div class="t">Remove Claude</div></div></div>
+  </div>`;
+
+B[3] = `${nav("Dream usage")}
+  <div style="margin-top:18px" class="big"><span style="font-size:40px">$44.81</span></div>
+  <div style="font-size:15px;color:var(--t2);margin-top:4px">so far in November</div>
+  <div style="margin-top:22px">${dayBars(72, "big")}</div>
+  <div class="axis"><span>Oct 10</span><span>Today</span></div>
+  <div class="h" style="margin-top:26px">What it paid for</div>
+  ${costRows(true)}
+  <div class="h" style="margin-top:26px">By project</div>
+  ${projectCosts()}`;
+
+B[4] = `${nav("AnkiWeb")}
+  <div style="display:flex;align-items:center;gap:14px;margin-top:20px"><span class="tile lg">${ico("file", 24)}</span><div><div style="font-size:22px;font-weight:650;letter-spacing:-.03em">AnkiWeb</div><div class="sub">Key file, added Nov 6</div></div></div>
+  <p class="para" style="margin-top:18px">It lives on one project’s computer, so no other project can reach it.</p>
+  <div class="group" style="margin-top:18px">
+    <div class="gr">${tile(P.arabic)}<div class="tt"><div class="t">Arabic conversation partner</div></div><span class="v">${ico("chev", 13)}</span></div>
+  </div>
+  <div class="group" style="margin-top:22px">
+    <div class="gr noic"><div class="tt"><div class="t">Replace key file</div></div></div>
+    <div class="gr noic"><div class="tt"><div class="t">Remove</div></div></div>
+  </div>
+  <p class="gfoot">Removing deletes the file from that computer. The project asks again if it needs it.</p>`;
+
+B[5] = `${nav("Archived")}
+  <p class="para" style="margin-top:14px">Archived projects keep everything and come back exactly as they were.</p>
+  <div class="group" style="margin-top:18px">
+    <div class="gr tall">${tile({ i: "pot" })}<div class="tt"><div class="t">Recipe Scaler</div><div class="s">Archived Nov 2</div></div><span class="btn sm">Restore</span></div>
+    <div class="gr tall">${tile({ i: "train" })}<div class="tt"><div class="t">Train Times</div><div class="s">Archived Oct 28</div></div><span class="btn sm">Restore</span></div>
+  </div>
+  <p class="gfoot">Swipe one left to delete it for good.</p>`;
+
+B[6] = `${nav("Settings")}
+  <div class="lab">Subscription usage</div>
+  <div class="group" style="border-color:var(--need-line)">${bPlanRow("claude", "Claude", 9, 78, 13, true)}</div>
+  <p class="gfoot" style="color:var(--t2)">It resets Wed 6:00 AM. If it runs out first, your projects pause and pick up on their own.</p>
+  <div class="addcard" style="border-radius:20px;padding:0 14px;min-height:52px"><span class="tile dash">${ico("plus", 17)}</span><div class="t" style="font-size:16px;font-weight:500">Add ChatGPT</div><span class="right t3" style="font-size:15px">Plus or Pro</span></div>
+  <div class="lab">Dream usage</div>
+  <div class="group"><div class="gr"><span class="tile">${ico("coins", 17)}</span><div class="tt"><div class="t">November so far</div></div><span class="v t3">Nothing yet</span></div></div>
+  <div class="lab">Connected services</div>
+  ${bServices}
+  ${bTail.replace(ver.replace("margin-top:24px", "margin-top:14px"), "")}`;
+
+// ───────────────────────── C · Usage and connections apart ─────────────────────────
+const C = {};
+const cDuo = `<div class="duo">
+    <div class="card"><div class="k">Subscription usage ${ico("chev", 12)}</div>
+      <div class="pl"><div class="row"><b>Claude</b><span>36% left</span></div>${bar(51, 13)}</div>
+      <div class="pl"><div class="row"><b>ChatGPT</b><span>92% left</span></div>${bar(6, 2)}</div>
+    </div>
+    <div class="card"><div class="k">Dream usage ${ico("chev", 12)}</div>
+      <div style="margin-top:14px" class="big"><span style="font-size:26px">$44.81</span></div>
+      <div class="sub" style="font-size:13px">so far in November</div>
+      <div style="margin-top:auto">${dayBars(28)}</div>
+    </div>
+  </div>`;
+const cConnected = (withPlans = true, near = false) => `<div class="group">
+    ${withPlans ? `<div class="gr tall">${planTile("claude")}<div class="tt"><div class="t">Claude</div><div class="s">Three projects run on it</div></div>${ico("chev", 13, "color:var(--t3)")}</div>` : ""}
+    ${withPlans && !near ? `<div class="gr tall">${planTile("gpt")}<div class="tt"><div class="t">ChatGPT</div><div class="s">Cabin runs on it</div></div>${ico("chev", 13, "color:var(--t3)")}</div>` : ""}
+    <div class="gr tall"><span class="tile">${ico("key", 17)}</span><div class="tt"><div class="t">OpenAI</div><div class="s">Every project can use it</div></div>${ico("chev", 13, "color:var(--t3)")}</div>
+    <div class="gr tall"><span class="tile">${ico("file", 17)}</span><div class="tt"><div class="t">AnkiWeb</div><div class="s">Only Arabic conversation partner</div></div>${ico("chev", 13, "color:var(--t3)")}</div>
+    <div class="gr tall"><span class="tile">${ico("app", 17)}</span><div class="tt"><div class="t">Apple Developer</div><div class="s">Every project can use it</div></div>${ico("chev", 13, "color:var(--t3)")}</div>
+  </div>`;
+const cAccount = `<div class="lab">Account</div>
+  <div class="group">
+    <div class="gr" style="min-height:70px"><span class="avatar">O</span><div class="tt"><div class="t" style="font-weight:600">Omer</div><div class="s">Signed in with Apple</div></div></div>
+    <div class="gr noic" style="--x:0"><div class="tt"><div class="t">Archived projects</div></div><span class="v">2 ${ico("chev", 13)}</span></div>
+    <div class="gr noic"><div class="tt"><div class="t">Sign out</div></div></div>
+  </div>`;
+
+C[1] = `${nav("Settings")}
+  ${cDuo}
+  <div class="lab">Connected</div>
+  ${cConnected()}
+  ${cAccount}`;
+
+C[2] = `${nav("Usage")}
+  <div class="seg"><span class="on">Subscription usage</span><span>Dream usage</span></div>
+  <div class="row" style="margin-top:22px">${planTile("claude")}<span class="ttl">Claude</span><span class="right t3" style="font-size:13.5px">Resets Wed 6:00 AM</span></div>
+  <div style="margin-top:14px;display:flex;align-items:baseline;gap:7px"><span class="big" style="font-size:32px">36%</span><span class="t2" style="font-size:15px">of this week left</span></div>
+  <div style="margin-top:12px">${bar(51, 13, "thick")}</div>
+  ${legend(51, 13)}
+  <div style="margin-top:8px">${shareRows(claudeShares, 13, true)}</div>
+  <div class="hair" style="margin:18px 0 20px;background:var(--line2)"></div>
+  <div class="row">${planTile("gpt")}<span class="ttl">ChatGPT</span><span class="right t3" style="font-size:13.5px">Resets Sat 9:00 AM</span></div>
+  <div style="margin-top:14px;display:flex;align-items:baseline;gap:7px"><span class="big" style="font-size:32px">92%</span><span class="t2" style="font-size:15px">of this week left</span></div>
+  <div style="margin-top:12px">${bar(6, 2, "thick")}</div>
+  <div style="margin-top:8px">${shareRows(gptShares, 2, true)}</div>
+  <div class="foot">Shares are estimates.</div>`;
+
+C[3] = `${nav("Usage")}
+  <div class="seg"><span>Subscription usage</span><span class="on">Dream usage</span></div>
+  <div style="margin-top:22px" class="big"><span style="font-size:36px">$44.81</span></div>
+  <div style="font-size:15px;color:var(--t2);margin-top:4px">so far in November</div>
+  <div style="margin-top:18px">${dayBars(64, "big")}</div>
+  <div class="axis"><span>Oct 10</span><span>Today</span></div>
+  <div class="h" style="margin-top:22px">By project</div>
+  ${projectCosts(true)}
+  <div class="h" style="margin-top:22px">What it paid for</div>
+  ${costRows(false)}`;
+
+C[4] = `${nav("Settings")}
+  ${cDuo}
+  <div class="lab">Connected</div>
+  ${cConnected()}
+  </div><div class="dim"></div><div class="sheet"><div class="grab"></div>
+    <div class="row" style="gap:14px"><span class="tile lg">${ico("file", 24)}</span><div><div style="font-size:20px;font-weight:650;letter-spacing:-.025em">AnkiWeb</div><div class="sub">Key file, added Nov 6</div></div></div>
+    <p class="para" style="margin-top:16px">It lives on Arabic conversation partner’s computer, so no other project can reach it.</p>
+    <div style="display:grid;gap:10px;margin-top:20px"><span class="btn" style="flex:none">Replace key file</span><span class="btn" style="flex:none;color:var(--t2)">Remove</span></div>
+  <div>`;
+
+C[5] = `<div class="lab" style="margin-top:6px">Connected</div>
+  ${cConnected()}
+  ${cAccount}
+  <div class="card update" style="margin-top:12px"><div style="flex:1"><div class="ttl" style="font-size:15px">An update is ready</div><div class="sub">It takes a second to restart.</div></div><span class="btn sm w">Restart</span></div>
+  ${ver}`;
+
+C[6] = `${nav("Settings")}
+  <div class="duo">
+    <div class="card near"><div class="k">Subscription usage ${ico("chev", 12)}</div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:14px">${ring(78, 13, 40, true)}<div><div class="big need" style="font-size:22px">9%</div><div class="sub" style="font-size:12.5px;margin-top:0">left of Claude</div></div></div>
+      <div class="sub" style="font-size:12.5px;margin-top:auto;line-height:1.4">Resets Wed 6:00 AM. Projects pause if it runs out.</div>
+    </div>
+    <div class="card"><div class="k">Dream usage</div>
+      <div style="margin-top:14px;font-size:15px;font-weight:600">Nothing yet</div>
+      <div class="sub" style="font-size:12.5px;margin-top:auto;line-height:1.4">What Dream spends running your projects shows up here.</div>
+    </div>
+  </div>
+  <div class="lab">Connected</div>
+  ${cConnected(true, true)}
+  <div class="addcard" style="border-radius:20px;padding:0 14px;min-height:62px"><span class="tile dash">${ico("plus", 17)}</span><div><div class="t" style="font-size:16px;font-weight:500">Add ChatGPT</div><div class="sub" style="margin-top:1px">Plus or Pro</div></div></div>`;
+
+// ───────────────────────── mount ─────────────────────────
+const SCROLL = { A3: 0, A4: 0, A5: "bottom", C5: "bottom" };
+for (const [k, set] of [["A", A], ["B", B], ["C", C]]) {
+  for (const n of Object.keys(set)) {
+    const id = k + n;
+    const el = document.createElement("div");
+    el.className = "scr";
+    el.id = id;
+    el.innerHTML = `${STATUS}<div class="scroll d-${k} ${typeof SCROLL[id] !== "undefined" ? "cont" : ""}">${set[n]}</div><div class="hi"></div>`;
+    document.body.appendChild(el);
+    if (SCROLL[id] === "bottom") {
+      const s = el.querySelector(".scroll");
+      s.style.paddingBottom = "40px";
+      s.scrollTop = s.scrollHeight;
+    }
+  }
+}
+</script>
+</body>
+</html>
