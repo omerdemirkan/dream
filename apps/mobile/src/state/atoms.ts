@@ -24,6 +24,7 @@ import {
   type ProjectId,
   type QuestionAnswer,
   type RequestId,
+  type UsageLimits,
   type WorkstreamId,
   type User
 } from "@dream/domain"
@@ -248,6 +249,14 @@ export const accountUsageAtom = Atom.family((provider: ModelProvider) =>
 /** The usage sheet, fetched when it opens (refresh it to fetch again). */
 export const projectUsageAtom = Atom.family((projectId: ProjectId) =>
   appRuntime.atom(ProjectUsages.use((usages) => usages.sheet(projectId)))
+)
+
+/** Their limits on a project's usage, both at once; returns the sheet as it is now. */
+export const setUsageLimitsFn = appRuntime.fn(
+  Effect.fn(function* (input: { readonly projectId: ProjectId; readonly limits: UsageLimits }) {
+    const usages = yield* ProjectUsages
+    return yield* usages.setLimits(input.projectId, input.limits).pipe(withWriteTimeout)
+  })
 )
 
 export const loadEarlierFn = appRuntime.fn(

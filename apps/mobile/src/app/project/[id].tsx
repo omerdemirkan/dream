@@ -20,7 +20,7 @@ import {
   type WorkstreamId
 } from "@dream/domain"
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
-import { Option, Schema } from "effect"
+import { DateTime, Option, Schema } from "effect"
 import { AsyncResult } from "effect/reactivity"
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -360,7 +360,11 @@ function Project(props: {
               }}
             />
           ) : null}
-          <UsageBadge projectId={props.projectId} onPress={() => setUsage(true)} />
+          <UsageBadge
+            projectId={props.projectId}
+            pausedBy={pausedByLimit(state, summary)}
+            onPress={() => setUsage(true)}
+          />
         </View>
         {state ? (
           <View style={{ marginTop: gap }}>
@@ -426,6 +430,13 @@ const labelOf = (
   return workstream === undefined ? undefined : labels?.get(workstream)
 }
 
+/** The limit they set that holds the project now, from the live state, else Home's row. */
+const pausedByLimit = (state: ProjectState | undefined, summary: ProjectSummary | undefined) => {
+  const until = state ? state.status.pausedUntil : summary?.pausedUntil
+  if (until === undefined || !DateTime.isGreaterThan(until, DateTime.nowUnsafe())) return undefined
+  return state ? state.status.pausedBy : summary?.pausedBy
+}
+
 /**
  * The tile with its presence dot, the title, and the state line (B), from the live state, else Home's row until
  * the snapshot arrives. Its own component, so the elapsed time ticking each second redraws only this.
@@ -442,6 +453,7 @@ function Identity(props: {
     activity,
     working: state?.working ?? false,
     pausedUntil: state ? state.status.pausedUntil : summary?.pausedUntil,
+    pausedBy: state ? state.status.pausedBy : summary?.pausedBy,
     now
   })
   const line = project

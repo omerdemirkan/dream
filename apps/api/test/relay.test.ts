@@ -428,6 +428,28 @@ describe("delivering to the app", () => {
     }).pipe(Effect.scoped)
   )
 
+  it.effect("waits while a usage limit holds the project, without counting it a failure", () =>
+    Effect.gen(function* () {
+      const { discord, runtime, pass, host, contents } = yield* setup()
+      const heldUntil = DateTime.add(yield* DateTime.now, { hours: 2 })
+      for (let i = 0; i < 20; i++) host.answers.push({ delivered: 0, heldUntil })
+      yield* runtime.start(discordConfig())
+      yield* pass()
+      discord.message("hello")
+      yield* pass("1 second")
+      yield* pass("70 minutes")
+      // Looked again every five minutes, and never told the agent it was failing.
+      assert.isAtLeast(host.calls.filter((call) => call.startsWith("deliver")).length, 14)
+      assert.lengthOf(host.alerts, 0)
+      const status = yield* runtime.status
+      assert.strictEqual(status.waiting, 1)
+      assert.lengthOf(status.problems, 0)
+      host.answers.length = 0
+      yield* pass("5 minutes")
+      assert.deepStrictEqual(contents(), ["hello"])
+    }).pipe(Effect.scoped)
+  )
+
   it.effect("drops what's too big, too many or too old, and counts it", () =>
     Effect.gen(function* () {
       const { discord, runtime, pass, host } = yield* setup()

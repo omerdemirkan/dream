@@ -2,6 +2,7 @@ import { assert, describe, it } from "@effect/vitest"
 import { Context, Effect, Layer, Ref, Stream } from "effect"
 import { Api, type Report } from "../src/Api.ts"
 import { Commands } from "../src/Commands.ts"
+import { Hold } from "../src/Hold.ts"
 import { Inbox } from "../src/Inbox.ts"
 import { type TaskRunInput, Tasks } from "../src/Tasks.ts"
 import { baseLayer, tempDir, wakeWithCommand, wakeWithTask } from "./support.ts"
@@ -13,7 +14,7 @@ const setup = (script: Parameters<typeof Tasks.layerTest>[0]["script"] = () => E
     const context = yield* Layer.build(
       Commands.layer.pipe(
         Layer.provideMerge(Layer.mergeAll(Tasks.layerTest({ script, log: asked }), Api.layerTest(reports))),
-        Layer.provideMerge(Inbox.layer),
+        Layer.provideMerge(Layer.merge(Inbox.layer, Hold.layer)),
         Layer.provideMerge(baseLayer(tempDir()))
       )
     )
@@ -26,7 +27,7 @@ const setup = (script: Parameters<typeof Tasks.layerTest>[0]["script"] = () => E
       Effect.timeout("10 seconds"),
       Effect.map((state) => (state._tag === "Some" ? state.value.entries : []))
     )
-    return { inbox, reports, asked, settled }
+    return { inbox, reports, asked, settled, hold: Context.get(context, Hold) }
   })
 
 describe("scheduled commands", () => {
@@ -44,6 +45,22 @@ describe("scheduled commands", () => {
       const result = failed?.event._tag === "WakeDue" ? failed.event.run?.result : undefined
       assert.strictEqual(result?.exitCode, 3)
       assert.include(result?.outputTail, "parser failed on 3 issues")
+    }).pipe(Effect.scoped)
+  )
+})
+
+describe("a usage hold", () => {
+  it.live("keeps scheduled commands and tasks waiting until it's over", () =>
+    Effect.gen(function* () {
+      const { inbox, hold, asked, settled } = yield* setup(() => Effect.succeed({ outcome: "succeeded" as const }))
+      yield* hold.set(true)
+      yield* inbox.deliver([wakeWithCommand(1, "echo fine"), wakeWithTask(2, "Write this week's episode.")])
+      yield* Effect.sleep("200 millis")
+      assert.strictEqual((yield* inbox.commands).length, 2)
+      assert.lengthOf(yield* Ref.get(asked), 0)
+      yield* hold.set(false)
+      assert.lengthOf(yield* settled, 0)
+      assert.lengthOf(yield* Ref.get(asked), 1)
     }).pipe(Effect.scoped)
   )
 })

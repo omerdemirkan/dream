@@ -74,6 +74,8 @@ export class ProjectDirectory extends Context.Service<
     readonly integrationRestored: (userId: UserId, integration: Integration, answered: ProjectId) => Effect.Effect<void>
     /** An integration other than a file key is gone (see `ProjectRpcs.IntegrationGone`). */
     readonly integrationGone: (userId: UserId, integration: Integration, failure?: string) => Effect.Effect<void>
+    /** A reading of the plan arrived from `except`: every other project of theirs with a usage limit checks it. */
+    readonly usageChanged: (userId: UserId, except: ProjectId) => Effect.Effect<void>
     readonly usageLimited: (
       userId: UserId,
       window: UsageWindowName,
@@ -111,6 +113,17 @@ export class ProjectDirectory extends Context.Service<
           each(userId, (projectId) =>
             clients.use(projectId, (client) =>
               client.IntegrationGone({ integration, ...(failure === undefined ? {} : { failure }) })
+            )
+          ),
+        usageChanged: (userId, except) =>
+          Effect.flatMap(projects.limitedProjectIdsFor(userId), (ids) =>
+            Effect.forEach(
+              ids.filter((id) => id !== except),
+              (id) =>
+                clients
+                  .use(id, (client) => client.CheckUsageLimits())
+                  .pipe(Effect.catchCause((cause) => Effect.logWarning("usage limit check failed", cause))),
+              { concurrency: 4, discard: true }
             )
           ),
         usageLimited: (userId, window, until, except) =>

@@ -47,6 +47,8 @@ export class Notifier extends Context.Service<
     readonly notify: (message: Message, id: NotificationId, category: NotificationCategory) => Effect.Effect<void>
     /** Sends one of the project's apps' notifications to every device, titled with the app's name. */
     readonly alertApp: (sender: AppSender, notification: AppNotification) => Effect.Effect<void>
+    /** Says a usage limit they set paused the project; tapping it opens the project's usage sheet. */
+    readonly alertUsage: (id: NotificationId, body: string) => Effect.Effect<void>
     readonly withdraw: (ids: ReadonlyArray<NotificationId>) => Effect.Effect<void>
     /** Withdraws every notification sent for a message (answered, withdrawn, connected, declined). */
     readonly withdrawFor: (message: Message) => Effect.Effect<void>
@@ -149,6 +151,30 @@ export class Notifier extends Context.Service<
                 notificationId: id,
                 ...(notification.url === undefined ? {} : { url: notification.url })
               })
+            })
+            .pipe(
+              Effect.flatMap(forget(token, "apns")),
+              Effect.catch((error) => Effect.logWarning("APNs alert failed", error.message))
+            )
+        }
+      })
+
+      const alertUsage = Effect.fn("Notifier.alertUsage")(function* (id: NotificationId, body: string) {
+        const project = yield* core.project.pipe(Effect.orDie)
+        const sentAt = yield* DateTime.now
+        yield* store.putNotification({ id, sentAt })
+        yield* projects.recordNotification({ id, userId: project.ownerId, projectId: project.id, sentAt })
+        for (const device of yield* devices) {
+          if (device.apnsToken === undefined) continue
+          const token = device.apnsToken
+          yield* apns
+            .alert(token, {
+              id,
+              title: project.title,
+              body,
+              category: "message",
+              threadId: project.id,
+              data: PushData.cases.OpenUsage.make({ projectId: project.id, notificationId: id })
             })
             .pipe(
               Effect.flatMap(forget(token, "apns")),
@@ -302,6 +328,7 @@ export class Notifier extends Context.Service<
       })
 
       return Notifier.of({
+        alertUsage,
         notify,
         alertApp,
         withdraw,

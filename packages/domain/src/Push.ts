@@ -34,6 +34,11 @@ export const PushData = Schema.TaggedUnion({
     url: Schema.optionalKey(Schema.String)
   },
   /**
+   * A limit they set on the project was reached and it's paused. Tapping it opens the project's usage sheet, where
+   * they can raise or clear the limit. Added in November 2026: older apps don't decode it, so a tap just opens Dream.
+   */
+  OpenUsage: { projectId: ProjectId, notificationId: NotificationId },
+  /**
    * A silent push (`content-available: 1`) listing delivered notifications to
    * remove. Best effort: the app also asks `FilterStaleNotifications` when opened.
    */

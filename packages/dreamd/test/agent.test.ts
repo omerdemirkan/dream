@@ -23,6 +23,7 @@ import { Attachments } from "../src/Attachments.ts"
 import type * as Background from "../src/harness/Background.ts"
 import { Harness, type HarnessError, type TurnResult, TurnOutcome } from "../src/harness/Harness.ts"
 import type { TurnHandlers } from "../src/harness/Turn.ts"
+import { Hold } from "../src/Hold.ts"
 import { Inbox } from "../src/Inbox.ts"
 import { Outreach } from "../src/Outreach.ts"
 import { noSelfCheck, Published } from "../src/Published.ts"
@@ -66,7 +67,7 @@ const setup = (
             : Attachments.layer.pipe(Layer.provide(FetchHttpClient.layer))
         )
       ),
-      Layer.provideMerge(Inbox.layer),
+      Layer.provideMerge(Layer.merge(Inbox.layer, Hold.layer)),
       Layer.provideMerge(
         options.attachments === undefined
           ? baseLayer(tempDir())
@@ -77,6 +78,7 @@ const setup = (
     const inbox = Context.get(context, Inbox)
     const agent = Context.get(context, Agent)
     const outreach = Context.get(context, Outreach)
+    const hold = Context.get(context, Hold)
     yield* Effect.forkScoped(agent.run)
     /** Wait until the scripted harness has recorded `n` entries. */
     const logged = (n: number) =>
@@ -98,7 +100,7 @@ const setup = (
       }
       return (yield* Ref.get(reports)).filter((report) => report._tag === "Question" || report._tag === "Message")
     })
-    return { turns, log, reports, inbox, agent, outreach, logged, idle, sent }
+    return { turns, log, reports, inbox, agent, outreach, hold, logged, idle, sent }
   })
 
 describe("Agent", () => {
@@ -120,6 +122,20 @@ describe("Agent", () => {
         ["started evt_1", "finished evt_1"]
       )
       assert.strictEqual((yield* inbox.state).entries.length, 0)
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect("starts nothing while a usage limit holds the project, and picks up what waited once it's over", () =>
+    Effect.gen(function* () {
+      const { turns, inbox, logged, hold, agent } = yield* setup()
+      yield* hold.set(true)
+      yield* Queue.offer(turns, () => Effect.succeed(completed()))
+      yield* inbox.deliver([userMessage(1, "Make the charts bigger")])
+      for (let i = 0; i < 50; i++) yield* Effect.yieldNow
+      assert.deepStrictEqual(yield* agent.status, { turn: "idle", queued: 1 })
+      yield* hold.set(false)
+      const [entry] = yield* logged(1)
+      assert.include(entry, "> Make the charts bigger")
     }).pipe(Effect.scoped)
   )
 

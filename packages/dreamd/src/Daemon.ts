@@ -25,6 +25,7 @@ import { Harness } from "./harness/Harness.ts"
 import { Tasks } from "./Tasks.ts"
 import { Inbox } from "./Inbox.ts"
 import { Outreach } from "./Outreach.ts"
+import { Hold } from "./Hold.ts"
 import { Progress } from "./progress/Progress.ts"
 import * as CliSummarizer from "./progress/CliSummarizer.ts"
 import { Summarizer } from "./progress/Summarizer.ts"
@@ -116,6 +117,7 @@ export const layerWith = <E, R>(
     Layer.provideMerge(
       Layer.mergeAll(
         Inbox.layer,
+        Hold.layer,
         Api.layer,
         Outreach.layer,
         Attachments.layer.pipe(Layer.provide(FetchHttpClient.layer)),

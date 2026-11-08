@@ -55,6 +55,13 @@ export class DaemonRpcs extends RpcGroup.make(
    * Added after the first release: an older dreamd fails it as an unknown request, which the DO ignores.
    */
   Rpc.make("SetWatching", { payload: { watching: Schema.Boolean } }),
+  /**
+   * A usage limit they set holds the project (`held`), or no longer does. While held, dreamd starts no turn and runs
+   * no scheduled command or task, even for events it already has; a turn under way finishes. Not kept across a
+   * restart: the DO holds back deliveries itself and says this again when it delivers. Added November 2026: an older
+   * dreamd fails it as an unknown request, which the DO ignores.
+   */
+  Rpc.make("HoldTurns", { payload: { held: Schema.Boolean } }),
   Rpc.make("Health", {
     success: Schema.Struct({
       version: Schema.String,

@@ -140,6 +140,10 @@ export function DeviceHost() {
       }
       return
     }
+    if (Option.isSome(data) && data.value._tag === "OpenUsage") {
+      router.push({ pathname: "/project/[id]", params: { id: data.value.projectId, sheet: "usage" } })
+      return
+    }
     if (Option.isNone(data) || data.value._tag !== "OpenMessage") return
     const { projectId, messageId } = data.value
     const category = lastResponse.notification.request.content.categoryIdentifier

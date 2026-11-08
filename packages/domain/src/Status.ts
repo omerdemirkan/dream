@@ -11,6 +11,7 @@ import { MessageId } from "./Ids.ts"
 import { fitLine, wrapLines } from "./Links.ts"
 import { MediaRef } from "./Media.ts"
 import { ProjectPhase } from "./Project.ts"
+import { UsageLimitReached } from "./Usage.ts"
 import { Workstream } from "./Workstream.ts"
 
 /**
@@ -61,6 +62,12 @@ export const StatusCard = Schema.Struct({
   workstreams: Schema.optionalKey(Schema.Array(Workstream)),
   /** Set by Dream, not the agent, while a usage limit holds the project. */
   pausedUntil: Schema.optionalKey(Schema.DateTimeUtc),
+  /**
+   * With `pausedUntil`, when it's a limit they set on the project that holds it rather than the plan's own; it
+   * lasts until they raise or clear it, or until `pausedUntil` (the week's reset). Added November 2026; older apps
+   * read it as the plan's pause, which ends at the same time.
+   */
+  pausedBy: Schema.optionalKey(UsageLimitReached),
   updatedAt: Schema.DateTimeUtc
 })
 export type StatusCard = typeof StatusCard.Type

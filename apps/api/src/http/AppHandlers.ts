@@ -299,6 +299,12 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
         }),
 
       GetProjectUsage: ({ projectId }) => Effect.flatMap(owned(projectId), usageReport.projectUsage),
+      SetUsageLimits: ({ projectId, limits }) =>
+        Effect.gen(function* () {
+          const project = yield* owned(projectId)
+          yield* clients.use(projectId, (client) => client.SetUsageLimits({ limits }))
+          return yield* usageReport.projectUsage(project)
+        }),
       GetAccountUsage: ({ provider }) => Effect.flatMap(me, (userId) => usageReport.accountUsage(userId, provider)),
 
       ListMessages: ({ projectId, before, limit }) =>

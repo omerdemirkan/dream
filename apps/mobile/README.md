@@ -189,11 +189,14 @@ xcrun simctl launch --terminate-running-process booted build.omer.dream \
 
 Project usage (Deck v3 option A, the ring): the right of the project header has a ring of the subscription's week,
 this project's share in white over everything else in grey, with "4%" over "of week"; tapping it opens the usage
-sheet (`…?sheet=usage`). By default the sample world's ChatGPT Pro week is 38% used, Lift Log about 4% of it, and
-each of the simulated agent's turns adds a little (the header follows `ProjectEvent.Usage`). `usage-near-limit`
-is the heavy week: 92% used, the ring's arc and "8% left" in amber, and a line in the sheet saying what's left and
-until when. `usage-none` is a world where no usage is known: the header shows nothing, and the sheet's tokens read
-"—". `usage-normal` goes back to the default.
+sheet (`…?sheet=usage`): the week as a ring (this project's share, what's left, when it resets) and the two limits
+they can set, "This project may use up to N% of the week" and "Stop when the plan has N% left", saved as each field
+loses focus. By default the sample world's ChatGPT Pro week is 38% used, Lift Log about 4% of it, and each of the
+simulated agent's turns adds a little (the header follows `ProjectEvent.Usage`). `usage-near-limit` is the heavy
+week: 92% used, the ring's arc and "8% left" in amber, and a line in the sheet saying what's left and until when.
+`usage-limit` gives Lift Log a limit at its share, so it's paused by it: "Paused · used its 4% of the week" in the
+header, "paused" under the ring, and the sheet's callout. `usage-none` is a world where no usage is known: the header
+shows nothing, and the sheet has no ring. `usage-normal` goes back to the default.
 
 The plan's usage lives in Settings, not on Home (usage in Settings, option B): the connected subscription is a plan
 card with what's left of the week, the five-hour and week bars (all projects in white, everything else in grey),

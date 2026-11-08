@@ -70,7 +70,7 @@ The system prompt of the project's agent, for every turn (`systemPrompt`).
 | 20 | [Recurring work](system/recurring-work.md) | What recurring work costs as a turn, as a scheduled task, or as an app calling a model API. | 175 |
 | 21 | [If it grows](system/if-it-grows.md) | What changes if a project outgrows the sandbox and has to serve many people. | 52 |
 
-### The `dream` skill, 5,713 words
+### The `dream` skill, 5,857 words
 
 The `dream` skill (`SKILL.md`), which the agent and every task's session load when they need it (`dreamSkill`).
 
@@ -92,7 +92,7 @@ The `dream` skill (`SKILL.md`), which the agent and every task's session load wh
 | 14 | [Browsers](skill/browsers.md) | The local headless Chromium and Playwright, and `dream browser` for a real Chrome in the cloud. | 147 |
 | 15 | [A Mac](skill/mac.md) | `dream mac`: renting a Mac with Xcode and simulators, running commands, copying files, and what's on it. | 241 |
 | 16 | [This machine](skill/machine.md) | `dream machine`: which size this is, when to move between sizes, and what a move carries over. | 201 |
-| 17 | [Usage](skill/usage.md) | `dream usage`: their subscription's five-hour and weekly windows. | 43 |
+| 17 | [Usage](skill/usage.md) | `dream usage`: their subscription's windows, this project's share of the week, and the limits they set on it. | 187 |
 
 ### Task prompt, 420 words
 

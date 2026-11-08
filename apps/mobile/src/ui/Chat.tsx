@@ -383,6 +383,7 @@ export function ChatActivity(props: { readonly state: ProjectState }) {
     activity: state.activity,
     working: state.working,
     pausedUntil: state.status.pausedUntil,
+    pausedBy: state.status.pausedBy,
     now
   })
   const row = chatRowOf(presence, state.messages, now, state.status.now)

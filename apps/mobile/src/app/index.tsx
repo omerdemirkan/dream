@@ -233,6 +233,7 @@ function ProjectRow(props: { readonly summary: ProjectSummary; readonly first: b
     activity: props.summary.activity,
     working: false,
     pausedUntil: props.summary.pausedUntil,
+    pausedBy: props.summary.pausedBy,
     now
   })
   const line = homeLine(presence, {

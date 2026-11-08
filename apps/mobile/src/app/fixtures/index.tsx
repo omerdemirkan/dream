@@ -49,6 +49,11 @@ const sections: ReadonlyArray<{ readonly title: string; readonly jumps: Readonly
       },
       { title: "Lift Log · no usage known", scenarios: ["reset", "usage-none"], to: "/project/prj_liftlog" },
       {
+        title: "Lift Log · paused at its usage limit",
+        scenarios: ["reset", "usage-limit"],
+        to: "/project/prj_liftlog?sheet=usage"
+      },
+      {
         title: "Lift Log · long Chat, scrolled up",
         scenarios: ["reset", "long-chat"],
         to: "/project/prj_liftlog?land=msg_long8"

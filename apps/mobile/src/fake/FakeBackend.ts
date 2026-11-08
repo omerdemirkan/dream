@@ -45,7 +45,9 @@ import {
   safeAttachmentName,
   sandboxKeyPath,
   type QuestionMessage,
+  reachedLimit,
   type StatusCard,
+  type UsageLimits,
   type TextMessage,
   Unauthorized,
   uniqueAttachmentNames,
@@ -129,6 +131,7 @@ export const Scenario = [
   "declined-reason",
   "usage-normal",
   "usage-near-limit",
+  "usage-limit",
   "usage-none",
   "workstreams",
   "workstreams-waiting",
@@ -358,14 +361,42 @@ export class FakeBackend extends Context.Service<
           usage = afterTurn(usage, record.project.id)
           yield* syncConnectionUsage
           yield* emitUsage(record)
+          yield* applyLimits(record)
         })
-      const projectUsage = (projectId: ProjectId, now: DateTime.Utc) =>
-        usageOf(
+      /** The limits they set on each project, and the one holding it. */
+      const limitsOf = new Map<ProjectId, UsageLimits>()
+      const projectUsage = (projectId: ProjectId, now: DateTime.Utc) => {
+        const sheet = usageOf(
           usage,
           projectId,
           active().map((r) => r.project),
           now
         )
+        const limits = limitsOf.get(projectId) ?? {}
+        const week = sheet.weekWindow
+        const reached = reachedLimit(limits, week)
+        return {
+          ...sheet,
+          ...(Object.keys(limits).length === 0 ? {} : { limits }),
+          ...(reached === undefined ? {} : { limitReached: reached })
+        }
+      }
+      /** As the ProjectDO does when a reading arrives or the limits change: paused at a limit, or not. */
+      const applyLimits = (record: ProjectRecord) =>
+        Effect.gen(function* () {
+          const now = yield* DateTime.now
+          const sheet = projectUsage(record.project.id, now)
+          const reached = sheet.limitReached
+          const { pausedUntil: _, pausedBy: _by, ...rest } = record.status
+          if (reached !== undefined && sheet.weekWindow?.resetsAt !== undefined) {
+            if (record.status.pausedBy?.limit === reached.limit && record.status.pausedBy.percent === reached.percent)
+              return
+            yield* setStatus(record, { ...rest, pausedUntil: sheet.weekWindow.resetsAt, pausedBy: reached })
+          } else if (record.status.pausedBy !== undefined) {
+            record.status = rest
+            yield* setStatus(record, {})
+          }
+        })
       /** As the ProjectDO does after each turn: the header's figures. */
       const emitUsage = (record: ProjectRecord) =>
         Effect.gen(function* () {
@@ -474,6 +505,7 @@ export class FakeBackend extends Context.Service<
             ? { progress: { done: milestones.filter((m) => m.state === "done").length, total: milestones.length } }
             : {}),
           ...(record.status.pausedUntil ? { pausedUntil: record.status.pausedUntil } : {}),
+          ...(record.status.pausedUntil && record.status.pausedBy ? { pausedBy: record.status.pausedBy } : {}),
           activity: record.activity
         }
       }
@@ -781,6 +813,14 @@ export class FakeBackend extends Context.Service<
         GetProjectUsage: ({ projectId }) =>
           Effect.gen(function* () {
             const record = yield* find(projectId)
+            return projectUsage(record.project.id, yield* DateTime.now)
+          }),
+        SetUsageLimits: ({ projectId, limits }) =>
+          Effect.gen(function* () {
+            const record = yield* find(projectId)
+            if (Object.keys(limits).length === 0) limitsOf.delete(record.project.id)
+            else limitsOf.set(record.project.id, limits)
+            yield* applyLimits(record)
             return projectUsage(record.project.id, yield* DateTime.now)
           }),
         GetAccountUsage: ({ provider }) =>
@@ -1542,6 +1582,14 @@ export class FakeBackend extends Context.Service<
             return yield* setUsage("near-limit")
           case "usage-none":
             return yield* setUsage("none")
+          case "usage-limit": {
+            const lift = Array.from(records.values()).find((r) => r.project.slug === "lift-log")
+            if (!lift) return
+            const share = projectUsage(lift.project.id, now).weekWindow?.projectPercent ?? 0
+            limitsOf.set(lift.project.id, { projectWeekPercent: Math.max(1, Math.floor(share)) })
+            yield* setActivity(lift, { state: "idle", since: DateTime.subtract(now, { minutes: 20 }) })
+            return yield* applyLimits(lift)
+          }
           case "stall-next-write":
             stallNextWrite = true
             return

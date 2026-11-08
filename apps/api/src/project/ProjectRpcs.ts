@@ -32,6 +32,7 @@ import {
   QuestionMessage,
   TextMessage,
   UpstreamFailure,
+  UsageLimits,
   UsageWindowName,
   WorkstreamId
 } from "@dream/domain"
@@ -144,6 +145,10 @@ export class ProjectRpcs extends RpcGroup.make(
   Rpc.make("CredentialsChanged", {}),
   /** Their subscription hit a limit in another project; hold this one until it resets. */
   Rpc.make("UsageLimited", { payload: { window: UsageWindowName, until: Schema.DateTimeUtc } }),
+  /** They set this project's usage limits (`AppRpcs.SetUsageLimits`); a key that's absent clears that limit. */
+  Rpc.make("SetUsageLimits", { payload: { limits: UsageLimits } }),
+  /** The plan's usage moved (a reading from another of their projects): check this project's limits. */
+  Rpc.make("CheckUsageLimits", {}),
   /** Where the gateway sends this project's public traffic. */
   Rpc.make("GatewayTarget", { success: GatewayTarget, error: Schema.Union([NotFound, UpstreamFailure]) }),
   /** Refresh their ChatGPT tokens now and push them to every sandbox of theirs. */

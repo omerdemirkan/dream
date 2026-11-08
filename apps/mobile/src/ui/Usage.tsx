@@ -1,29 +1,44 @@
 /**
  * Project usage, Deck v3 option A: a small ring of the subscription's week on the right of the project header
- * (this project's share, everything else, what's left), and the usage sheet it opens. What they say comes from
- * `data/usage.ts`; sizes and colours follow mocks/screens/project-usage (screens.html, `.hr-u.ring`, `.sheet`).
- * Its pieces (UsageRing, WindowBar, ShareRow, LimitCallout, Footnote, SectionHeading) also draw Settings' plan card
- * (`PlanCard.tsx`), each taking the colour of what's in focus: white, or amber near the limit.
+ * (this project's share, everything else, what's left), and the usage sheet it opens: the week at a glance and the
+ * two limits they can set. What they say comes from `data/usage.ts`; sizes and colours follow
+ * mocks/screens/project-usage (screens.html, `.hr-u.ring`, `.sheet`). Its pieces (UsageRing, WindowBar, ShareRow,
+ * LimitCallout, Footnote, SectionHeading) also draw Settings' plan card (`PlanCard.tsx`), each taking the colour of
+ * what's in focus: white, or amber near the limit.
  */
-import type { ProjectId } from "@dream/domain"
+import type { ProjectId, ProjectUsage, UsageLimitReached } from "@dream/domain"
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react"
-import { useEffect } from "react"
+import { useEffect, useRef, useState } from "react"
 import { DateTime, Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
 import { SymbolView, type SymbolViewProps } from "expo-symbols"
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
+import {
+  ActivityIndicator,
+  Keyboard,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View
+} from "react-native"
 import Animated, { Easing, SlideInDown } from "react-native-reanimated"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import Svg, { Circle, G } from "react-native-svg"
 import {
+  type LimitRow,
+  parseLimit,
   type RingArcs,
   type ShareRowView,
   type UsageSheet as SheetView,
   usageBadge,
   usageSheet,
-  type WindowBarView
+  type WindowBarView,
+  withLimit
 } from "../data/usage.ts"
-import { projectUsageAtom, usageGlanceAtom } from "../state/atoms.ts"
+import { projectUsageAtom, setUsageLimitsFn, usageGlanceAtom } from "../state/atoms.ts"
+import { useAction } from "./actions.ts"
 import { IconButton } from "./kit.tsx"
 import { color, gutter, tracking } from "./theme.ts"
 
@@ -68,10 +83,17 @@ export function UsageRing(props: {
   )
 }
 
-/** The header's right side: the ring and "4%" over "of week", or nothing while no usage is known. */
-export function UsageBadge(props: { readonly projectId: ProjectId; readonly onPress: () => void }) {
+/**
+ * The header's right side: the ring and "4%" over "of week", or nothing while no usage is known; "paused" in amber
+ * while a limit they set holds the project.
+ */
+export function UsageBadge(props: {
+  readonly projectId: ProjectId
+  readonly pausedBy?: UsageLimitReached | undefined
+  readonly onPress: () => void
+}) {
   const glance = Option.getOrUndefined(AsyncResult.value(useAtomValue(usageGlanceAtom(props.projectId))))
-  const badge = usageBadge(glance)
+  const badge = usageBadge(glance, props.pausedBy)
   if (!badge) return null
   return (
     <Pressable
@@ -127,7 +149,10 @@ export function UsageSheet(props: {
       <View style={{ flex: 1 }}>
         <Pressable
           accessibilityLabel="Close"
-          onPress={props.onClose}
+          onPress={() => {
+            Keyboard.dismiss()
+            props.onClose()
+          }}
           style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(0,0,0,0.58)" }]}
         />
         {props.open ? (
@@ -179,12 +204,16 @@ function SheetContent(props: {
   // figures from the last time it was open.
   const refresh = useAtomRefresh(projectUsageAtom(props.projectId))
   useEffect(() => refresh(), [refresh])
-  const usage = result.waiting ? undefined : Option.getOrUndefined(AsyncResult.value(result))
-  const view = usage ? usageSheet(usage, props.title, props.projectId, DateTime.nowUnsafe()) : undefined
+  // What saving a limit returned, newer than the fetch.
+  const [saved, setSaved] = useState<ProjectUsage | undefined>(undefined)
+  const fetched = result.waiting ? undefined : Option.getOrUndefined(AsyncResult.value(result))
+  const usage = saved ?? fetched
+  const view = usage ? usageSheet(usage, props.title, DateTime.nowUnsafe()) : undefined
   return (
     <ScrollView
       contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: props.bottom }}
       showsVerticalScrollIndicator={false}
+      keyboardDismissMode="on-drag"
     >
       <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
         <View style={{ flex: 1 }}>
@@ -195,10 +224,19 @@ function SheetContent(props: {
             {view?.subtitle ?? props.title}
           </Text>
         </View>
-        <IconButton icon="close" size={32} tone="quiet" label="Close" onPress={props.onClose} />
+        <IconButton
+          icon="close"
+          size={32}
+          tone="quiet"
+          label="Close"
+          onPress={() => {
+            Keyboard.dismiss()
+            props.onClose()
+          }}
+        />
       </View>
-      {view ? (
-        <Body view={view} title={props.title} />
+      {view && usage ? (
+        <Body view={view} usage={usage} projectId={props.projectId} title={props.title} onSaved={setSaved} />
       ) : AsyncResult.isFailure(result) ? (
         <Text style={{ fontSize: 14.5, color: color.t2, marginTop: 24 }}>Usage isn’t available right now.</Text>
       ) : (
@@ -208,41 +246,48 @@ function SheetContent(props: {
   )
 }
 
-function Body(props: { readonly view: SheetView; readonly title: string }) {
+function Body(props: {
+  readonly view: SheetView
+  readonly usage: ProjectUsage
+  readonly projectId: ProjectId
+  readonly title: string
+  readonly onSaved: (usage: ProjectUsage) => void
+}) {
   const { view } = props
+  const save = useAction(setUsageLimitsFn)
+  const limits = props.usage.limits ?? {}
+  const change = (which: "project" | "planLeft", value: number | undefined) => {
+    const next = withLimit(limits, which, value)
+    if (next.projectWeekPercent === limits.projectWeekPercent && next.planLeftPercent === limits.planLeftPercent) return
+    save.run({ projectId: props.projectId, limits: next }, { onSuccess: props.onSaved })
+  }
   return (
     <>
       {view.hero ? <Hero hero={view.hero} title={props.title} /> : null}
       {view.callout ? <LimitCallout callout={view.callout} /> : null}
-      <Periods periods={view.periods} />
-      {view.windows.length > 0 ? (
-        <>
-          <SectionHeading>{view.windowsTitle}</SectionHeading>
-          {view.windows.map((w) => (
-            <WindowBar key={w.label} bar={w} focusColor={w.nearLimit ? color.need : color.t1} />
-          ))}
-        </>
-      ) : null}
-      {view.projects.length > 0 ? (
-        <>
-          <SectionHeading>This week, across your projects</SectionHeading>
-          {view.projects.map((p) => (
-            <ShareRow
-              key={p.key}
-              row={p}
-              focusColor={p.current && view.hero?.nearLimit === true ? color.need : color.t1}
-            />
-          ))}
-        </>
-      ) : null}
-      {/* With nothing measured yet there are no shares to explain. */}
-      {view.hero || view.projects.length > 0 ? <Footnote>{view.footnote}</Footnote> : null}
+      <SectionHeading>Limits</SectionHeading>
+      <LimitField
+        before="This project may use up to"
+        after="of the week"
+        label="Most of the week this project may use, in percent"
+        row={view.limits.project}
+        onChange={(value) => change("project", value)}
+      />
+      <LimitField
+        before="Stop when the plan has"
+        after="left"
+        label="Pause when this much of the plan is left, in percent"
+        row={view.limits.planLeft}
+        onChange={(value) => change("planLeft", value)}
+      />
+      {view.hero ? <Footnote>Shares are estimates.</Footnote> : null}
     </>
   )
 }
 
 function Hero(props: { readonly hero: NonNullable<SheetView["hero"]>; readonly title: string }) {
   const { hero } = props
+  const focus = hero.nearLimit ? color.need : color.t1
   const row = (swatch: string, label: string, value: string, warn = false) => (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
       <View style={{ width: 9, height: 9, borderRadius: 3, backgroundColor: swatch }} />
@@ -265,7 +310,7 @@ function Hero(props: { readonly hero: NonNullable<SheetView["hero"]>; readonly t
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 20, marginTop: 16, marginBottom: 2 }}>
       <View style={{ width: 118, height: 118 }}>
-        <UsageRing size={118} stroke={14} arcs={hero.arcs} focusColor={hero.nearLimit ? color.need : color.t1} />
+        <UsageRing size={118} stroke={14} arcs={hero.arcs} focusColor={focus} />
         <View style={[StyleSheet.absoluteFill, { alignItems: "center", justifyContent: "center" }]}>
           <Text
             style={{
@@ -283,65 +328,89 @@ function Hero(props: { readonly hero: NonNullable<SheetView["hero"]>; readonly t
         </View>
       </View>
       <View style={{ flex: 1, gap: 9, maxWidth: 190 }}>
-        {row(hero.nearLimit ? color.need : color.t1, props.title, hero.legend.project)}
-        {row(others, "Everything else", hero.legend.others)}
-        {row(track, "Left", hero.legend.left, hero.nearLimit)}
-        <Text style={{ fontSize: 12.5, color: color.t3 }}>Shares are estimates</Text>
+        {row(focus, props.title, hero.share)}
+        {row(track, "Left this week", hero.left, hero.nearLimit)}
+        {hero.resets ? <Text style={{ fontSize: 12.5, color: color.t3 }}>{hero.resets}</Text> : null}
       </View>
     </View>
   )
 }
 
-function Periods(props: { readonly periods: SheetView["periods"] }) {
+/**
+ * One limit as a sentence with a field in it: "This project may use up to [25]% of the week". Empty means no limit;
+ * what they type is saved when the field loses focus (tapping elsewhere, scrolling, closing the sheet).
+ */
+function LimitField(props: {
+  readonly before: string
+  readonly after: string
+  readonly label: string
+  readonly row: LimitRow
+  readonly onChange: (value: number | undefined) => void
+}) {
+  const { row } = props
+  const shown = row.value === undefined ? "" : String(row.value)
+  const [text, setText] = useState(shown)
+  const editing = useRef(false)
+  // A saved value, or one from a fresh fetch, replaces what's shown unless they're typing.
+  useEffect(() => {
+    if (!editing.current) setText(shown)
+  }, [shown])
+  const tint = row.reached ? color.need : color.t1
+  const commit = () => {
+    editing.current = false
+    const value = parseLimit(text)
+    setText(value === undefined ? "" : String(value))
+    props.onChange(value)
+  }
   return (
-    <View
-      style={{
-        flexDirection: "row",
-        marginTop: 16,
-        borderWidth: 1,
-        borderColor: color.line,
-        borderRadius: 18,
-        borderCurve: "continuous",
-        backgroundColor: color.bg
-      }}
-    >
-      {props.periods.map((p, i) => (
+    <View style={{ paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: color.line }}>
+      <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", rowGap: 6 }}>
+        <Text style={{ fontSize: 15, color: color.t1, letterSpacing: -0.15 }}>{props.before} </Text>
         <View
-          key={p.label}
           style={{
-            flex: 1,
-            paddingTop: 9,
-            paddingBottom: 10,
-            paddingHorizontal: 12,
-            borderLeftWidth: i === 0 ? 0 : 1,
-            borderColor: color.line
+            flexDirection: "row",
+            alignItems: "center",
+            height: 32,
+            paddingHorizontal: 10,
+            borderRadius: 10,
+            borderCurve: "continuous",
+            borderWidth: 1,
+            borderColor: row.reached ? color.needLine : color.line2,
+            backgroundColor: row.reached ? color.needBg : color.s2
           }}
         >
-          <Text numberOfLines={1} style={{ fontSize: 12, color: color.t3 }}>
-            {p.label}
-          </Text>
-          <Text
-            style={{
-              fontSize: 17,
-              fontWeight: "600",
-              letterSpacing: tracking(-0.025, 17),
-              marginTop: 3,
-              color: p.value === "—" ? color.t3 : color.t1,
-              fontVariant: ["tabular-nums"]
+          <TextInput
+            value={text}
+            onChangeText={setText}
+            onFocus={() => {
+              editing.current = true
             }}
-          >
-            {p.value}
-          </Text>
-          {p.detail ? (
-            <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 12.5, color: color.t2, marginTop: 1 }}>
-              {p.detail}
-            </Text>
-          ) : null}
-          {p.cacheRead ? (
-            <Text style={{ fontSize: 11.5, lineHeight: 15, color: color.t3, marginTop: 3 }}>{p.cacheRead}</Text>
-          ) : null}
+            onBlur={commit}
+            onSubmitEditing={commit}
+            placeholder="—"
+            placeholderTextColor={color.t3}
+            keyboardType="number-pad"
+            returnKeyType="done"
+            maxLength={2}
+            selectTextOnFocus
+            accessibilityLabel={props.label}
+            style={{
+              minWidth: 22,
+              fontSize: 15,
+              fontWeight: "600",
+              color: tint,
+              textAlign: "right",
+              fontVariant: ["tabular-nums"],
+              padding: 0
+            }}
+          />
+          <Text style={{ fontSize: 15, fontWeight: "600", color: text === "" ? color.t3 : tint }}>%</Text>
         </View>
-      ))}
+        <Text style={{ fontSize: 15, color: color.t1, letterSpacing: -0.15 }}> {props.after}</Text>
+      </View>
+      {row.note ? (
+        <Text style={{ fontSize: 13, color: row.reached ? color.need : color.t3, marginTop: 5 }}>{row.note}</Text>
+      ) : null}
     </View>
   )
 }

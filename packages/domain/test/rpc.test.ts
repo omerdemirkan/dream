@@ -43,6 +43,7 @@ const DaemonHandlers = DaemonRpcs.toLayer({
   Deliver: ({ events }) => Effect.succeed({ accepted: events.map((event) => event.id) }),
   ForwardRelay: ({ deliveries }) => Effect.succeed({ delivered: deliveries.length }),
   SetWatching: ({ watching }) => Effect.sync(() => void watched.push(watching)),
+  HoldTurns: () => Effect.void,
   Health: () => Effect.succeed({ version: "test", turn: "idle" as const, queued: 0 })
 })
 

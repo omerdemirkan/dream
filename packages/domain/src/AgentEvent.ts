@@ -10,7 +10,7 @@ import { IntegrationAccess } from "./Connections.ts"
 import { AppId, EventId, LinkId, type MediaId, MessageId, WakeId } from "./Ids.ts"
 import { Attachment, attachmentPath, formatBytes, isImageAttachment } from "./Media.ts"
 import { QuestionAnswer } from "./Message.ts"
-import { UsageWindowName } from "./Usage.ts"
+import { UsageLimits, UsageWindowName, WindowShare } from "./Usage.ts"
 import { TaskFailure, WakeTask } from "./Wake.ts"
 import { SandboxSize, SandboxSizes } from "./Sandbox.ts"
 import { ThreadRef } from "./Thread.ts"
@@ -97,6 +97,17 @@ export const AgentEvent = Schema.TaggedUnion({
   /** `dream wake "why"` from anywhere in the sandbox, typically an app's error handler. */
   Alert: { ...EventFields, reason: Schema.String },
   UsageReset: { ...EventFields, window: UsageWindowName },
+  /**
+   * They set, changed or cleared the usage limits on this project (`limits` as they are now, `previous` as they
+   * were), with where the project stood in the week then. Added November 2026; only dreamd builds whose
+   * `dream usage` shows limits get it.
+   */
+  UsageLimitsChanged: {
+    ...EventFields,
+    limits: UsageLimits,
+    previous: UsageLimits,
+    week: Schema.optionalKey(WindowShare)
+  },
   /**
    * dreamd loaded the project's published URL after a turn and it looked broken (an error status, uncaught page
    * errors, or no answer). Made by dreamd itself, never by the API, and only when the result changed.
@@ -320,6 +331,40 @@ const renderAttachments = (messageId: string, attachments: ReadonlyArray<Attachm
   return `${attachments.length} ${kind}:\n${attachments.map((a) => `- ${line(a)}`).join("\n")}`
 }
 
+const renderUsageLimits = (
+  limits: UsageLimits,
+  previous: UsageLimits,
+  week: WindowShare | undefined,
+  options: RenderOptions
+): string => {
+  const { projectWeekPercent: cap, planLeftPercent: floor } = limits
+  if (cap === undefined && floor === undefined) {
+    return "They cleared the usage limits on this project, so it runs on their plan as before, up to the plan's own limits."
+  }
+  const parts = [
+    ...(cap === undefined ? [] : [`this project may use up to ${cap}% of their plan's week`]),
+    ...(floor === undefined
+      ? []
+      : [`Dream stops it when the plan has ${floor}% of its week left, so their other work keeps some room`])
+  ]
+  const changed =
+    previous.projectWeekPercent === undefined && previous.planLeftPercent === undefined ? "set" : "changed"
+  const where =
+    week === undefined
+      ? ""
+      : ` So far this week it has used about ${Math.round(week.projectPercent)}%, and the plan has ` +
+        `${Math.max(0, 100 - Math.round(week.usedPercent))}% left` +
+        (week.resetsAt === undefined ? "." : `; the week resets ${formatEventTime(week.resetsAt, options)}.`)
+  return (
+    `They ${changed} the usage limits on this project: ${parts.join(", and ")}.${where}\n` +
+    "At a limit, Dream lets the turn under way finish, then holds new turns, wake-ups and relay deliveries until " +
+    "they raise or clear it or the week resets, and tells them on their phone. Its share is an estimate from how " +
+    "the plan moved while you worked, read after a turn's first model call and when it ends, so one long turn can " +
+    "run past a limit. `dream usage` shows where you stand against them; worth a look now and then, and before " +
+    "starting something big."
+  )
+}
+
 /** One event as a paragraph of the turn prompt. Message and wake ids are included so the agent can refer to them. */
 export const renderAgentEvent = (event: AgentEvent, options: RenderOptions = {}): string => {
   const time = formatEventTime(event.at, options)
@@ -371,6 +416,7 @@ export const renderAgentEvent = (event: AgentEvent, options: RenderOptions = {})
     Alert: ({ reason }) => `Something in the sandbox called \`dream wake\`:\n${quote(reason)}`,
     UsageReset: ({ window }) =>
       window === "fiveHour" ? "Their five-hour usage window has reset." : "Their weekly usage limit has reset.",
+    UsageLimitsChanged: ({ limits, previous, week }) => renderUsageLimits(limits, previous, week, options),
     PublishedUrlBroken: ({ url, port, facts }) =>
       `When your last turn ended, Dream loaded your published URL ${url} (port ${port}):\n${quote(facts)}`,
     LinkEdited: ({ linkId, url, title, change, previousTitle, tile }) =>

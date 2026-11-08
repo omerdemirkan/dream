@@ -33,7 +33,7 @@ import {
 } from "../Message.ts"
 import { Attachment, AttachmentContentType, AttachmentLimits, MediaUploadTarget } from "../Media.ts"
 import { ArchivedProject, Harness, Project, ProjectSummary } from "../Project.ts"
-import { AccountUsage, ModelProvider, ProjectUsage } from "../Usage.ts"
+import { AccountUsage, ModelProvider, ProjectUsage, UsageLimits } from "../Usage.ts"
 import { Device, Features, TimeZone, User } from "../User.ts"
 
 /** An open question or access request for the Home deck, with the project it belongs to. */
@@ -255,6 +255,16 @@ export class AuthedAppRpcs extends RpcGroup.make(
    */
   Rpc.make("GetProjectUsage", {
     payload: { projectId: ProjectId },
+    success: ProjectUsage,
+    error: NotFound
+  }),
+  /**
+   * Set this project's usage limits, both at once: a key that's absent clears that limit. The agent hears of the
+   * change, a limit reached pauses the project, and one raised or cleared lets it go on. Returns the usage sheet as
+   * it is now. Added November 2026.
+   */
+  Rpc.make("SetUsageLimits", {
+    payload: { projectId: ProjectId, limits: UsageLimits },
     success: ProjectUsage,
     error: NotFound
   }),

@@ -56,6 +56,7 @@ import * as Background from "./harness/Background.ts"
 import { Harness, type TurnResult, TurnOutcome } from "./harness/Harness.ts"
 import { type QuestionOutcome, replyFromFinalText } from "./harness/PersonChannel.ts"
 import type { TurnHandlers } from "./harness/Turn.ts"
+import { Hold } from "./Hold.ts"
 import { Inbox, type InboxState, queuedCount } from "./Inbox.ts"
 import * as JsonFile from "./JsonFile.ts"
 import { Outreach } from "./Outreach.ts"
@@ -126,6 +127,7 @@ export class Agent extends Context.Service<
     Agent,
     Effect.gen(function* () {
       const inbox = yield* Inbox
+      const hold = yield* Hold
       const harness = yield* Harness
       const api = yield* Api
       const outreach = yield* Outreach
@@ -370,6 +372,8 @@ export class Agent extends Context.Service<
         while (true) {
           yield* waitOutLimit
           yield* waitFor(hasQueued)
+          // A limit they set on the project: what's queued waits until it's raised, cleared or over.
+          yield* hold.released
           const retry = yield* turn.pipe(
             Effect.catch((error) => Effect.logError("The inbox failed", { error: error.message }).pipe(Effect.as(true)))
           )

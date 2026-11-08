@@ -33,6 +33,7 @@ import { Agent } from "./Agent.ts"
 import { DreamdConfig } from "./Config.ts"
 import { Inbox } from "./Inbox.ts"
 import { Outreach } from "./Outreach.ts"
+import { Hold } from "./Hold.ts"
 import { Progress } from "./progress/Progress.ts"
 import { Published } from "./Published.ts"
 import { RelayForwarder } from "./Relays.ts"
@@ -51,6 +52,7 @@ const DaemonHandlers = DaemonRpcs.toLayer(
     const config = yield* DreamdConfig
     const relays = yield* RelayForwarder
     const progress = yield* Progress
+    const hold = yield* Hold
     const envHash = Option.match(config.envHash, { onNone: () => ({}), onSome: (envHash) => ({ envHash }) })
     const release = Option.match(yield* readRelease(), { onNone: () => ({}), onSome: (release) => ({ release }) })
     return {
@@ -72,6 +74,7 @@ const DaemonHandlers = DaemonRpcs.toLayer(
           return yield* relays.forward(request)
         }),
       SetWatching: ({ watching }) => progress.setWatching(watching),
+      HoldTurns: ({ held }) => hold.set(held),
       Health: () => agent.status.pipe(Effect.map((status) => ({ version, ...status, ...envHash, ...release })))
     }
   })

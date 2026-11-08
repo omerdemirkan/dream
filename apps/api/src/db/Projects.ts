@@ -18,6 +18,8 @@ import {
   ProjectId,
   ProjectPhase,
   ProjectSummary,
+  UsageLimitReached,
+  UsageLimits,
   UserId
 } from "@dream/domain"
 import { Context, DateTime, Effect, Layer, Option, Schema } from "effect"
@@ -48,6 +50,10 @@ const ProjectRow = Schema.Struct({
   activity_json: Schema.optionalKey(Schema.NullOr(JsonColumn(AgentActivity))),
   /** Missing until migration 0008 ran; null unless they archived it. */
   archived_at: Schema.optionalKey(Schema.NullOr(IsoDate)),
+  /** Missing until migration 0015 ran; null unless they set a usage limit on it. */
+  usage_limits_json: Schema.optionalKey(Schema.NullOr(JsonColumn(UsageLimits))),
+  /** Missing until migration 0015 ran; null unless a limit they set holds it. */
+  paused_by_json: Schema.optionalKey(Schema.NullOr(JsonColumn(UsageLimitReached))),
   created_at: IsoDate,
   updated_at: IsoDate
 })
@@ -77,6 +83,7 @@ const toSummary = (row: ProjectRow): ProjectSummary => ({
     ? {}
     : { progress: { done: row.progress_done ?? 0, total: row.progress_total } }),
   ...(row.paused_until === null ? {} : { pausedUntil: row.paused_until }),
+  ...(row.paused_until === null || row.paused_by_json == null ? {} : { pausedBy: row.paused_by_json }),
   ...(row.activity_json == null ? {} : { activity: row.activity_json })
 })
 
@@ -86,6 +93,9 @@ export interface ProjectProjection {
   readonly sandboxId?: string | undefined
   readonly progress?: { readonly done: number; readonly total: number } | undefined
   readonly pausedUntil?: DateTime.Utc | undefined
+  readonly pausedBy?: UsageLimitReached | undefined
+  /** Absent when neither limit is set. */
+  readonly usageLimits?: UsageLimits | undefined
   readonly activity?: AgentActivity | undefined
   readonly openAsks: ReadonlyArray<AskMessage>
 }
@@ -188,6 +198,12 @@ export class Projects extends Context.Service<
     /** Archives the project (`at`) or restores it (`undefined`). Only its DO calls this. */
     readonly setArchived: (id: ProjectId, at: DateTime.Utc | undefined) => Effect.Effect<void>
     readonly projectIdsFor: (userId: UserId) => Effect.Effect<ReadonlyArray<ProjectId>>
+    /** Their projects with a usage limit set, for checking them when the plan's usage moves. */
+    readonly limitedProjectIdsFor: (userId: UserId) => Effect.Effect<ReadonlyArray<ProjectId>>
+    /** The usage limits set on a project, and the one that holds it, as its DO last projected them. */
+    readonly usageLimits: (
+      id: ProjectId
+    ) => Effect.Effect<{ readonly limits?: UsageLimits | undefined; readonly pausedBy?: UsageLimitReached | undefined }>
     /** The sandbox every project records as its own (for the reaper, which never touches these). */
     readonly sandboxIds: Effect.Effect<ReadonlySet<string>>
     /** Replace the projection of one project (its row and its open asks). */
@@ -315,6 +331,27 @@ export class Projects extends Context.Service<
           Effect.map((rows) => rows.map((row) => row.id))
         )
 
+      const limitedProjectIdsFor = (userId: UserId) =>
+        sql`SELECT id FROM projects WHERE owner_id = ${userId} AND usage_limits_json IS NOT NULL`.pipe(
+          decodeRows(Schema.Struct({ id: ProjectId })),
+          Effect.map((rows) => rows.map((row) => row.id))
+        )
+
+      const usageLimits = (id: ProjectId) =>
+        sql`SELECT usage_limits_json, paused_by_json, paused_until FROM projects WHERE id = ${id}`.pipe(
+          decodeFirst(
+            Schema.Struct({
+              usage_limits_json: Schema.NullOr(JsonColumn(UsageLimits)),
+              paused_by_json: Schema.NullOr(JsonColumn(UsageLimitReached)),
+              paused_until: Schema.NullOr(IsoDate)
+            })
+          ),
+          Effect.map((row) => ({
+            ...(row?.usage_limits_json == null ? {} : { limits: row.usage_limits_json }),
+            ...(row?.paused_by_json == null || row.paused_until === null ? {} : { pausedBy: row.paused_by_json })
+          }))
+        )
+
       const sandboxIds = sql`SELECT sandbox_id FROM projects WHERE sandbox_id IS NOT NULL`.pipe(
         decodeRows(Schema.Struct({ sandbox_id: Schema.String })),
         Effect.map((rows) => new Set(rows.map((row) => row.sandbox_id)) as ReadonlySet<string>)
@@ -334,6 +371,12 @@ export class Projects extends Context.Service<
             progress_done: projection.progress?.done ?? null,
             progress_total: projection.progress?.total ?? null,
             paused_until: projection.pausedUntil === undefined ? null : DateTime.formatIso(projection.pausedUntil),
+            paused_by_json:
+              projection.pausedUntil === undefined || projection.pausedBy === undefined
+                ? null
+                : encodeJson(UsageLimitReached, projection.pausedBy),
+            usage_limits_json:
+              projection.usageLimits === undefined ? null : encodeJson(UsageLimits, projection.usageLimits),
             // What needs them now, as ProjectSummary.openAsks says: an access request for later doesn't count yet.
             open_asks: projection.openAsks.filter((ask) => !(ask._tag === "Access" && ask.when)).length,
             activity_json: projection.activity === undefined ? null : encodeJson(AgentActivity, projection.activity),
@@ -447,6 +490,8 @@ export class Projects extends Context.Service<
         archived,
         setArchived,
         projectIdsFor,
+        limitedProjectIdsFor,
+        usageLimits,
         sandboxIds,
         project,
         openAsks,

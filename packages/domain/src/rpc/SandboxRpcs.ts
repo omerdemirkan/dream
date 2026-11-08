@@ -47,7 +47,7 @@ import { AccessMessage, AccessRequest, Message, QuestionMessage, TextMessage } f
 import { ProgressText, ProjectPhase } from "../Project.ts"
 import { Relay, RelaySource, RelayTarget } from "../Relay.ts"
 import { Milestone, StatusCard } from "../Status.ts"
-import { TurnUsage, UsageSnapshot } from "../Usage.ts"
+import { TurnUsage, UsageLimitStanding, UsageSnapshot } from "../Usage.ts"
 import { TaskReport, Wake, WakeTask, WakeWhen } from "../Wake.ts"
 import { Workstreams, WorkstreamTitle } from "../Workstream.ts"
 
@@ -433,6 +433,8 @@ export class SandboxRpcs extends RpcGroup.make(
   // Usage ------------------------------------------------------------------------------
   /** `dream usage`. */
   Rpc.make("GetUsage", { success: UsageSnapshot, error: NotFound }),
+  /** `dream usage`: the limits they set on this project and where it stands against them. Added November 2026. */
+  Rpc.make("GetUsageLimits", { success: UsageLimitStanding }),
   /** `dream machine`: the sandbox's size, and a move that's waiting. Added November 2026. */
   Rpc.make("GetMachine", { success: MachineInfo }),
   /**

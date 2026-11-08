@@ -4,6 +4,7 @@
  * Times are UTC, with how far away they are.
  */
 import type {
+  UsageLimitStanding,
   AccessMessage,
   AppLink,
   AppNotification,
@@ -325,15 +326,49 @@ const window = (name: string, value: UsageWindow | undefined, now: DateTime.Utc)
         `${name}: ${Math.round(value.usedPercent)}% used${value.resetsAt === undefined ? "" : `, resets ${time(value.resetsAt, now)}`}`
       ]
 
-export const usage = (snapshot: UsageSnapshot, now: DateTime.Utc): string =>
+export const usage = (snapshot: UsageSnapshot, now: DateTime.Utc, standing?: UsageLimitStanding): string =>
   [
     `${snapshot.plan ?? (snapshot.provider === "claude" ? "Claude" : "ChatGPT")} subscription, as of ${time(snapshot.observedAt, now)}`,
     ...window("Five-hour window", snapshot.fiveHour, now),
     ...window("Weekly limit", snapshot.weekly, now),
     ...(snapshot.limitedUntil === undefined
       ? []
-      : [`Limit reached (${snapshot.limitedUntil.window}): no turns until ${time(snapshot.limitedUntil.until, now)}.`])
+      : [`Limit reached (${snapshot.limitedUntil.window}): no turns until ${time(snapshot.limitedUntil.until, now)}.`]),
+    ...(standing === undefined ? [] : usageLimits(standing, now))
   ].join("\n")
+
+const percent = (value: number) => `${Math.round(value)}%`
+
+/** This project's share of the week, the limits they set on it, and how close it is to each. */
+export const usageLimits = (standing: UsageLimitStanding, now: DateTime.Utc): ReadonlyArray<string> => {
+  const { limits, week, reached } = standing
+  const { projectWeekPercent: cap, planLeftPercent: floor } = limits
+  const lines = week === undefined ? [] : [`This project has used about ${percent(week.projectPercent)} of the week.`]
+  if (cap === undefined && floor === undefined) return [...lines, "They've set no usage limits on this project."]
+  const left = week === undefined ? undefined : 100 - week.usedPercent
+  const toGo = (distance: number | undefined) =>
+    distance === undefined ? "" : distance > 0 ? ` (about ${percent(distance)} to go)` : " (reached)"
+  const parts = [
+    ...(cap === undefined
+      ? []
+      : [
+          `this project may use up to ${cap}% of the week${toGo(week === undefined ? undefined : cap - week.projectPercent)}`
+        ]),
+    ...(floor === undefined
+      ? []
+      : [`Dream stops it when the plan has ${floor}% left${toGo(left === undefined ? undefined : left - floor)}`])
+  ]
+  lines.push(`Limits they set: ${parts.join("; ")}.`)
+  if (reached !== undefined) {
+    const which =
+      reached.limit === "project"
+        ? `this project has used the ${reached.percent}% of the week they gave it`
+        : `the plan is down to the ${reached.percent}% they keep free`
+    const reset = week?.resetsAt === undefined ? "" : `, or the week resets ${time(week.resetsAt, now)}`
+    lines.push(`Paused: ${which}. Nothing new starts until they raise or clear it${reset}.`)
+  }
+  return lines
+}
 
 const clip = (text: string, max = 200) => {
   const line = text.trim().split("\n")[0]?.trim() ?? ""

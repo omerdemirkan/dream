@@ -14,6 +14,7 @@ import { nextWakeAt } from "./Handlers.ts"
 import { Machines } from "./Machines.ts"
 import { SandboxManager } from "./SandboxManager.ts"
 import { Singletons, Store } from "./Store.ts"
+import { UsageLimiter } from "./UsageLimits.ts"
 
 export class Scheduler extends Context.Service<Scheduler, { readonly run: Effect.Effect<void> }>()(
   "@dream/api/project/Scheduler"
@@ -27,6 +28,7 @@ export class Scheduler extends Context.Service<Scheduler, { readonly run: Effect
       const sandbox = yield* SandboxManager
       const machines = yield* Machines
       const users = yield* Users
+      const limiter = yield* UsageLimiter
 
       const fireWakes = (nowMs: number) =>
         Effect.gen(function* () {
@@ -62,6 +64,8 @@ export class Scheduler extends Context.Service<Scheduler, { readonly run: Effect
         yield* store.clearTimer("usage-reset")
         const pause = yield* core.usagePause
         if (Option.isNone(pause)) return
+        // A limit they set: still reached (the reset time wasn't known, or a reading of the new week says so), or not.
+        if (pause.value.limit !== undefined) return yield* limiter.check
         yield* core.saveUsagePause(Option.none())
         if (pause.value.wakeOnReset) {
           yield* core.enqueue(
@@ -75,6 +79,8 @@ export class Scheduler extends Context.Service<Scheduler, { readonly run: Effect
           // Deliver whatever arrived while paused.
           yield* store.setTimer("deliver", yield* Clock.currentTimeMillis)
         }
+        // The plan's limit is over; one they set may hold it now.
+        yield* limiter.check
       })
 
       const run = Effect.gen(function* () {

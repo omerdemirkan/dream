@@ -11,7 +11,8 @@ import {
   RelayEventMaxAgeHours,
   RelayEventMaxBytes,
   RelayQueueLimit,
-  type RelayForward
+  type RelayForward,
+  type RelayForwardResult
 } from "@dream/domain"
 import { Clock, DateTime, Duration, Effect, Option, Queue } from "effect"
 import { encodeJson } from "../db/Sql.ts"
@@ -23,6 +24,8 @@ import { describeRelay, noteProblem } from "./Status.ts"
 
 /** Events handed over per call. */
 export const BatchSize = 10
+/** While a usage limit holds the project, how often to look again. */
+const HeldRecheckMs = 5 * 60_000
 /** Failing this long, the agent hears about it. */
 export const AlertAfter = Duration.hours(1)
 
@@ -96,12 +99,18 @@ export const makeOutbox = Effect.gen(function* () {
       })) as unknown as readonly [RelayForward, ...Array<RelayForward>]
       const result = yield* host.deliver(config.projectId, config.relayId, deliveries).pipe(
         Effect.catchDefect((defect) =>
-          Effect.succeed({
+          Effect.succeed<RelayForwardResult>({
             delivered: 0,
             failure: { message: `Couldn't reach the project: ${String((defect as Error)?.message ?? defect)}` }
           })
         )
       )
+      // A usage limit they set holds the project: wait without counting it a failure, and look again now and then
+      // in case they raised it.
+      if (result.heldUntil !== undefined) {
+        const left = DateTime.toEpochMillis(result.heldUntil) - nowMs
+        return { failures, idle: false, wait: Duration.millis(Math.max(1_000, Math.min(left, HeldRecheckMs))) }
+      }
       const delivered = Math.max(0, Math.min(result.delivered, batch.length))
       yield* store.remove(batch.slice(0, delivered).map((event) => event.id))
       const now = yield* DateTime.now

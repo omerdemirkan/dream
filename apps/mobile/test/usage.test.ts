@@ -6,13 +6,14 @@ import { AccountUsages } from "../src/data/AccountUsages.ts"
 import { AppClient, type AppRpcClient } from "../src/data/AppClient.ts"
 import {
   latestGlance,
+  parseLimit,
   percentLabel,
   planCard,
   profileHint,
   ringArcs,
-  tokensLabel,
   usageBadge,
-  usageSheet
+  usageSheet,
+  withLimit
 } from "../src/data/usage.ts"
 
 const la = "America/Los_Angeles"
@@ -40,16 +41,10 @@ describe("usageBadge", () => {
     assert.closeTo(badge?.arcs.others ?? 0, 0.34, 1e-9)
   })
 
-  it("names Claude when the plan is Claude's", () => {
-    const claude = usageSheet(
-      { ...Fx.liftLogUsage, provider: "claude", plan: "Claude Max" },
-      "Lift Log",
-      Fx.liftLog.id,
-      now,
-      la
-    )
-    assert.include(claude.footnote, "so using Claude elsewhere at the same time can count toward a project.")
-    assert.strictEqual(claude.windowsTitle, "Your Claude Max")
+  it("says it's paused, in amber, while a limit they set holds the project", () => {
+    const paused = usageBadge(glance({ usedPercent: 40, projectPercent: 25 }), { limit: "project", percent: 25 })
+    assert.deepStrictEqual([paused?.value, paused?.caption, paused?.nearLimit], ["25%", "paused", true])
+    assert.strictEqual(usageBadge(undefined, { limit: "planLeft", percent: 10 })?.value, "—")
   })
 
   it("near the limit, says what's left of the week", () => {
@@ -89,81 +84,95 @@ describe("latestGlance", () => {
   })
 })
 
-describe("tokensLabel", () => {
-  it("is short", () => {
-    assert.deepStrictEqual([640, 45_200, 910_000, 2_140_000, 9_620_000, 142_000_000].map(tokensLabel), [
-      "640",
-      "45K",
-      "0.9M",
-      "2.1M",
-      "9.6M",
-      "142M"
-    ])
-  })
-})
-
 describe("usageSheet", () => {
-  const sheet = usageSheet(Fx.liftLogUsage, "Lift Log", Fx.liftLog.id, now, la)
+  const sheet = usageSheet(Fx.liftLogUsage, "Lift Log", now, la)
+  const resets = DateTime.makeUnsafe("2026-11-09T16:00:00Z")
 
-  it("reads like the mock: the hero, three periods, both windows, every project and Outside Dream", () => {
+  it("shows what this project used of the week, what's left and when it resets, and no limits yet", () => {
     assert.strictEqual(sheet.subtitle, "Lift Log · ChatGPT Pro")
-    assert.deepStrictEqual(sheet.hero?.legend, { project: "4%", others: "34%", left: "62%" })
-    assert.strictEqual(sheet.hero?.share, "4%")
+    assert.deepStrictEqual(
+      [sheet.hero?.share, sheet.hero?.left, sheet.hero?.resets],
+      ["4%", "62%", "Resets Mon 12:00 AM"]
+    )
     assert.isUndefined(sheet.callout)
-    assert.deepStrictEqual(sheet.periods, [
-      { label: "Today", value: "2.1M", cacheRead: "+18M from cache", detail: "≈2% of week" },
-      { label: "This 5 hours", value: "0.9M", cacheRead: "+7.9M from cache", detail: "≈9% of 5 hours" },
-      { label: "This week", value: "9.6M", cacheRead: "+83M from cache", detail: "≈4% of week" }
-    ])
-    assert.strictEqual(sheet.windowsTitle, "Your ChatGPT Pro")
-    assert.deepStrictEqual(
-      sheet.windows.map((w) => [w.label, w.used, w.resets]),
-      [
-        ["5 hours", "41% used", "resets 3:40 PM"],
-        ["Week", "38% used", "resets Mon 12:00 AM"]
-      ]
-    )
-    assert.deepStrictEqual(
-      sheet.projects.map((p) => [p.title, p.share, p.current, p.outside]),
-      [
-        ["Recipe Scaler", "19%", false, false],
-        ["Lift Log", "4%", true, false],
-        ["Cabin", "3%", false, false],
-        ["Morning Brief", "2%", false, false],
-        ["Outside Dream", "10%", false, true]
-      ]
-    )
-    assert.strictEqual(sheet.projects[0]?.bar, 1)
-    assert.strictEqual(
-      sheet.footnote,
-      "Tokens are exact. Shares (≈) are estimated from how your plan moved while each project worked, so using ChatGPT elsewhere at the same time can count toward a project."
-    )
+    assert.deepStrictEqual(sheet.limits, {
+      project: { value: undefined, reached: false },
+      planLeft: { value: undefined, reached: false }
+    })
+    const claude = usageSheet({ ...Fx.liftLogUsage, provider: "claude", plan: "Claude Max" }, "Lift Log", now, la)
+    assert.strictEqual(claude.subtitle, "Lift Log · Claude Max")
   })
 
-  it("says when subagents aren't counted, and shows a quiet dash for a period without tokens", () => {
-    const usage: ProjectUsage = { ...Fx.liftLogUsage, subagents: "excluded", today: {} }
-    const excluded = usageSheet(usage, "Lift Log", Fx.liftLog.id, now, la)
-    assert.isTrue(excluded.footnote.startsWith("Tokens are exact but leave out what subagents used. Shares (≈)"))
-    assert.deepStrictEqual(excluded.periods[0], { label: "Today", value: "—" })
+  it("prefers the week as a whole, which an API sends even when this project didn't work in it", () => {
+    const { weekly: _, ...rest } = Fx.liftLogUsage
+    const idle = usageSheet({ ...rest, weekWindow: { usedPercent: 50, projectPercent: 0 } }, "Lift Log", now, la)
+    assert.deepStrictEqual([idle.hero?.share, idle.hero?.left], ["<1%", "50%"])
   })
 
   it("near the limit, says what's left and until when", () => {
     const usage: ProjectUsage = {
       ...Fx.liftLogUsage,
-      weekly: { usedPercent: 92, projectPercent: 31, resetsAt: DateTime.makeUnsafe("2026-11-09T16:00:00Z") }
+      weekly: { usedPercent: 92, projectPercent: 31, resetsAt: resets }
     }
-    const near = usageSheet(usage, "Lift Log", Fx.liftLog.id, now, la)
+    const near = usageSheet(usage, "Lift Log", now, la)
     assert.isTrue(near.hero?.nearLimit)
-    assert.deepStrictEqual(near.hero?.legend, { project: "31%", others: "61%", left: "8%" })
+    assert.strictEqual(near.hero?.left, "8%")
     assert.strictEqual(near.callout?.left, "8% of your week is left")
     assert.isTrue(near.callout?.rest.startsWith(", until Mon 8:00 AM."))
   })
 
-  it("without the week, has no hero and no windows to show", () => {
+  it("shows each limit with where the project stands, and says which one paused it", () => {
+    const week = { usedPercent: 70, projectPercent: 25, resetsAt: resets }
+    const usage: ProjectUsage = {
+      ...Fx.liftLogUsage,
+      weekly: week,
+      weekWindow: week,
+      limits: { projectWeekPercent: 25, planLeftPercent: 10 },
+      limitReached: { limit: "project", percent: 25 }
+    }
+    const paused = usageSheet(usage, "Lift Log", now, la)
+    assert.deepStrictEqual(paused.limits, {
+      project: { value: 25, note: "About 25% used so far", reached: true },
+      planLeft: { value: 10, note: "30% left now", reached: false }
+    })
+    assert.isTrue(paused.hero?.nearLimit)
+    assert.deepStrictEqual(paused.callout, {
+      left: "Paused at the 25% you gave it",
+      rest: ". It picks up when you raise or clear the limit, or when your week resets Mon 8:00 AM."
+    })
+    const floor = usageSheet({ ...usage, limitReached: { limit: "planLeft", percent: 10 } }, "Lift Log", now, la)
+    assert.strictEqual(floor.callout?.left, "Paused to keep 10% of your week free")
+    assert.include(floor.callout?.rest, "when you lower or clear the limit")
+  })
+
+  it("without the week, has no ring, and the limits still show", () => {
     const { weekly: _, fiveHourWindow: __, ...rest } = Fx.liftLogUsage
-    const unknown = usageSheet(rest, "Lift Log", Fx.liftLog.id, now, la)
+    const unknown = usageSheet({ ...rest, limits: { planLeftPercent: 20 } }, "Lift Log", now, la)
     assert.isUndefined(unknown.hero)
-    assert.deepStrictEqual(unknown.windows, [])
+    assert.deepStrictEqual(unknown.limits.planLeft, { value: 20, reached: false })
+  })
+})
+
+describe("limit fields", () => {
+  it("take whole percents from 1 to 99, and clear on anything else", () => {
+    assert.deepStrictEqual(["25", " 7%", "", "0", "00", "99"].map(parseLimit), [
+      25,
+      7,
+      undefined,
+      undefined,
+      undefined,
+      99
+    ])
+  })
+
+  it("change one limit and keep the other", () => {
+    assert.deepStrictEqual(withLimit({ planLeftPercent: 10 }, "project", 30), {
+      planLeftPercent: 10,
+      projectWeekPercent: 30
+    })
+    assert.deepStrictEqual(withLimit({ planLeftPercent: 10, projectWeekPercent: 30 }, "planLeft", undefined), {
+      projectWeekPercent: 30
+    })
   })
 })
 

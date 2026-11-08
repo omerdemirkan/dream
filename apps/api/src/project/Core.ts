@@ -13,7 +13,8 @@ import {
   NotFound,
   type Project,
   ProjectEvent,
-  type StatusCard
+  type StatusCard,
+  type UsageLimits
 } from "@dream/domain"
 import { Clock, Context, DateTime, Effect, Layer, Option, Semaphore } from "effect"
 import { Projects } from "../db/Projects.ts"
@@ -71,12 +72,15 @@ export class Core extends Context.Service<
     readonly status: Effect.Effect<StatusCard>
     readonly sandbox: Effect.Effect<SandboxRecord>
     readonly usagePause: Effect.Effect<Option.Option<UsagePause>>
+    /** The usage limits they set; empty when neither is set. */
+    readonly usageLimits: Effect.Effect<UsageLimits>
     readonly activity: Effect.Effect<AgentActivity>
 
     readonly saveProject: (project: Project) => Effect.Effect<void>
     readonly saveStatus: (status: StatusCard) => Effect.Effect<void>
     readonly saveSandbox: (record: SandboxRecord) => Effect.Effect<void>
     readonly saveUsagePause: (pause: Option.Option<UsagePause>) => Effect.Effect<void>
+    readonly saveUsageLimits: (limits: UsageLimits) => Effect.Effect<void>
     /** The scheduled wakes changed: tells phones and Home about the next one. */
     readonly wakesChanged: Effect.Effect<void>
     /** Delivery of these events to the sandbox began: their messages among them read "Seen" from now on. */
@@ -118,6 +122,10 @@ export class Core extends Context.Service<
         Option.getOrElse(() => emptySandbox)
       )
       const usagePause = store.getSingleton(...Singletons.usagePause)
+      const usageLimits = Effect.map(
+        store.getSingleton(...Singletons.usageLimits),
+        Option.getOrElse((): UsageLimits => ({}))
+      )
 
       const openAsks = Effect.map(store.openAsks, (messages) => messages.filter(isOpenAsk))
 
@@ -132,12 +140,15 @@ export class Core extends Context.Service<
           const card = yield* status
           const record = yield* sandbox
           const pause = yield* usagePause
+          const limits = yield* usageLimits
           const done = card.milestones.filter((m) => m.state === "done").length
           yield* projects.project({
             project: current.value,
             sandboxId: record.access?.sandboxId,
             progress: card.milestones.length === 0 ? undefined : { done, total: card.milestones.length },
             pausedUntil: Option.isSome(pause) ? pause.value.until : undefined,
+            pausedBy: Option.isSome(pause) ? pause.value.limit : undefined,
+            usageLimits: Object.keys(limits).length === 0 ? undefined : limits,
             activity: activityOf(record, yield* store.nextWakeMs),
             openAsks: yield* openAsks
           })
@@ -195,10 +206,23 @@ export class Core extends Context.Service<
           if (Option.isSome(pause)) yield* store.putSingleton(...Singletons.usagePause, pause.value)
           else yield* store.clearSingleton(Singletons.usagePause[0])
           const card = yield* status
-          const { pausedUntil: _, ...rest } = card
-          const next: StatusCard = Option.isSome(pause) ? { ...rest, pausedUntil: pause.value.until } : rest
+          const { pausedUntil: _, pausedBy: _by, ...rest } = card
+          const next: StatusCard = Option.isSome(pause)
+            ? {
+                ...rest,
+                pausedUntil: pause.value.until,
+                ...(pause.value.limit === undefined ? {} : { pausedBy: pause.value.limit })
+              }
+            : rest
           yield* store.putSingleton(...Singletons.status, next)
           yield* live.publish(ProjectEvent.cases.StatusChanged.make({ status: next }))
+          yield* reproject
+        })
+
+      const saveUsageLimits = (limits: UsageLimits) =>
+        Effect.gen(function* () {
+          if (Object.keys(limits).length === 0) yield* store.clearSingleton(Singletons.usageLimits[0])
+          else yield* store.putSingleton(...Singletons.usageLimits, limits)
           yield* reproject
         })
 
@@ -242,11 +266,13 @@ export class Core extends Context.Service<
         status,
         sandbox,
         usagePause,
+        usageLimits,
         activity,
         saveProject,
         saveStatus,
         saveSandbox,
         saveUsagePause,
+        saveUsageLimits,
         wakesChanged,
         markSeen,
         message: store.message,

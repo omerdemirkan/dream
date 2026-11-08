@@ -17,6 +17,7 @@ import { Relays } from "./Relays.ts"
 import { SandboxManager } from "./SandboxManager.ts"
 import { Scheduler } from "./Scheduler.ts"
 import { migrate, Store } from "./Store.ts"
+import { UsageLimiter } from "./UsageLimits.ts"
 
 export const projectLayer = (
   storage: DurableObjectStorage,
@@ -28,8 +29,9 @@ export const projectLayer = (
   const core = Core.layer.pipe(Layer.provideMerge(Layer.mergeAll(LiveFeed.layer, alarm)))
   const sandbox = SandboxManager.layer.pipe(Layer.provide([SandboxRefresh.layer, SandboxMove.layer]))
   const domain = Layer.mergeAll(Notifier.layer, sandbox, Machines.layer).pipe(Layer.provideMerge(core))
+  const limits = UsageLimiter.layer.pipe(Layer.provideMerge(domain))
   return Layer.mergeAll(Scheduler.layer, Relays.layer, AppNotifications.layer).pipe(
-    Layer.provideMerge(domain),
+    Layer.provideMerge(limits),
     Layer.provideMerge(store)
   )
 }

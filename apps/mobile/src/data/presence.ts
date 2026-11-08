@@ -4,7 +4,7 @@
  * derived here from what the API sends (`AgentActivity`, the pause, open asks, messages) and the clock, so every
  * state is covered by tests in Node.
  */
-import type { AgentActivity, Harness, Message, TextMessage, TurnProgress } from "@dream/domain"
+import type { AgentActivity, Harness, Message, TextMessage, TurnProgress, UsageLimitReached } from "@dream/domain"
 import { DateTime, Duration } from "effect"
 import { sameDay, timeLabel } from "./format.ts"
 
@@ -17,8 +17,8 @@ export type Presence =
     }
   /** Dream is bringing its computer up to deliver something. */
   | { readonly _tag: "Starting"; readonly since: DateTime.Utc }
-  /** Waiting for a usage window to reset. */
-  | { readonly _tag: "Paused"; readonly until: DateTime.Utc }
+  /** Waiting for a usage window to reset, or (`by`) for them to raise or clear a limit they set. */
+  | { readonly _tag: "Paused"; readonly until: DateTime.Utc; readonly by?: UsageLimitReached | undefined }
   /** Between turns with its computer still up; `since` is when the last turn ended. */
   | {
       readonly _tag: "Awake"
@@ -38,6 +38,8 @@ export interface PresenceInput {
   readonly activity: AgentActivity | undefined
   readonly working: boolean
   readonly pausedUntil: DateTime.Utc | undefined
+  /** With `pausedUntil`: a limit they set holds the project. */
+  readonly pausedBy?: UsageLimitReached | undefined
   readonly now: DateTime.Utc
 }
 
@@ -66,7 +68,7 @@ export const presenceOf = (input: PresenceInput): Presence => {
     return { _tag: "Starting", since: activity.since }
   }
   if (input.pausedUntil !== undefined && isAfter(input.pausedUntil, now)) {
-    return { _tag: "Paused", until: input.pausedUntil }
+    return { _tag: "Paused", until: input.pausedUntil, ...(input.pausedBy ? { by: input.pausedBy } : {}) }
   }
   if (activity === undefined) return { _tag: "Unknown" }
   const since = activity.state === "idle" ? activity.since : undefined
@@ -154,9 +156,14 @@ const working = (presence: { readonly since?: DateTime.Utc | undefined }, now: D
   strong: true
 })
 
-const paused = (until: DateTime.Utc, context: LineContext): StateLine => ({
+const paused = (presence: Extract<Presence, { _tag: "Paused" }>, context: LineContext): StateLine => ({
   lead: "Paused",
-  rest: `${planName(context.harness)} usage resets ${aheadLabel(until, context.now, context.timeZone)}`,
+  rest:
+    presence.by === undefined
+      ? `${planName(context.harness)} usage resets ${aheadLabel(presence.until, context.now, context.timeZone)}`
+      : presence.by.limit === "project"
+        ? `used its ${presence.by.percent}% of the week`
+        : `keeping ${presence.by.percent}% of ${planName(context.harness)} free`,
   strong: false
 })
 
@@ -191,7 +198,7 @@ export const homeLine = (
     case "Starting":
       return { lead: "Starting its computer…", strong: true }
     case "Paused":
-      return paused(presence.until, context)
+      return paused(presence, context)
   }
   if (context.openAsks > 0) return { lead: "Waiting for you", rest: context.headline, strong: false, need: true }
   if (presence._tag === "Awake") {
@@ -217,7 +224,7 @@ export const headerLine = (
     case "Starting":
       return { lead: "Starting up", strong: true }
     case "Paused":
-      return paused(presence.until, context)
+      return paused(presence, context)
   }
   if (presence._tag !== "Unknown" && sentPending(messages, now)) {
     return presence._tag === "Awake"

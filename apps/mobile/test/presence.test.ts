@@ -158,6 +158,26 @@ describe("Home (B)", () => {
     assert.isTrue(homeLine(cabin, context(now, [], 2))?.need)
   })
 
+  it("says which limit they set paused it", () => {
+    const share = presenceOf({
+      activity: asleep,
+      working: false,
+      pausedUntil: at("16:00"),
+      pausedBy: { limit: "project", percent: 25 },
+      now
+    })
+    assert.strictEqual(dotOf(share), "paused")
+    assert.strictEqual(line(headerLine(share, context(now, []))), "Paused · used its 25% of the week")
+    const floor = presenceOf({
+      activity: asleep,
+      working: false,
+      pausedUntil: at("16:00"),
+      pausedBy: { limit: "planLeft", percent: 10 },
+      now
+    })
+    assert.strictEqual(line(homeLine(floor, context(now, []))), "Paused · keeping 10% of Claude free")
+  })
+
   it("puts working ahead of waiting and paused", () => {
     const p = presence(working, at("14:05"), { pausedUntil: at("16:00") })
     assert.strictEqual(line(homeLine(p, context(at("14:05"), [], 3))), "Working · 3m")

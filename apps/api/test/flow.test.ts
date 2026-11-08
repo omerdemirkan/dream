@@ -943,6 +943,124 @@ describe("a project, end to end", () => {
     })
   )
 
+  it.live("a limit on the project's share pauses it after the turn that reached it, and raising it resumes", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project } = yield* setup(cloud)
+      yield* cloud.alarm(project.id)
+      const dreamd = yield* cloud.sandbox(envFileOf(cloud, project.id).env.DREAM_PROJECT_TOKEN)
+      const weekResets = DateTime.add(yield* DateTime.now, { days: 3 })
+      const report = (week: number) =>
+        Effect.flatMap(DateTime.now, (observedAt) =>
+          dreamd.ReportUsage({
+            usage: { provider: "claude", weekly: { usedPercent: week, resetsAt: weekResets }, observedAt }
+          })
+        )
+      const turn = (from: number, to: number) =>
+        Effect.gen(function* () {
+          yield* report(from)
+          yield* dreamd.ReportTurn({ state: "started", eventIds: [] })
+          yield* Effect.sleep("5 millis")
+          yield* report(to)
+          yield* dreamd.ReportTurn({
+            state: "finished",
+            eventIds: [],
+            usage: { tokens: { input: 1_000, cacheRead: 0, cacheWrite: 0, output: 1_000 } }
+          })
+        })
+      yield* turn(10, 20)
+
+      const set = yield* cloud.phone.SetUsageLimits({ projectId: project.id, limits: { projectWeekPercent: 25 } })
+      assert.deepStrictEqual(set.limits, { projectWeekPercent: 25 })
+      assert.isUndefined(set.limitReached)
+      assert.deepStrictEqual(set.weekWindow, { usedPercent: 20, projectPercent: 10, resetsAt: weekResets })
+      yield* cloud.alarm(project.id)
+      const told = cloud.world.delivered.at(-1)!.events as ReadonlyArray<any>
+      assert.deepStrictEqual(
+        told.map((e) => e._tag),
+        ["UsageLimitsChanged"]
+      )
+      assert.include(renderAgentEvent(told[0]), "may use up to 25% of their plan's week")
+
+      yield* turn(20, 30)
+      assert.isUndefined((yield* cloud.phone.ListProjects())[0]?.pausedUntil)
+      yield* turn(30, 36)
+      const [summary] = yield* cloud.phone.ListProjects()
+      assert.deepStrictEqual(summary?.pausedUntil, weekResets)
+      assert.deepStrictEqual(summary?.pausedBy, { limit: "project", percent: 25 })
+      const standing = yield* dreamd.GetUsageLimits()
+      assert.deepStrictEqual(standing.reached, { limit: "project", percent: 25 })
+      assert.strictEqual(standing.week?.projectPercent, 26)
+      // dreamd heard to start nothing more, and their phone which limit and how to go on.
+      assert.deepStrictEqual(
+        cloud.world.holds.map((h) => h.held),
+        [true]
+      )
+      const alert = cloud.world.pushes.findLast((p) => p.kind === "alert")!.payload as any
+      assert.strictEqual(alert.data._tag, "OpenUsage")
+      assert.match(alert.body, /^Paused after using the 25% of your week you gave it\. Raise or clear the limit/)
+
+      // Their message, and a wake, wait.
+      const delivered = cloud.world.delivered.length
+      yield* cloud.phone.SendMessage({ projectId: project.id, text: "Also track RPE" })
+      yield* cloud.alarm(project.id)
+      assert.strictEqual(cloud.world.delivered.length, delivered)
+      // A reading that changes nothing doesn't tell them again.
+      const pushes = cloud.world.pushes.length
+      yield* report(36)
+      assert.strictEqual(cloud.world.pushes.length, pushes)
+
+      const raised = yield* cloud.phone.SetUsageLimits({ projectId: project.id, limits: { projectWeekPercent: 40 } })
+      assert.isUndefined(raised.limitReached)
+      assert.isUndefined((yield* cloud.phone.ListProjects())[0]?.pausedUntil)
+      const withdrawn = cloud.world.pushes.findLast((p) => p.kind === "silent")!.payload as any
+      assert.deepStrictEqual(withdrawn.notificationIds, [alert.id])
+      yield* cloud.alarm(project.id)
+      assert.deepStrictEqual(
+        (cloud.world.delivered.at(-1)!.events as ReadonlyArray<any>).map((e) => e._tag),
+        ["UserMessage", "UsageLimitsChanged"]
+      )
+      assert.deepStrictEqual(
+        cloud.world.holds.map((h) => h.held),
+        [true, false]
+      )
+      yield* cloud.close
+    })
+  )
+
+  it.live("a floor on what's left of the plan pauses a project when another uses the plan, until the week resets", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project } = yield* setup(cloud)
+      yield* cloud.alarm(project.id)
+      const other = yield* cloud.phone.CreateProject({ idea: "A recipe scaler for my bakery's batch sizes." })
+      yield* cloud.alarm(other.id)
+      const busy = yield* cloud.sandbox(envFileOf(cloud, other.id).env.DREAM_PROJECT_TOKEN)
+      yield* cloud.phone.SetUsageLimits({ projectId: project.id, limits: { planLeftPercent: 30 } })
+      const weekResets = DateTime.add(yield* DateTime.now, { milliseconds: 1500 })
+      yield* busy.ReportUsage({
+        usage: {
+          provider: "claude",
+          weekly: { usedPercent: 72, resetsAt: weekResets },
+          observedAt: yield* DateTime.now
+        }
+      })
+      yield* Effect.sleep("100 millis")
+      const paused = (yield* cloud.phone.ListProjects()).find((s) => s.project.id === project.id)
+      assert.deepStrictEqual(paused?.pausedBy, { limit: "planLeft", percent: 30 })
+      const other_ = (yield* cloud.phone.ListProjects()).find((s) => s.project.id === other.id)
+      assert.isUndefined(other_?.pausedUntil)
+      const alert = cloud.world.pushes.findLast((p) => p.kind === "alert")!.payload as any
+      assert.match(alert.body, /^Paused to keep the last 30% of your Claude week free\./)
+
+      yield* Effect.sleep("1500 millis")
+      yield* cloud.alarm(project.id)
+      const resumed = (yield* cloud.phone.ListProjects()).find((s) => s.project.id === project.id)
+      assert.isUndefined(resumed?.pausedUntil)
+      yield* cloud.close
+    })
+  )
+
   it.live('takes a turn\'s "before" from its first reading when the stored one is hours old', () =>
     Effect.gen(function* () {
       const cloud = yield* makeCloud()

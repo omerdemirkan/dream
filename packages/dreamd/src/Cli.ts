@@ -48,6 +48,7 @@ import {
   relayUrlProblem,
   StatusCard,
   TextMessage,
+  UsageLimitStanding,
   UsageSnapshot,
   Wake,
   type WakeId,
@@ -2015,14 +2016,28 @@ const machine = Command.make("machine", { json }, (input) =>
   ])
 )
 
+/** `dream usage --json`: the subscription, and the project's limits when the API knows them. */
+const UsageReport = Schema.Struct({ ...UsageSnapshot.fields, limits: Schema.optionalKey(UsageLimitStanding) })
+
 const usage = Command.make("usage", { json }, (input) =>
   Effect.gen(function* () {
     const dream = yield* Dream
     const snapshot = yield* userFacing(dream.GetUsage())
-    yield* show(input.json, UsageSnapshot, snapshot, Format.usage(snapshot, yield* now))
+    // An API from before limits doesn't know GetUsageLimits; the windows still show.
+    const standing = yield* dream.GetUsageLimits().pipe(
+      Effect.map(Option.some),
+      Effect.catchCause(() => Effect.succeed(Option.none<UsageLimitStanding>()))
+    )
+    const report = Option.match(standing, {
+      onNone: () => snapshot,
+      onSome: (limits) => ({ ...snapshot, limits })
+    })
+    yield* show(input.json, UsageReport, report, Format.usage(snapshot, yield* now, Option.getOrUndefined(standing)))
   })
 ).pipe(
-  Command.withDescription("Their subscription's five-hour and weekly windows: how much is used and when each resets.")
+  Command.withDescription(
+    "Their subscription's five-hour and weekly windows, this project's share of the week, and the limits they set on it."
+  )
 )
 
 export const dream = Command.make("dream").pipe(

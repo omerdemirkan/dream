@@ -50,6 +50,12 @@ export class Daemon extends Context.Service<
       daemonToken: string,
       watching: boolean
     ) => Effect.Effect<void, UpstreamFailure>
+    /** A usage limit they set holds the project, or no longer does (`DaemonRpcs.HoldTurns`). An older dreamd refuses it. */
+    readonly holdTurns: (
+      sandbox: SandboxAccess,
+      daemonToken: string,
+      held: boolean
+    ) => Effect.Effect<void, UpstreamFailure>
     readonly health: (
       sandbox: SandboxAccess,
       daemonToken: string
@@ -135,7 +141,13 @@ export class Daemon extends Context.Service<
           Effect.mapError(failure("Telling dreamd who's watching"))
         )
 
-      return Daemon.of({ deliver, forwardRelay, setWatching, health })
+      const holdTurns = (sandbox: SandboxAccess, daemonToken: string, held: boolean) =>
+        withClient(sandbox, daemonToken, (client) => client.HoldTurns({ held })).pipe(
+          Effect.timeout("10 seconds"),
+          Effect.mapError(failure(held ? "Holding dreamd's turns" : "Releasing dreamd's turns"))
+        )
+
+      return Daemon.of({ deliver, forwardRelay, setWatching, holdTurns, health })
     })
   )
 }

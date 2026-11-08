@@ -419,6 +419,7 @@ const Handlers = SandboxRpcs.toLayer(
       GetMac: () => log("GetMac", {}).pipe(Effect.as({ state: "stopped" as const, idleTimeoutMinutes: 20 })),
       GetMacSsh: () => log("GetMacSsh", {}).pipe(Effect.andThen(unavailable("Namespace"))),
       StopMac: () => log("StopMac", {}).pipe(Effect.andThen(unavailable("Namespace"))),
+      GetUsageLimits: () => log("GetUsageLimits", {}).pipe(Effect.as({ limits: {} })),
       GetUsage: () =>
         log("GetUsage", {}).pipe(
           Effect.andThen(Ref.get(usage)),

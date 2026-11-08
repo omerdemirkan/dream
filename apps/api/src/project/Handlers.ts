@@ -52,6 +52,7 @@ import { ProjectRpcs } from "./ProjectRpcs.ts"
 import { Relays } from "./Relays.ts"
 import { SandboxManager } from "./SandboxManager.ts"
 import { type SandboxRecord, Singletons, Store } from "./Store.ts"
+import { UsageLimiter } from "./UsageLimits.ts"
 
 const notFound = (entity: string, id: string) => new NotFound({ entity, id })
 
@@ -114,6 +115,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
     const machines = yield* Machines
     const relays = yield* Relays
     const appNotifications = yield* AppNotifications
+    const limiter = yield* UsageLimiter
 
     const findMessage = (id: Message["id"]) =>
       Effect.flatMap(core.message(id), (found) =>
@@ -443,6 +445,9 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
           yield* alarm.reschedule
         }),
 
+      SetUsageLimits: ({ limits }) => limiter.set(limits),
+      CheckUsageLimits: () => limiter.check,
+
       GatewayTarget: () => sandbox.gatewayTarget,
 
       RelayDeliver: ({ relayId, deliveries }) => relays.deliver(relayId, deliveries),
@@ -550,6 +555,7 @@ export const AgentHandlers = SandboxRpcs.toLayer(
     const alarm = yield* Alarm
     const relays = yield* Relays
     const appNotifications = yield* AppNotifications
+    const limiter = yield* UsageLimiter
 
     const project = core.project.pipe(Effect.orDie)
 
@@ -1040,7 +1046,9 @@ export const AgentHandlers = SandboxRpcs.toLayer(
           const current = yield* project
           yield* connections.recordUsage(current.ownerId, usage)
           yield* sandbox.usageReported(usage)
-          if (usage.limitedUntil === undefined) return
+          // The plan's week moved: this project's limits, and those of any other project of theirs with limits.
+          yield* directory.usageChanged(current.ownerId, current.id).pipe(Effect.forkDetach)
+          if (usage.limitedUntil === undefined) return yield* limiter.check
           const { window, until } = usage.limitedUntil
           if (DateTime.toEpochMillis(until) <= (yield* Clock.currentTimeMillis)) return
           yield* core.saveUsagePause(Option.some({ window, until, wakeOnReset: true }))
@@ -1054,8 +1062,11 @@ export const AgentHandlers = SandboxRpcs.toLayer(
       RemoveRelay: ({ relayId }) => relays.remove(relayId),
       RestartRelay: ({ relayId }) => relays.restart(relayId),
 
-      ReportTask: (report) => sandbox.taskFinished(report),
-      ReportTurn: ({ state, usage }) => (state === "started" ? sandbox.turnStarted : sandbox.turnFinished(usage)),
+      GetUsageLimits: () => limiter.standing,
+      // A finished turn or task is credited its share of the week: check before dreamd hears back and starts more.
+      ReportTask: (report) => Effect.andThen(sandbox.taskFinished(report), limiter.check),
+      ReportTurn: ({ state, usage }) =>
+        state === "started" ? sandbox.turnStarted : Effect.andThen(sandbox.turnFinished(usage), limiter.check),
       ReportProgress: (report) => sandbox.reportProgress(report),
       StayAwake: () => sandbox.stayAwake,
       Sleep: ({ reason, checkedAt }) => sandbox.sleep(reason, checkedAt),

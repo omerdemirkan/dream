@@ -26,6 +26,8 @@ import {
   StatusCard,
   TurnProgress,
   UsageSnapshot,
+  UsageLimitReached,
+  UsageLimits,
   UsageWindowName,
   Wake,
   WakeId
@@ -60,6 +62,8 @@ export const SandboxRecord = Schema.Struct({
   progress: Schema.optionalKey(TurnProgress),
   /** The subscription's usage as Dream knew it when the running turn started: its "before" in the turn ledger. */
   turnUsageBefore: Schema.optionalKey(UsageSnapshot),
+  /** dreamd was told to hold its turns (`DaemonRpcs.HoldTurns`) and hasn't been told it's over. */
+  daemonHeld: Schema.optionalKey(Schema.Boolean),
   /** Set while events wait for a sandbox that's being created or resumed, until a turn takes them. */
   startingSince: Schema.optionalKey(Schema.DateTimeUtc),
   /** When the last turn ended, and when the sandbox goes to sleep after it (IdleTimeout later). */
@@ -130,7 +134,14 @@ export const UsagePause = Schema.Struct({
   window: UsageWindowName,
   until: Schema.DateTimeUtc,
   /** Whether this project hit the limit itself (it then gets a UsageReset event). */
-  wakeOnReset: Schema.Boolean
+  wakeOnReset: Schema.Boolean,
+  /**
+   * A limit they set on the project holds it, not the plan's own: it lasts until they raise or clear it, or until
+   * `until` (the week's reset), whichever is first.
+   */
+  limit: Schema.optionalKey(UsageLimitReached),
+  /** The notification that told them of `limit`, withdrawn when the pause ends. */
+  notificationId: Schema.optionalKey(NotificationId)
 })
 export type UsagePause = typeof UsagePause.Type
 
@@ -239,6 +250,10 @@ export const migrations = Migrator.fromRecord({
       json TEXT NOT NULL
     )`
     yield* sql`CREATE INDEX app_notifications_app ON app_notifications (app_id, sent_at_ms)`
+  }),
+  "0006_usage_limits": Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    yield* sql`CREATE TABLE usage_limits (id INTEGER PRIMARY KEY CHECK (id = 1), json TEXT NOT NULL)`
   })
 })
 
@@ -603,6 +618,7 @@ export class Store extends Context.Service<
           "live_activity",
           "mac",
           "usage_pause",
+          "usage_limits",
           "owner_archived",
           "relays",
           "app_senders",
@@ -693,6 +709,8 @@ export const Singletons = {
   liveActivity: ["live_activity", LiveActivityRecord] as const,
   mac: ["mac", MacRecord] as const,
   usagePause: ["usage_pause", UsagePause] as const,
+  /** The usage limits they set on the project (`AppRpcs.SetUsageLimits`); absent when neither is set. */
+  usageLimits: ["usage_limits", UsageLimits] as const,
   /** Deleted (`ProjectRpcs.Delete`): the tombstone `wipe` keeps. The table is older than the name. */
   deleted: ["archived", Schema.Struct({ at: Schema.DateTimeUtc })] as const,
   /** Archived by its owner (`ProjectRpcs.Archive`), until they restore it: the agent is held, nothing is lost. */

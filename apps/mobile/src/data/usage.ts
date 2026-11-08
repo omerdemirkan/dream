@@ -1,6 +1,6 @@
 /**
  * How a project's use of the subscription reads on screen: the ring in the project header (Deck v3, project usage
- * option A) and the usage sheet it opens. Pure, so it's tested in Node. Tokens are exact; shares are estimates.
+ * option A) and the usage sheet it opens. Pure, so it's tested in Node. Shares are estimates.
  */
 import type {
   AccountUsage,
@@ -9,7 +9,8 @@ import type {
   ProjectShare,
   ProjectUsage,
   ProjectUsageGlance,
-  UsagePeriod,
+  UsageLimitReached,
+  UsageLimits,
   UsageSnapshot,
   WindowShare
 } from "@dream/domain"
@@ -32,18 +33,6 @@ export const latestGlance = (
 /** A share as a label: "4%", and "<1%" for a share too small to round to one. */
 export const percentLabel = (percent: number) => (percent < 0.5 ? "<1%" : `${Math.round(percent)}%`)
 
-/** Exact token counts, short: "640", "45K", "0.9M", "2.1M", "142M". */
-export const tokensLabel = (tokens: number) => {
-  if (tokens < 1_000) return `${tokens}`
-  if (tokens < 100_000) return `${Math.round(tokens / 1_000)}K`
-  if (tokens < 100_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`
-  return `${Math.round(tokens / 1_000_000)}M`
-}
-
-/** Cache reads, which dwarf the headline: "+18M from cache", "+640K from cache" (one line in the sheet's narrow cells). */
-export const cacheReadLabel = (tokens: number) =>
-  `+${tokens >= 10_000_000 ? `${Math.round(tokens / 1_000_000)}M` : tokensLabel(tokens)} from cache`
-
 /** One ring's arcs, as fractions of the circle: this project's, then everything else's; the rest is the track. */
 export interface RingArcs {
   readonly project: number
@@ -61,19 +50,34 @@ export const ringArcs = (window: WindowShare, minProject: number): RingArcs => {
   return { project, others: Math.max(0, Math.min(used - share, 1 - project)) }
 }
 
-/** The header's ring: absent when the week isn't known or this project hasn't used any of it (never a fake 0%). */
+/**
+ * The header's ring: absent when the week isn't known or this project hasn't used any of it (never a fake 0%), unless
+ * a limit they set holds it, when it says so.
+ */
 export interface UsageBadge {
   readonly arcs: RingArcs
   readonly nearLimit: boolean
   /** "4%" (this project's share), or near the limit "8% left" (the whole week's). */
   readonly value: string
-  readonly caption: "of week"
+  readonly caption: "of week" | "paused"
   /** What VoiceOver reads. */
   readonly accessibilityLabel: string
 }
 
-export const usageBadge = (glance: ProjectUsageGlance | undefined): UsageBadge | undefined => {
+export const usageBadge = (
+  glance: ProjectUsageGlance | undefined,
+  pausedBy?: UsageLimitReached | undefined
+): UsageBadge | undefined => {
   const week = glance?.weekly
+  if (pausedBy) {
+    return {
+      arcs: week ? ringArcs(week, 0.08) : { project: 0, others: 0 },
+      nearLimit: true,
+      value: week ? percentLabel(week.projectPercent) : "—",
+      caption: "paused",
+      accessibilityLabel: "Usage: paused at a limit you set"
+    }
+  }
   if (!week) return undefined
   const nearLimit = week.usedPercent >= nearLimitPercent
   const left = leftPercent(week)
@@ -194,94 +198,129 @@ const limitCallout = (
 // The sheet
 // ---------------------------------------------------------------------------
 
+/**
+ * The usage sheet, kept to what matters at a glance: how much of the week this project used, how much of the plan
+ * is left and when it resets, and the two limits they can set. Token counts, other projects and how shares are
+ * estimated stay out of it (Settings' plan card has the projects).
+ */
 export interface UsageSheet {
   /** "Lift Log · ChatGPT Pro" */
   readonly subtitle: string
-  /** The week as the hero ring with its legend; absent when the week isn't known. */
+  /** The week as a ring, absent when the week isn't known. */
   readonly hero?: {
     readonly arcs: RingArcs
     readonly nearLimit: boolean
+    /** This project's share: "31%". */
     readonly share: string
-    readonly legend: { readonly project: string; readonly others: string; readonly left: string }
+    /** What's left of the plan this week: "8%". */
+    readonly left: string
+    /** "Resets Mon 8:00 AM" */
+    readonly resets?: string
   }
-  /** Near the limit: what's left and until when. */
+  /** Paused by a limit they set, or near the end of the week: in amber. */
   readonly callout?: { readonly left: string; readonly rest: string }
-  readonly periods: ReadonlyArray<{
-    readonly label: string
-    /** Tokens without cache reads, or "—" when no turn in the period reported any. */
-    readonly value: string
-    readonly detail?: string
-    readonly cacheRead?: string
-  }>
-  /** "Your ChatGPT Pro", over each window known. */
-  readonly windowsTitle: string
-  readonly windows: ReadonlyArray<WindowBarView>
-  readonly projects: ReadonlyArray<ShareRowView>
-  readonly footnote: string
+  readonly limits: LimitsView
+}
+
+/** The two limits, each as its field shows it, and a quiet line on where the project stands against it. */
+export interface LimitsView {
+  readonly project: LimitRow
+  readonly planLeft: LimitRow
+}
+
+export interface LimitRow {
+  /** The limit, or undefined when it isn't set. */
+  readonly value: number | undefined
+  /** "About 21% used so far", "38% left now"; absent when the week isn't known. */
+  readonly note?: string
+  /** This is the limit holding the project. */
+  readonly reached: boolean
 }
 
 const planName = (provider: ModelProvider, plan: string | undefined) =>
   plan ?? (provider === "chatgpt" ? "ChatGPT plan" : "Claude plan")
 
-const period = (label: string, p: UsagePeriod, of: string) => ({
-  label,
-  value: p.tokens === undefined ? "—" : tokensLabel(p.tokens),
-  ...(p.tokens !== undefined && p.cacheReadTokens ? { cacheRead: cacheReadLabel(p.cacheReadTokens) } : {}),
-  ...(p.sharePercent !== undefined
-    ? { detail: `≈${percentLabel(p.sharePercent)} of ${of}` }
-    : p.costUsd !== undefined
-      ? { detail: `$${p.costUsd.toFixed(2)}` }
-      : {})
+/** Why a limit they set paused the project, in the sheet's callout. */
+const pausedCallout = (
+  reached: UsageLimitReached,
+  resetsAt: DateTime.Utc | undefined,
+  now: DateTime.Utc,
+  timeZone?: string
+) => ({
+  left:
+    reached.limit === "project"
+      ? `Paused at the ${reached.percent}% you gave it`
+      : `Paused to keep ${reached.percent}% of your week free`,
+  rest: `. It picks up when you ${reached.limit === "project" ? "raise" : "lower"} or clear the limit${
+    resetsAt ? `, or when your week resets ${resetLabel(resetsAt, now, timeZone)}` : ""
+  }.`
 })
 
 export const usageSheet = (
   usage: ProjectUsage,
   projectTitle: string,
-  projectId: string,
   now: DateTime.Utc,
   timeZone?: string
 ): UsageSheet => {
   const plan = planName(usage.provider, usage.plan)
-  const week = usage.weekly
+  // `weekWindow` is there whether or not this project worked this week; APIs from before it send `weekly` alone.
+  const week = usage.weekWindow ?? usage.weekly
   const nearLimit = week !== undefined && week.usedPercent >= nearLimitPercent
-  const window = (label: string, w: WindowShare | undefined) =>
-    w ? [windowBar(label, w.usedPercent, w.projectPercent, w.resetsAt, now, timeZone)] : []
+  const reached = usage.limitReached
+  const limits = usage.limits ?? {}
+  const left = week === undefined ? undefined : leftPercent(week)
   return {
     subtitle: `${projectTitle} · ${usage.billing === "apiKey" ? "API key" : plan}`,
     ...(week
       ? {
           hero: {
             arcs: ringArcs(week, 0.03),
-            nearLimit,
+            nearLimit: nearLimit || reached !== undefined,
             share: percentLabel(week.projectPercent),
-            legend: legend(week)
+            left: `${left}%`,
+            ...(week.resetsAt ? { resets: `Resets ${resetLabel(week.resetsAt, now, timeZone)}` } : {})
           }
         }
       : {}),
-    ...(week && nearLimit ? { callout: limitCallout(week.usedPercent, week.resetsAt, now, timeZone) } : {}),
-    periods: [
-      period("Today", usage.today, "week"),
-      period("This 5 hours", usage.fiveHour, "5 hours"),
-      period("This week", usage.week, "week")
-    ],
-    windowsTitle: `Your ${plan}`,
-    windows: [...window("5 hours", usage.fiveHourWindow), ...window("Week", week)],
-    projects: shareRows(usage.projects, usage.outsideDreamPercent, projectId),
-    footnote: `${
-      usage.subagents === "excluded" ? "Tokens are exact but leave out what subagents used." : "Tokens are exact."
-    } Shares (≈) are estimated from how your plan moved while each project worked, so using ${providerName(usage.provider)} elsewhere at the same time can count toward a project.`
+    ...(reached
+      ? { callout: pausedCallout(reached, week?.resetsAt, now, timeZone) }
+      : week && nearLimit
+        ? { callout: limitCallout(week.usedPercent, week.resetsAt, now, timeZone) }
+        : {}),
+    limits: {
+      project: {
+        value: limits.projectWeekPercent,
+        ...(week && limits.projectWeekPercent !== undefined
+          ? { note: `About ${percentLabel(week.projectPercent)} used so far` }
+          : {}),
+        reached: reached?.limit === "project"
+      },
+      planLeft: {
+        value: limits.planLeftPercent,
+        ...(week && limits.planLeftPercent !== undefined ? { note: `${left}% left now` } : {}),
+        reached: reached?.limit === "planLeft"
+      }
+    }
   }
 }
 
-/** This project, everything else and what's left, in whole percent that add up to 100. */
-const legend = (week: WindowShare) => {
-  const used = Math.round(week.usedPercent)
-  const project = Math.min(Math.round(week.projectPercent), used)
-  return {
-    project: percentLabel(week.projectPercent),
-    others: `${used - project}%`,
-    left: `${100 - used}%`
-  }
+/** A limit as typed: whole percents 1–99, and anything else (empty, 0) clears it. */
+export const parseLimit = (text: string): number | undefined => {
+  const digits = text.replace(/[^0-9]/g, "")
+  if (digits === "") return undefined
+  const value = Number.parseInt(digits, 10)
+  return value < 1 ? undefined : Math.min(99, value)
+}
+
+/** The limits with one changed. */
+export const withLimit = (
+  limits: UsageLimits,
+  which: "project" | "planLeft",
+  value: number | undefined
+): UsageLimits => {
+  const key = which === "project" ? "projectWeekPercent" : "planLeftPercent"
+  const { [key]: _, ...rest } = limits
+  return value === undefined ? rest : { ...rest, [key]: value }
 }
 
 const clamp = (fraction: number) => Math.min(1, Math.max(0, fraction))

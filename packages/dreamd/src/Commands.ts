@@ -12,6 +12,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process"
 import { Api } from "./Api.ts"
 import { DreamdConfig } from "./Config.ts"
 import { agentEnv } from "./harness/HarnessEnv.ts"
+import { Hold } from "./Hold.ts"
 import { Inbox, type RunResult, type WakeDueEvent } from "./Inbox.ts"
 import { Tasks } from "./Tasks.ts"
 import * as Usage from "./Usage.ts"
@@ -39,6 +40,7 @@ export class Commands extends Context.Service<
     Effect.gen(function* () {
       const config = yield* DreamdConfig
       const inbox = yield* Inbox
+      const hold = yield* Hold
       const tasks = yield* Tasks
       const api = yield* Api
       const provider = config.harness === "claude-code" ? ("claude" as const) : ("chatgpt" as const)
@@ -133,8 +135,9 @@ export class Commands extends Context.Service<
           )
         )
 
-      const run = inbox.changes.pipe(
-        Stream.mapEffect(() => inbox.commands),
+      // While a usage limit they set holds the project, scheduled commands and tasks wait like turns do.
+      const run = Stream.merge(inbox.changes, hold.changes).pipe(
+        Stream.mapEffect(() => Effect.flatMap(hold.held, (held) => (held ? Effect.succeed([]) : inbox.commands))),
         Stream.runForEach((commands) =>
           Effect.forEach(commands, (event) =>
             Ref.modify(running, (ids) => (ids.has(event.id) ? [false, ids] : [true, new Set([...ids, event.id])])).pipe(

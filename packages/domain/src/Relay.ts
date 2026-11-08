@@ -192,6 +192,11 @@ export type RelayForward = typeof RelayForward.Type
 /** What dreamd reports after posting a batch to the app: how many it took, in order, and why the next one didn't go. */
 export const RelayForwardResult = Schema.Struct({
   delivered: Schema.Int,
+  /**
+   * Nothing was tried because a usage limit they set holds the project: wait, up to then, without counting it a
+   * failure. Set by the ProjectDO, never by dreamd. Added November 2026.
+   */
+  heldUntil: Schema.optionalKey(Schema.DateTimeUtc),
   failure: Schema.optionalKey(
     Schema.Struct({
       message: Schema.String,

@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 import { ProjectId, UserId } from "./Ids.ts"
+import { UsageLimitReached } from "./Usage.ts"
 
 /** The coding agent that runs the project. Fixed when the project is created. */
 export const Harness = Schema.Literals(["claude-code", "codex"])
@@ -113,6 +114,8 @@ export const ProjectSummary = Schema.Struct({
   progress: Schema.optionalKey(Schema.Struct({ done: Schema.Int, total: Schema.Int })),
   /** Set while the project waits for a usage window to reset. */
   pausedUntil: Schema.optionalKey(Schema.DateTimeUtc),
+  /** As `StatusCard.pausedBy`: a limit they set holds it. Added November 2026. */
+  pausedBy: Schema.optionalKey(UsageLimitReached),
   /** Whether the agent is up, and its next wake. Absent from older APIs. */
   activity: Schema.optionalKey(AgentActivity)
 })

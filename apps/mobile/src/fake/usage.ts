@@ -214,6 +214,9 @@ export const usageOf = (
     projects: known ? shares : [],
     ...(known ? { outsideDreamPercent: world.outside } : {}),
     subagents: "included",
+    ...(known
+      ? { weekWindow: { usedPercent: world.weekUsed, projectPercent: own?.week ?? 0, resetsAt: nextMonday(now) } }
+      : {}),
     observedAt: now
   }
 }

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime, Option } from "effect"
+import * as Format from "../src/cli/Format.ts"
 import { fromClaudeRaw, fromCodexRollout, isCodexUsageLimitMessage, merge, toSnapshot } from "../src/Usage.ts"
 
 const fixture = (name: string) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8")
@@ -114,5 +115,45 @@ describe("snapshots", () => {
       weekly: { usedPercent: 20 },
       observedAt: now
     })
+  })
+})
+
+describe("dream usage", () => {
+  const now = DateTime.makeUnsafe("2026-11-08T12:00:00Z")
+  const resetsAt = DateTime.makeUnsafe("2026-11-10T16:00:00Z")
+  const snapshot = {
+    provider: "claude" as const,
+    plan: "Claude Max",
+    weekly: { usedPercent: 62, resetsAt },
+    observedAt: now
+  }
+  const week = { usedPercent: 62, projectPercent: 21, resetsAt }
+
+  it("shows the project's share and how close it is to each limit they set", () => {
+    const text = Format.usage(snapshot, now, { limits: { projectWeekPercent: 30, planLeftPercent: 10 }, week })
+    assert.include(text, "This project has used about 21% of the week.")
+    assert.include(
+      text,
+      "Limits they set: this project may use up to 30% of the week (about 9% to go); Dream stops it when the plan has 10% left (about 28% to go)."
+    )
+    assert.notInclude(text, "Paused")
+  })
+
+  it("says when a limit holds the project, and until when at the latest", () => {
+    const text = Format.usage(snapshot, now, {
+      limits: { planLeftPercent: 40 },
+      week,
+      reached: { limit: "planLeft", percent: 40 }
+    })
+    assert.include(text, "Dream stops it when the plan has 40% left (reached)")
+    assert.include(
+      text,
+      "Paused: the plan is down to the 40% they keep free. Nothing new starts until they raise or clear it, or the week resets 2026-11-10T16:00Z"
+    )
+  })
+
+  it("says when there are no limits, and shows the windows alone from an API that predates them", () => {
+    assert.include(Format.usage(snapshot, now, { limits: {}, week }), "They've set no usage limits on this project.")
+    assert.notInclude(Format.usage(snapshot, now), "limits")
   })
 })

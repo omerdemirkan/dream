@@ -15,6 +15,8 @@ import {
   type ProjectUsage,
   type ProjectUsageGlance,
   type UsageBilling,
+  type UsageLimitReached,
+  type UsageLimits,
   type UsagePeriod,
   type UsageSnapshot,
   type UsageWindow,
@@ -78,6 +80,9 @@ export interface UsageInputs {
   readonly timeZone: string
   /** Title and icon of each project in `turns`; a missing one was deleted. */
   readonly projects: ReadonlyMap<ProjectId, { readonly title: string; readonly icon?: string | undefined }>
+  /** The limits they set on the project, and the one holding it. */
+  readonly limits?: UsageLimits | undefined
+  readonly limitReached?: UsageLimitReached | undefined
 }
 
 interface Window {
@@ -182,6 +187,7 @@ export const buildProjectUsage = (input: UsageInputs): ProjectUsage => {
   // The header shows nothing rather than a made-up 0% when the week isn't known or this project hasn't worked in it.
   const weeklyShare = week.turns.length === 0 ? undefined : windowShare(weekly, week.turns)
   const fiveHourWindow = windowShare(fiveHour, five.turns)
+  const weekWindow = windowShare(weekly, week.turns)
 
   const projects = weekShares(weekly, turns, weekStartMs, input.projects, [project.id])
 
@@ -200,7 +206,10 @@ export const buildProjectUsage = (input: UsageInputs): ProjectUsage => {
     ...(fiveHourWindow === undefined ? {} : { fiveHourWindow }),
     projects,
     ...(weekly === undefined ? {} : { outsideDreamPercent: roundPercent(weekly.attribution.outsideDream) }),
-    ...(subagentModes.size === 1 && onlyMode !== undefined ? { subagents: onlyMode } : {})
+    ...(subagentModes.size === 1 && onlyMode !== undefined ? { subagents: onlyMode } : {}),
+    ...(weekWindow === undefined ? {} : { weekWindow }),
+    ...(input.limits === undefined || Object.keys(input.limits).length === 0 ? {} : { limits: input.limits }),
+    ...(input.limitReached === undefined ? {} : { limitReached: input.limitReached })
   }
 }
 
@@ -256,6 +265,8 @@ export class UsageReport extends Context.Service<
   {
     readonly projectUsage: (project: Project) => Effect.Effect<ProjectUsage>
     readonly glance: (project: Project) => Effect.Effect<ProjectUsageGlance>
+    /** The week and this project's share of it, whether or not it worked in it; absent when the week isn't known. */
+    readonly week: (project: Project) => Effect.Effect<WindowShare | undefined>
     /** Fails with `NotFound` when they have no connected `provider` subscription. */
     readonly accountUsage: (userId: UserId, provider: ModelProvider) => Effect.Effect<AccountUsage, NotFound>
   }
@@ -286,7 +297,7 @@ export class UsageReport extends Context.Service<
         return described
       })
 
-      const projectUsage = Effect.fn("UsageReport.projectUsage")(function* (project: Project) {
+      const inputs = Effect.fn("UsageReport.inputs")(function* (project: Project) {
         const provider = providerFor(project)
         const nowMs = yield* Clock.currentTimeMillis
         const timeZone = yield* timeZoneOf(project.ownerId)
@@ -296,8 +307,28 @@ export class UsageReport extends Context.Service<
           onSome: (row) => row.usage_json ?? undefined
         })
         const turns = yield* log.since(project.ownerId, provider, DateTime.makeUnsafe(ledgerSinceMs(nowMs, timeZone)))
+        return { snapshot, turns, nowMs, timeZone }
+      })
+
+      const week = Effect.fn("UsageReport.week")(function* (project: Project) {
+        const { snapshot, turns, nowMs, timeZone } = yield* inputs(project)
+        return buildProjectUsage({ project, snapshot, turns, nowMs, timeZone, projects: new Map() }).weekWindow
+      })
+
+      const projectUsage = Effect.fn("UsageReport.projectUsage")(function* (project: Project) {
+        const { snapshot, turns, nowMs, timeZone } = yield* inputs(project)
         const described = yield* describe(turns, [project])
-        return buildProjectUsage({ project, snapshot, turns, nowMs, timeZone, projects: described })
+        const { limits, pausedBy } = yield* projects.usageLimits(project.id)
+        return buildProjectUsage({
+          project,
+          snapshot,
+          turns,
+          nowMs,
+          timeZone,
+          projects: described,
+          limits,
+          limitReached: pausedBy
+        })
       })
 
       const accountUsage = Effect.fn("UsageReport.accountUsage")(function* (userId: UserId, provider: ModelProvider) {
@@ -318,6 +349,7 @@ export class UsageReport extends Context.Service<
       return UsageReport.of({
         projectUsage,
         glance: (project) => Effect.map(projectUsage(project), toGlance),
+        week,
         accountUsage
       })
     })

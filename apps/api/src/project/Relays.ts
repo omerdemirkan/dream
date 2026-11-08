@@ -25,7 +25,7 @@ import {
   type RelayTarget,
   relayUrlHost
 } from "@dream/domain"
-import { DateTime, Effect, Layer, Option, Context, Redacted } from "effect"
+import { Clock, Context, DateTime, Effect, Layer, Option, Redacted } from "effect"
 import { Connections, type IntegrationRow } from "../db/Connections.ts"
 import { toHex, utf8 } from "../lib/Bytes.ts"
 import { CredentialStore } from "../integrations/CredentialStore.ts"
@@ -285,6 +285,15 @@ export class Relays extends Context.Service<
           Effect.gen(function* () {
             if (yield* held) return yield* new NotFound({ entity: "relay", id })
             const record = yield* find(id)
+            // A limit they set holds the project: its relays wait with everything else.
+            const pause = yield* core.usagePause
+            if (
+              Option.isSome(pause) &&
+              pause.value.limit !== undefined &&
+              DateTime.toEpochMillis(pause.value.until) > (yield* Clock.currentTimeMillis)
+            ) {
+              return { delivered: 0, heldUntil: pause.value.until }
+            }
             const project = yield* core.project.pipe(Effect.orDie)
             const port = record.target.port ?? project.publishedPort
             if (port === undefined) {

@@ -256,6 +256,12 @@ export class SandboxManager extends Context.Service<
     readonly taskFinished: (report: TaskReport) => Effect.Effect<void>
     readonly keepalive: Effect.Effect<void>
     /**
+     * A usage limit they set holds the project (`true`), or no longer does: dreamd starts nothing more, even what it
+     * already has. Told only while its sandbox is up (asking would wake it, and asleep it has nothing under way);
+     * a release that can't be told now is told with the next delivery. Best effort.
+     */
+    readonly holdTurns: (held: boolean) => Effect.Effect<void>
+    /**
      * dreamd is running a scheduled command, taking a relay's delivery or serving the published app: keep the sandbox
      * up a while longer.
      */
@@ -737,7 +743,8 @@ export class SandboxManager extends Context.Service<
         }
         yield* store.clearTimer("deliver")
         const pending = yield* store.pendingEvents(BatchSize)
-        if (pending.length === 0) return
+        // A usage hold is over: dreamd may start what it was holding.
+        if (pending.length === 0) return yield* holdTurns(false)
         const project = yield* core.project.pipe(Effect.orDie)
         // Their messages have reached the agent's machine: they read "Seen" from here on.
         yield* core.markSeen(pending.map((event) => event.id))
@@ -778,6 +785,7 @@ export class SandboxManager extends Context.Service<
         }
         yield* refreshIfDue(access, daemonToken)
         yield* refreshDaemonEnv(access, daemonToken)
+        yield* holdTurns(false, true)
         const timeZone = Option.flatMap(yield* users.find(project.ownerId), (user) =>
           Option.fromUndefinedOr(user.timeZone)
         )
@@ -1057,6 +1065,27 @@ export class SandboxManager extends Context.Service<
           if (record.daemonToken === undefined) return
           yield* daemon.setWatching(record.access, record.daemonToken, watching)
         }).pipe(Effect.catch((error) => Effect.logInfo("couldn't tell dreamd who's watching", error.message)))
+
+      const holdTurns = (held: boolean, wake = false) =>
+        Effect.gen(function* () {
+          const record = yield* core.sandbox
+          if (record.status !== "ready" || record.access === undefined || record.daemonToken === undefined) return
+          if (!held && record.daemonHeld !== true) return
+          const nowMs = yield* Clock.currentTimeMillis
+          const up =
+            record.working || (record.awakeUntil !== undefined && DateTime.toEpochMillis(record.awakeUntil) > nowMs)
+          if (!up && !wake) return
+          yield* daemon.holdTurns(record.access, record.daemonToken, held)
+          yield* update(({ daemonHeld: _, ...r }) => (held ? { ...r, daemonHeld: true } : r))
+        }).pipe(
+          Effect.catch((error) =>
+            Effect.gen(function* () {
+              yield* Effect.logInfo("couldn't tell dreamd about the usage hold", error.message)
+              // An older dreamd doesn't know it; there's nothing to release later either way.
+              if (!held) yield* update(({ daemonHeld: _, ...r }) => r)
+            })
+          )
+        )
 
       const watchersChanged = Effect.flatMap(live.watchers, (count) => tellWatching(count > 0))
 
@@ -1464,6 +1493,7 @@ export class SandboxManager extends Context.Service<
         reportProgress,
         watchersChanged,
         keepalive: keepalive.pipe(Effect.catch(() => Effect.void)),
+        holdTurns: (held) => holdTurns(held),
         stayAwake,
         sleep,
         visitCheck,

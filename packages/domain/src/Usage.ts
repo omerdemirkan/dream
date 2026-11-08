@@ -90,6 +90,64 @@ export const ProjectUsageGlance = Schema.Struct({
 })
 export type ProjectUsageGlance = typeof ProjectUsageGlance.Type
 
+// ---------------------------------------------------------------------------
+// Limits they set on a project
+// ---------------------------------------------------------------------------
+
+const LimitPercent = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 99 }))
+
+/**
+ * The usage limits they set on one project, both measured against the subscription's weekly window. Absent means
+ * not set; neither is set at first. Added November 2026.
+ */
+export const UsageLimits = Schema.Struct({
+  /** This project may use up to this much of the week: a cap on its own (estimated) share. */
+  projectWeekPercent: Schema.optionalKey(LimitPercent),
+  /** Stop when the plan has this much of its week left, so their other work still has room. */
+  planLeftPercent: Schema.optionalKey(LimitPercent)
+})
+export type UsageLimits = typeof UsageLimits.Type
+
+/** Which limit: `project`, its own share of the week (`projectWeekPercent`); `planLeft`, what's left of the plan. */
+export const UsageLimitName = Schema.Literals(["project", "planLeft"])
+export type UsageLimitName = typeof UsageLimitName.Type
+
+/** A limit they set, reached: the project is paused until they raise or clear it, or the week resets. */
+export const UsageLimitReached = Schema.Struct({
+  limit: UsageLimitName,
+  /** The limit's value when it was reached, in percent. */
+  percent: LimitPercent
+})
+export type UsageLimitReached = typeof UsageLimitReached.Type
+
+/** The limit `limits` has reached in `week`, if any; the project's own share first. */
+export const reachedLimit = (
+  limits: UsageLimits,
+  week: { readonly usedPercent: number; readonly projectPercent: number } | undefined
+): UsageLimitReached | undefined => {
+  if (week === undefined) return undefined
+  const { projectWeekPercent, planLeftPercent } = limits
+  if (projectWeekPercent !== undefined && week.projectPercent >= projectWeekPercent) {
+    return { limit: "project", percent: projectWeekPercent }
+  }
+  if (planLeftPercent !== undefined && 100 - week.usedPercent <= planLeftPercent) {
+    return { limit: "planLeft", percent: planLeftPercent }
+  }
+  return undefined
+}
+
+/**
+ * Where a project stands against its limits (`dream usage`, `SandboxRpcs.GetUsageLimits`). `week` is absent when
+ * Dream doesn't know how full the week is. Added November 2026.
+ */
+export const UsageLimitStanding = Schema.Struct({
+  limits: UsageLimits,
+  week: Schema.optionalKey(WindowShare),
+  /** Set while a limit holds the project. */
+  reached: Schema.optionalKey(UsageLimitReached)
+})
+export type UsageLimitStanding = typeof UsageLimitStanding.Type
+
 /** This project's use over one period. */
 export const UsagePeriod = Schema.Struct({
   /**
@@ -135,7 +193,16 @@ export const ProjectUsage = Schema.Struct({
   /** The rest of the week's use: claude.ai, the ChatGPT app, a CLI on their laptop. */
   outsideDreamPercent: Schema.optionalKey(Percent),
   /** Whether subagents' tokens are counted; absent when some turns couldn't say. */
-  subagents: Schema.optionalKey(Schema.Literals(["included", "excluded"]))
+  subagents: Schema.optionalKey(Schema.Literals(["included", "excluded"])),
+  /**
+   * The week, whether or not this project worked in it (unlike `weekly`, which the header reads): absent only when
+   * Dream doesn't know how full it is. Added November 2026.
+   */
+  weekWindow: Schema.optionalKey(WindowShare),
+  /** The limits they set on this project; absent when neither is set. Added November 2026. */
+  limits: Schema.optionalKey(UsageLimits),
+  /** Set while one of them holds the project. Added November 2026. */
+  limitReached: Schema.optionalKey(UsageLimitReached)
 })
 export type ProjectUsage = typeof ProjectUsage.Type
 

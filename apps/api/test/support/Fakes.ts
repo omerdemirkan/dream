@@ -53,6 +53,8 @@ export class FakeWorld {
     envHash: string | undefined
   }> = []
   readonly pushes: Array<{ readonly token: string; readonly kind: string; readonly payload: unknown }> = []
+  /** What dreamd was told about holding its turns (`HoldTurns`). */
+  readonly holds: Array<{ readonly sandboxId: string; readonly held: boolean }> = []
   /** What dreamd was told about who's watching (`SetWatching`). */
   readonly watching: Array<{ readonly sandboxId: string; readonly watching: boolean }> = []
   readonly processes: Array<{ sandboxId: string; command: string; pty: boolean }> = []
@@ -359,6 +361,8 @@ export const fakeDaemon = (world: FakeWorld) =>
         }),
       setWatching: (sandbox, _token, watching) =>
         Effect.sync(() => void world.watching.push({ sandboxId: sandbox.sandboxId, watching })),
+      holdTurns: (sandbox, _token, held) =>
+        Effect.sync(() => void world.holds.push({ sandboxId: sandbox.sandboxId, held })),
       forwardRelay: (sandbox, _token, request) =>
         Effect.gen(function* () {
           if (world.deliverFails) return yield* new UpstreamFailure({ service: "dreamd", message: "down" })
