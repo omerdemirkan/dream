@@ -1710,8 +1710,23 @@ describe("two plans", () => {
       const sheet = yield* cloud.phone.GetProjectUsage({ projectId: onClaude.id })
       assert.strictEqual(sheet.provider, "claude")
 
-      // A report naming the other plan is ignored rather than recorded on it.
+      // Each project's sheet names and reads the plan it runs on; a limit on the Claude project's plan isn't reached
+      // by ChatGPT's week.
       const claudeD = yield* cloud.sandbox(envFileOf(cloud, onClaude.id).env.DREAM_PROJECT_TOKEN)
+      yield* claudeD.ReportUsage({
+        usage: { provider: "claude", plan: "Claude Max", weekly: { usedPercent: 40 }, observedAt: now }
+      })
+      const limited = yield* cloud.phone.SetUsageLimits({ projectId: onClaude.id, limits: { planLeftPercent: 50 } })
+      assert.strictEqual(limited.plan, "Claude Max")
+      assert.strictEqual(limited.weekWindow?.usedPercent, 40)
+      assert.isUndefined(limited.limitReached)
+      const codexSheet = yield* cloud.phone.GetProjectUsage({ projectId: onChatGpt.id })
+      assert.deepStrictEqual([codexSheet.provider, codexSheet.weekWindow?.usedPercent], ["chatgpt", 100])
+      yield* codexd.ReportUsage({ usage: { provider: "chatgpt", weekly: { usedPercent: 100 }, observedAt: now } })
+      yield* Effect.sleep("100 millis")
+      assert.isUndefined((yield* cloud.phone.ListProjects()).find((s) => s.project.id === onClaude.id)?.pausedBy)
+
+      // A report naming the other plan is ignored rather than recorded on it.
       yield* claudeD.ReportUsage({ usage: { provider: "chatgpt", weekly: { usedPercent: 3 }, observedAt: now } })
       assert.strictEqual((yield* cloud.phone.GetAccountUsage({ provider: "chatgpt" })).weekly?.usedPercent, 100)
       yield* cloud.close
