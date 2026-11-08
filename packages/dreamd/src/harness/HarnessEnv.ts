@@ -35,7 +35,28 @@ export const agentEnv = (
   processEnv: Readonly<Record<string, string | undefined>>,
   config: { readonly home: string; readonly socket: string }
 ): Record<string, string> =>
-  harnessEnv(processEnv, { HOME: config.home, [DaemonEnv.socket]: config.socket, DISABLE_AUTOUPDATER: "1" })
+  harnessEnv(processEnv, {
+    ...systemTrust(processEnv),
+    HOME: config.home,
+    [DaemonEnv.socket]: config.socket,
+    DISABLE_AUTOUPDATER: "1"
+  })
+
+/** The system's CA bundle, which holds E2B's egress CA alongside the public roots. */
+export const systemCaBundle = "/etc/ssl/certs/ca-certificates.crt"
+
+/**
+ * E2B's egress decrypts and re-signs HTTPS to every host with a rule (the model's, a connected service's) with its
+ * own CA, which the system trusts and curl uses. Node, Bun and Python's `requests` and `httpx` bring their own roots
+ * and refuse it, so the agent's apps couldn't reach those hosts; pointing them at the system bundle fixes that. A
+ * value already set is kept.
+ */
+const systemTrust = (processEnv: Readonly<Record<string, string | undefined>>): Record<string, string> =>
+  Object.fromEntries(
+    ["NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE"]
+      .filter((name) => processEnv[name] === undefined)
+      .map((name) => [name, systemCaBundle])
+  )
 
 /**
  * How each harness authenticates, given to its adapter as an explicit

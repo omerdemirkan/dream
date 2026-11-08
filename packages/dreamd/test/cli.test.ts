@@ -112,6 +112,15 @@ describe("the harness environment", () => {
     assert.isUndefined(env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS)
   })
 
+  it("points Node and Python at the system CA bundle, which trusts E2B's egress, unless already set", () => {
+    const config = { home: "/home/user", socket: "/tmp/dreamd.sock" }
+    const env = agentEnv({ PATH: "/usr/bin" }, config)
+    for (const name of ["NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE"]) {
+      assert.strictEqual(env[name], "/etc/ssl/certs/ca-certificates.crt")
+    }
+    assert.strictEqual(agentEnv({ SSL_CERT_FILE: "/mine.pem" }, config).SSL_CERT_FILE, "/mine.pem")
+  })
+
   it("gives each harness a placeholder credential and no refreshable login", () => {
     assert.deepStrictEqual(Object.keys(harnessAuth("claude-code")), ["CLAUDE_CODE_OAUTH_TOKEN"])
     assert.deepStrictEqual(harnessAuth("codex"), {

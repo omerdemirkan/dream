@@ -532,3 +532,14 @@ fake-responses.ts, in a clean environment), then in E2B (`packages/sandbox-templ
   delivered into the root's input by `wait_agent`, or at the start of a later root turn, not the one that starts
   right after the child completes (not even 1.5 s later). Dream's patch hands the answers over in the follow-up root
   turn's input itself, so the model may see an answer twice.
+
+## E2B egress and TLS in apps (2026-11-08, egress-ca-fix)
+- E2B's egress re-signs HTTPS to every host that has a network rule (a model host, a connected service) with its own
+  CA, which is in the system bundle (`/etc/ssl/certs/ca-certificates.crt`): curl and Python's urllib accept it. Node
+  (and Bun, Python's `requests`/`httpx` with certifi) bring their own roots and refuse it: in a dream-sandbox with a
+  rule on httpbin.org, `node -e "fetch('https://httpbin.org/headers')"` failed with `UNABLE_TO_VERIFY_LEAF_SIGNATURE`,
+  and passed with the injected header once `NODE_EXTRA_CA_CERTS` pointed at the system bundle. So every Node app
+  calling a connected service through its egress rule failed before this. dreamd now sets `NODE_EXTRA_CA_CERTS`,
+  `SSL_CERT_FILE` and `REQUESTS_CA_BUNDLE` to the system bundle for everything it starts (`agentEnv`), keeping a value
+  already set. Processes started before the new dreamd (servers left running) keep their old environment until
+  restarted.
