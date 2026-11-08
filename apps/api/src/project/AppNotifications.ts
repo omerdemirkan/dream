@@ -151,7 +151,7 @@ const notifyOutcome = (
     case "quiet":
       return `sent quietly${reached}`
     case "held":
-      return `held back: over Dream's ${held === "project" ? "daily limit for the project" : `${held ?? "hourly"} limit for the app`}`
+      return `held back: over Dream's ${held === "project" ? "daily limit for the project" : held === "day" ? "daily limit for the app" : "hourly limit for the app"}`
     case "muted":
       return "kept in its history: they muted it"
     case "duplicate":
