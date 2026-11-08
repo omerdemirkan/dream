@@ -21,7 +21,7 @@ import {
   parseMeminfo,
   parseVmstat
 } from "../src/Machine.ts"
-import { Tasks } from "../src/Tasks.ts"
+import { type TaskRunInput, Tasks } from "../src/Tasks.ts"
 import { baseLayer, tempDir, wakeWithCommand } from "./support.ts"
 
 const at = DateTime.makeUnsafe("2026-11-08T14:00:00Z")
@@ -103,7 +103,7 @@ describe("a scheduled command that keeps failing", () => {
         Commands.layer.pipe(
           Layer.provideMerge(
             Layer.mergeAll(
-              Tasks.layerTest({ script: () => Effect.die("no tasks"), log: yield* Ref.make([]) }),
+              Tasks.layerTest({ script: () => Effect.die("no tasks"), log: yield* Ref.make<ReadonlyArray<TaskRunInput>>([]) }),
               Api.layerTest(reports)
             )
           ),

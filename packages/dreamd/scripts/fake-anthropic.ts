@@ -275,6 +275,8 @@ createServer((request, response) => {
         opening: openingOf(last),
         // Every line of the last user message that says what they wrote and where (a thread), for checks.
         wrote: lastText.split("\n").filter((line) => /They (wrote|sent) \(/.test(line)),
+        // Lines of the turn prompt about trouble: Dream's alerts (`Alert` with `noticed`) and failed scheduled runs.
+        trouble: lastText.split("\n").filter((line) => /Dream noticed a problem|^> Your published app|exited with code/.test(line)),
         // Claude Code's own turn for background work that reported back.
         notified: lastText.includes("<task-notification>"),
         // A turn prompt telling the agent its background work was stopped (`BackgroundStopped`).
