@@ -8,7 +8,7 @@
  */
 import type { ProjectId, ProjectUsage, UsageLimitReached } from "@dream/domain"
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react"
-import { useEffect, useRef, useState } from "react"
+import { type ReactNode, useEffect, useRef, useState } from "react"
 import { DateTime, Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
 import { SymbolView, type SymbolViewProps } from "expo-symbols"
@@ -39,7 +39,6 @@ import {
 } from "../data/usage.ts"
 import { projectUsageAtom, setUsageLimitsFn, usageGlanceAtom } from "../state/atoms.ts"
 import { useAction } from "./actions.ts"
-import { ProjectCostsSection } from "./Costs.tsx"
 import { IconButton } from "./kit.tsx"
 import { color, gutter, tracking } from "./theme.ts"
 
@@ -137,12 +136,16 @@ export function UsageBadge(props: {
 // The sheet
 // ---------------------------------------------------------------------------
 
-/** Opens over the project, below its header. Fetches fresh each time it opens. */
+/**
+ * Opens over the project, below its header. Fetches fresh each time it opens. `footer` goes under the plan's part,
+ * once it's loaded: what Dream paid for the project (`Costs.tsx`).
+ */
 export function UsageSheet(props: {
   readonly projectId: ProjectId
   readonly title: string
   readonly open: boolean
   readonly onClose: () => void
+  readonly footer?: ReactNode
 }) {
   const insets = useSafeAreaInsets()
   return (
@@ -199,6 +202,7 @@ function SheetContent(props: {
   readonly title: string
   readonly onClose: () => void
   readonly bottom: number
+  readonly footer?: ReactNode
 }) {
   const result = useAtomValue(projectUsageAtom(props.projectId))
   // The family keeps the last fetch, so opening the sheet fetches again, and shows the spinner rather than the
@@ -237,7 +241,14 @@ function SheetContent(props: {
         />
       </View>
       {view && usage ? (
-        <Body view={view} usage={usage} projectId={props.projectId} title={props.title} onSaved={setSaved} />
+        <Body
+          view={view}
+          usage={usage}
+          projectId={props.projectId}
+          title={props.title}
+          onSaved={setSaved}
+          footer={props.footer}
+        />
       ) : AsyncResult.isFailure(result) ? (
         <Text style={{ fontSize: 14.5, color: color.t2, marginTop: 24 }}>Usage isn’t available right now.</Text>
       ) : (
@@ -253,6 +264,7 @@ function Body(props: {
   readonly projectId: ProjectId
   readonly title: string
   readonly onSaved: (usage: ProjectUsage) => void
+  readonly footer?: ReactNode
 }) {
   const { view } = props
   const save = useAction(setUsageLimitsFn)
@@ -282,7 +294,7 @@ function Body(props: {
         onChange={(value) => change("planLeft", value)}
       />
       {view.hero ? <Footnote>Shares are estimates.</Footnote> : null}
-      <ProjectCostsSection projectId={props.projectId} />
+      {props.footer}
     </>
   )
 }

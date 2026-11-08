@@ -169,13 +169,31 @@ cross-check, rebuilt from E2B's log.
 
 ## In the app
 
-Costs sit beside the subscription's usage, never mixed into it:
+Costs sit beside the subscription's usage, never mixed into it: dollars here, the plan's percentages there, no
+rings or window bars for costs, and every view of them ends with "Estimates at list prices. None of this comes out
+of your plan." OpenAI calls their own key paid always show on their own, under "Paid by your OpenAI key", and never
+in Dream's total. (`apps/mobile/src/ui/Costs.tsx`, `src/data/costs.ts`; fixtures `costs-*`.)
 
-- **A project:** the usage sheet gets a section for what Dream spent on it this month: a total, a line per cost
-  center (sandbox hours, browser and Mac minutes, OpenAI calls), and last month for comparison.
-- **All projects:** Settings shows this month's total, and a full-screen view (the "See more" pattern of the plan
-  cards) has the 30-day chart, the centers, OpenAI by model, and the projects largest first. An operator's view adds
-  everyone and the overhead.
+- **A project:** the usage sheet ends, under a hairline, with "What Dream paid in November": the total, last month
+  beside it, and a line per cost center with what it bought ("Machine time · 41 hours", "Cloud browsers · 52
+  minutes", "OpenAI · 412 requests"; a single OpenAI model goes in the line's title). Nothing at all for a project
+  that hasn't cost anything this month or last, or against an API without costs. Storage shows no quantity, since
+  GB-months so far this month don't read as anything.
+- **All projects:** Settings has a "What Dream pays" card under the plans (this month, last month, the 30 days as
+  small bars, and their own key's part in a line of its own), absent until something cost anything. Its "See more"
+  opens `/costs`, full screen like the plan cards' breakdown (`/plan/<provider>`): the 30 days (touch a bar to read
+  a day), what it paid for with OpenAI by model, the projects largest first (each opens its usage sheet; archived
+  ones say so; deleted ones are one row; `unattributed` is "Outside your projects"), and their key's part.
+- **Operators:** "Everyone on this Dream" at the foot of `/costs`, which only an operator's response makes appear,
+  opens `/costs/everyone`: the month, the 30 days, what it paid for, each person's share, and the overhead no one
+  caused, with a note that Cloudflare and plan fees aren't counted.
+
+Calls the app makes on the API's shapes, for the Worker side to match: a deleted project comes as
+`{ title: "Deleted project", archived: true }` with no icon, as `GetAccountUsage` names one (the app folds them
+into one row); `ProjectCost.personUsd` is what their key paid for that project; an API without the cost RPCs (or a
+failed fetch) shows no costs anywhere rather than an error, since they're extra. The project's section is reachable
+only where its usage sheet is (the header's ring, and each project row in `/costs`, which opens the sheet even when
+no plan usage is known).
 
 ## The agent
 
