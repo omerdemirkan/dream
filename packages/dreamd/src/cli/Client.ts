@@ -6,6 +6,7 @@
 import {
   DaemonEnv,
   DefaultDaemonSocket,
+  EmailLimitReached,
   HttpRpcSerialization,
   InvalidRequest,
   NotFound,
@@ -46,7 +47,9 @@ export class Dream extends Context.Service<
 /** One line for whoever ran the command (usually the agent), for any failure. */
 export const describeError = (error: unknown): string => {
   if (error instanceof NotFound) return `No ${error.entity} ${error.id}.`
-  if (error instanceof InvalidRequest || error instanceof Unauthorized) return error.message
+  if (error instanceof InvalidRequest || error instanceof Unauthorized || error instanceof EmailLimitReached) {
+    return error.message
+  }
   if (error instanceof UpstreamFailure) return `${error.service} failed: ${error.message}`
   if (error instanceof RpcClientError.RpcClientError) {
     const cause = Predicate.hasProperty(error.reason, "cause") ? String(error.reason.cause) : error.message

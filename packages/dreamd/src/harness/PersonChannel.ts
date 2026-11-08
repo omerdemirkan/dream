@@ -124,9 +124,10 @@ export const replyFromFinalText = (text: string): Option.Option<string> => {
   return plain.length === 0 || boilerplate.some((pattern) => pattern.test(plain)) ? Option.none() : Option.some(trimmed)
 }
 
-/** The `SandboxRpcs` calls that reach the person: a message, a question, an access request, the Status card, a Live Activity. */
+/** The `SandboxRpcs` calls that reach the person: a message, an email, a question, an access request, the Status card, a Live Activity. */
 export const reachesPerson: ReadonlySet<string> = new Set([
   "SendMessage",
+  "SendEmail",
   "AskQuestion",
   "RequestAccess",
   "SetUpAppNotifications",

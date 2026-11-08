@@ -48,6 +48,7 @@ export const layout = {
     sections: [
       "dream",
       "messages",
+      "email",
       "questions",
       "access",
       "app-notifications",

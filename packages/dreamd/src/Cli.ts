@@ -6,6 +6,7 @@
  */
 import {
   AgentLinksPerProject,
+  agentEmailProblem,
   AccessMessage,
   AppId,
   AppNotification,
@@ -256,6 +257,60 @@ const message = Command.make(
   Command.withExamples([
     { command: 'dream message "The first version is live: https://…" --media shot.png --notify' },
     { command: 'dream message --reply-to msg_\u2026 "It does now: the 214 came down to 187."' }
+  ])
+)
+
+const email = Command.make(
+  "email",
+  {
+    subject: Flag.String("subject").pipe(Flag.withDescription("The subject line, as their inbox shows it.")),
+    text: textArgument(
+      "markdown",
+      "The email, in markdown: headings, numbered steps, links, code blocks and tables render properly. Dream puts it in its own email, from Dream, to their address."
+    ),
+    file: Flag.String("file").pipe(Flag.withDescription("Read the markdown from this file instead."), Flag.optional),
+    work: workFlag,
+    replyTo: replyFlag,
+    json
+  },
+  (input) =>
+    Effect.gen(function* () {
+      const dream = yield* Dream
+      const fs = yield* FileSystem.FileSystem
+      const markdown = Option.isSome(input.file)
+        ? yield* fs.readFileString(input.file.value).pipe(
+            Effect.mapError(
+              (cause) =>
+                new CliError.UserError({
+                  cause,
+                  userMessage: `Can't read ${input.file.pipe(Option.getOrElse(() => ""))}.`
+                })
+            )
+          )
+        : yield* textFrom(input.text, 'Say what: `dream email --subject "…" --file steps.md`, or pipe it in.')
+      const problem = agentEmailProblem(input.subject, markdown)
+      if (problem !== undefined) return yield* fail(problem)
+      const workstream = workOf(input.work)
+      const replyTo = replyOf(input.replyTo)
+      const sent = yield* userFacing(
+        dream.SendEmail(defined({ subject: input.subject.trim(), markdown, workstream, replyTo }))
+      ).pipe(newerThanApi("This version of Dream can't send email yet; put it in Chat with `dream message`."))
+      yield* show(
+        input.json,
+        TextMessage,
+        sent,
+        `Emailed "${sent.email?.subject ?? input.subject}" to ${sent.email?.to ?? "them"}; Chat has a copy (${sent.id}).` +
+          Format.unlabeled(workstream, sent) +
+          Format.threaded(replyTo, sent)
+      )
+    })
+).pipe(
+  Command.withDescription(
+    "Email them markdown you write, rendered into a clean email from Dream at their own address, with a copy in Chat."
+  ),
+  Command.withExamples([
+    { command: 'dream email --subject "Set up Tide Clock in Apple Developer" --file steps.md' },
+    { command: "dream email --subject \"Point your domain at the app\" - <<'EOF'" }
   ])
 )
 
@@ -2042,10 +2097,11 @@ const usage = Command.make("usage", { json }, (input) =>
 
 export const dream = Command.make("dream").pipe(
   Command.withDescription(
-    "Reach the person and Dream from this sandbox: messages, questions, access, notifications from your apps, status, workstreams, wake-ups, relays, publishing, app links on their Home, a browser, a Mac, usage, and this machine's size."
+    "Reach the person and Dream from this sandbox: messages, email, questions, access, notifications from your apps, status, workstreams, wake-ups, relays, publishing, app links on their Home, a browser, a Mac, usage, and this machine's size."
   ),
   Command.withSubcommands([
     message,
+    email,
     ask,
     access,
     notify,

@@ -122,6 +122,20 @@ const Handlers = SandboxRpcs.toLayer(
             ...(payload.replyTo === undefined ? {} : { replyTo: payload.replyTo })
           })
         ),
+      // Nothing is mailed: the call is printed, and Chat's copy comes back as the Worker's would.
+      SendEmail: ({ subject, markdown, ...place }) =>
+        log("SendEmail", { subject, markdown, ...place }).pipe(
+          Effect.as({
+            _tag: "Text" as const,
+            ...message,
+            id: MessageId.make(id("msg")),
+            from: "agent" as const,
+            text: markdown,
+            media: [],
+            email: { subject, to: "you@example.com", sentAt: message.createdAt },
+            ...place
+          })
+        ),
       AskQuestion: ({ previews, ...payload }) =>
         log("AskQuestion", { ...payload, ...(previews === undefined ? {} : { previews }) }).pipe(
           Effect.as<QuestionMessage>({

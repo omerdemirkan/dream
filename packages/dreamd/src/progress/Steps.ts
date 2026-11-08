@@ -115,6 +115,8 @@ const dreamAction = (words: string): string | undefined => {
   switch (match[1]) {
     case "message":
       return "sent them a message"
+    case "email":
+      return "emailed them"
     case "ask":
       return "asked them a question"
     case "status":
