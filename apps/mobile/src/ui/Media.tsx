@@ -9,8 +9,19 @@ import { Image } from "expo-image"
 import { useVideoPlayer, VideoView } from "expo-video"
 import { Option, Redacted } from "effect"
 import { AsyncResult } from "effect/reactivity"
-import { useEffect } from "react"
-import { Modal, Pressable, ScrollView, type StyleProp, Text, View, type ViewStyle } from "react-native"
+import { useEffect, useRef } from "react"
+import {
+  type GestureResponderEvent,
+  Modal,
+  Pressable,
+  ScrollView,
+  type ScrollViewInstance,
+  type StyleProp,
+  Text,
+  useWindowDimensions,
+  View,
+  type ViewStyle
+} from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { sessionAtom } from "../state/atoms.ts"
 import { appConfig } from "../state/runtime.ts"
@@ -257,9 +268,59 @@ export function MediaViewer() {
 function ViewerBody(props: { readonly media: MediaRef }) {
   const source = useMediaSource(props.media)
   if (source === undefined) return null
-  return props.media.kind === "video" ? (
-    <FullVideo source={source} />
-  ) : (
-    <Image source={source} contentFit="contain" style={{ flex: 1 }} />
+  return props.media.kind === "video" ? <FullVideo source={source} /> : <ZoomableImage source={source} />
+}
+
+/** How far a double tap zooms in, and how far a pinch can go. */
+const doubleTapScale = 2.5
+const maxScale = 5
+
+/**
+ * A photo to pinch and pan, as in Photos: iOS's own zooming scroll view, so pinching, panning and bouncing feel
+ * native. A double tap zooms in on where it landed, and out again.
+ */
+function ZoomableImage(props: { readonly source: Source }) {
+  const window = useWindowDimensions()
+  const scroll = useRef<ScrollViewInstance>(null)
+  const zoomed = useRef(false)
+  const lastTap = useRef(0)
+  const onPress = (event: GestureResponderEvent) => {
+    const now = Date.now()
+    if (now - lastTap.current > 300) {
+      lastTap.current = now
+      return
+    }
+    lastTap.current = 0
+    const scale = zoomed.current ? 1 : doubleTapScale
+    const width = window.width / scale
+    const height = window.height / scale
+    const { locationX, locationY } = event.nativeEvent
+    scroll.current?.scrollResponderZoomTo({
+      x: locationX - width / 2,
+      y: locationY - height / 2,
+      width,
+      height,
+      animated: true
+    })
+  }
+  return (
+    <ScrollView
+      ref={scroll}
+      maximumZoomScale={maxScale}
+      minimumZoomScale={1}
+      centerContent
+      bouncesZoom
+      showsHorizontalScrollIndicator={false}
+      showsVerticalScrollIndicator={false}
+      scrollEventThrottle={32}
+      onScroll={(event) => {
+        zoomed.current = (event.nativeEvent.zoomScale ?? 1) > 1.01
+      }}
+      contentContainerStyle={{ width: window.width, height: window.height }}
+    >
+      <Pressable accessibilityLabel="Photo. Pinch or double tap to zoom." onPress={onPress} style={{ flex: 1 }}>
+        <Image source={props.source} contentFit="contain" style={{ width: "100%", height: "100%" }} />
+      </Pressable>
+    </ScrollView>
   )
 }
