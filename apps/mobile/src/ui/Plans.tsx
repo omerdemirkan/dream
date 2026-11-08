@@ -46,6 +46,7 @@ export function usePlanMenu(connection: ModelConnection) {
     ])
   return {
     busy: disconnect.busy,
+    remove,
     open: () =>
       ActionSheetIOS.showActionSheetWithOptions(
         {

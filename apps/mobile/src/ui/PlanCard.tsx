@@ -16,8 +16,19 @@ import { usePlanMenu } from "./Plans.tsx"
 import { color } from "./theme.ts"
 import { Footnote, LimitCallout, SectionHeading, ShareRow, WindowBar } from "./Usage.tsx"
 
-export function PlanCard(props: { readonly connection: ModelConnection }) {
+export function PlanCard(props: {
+  readonly connection: ModelConnection
+  /** Opens its menu, or the Remove warning, on arrival (`/settings?plan=menu:claude`, `remove:claude`). */
+  readonly show?: "menu" | "remove" | undefined
+}) {
   const menu = usePlanMenu(props.connection)
+  useEffect(() => {
+    if (props.show === undefined) return
+    const id = setTimeout(props.show === "menu" ? menu.open : menu.remove, 900)
+    return () => clearTimeout(id)
+    // Only on arrival.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const atom = accountUsageAtom(props.connection.provider)
   const result = useAtomValue(atom)
   // Fetched again each time Settings opens, so the shares are as fresh as the connection's own usage.

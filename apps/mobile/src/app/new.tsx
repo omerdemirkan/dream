@@ -85,6 +85,8 @@ export default function NewIdea() {
     sample?: string
     starter?: string
     attach?: string
+    /** `open`: the plan picker opens on arrival (with both plans connected). */
+    plan?: string
   }>()
   const insets = useSafeAreaInsets()
   const barBottom = Math.max(insets.bottom, 12) + 2
@@ -343,7 +345,12 @@ export default function NewIdea() {
                 {wordCountLabel(text)}
               </Text>
               {plan.choices.length > 1 && plan.chosen !== undefined ? (
-                <PlanPicker chosen={plan.chosen} choices={plan.choices} onChoose={plan.choose} />
+                <PlanPicker
+                  chosen={plan.chosen}
+                  choices={plan.choices}
+                  onChoose={plan.choose}
+                  openOnArrival={params.plan === "open"}
+                />
               ) : null}
             </>
           )}
@@ -396,7 +403,15 @@ function PlanPicker(props: {
   readonly chosen: ModelProvider
   readonly choices: ReadonlyArray<ModelProvider>
   readonly onChoose: (provider: ModelProvider) => void
+  readonly openOnArrival?: boolean
 }) {
+  useEffect(() => {
+    if (!props.openOnArrival) return
+    const id = setTimeout(open, 900)
+    return () => clearTimeout(id)
+    // Only on arrival.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const open = () =>
     ActionSheetIOS.showActionSheetWithOptions(
       {

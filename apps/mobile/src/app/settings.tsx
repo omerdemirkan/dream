@@ -7,7 +7,7 @@ import { useAtomValue } from "@effect/atom-react"
 import * as Application from "expo-application"
 import { DateTime, Effect, Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
-import { useRouter } from "expo-router"
+import { useLocalSearchParams, useRouter } from "expo-router"
 import { useUpdates } from "expo-updates"
 import { type ReactNode, useState } from "react"
 import { Pressable, ScrollView, Text, View } from "react-native"
@@ -63,6 +63,8 @@ export default function Settings() {
     (projects.find((summary) => summary.project.id === id) ?? archived.find((row) => row.project.id === id))?.project
       .title
   const plans = settingsPlans(connections)
+  const params = useLocalSearchParams<{ plan?: string }>()
+  const [show, showFor] = (params.plan ?? "").split(":")
   const signOut = useAction(signOutFn)
   return (
     <ScrollView
@@ -81,7 +83,11 @@ export default function Settings() {
 
       <Section title={plans.connected.length > 1 ? "Plans" : "Plan"}>
         {plans.shown.map((connection) => (
-          <ConnectionRow key={connection.id} connection={connection} />
+          <ConnectionRow
+            key={connection.id}
+            connection={connection}
+            show={showFor === connection.provider && (show === "menu" || show === "remove") ? show : undefined}
+          />
         ))}
         {plans.addable.map((provider) => (
           <AddPlanTile key={provider} provider={provider} />
@@ -231,12 +237,12 @@ function ArchivedRow(props: { readonly archived: ArchivedProject }) {
   )
 }
 
-function ConnectionRow(props: { readonly connection: ModelConnection }) {
+function ConnectionRow(props: { readonly connection: ModelConnection; readonly show?: "menu" | "remove" | undefined }) {
   const router = useRouter()
   const disconnect = useAction(disconnectModelConnectionFn)
   const c = props.connection
   // A connected plan is the plan card: its usage, each project's share of it, and its menu.
-  if (c.status === "connected") return <PlanCard connection={c} />
+  if (c.status === "connected") return <PlanCard connection={c} show={props.show} />
   return c.status === "pending" ? (
     <Row
       icon="spark"
