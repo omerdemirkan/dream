@@ -103,7 +103,10 @@ describe("a scheduled command that keeps failing", () => {
         Commands.layer.pipe(
           Layer.provideMerge(
             Layer.mergeAll(
-              Tasks.layerTest({ script: () => Effect.die("no tasks"), log: yield* Ref.make<ReadonlyArray<TaskRunInput>>([]) }),
+              Tasks.layerTest({
+                script: () => Effect.die("no tasks"),
+                log: yield* Ref.make<ReadonlyArray<TaskRunInput>>([])
+              }),
               Api.layerTest(reports)
             )
           ),

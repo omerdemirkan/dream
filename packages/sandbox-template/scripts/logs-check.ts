@@ -31,7 +31,8 @@ const fakeAnthropic = fileURLToPath(new URL("../../dreamd/scripts/fake-anthropic
 const refreshSandbox = fileURLToPath(new URL("../../../apps/api/scripts/refresh-sandbox.ts", import.meta.url))
 
 /** Never print anything that looks like a credential, whatever the sandbox says. */
-const clean = (text: string) => text.replace(/sk-ant-[A-Za-z0-9_-]+/g, "sk-ant-…").replace(/(token[=:" ]+)[^\s"]{12,}/gi, "$1…")
+const clean = (text: string) =>
+  text.replace(/sk-ant-[A-Za-z0-9_-]+/g, "sk-ant-…").replace(/(token[=:" ]+)[^\s"]{12,}/gi, "$1…")
 
 const run = async (sandbox: Sandbox, command: string, timeoutMs = 120_000) => {
   const result = await sandbox.commands
@@ -154,16 +155,33 @@ try {
   mark = await modelLines()
   await run(sandbox, "for i in 1 2 3 4; do curl -s -o /dev/null localhost:8787/gw/api/recipes?page=$i; done")
   const alertTurn = await settle(mark)
-  check("server errors between turns wake the agent with Dream's alert", alertTurn.includes("Dream noticed a problem"), alertTurn)
+  check(
+    "server errors between turns wake the agent with Dream's alert",
+    alertTurn.includes("Dream noticed a problem"),
+    alertTurn
+  )
   check("the alert names the failing requests", alertTurn.includes("GET /api/recipes?page=3 → 500"), alertTurn)
 
   const verify = async (when: string) => {
     const all = await logs("--limit 400")
     const errors = await logs("--errors --limit 400")
     check(`${when}: the gateway's requests`, /gateway {2}ERROR GET \/api\/recipes\?page=1 → 500/.test(all), all)
-    check(`${when}: the published app's own error, with its stack`, /app web {2}ERROR Error: SQLITE_BUSY/.test(errors) && errors.includes("at query (/home/user/project/db.js:4:11)"), errors)
-    check(`${when}: the second server's output, found by its port`, /app worker {2}worker listening on 3001/.test(all), all)
-    check(`${when}: the failed run with its output`, /run wak_\S+ {2}ERROR `curl -fsS --max-time 5 localhost:3000\/api\/feed` failed with exit code 22/.test(errors) && errors.includes("curl: (22)"), errors)
+    check(
+      `${when}: the published app's own error, with its stack`,
+      /app web {2}ERROR Error: SQLITE_BUSY/.test(errors) && errors.includes("at query (/home/user/project/db.js:4:11)"),
+      errors
+    )
+    check(
+      `${when}: the second server's output, found by its port`,
+      /app worker {2}worker listening on 3001/.test(all),
+      all
+    )
+    check(
+      `${when}: the failed run with its output`,
+      /run wak_\S+ {2}ERROR `curl -fsS --max-time 5 localhost:3000\/api\/feed` failed with exit code 22/.test(errors) &&
+        errors.includes("curl: (22)"),
+      errors
+    )
     check(`${when}: dreamd's start`, /dream {2}dreamd \S+ started/.test(all), all)
     check(`${when}: the turns`, all.includes("A turn started, woken by a wake-up"), all)
     check(`${when}: the check after the turn`, all.includes("After the turn, Dream loaded the published URL"), all)
@@ -191,7 +209,13 @@ try {
           env: { ...process.env, NODE_USE_ENV_PROXY: "1" }
         })
       )
-      console.log(`refreshed to ${template}: ${out.split("\n").filter((l) => /Refreshed|Current|refreshed/.test(l)).join(" ").slice(0, 300)}`)
+      console.log(
+        `refreshed to ${template}: ${out
+          .split("\n")
+          .filter((l) => /Refreshed|Current|refreshed/.test(l))
+          .join(" ")
+          .slice(0, 300)}`
+      )
       await sleep(10_000)
     }
     const refreshed = await verify("after a refresh and back")
