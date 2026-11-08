@@ -268,5 +268,7 @@ the other workstreams to agree first.
 - Throwaway sandboxes (checks, probes, scripts) carry `devSandboxMetadata(<script>)` from `@dream/domain`, and the
   Worker's maintenance kills any without an owner that started over an hour ago (`apps/api/src/e2b/Reaper.ts`).
   `reaper: "skip"` in a sandbox's metadata spares a long experiment.
+- E2B's `GET /sandboxes/{id}` (the SDK's `Sandbox.getInfo`) returns the sandbox's egress rules, which hold the
+  person's credentials in plain text. Read only the fields you need, and never print or log the whole response.
 - The iPhone app's JavaScript: `node apps/mobile/scripts/updates.ts publish` from main (rollback and status too;
   see apps/mobile/README.md). Native changes still need a TestFlight build, and `publish` says so.
