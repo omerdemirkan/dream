@@ -1,5 +1,5 @@
 /**
- * Advanced: a project's starting settings, behind a quiet pill beside Send on the new-idea screen. The sheet holds
+ * Advanced: a project's starting settings, behind a round button beside Send on the new-idea screen. The sheet holds
  * the plan (only with more than one connected), the agent's model and reasoning effort, and the two usage limits;
  * left alone, the project starts as it always has. What it says comes from `data/advanced.ts`. The agent's part
  * (`AgentPicker`) is also the usage sheet's, where a project's model and effort can be changed later. The sheet is
@@ -20,28 +20,40 @@ import { Icon, IconButton } from "./kit.tsx"
 import { color, gutter, tracking } from "./theme.ts"
 import { Footnote, LimitField, SectionHeading } from "./Usage.tsx"
 
-/** The pill beside Send: "Advanced", with a dot once anything differs from the defaults. */
-export function AdvancedPill(props: { readonly changed: boolean; readonly onPress: () => void }) {
+/** The button beside Send, shaped like the composer's others, with a dot once anything differs from the defaults. */
+export function AdvancedButton(props: { readonly changed: boolean; readonly onPress: () => void }) {
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={props.changed ? "Advanced settings, changed" : "Advanced settings"}
       onPress={props.onPress}
-      hitSlop={6}
       style={({ pressed }) => ({
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 7,
-        height: 34,
-        paddingHorizontal: 13,
-        borderRadius: 17,
+        width: 56,
+        height: 56,
+        borderRadius: 28,
         backgroundColor: pressed ? color.s3 : color.s2,
         borderWidth: 1,
-        borderColor: color.line2
+        borderColor: color.line2,
+        alignItems: "center",
+        justifyContent: "center"
       })}
     >
-      {props.changed ? <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: color.t1 }} /> : null}
-      <Text style={{ fontSize: 14, fontWeight: "600", color: props.changed ? color.t1 : color.t2 }}>Advanced</Text>
+      <Icon name="sliders" size={22} color={color.t1} />
+      {props.changed ? (
+        <View
+          style={{
+            position: "absolute",
+            top: 13,
+            right: 13,
+            width: 8,
+            height: 8,
+            borderRadius: 4,
+            backgroundColor: color.t1,
+            borderWidth: 1.5,
+            borderColor: color.s2
+          }}
+        />
+      ) : null}
     </Pressable>
   )
 }

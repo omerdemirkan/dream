@@ -59,6 +59,7 @@ const glyphs = {
   paste: "doc.on.clipboard",
   copy: "doc.on.doc",
   wrench: "wrench.adjustable",
+  sliders: "slider.horizontal.3",
   warn: "exclamationmark.triangle",
   arrowOut: "arrow.up.right",
   plus: "plus",

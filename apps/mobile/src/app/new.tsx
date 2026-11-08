@@ -46,7 +46,7 @@ import { createProjectFn, modelConnectionsAtom, projectsAtom } from "../state/at
 import { askPushAtom } from "../state/ui.ts"
 import { useAction, useToast } from "../ui/actions.ts"
 import { useRequestId } from "../ui/hooks.ts"
-import { AdvancedPill, AdvancedSheet } from "../ui/Advanced.tsx"
+import { AdvancedButton, AdvancedSheet } from "../ui/Advanced.tsx"
 import { Bars, Icon, IconButton } from "../ui/kit.tsx"
 import { samplesFor } from "../ui/attachmentSamples.ts"
 import { AttachmentTray, useStagedAttachments } from "../ui/Attachments.tsx"
@@ -349,7 +349,7 @@ export default function NewIdea() {
               <Text numberOfLines={1} style={{ flex: 1, fontSize: 14, color: color.t3 }}>
                 {wordCountLabel(text)}
               </Text>
-              <AdvancedPill changed={advanced.view.changed} onPress={advanced.show} />
+              <AdvancedButton changed={advanced.view.changed} onPress={advanced.show} />
             </>
           )}
         </View>
