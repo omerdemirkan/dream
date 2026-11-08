@@ -11,8 +11,8 @@ wakes the sandbox. From their phone it opens in Safari.
   frozen with everything else, and its open connections close.
 - Publishing then loads the URL from this sandbox and tells you what it answers and any page errors; running it again
   re-checks. Dream also loads it when each of your turns ends, and wakes you when that finds a new error status, page
-  error, or no answer. Between turns, Dream's gateway logs every request to it (`dream logs --source gateway`), and
-  wakes you once when requests start failing with server errors or never reaching the app.
+  error, or no answer. Dream's gateway logs every request to it (`dream logs --source gateway`), and when requests
+  start failing between your turns, with server errors or never reaching the app, it wakes you once.
 - Requests reach your server with `Host` set to the sandbox's internal name (`<port>-<sandbox id>.e2b.app`), so a
   server that checks hosts (Vite's dev server does) has to allow it.
 - The public URL works from inside this sandbox too, so you can load exactly what they'll see.

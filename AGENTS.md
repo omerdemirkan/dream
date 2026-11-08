@@ -92,6 +92,7 @@ types at its edge.
 | `Connections.ts`, `Usage.ts` | Model connections and connect flows, integrations, usage windows |
 | `LiveActivity.ts`, `Push.ts` | ActivityKit attributes and content state; APNs custom data |
 | `Wake.ts`, `Machines.ts`, `Media.ts` | Scheduled wakes; Browserbase and Mac sessions; media refs and uploads |
+| `Logs.ts` | The project's log (`dream logs`): sources, entries, queries, machine readings and per-turn machine use, the trouble Dream alerts about |
 | `Relay.ts` | Relays (lines Dream holds open for a sleeping sandbox): sources, targets, state, the delivery body and its signature headers, limits |
 | `Auth.ts`, `Errors.ts` | Caller identity, auth middlewares, boundary errors |
 | `Transport.ts` | Routes, serialization per transport, dreamd's env (`DaemonEnv`, `DaemonConfig`) |
@@ -168,6 +169,10 @@ the other workstreams to agree first.
   `DREAM_AI_GATEWAY_ENABLED`; sandboxes reach it with a placeholder key and a per-project credential egress adds,
   and WebRTC calls are metered by a sideband (`OpenAICallDO`). `apps/api/scripts/gateway-smoke.ts` makes real calls
   through it; `packages/sandbox-template/scripts/gateway-check.ts` checks it from a sandbox on each harness.
+  The published-app gateway hands what it sees of each request to the project's DO a few seconds at a time
+  (`http/GatewayLog.ts`), which keeps the DO's half of the project's log in its SQLite with notifications, relay
+  alerts, refreshes and visit checks (`project/ProjectLog.ts`, read by `SandboxRpcs.ReadLog`), and tells the agent
+  once (`Alert` with `noticed`) when the published app keeps failing people between turns.
   A rented Mac counts as in use only while something the agent runs is at work on it: the ProjectDO probes it every
   five minutes through Namespace's command service (`brokers/MacProbe.ts`), stops it after 15 minutes without use (an
   hour while something the agent left runs quietly) or soon after a turn ends with nothing running, and logs each Mac's life to D1 `mac_activity`
@@ -199,6 +204,11 @@ the other workstreams to agree first.
   `node packages/sandbox-template/scripts/resource-review.ts` is the daily review of all of Dream's spend and waste
   (exits 2 when something needs action; see `docs/metering.md`). dreamd posts relay deliveries to the app on
   localhost, signed with `~/.dream/relay.key` (`src/Relays.ts`).
+  dreamd keeps the sandbox's half of the project's log in `~/.dream/logs/<source>.jsonl` (`src/Log.ts`): scheduled
+  runs and tasks, relay deliveries, turns and its own life (`Lifecycle.ts`), machine readings and memory or disk
+  alerts (`Machine.ts`, which also sends each turn's `MachineUse`), and what servers write to `~/logs` or to files a
+  listening process writes to (`AppLogs.ts`). `dream logs` merges both halves; `packages/sandbox-template/scripts/
+  logs-check.ts` checks it on real E2B against the fakes.
   A scheduled task (`dream wake --task`) runs like a `--run` command, but in a new harness session of its own, on the
   model and effort the agent picked, from its brief and `taskPrompt` (`docs/prompts/task/`; `src/Tasks.ts`). Each
   run is reported with `ReportTask` and counted in the ledger like a turn; `packages/sandbox-template/scripts/

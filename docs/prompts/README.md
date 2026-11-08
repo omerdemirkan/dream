@@ -109,7 +109,7 @@ Its description (38 words, in [frontmatter.yaml](skills/dream-access/frontmatter
 | --- | --- | --- | --- |
 | 1 | [Access to services](skills/dream-access/access.md) | `dream access`: how Dream keeps their credentials out of the sandbox, the access card and what makes it quick to fulfil, each kind (Google, OAuth providers, keys in a header, Apple, key files), and connections over time. | 1169 |
 
-### The `dream-hosting` skill, 1,016 words
+### The `dream-hosting` skill, 1,018 words
 
 A skill (`SKILL.md`): the harness lists its name and description on every turn, and the agent or a task's session reads the rest when it judges it needs it.
 
@@ -117,7 +117,7 @@ Its description (38 words, in [frontmatter.yaml](skills/dream-hosting/frontmatte
 
 | # | Section | Covers | Words |
 | --- | --- | --- | --- |
-| 1 | [Hosting](skills/dream-hosting/hosting.md) | `dream publish`: the public URL, how it wakes and checks the sandbox, webhooks, and keeping servers running between turns. | 358 |
+| 1 | [Hosting](skills/dream-hosting/hosting.md) | `dream publish`: the public URL, how it wakes and checks the sandbox, webhooks, and keeping servers running between turns. | 360 |
 | 2 | [Relays](skills/dream-hosting/relays.md) | `dream relay`: Discord's Gateway and WebSocket feeds held open by Dream, how events reach your app, signatures, state, and limits. | 606 |
 | 3 | [If it grows](skills/dream-hosting/if-it-grows.md) | What changes if a project outgrows the sandbox and has to serve many people. | 52 |
 
