@@ -201,11 +201,13 @@ export class E2BMetering extends Context.Service<
           yield* keepWith(existing)
           // If E2B didn't take the new secret it still signs with the old one: keep the secrets as they were, so a
           // retried rotation can't push the secret E2B uses out of `previous`.
-          const updated = yield* events.updateWebhook(existing, settings).pipe(
-            Effect.tapError(() =>
-              Option.match(previous, { onNone: () => Effect.void, onSome: (kept) => keep(existing, url, kept) })
+          const updated = yield* events
+            .updateWebhook(existing, settings)
+            .pipe(
+              Effect.tapError(() =>
+                Option.match(previous, { onNone: () => Effect.void, onSome: (kept) => keep(existing, url, kept) })
+              )
             )
-          )
           if (Option.isSome(updated)) {
             return { webhookId: updated.value.id, url, events: BilledTypes, created: false }
           }
