@@ -41,7 +41,7 @@ export const MeterEvent = Schema.Struct({
   at: Schema.DateTimeUtc,
   /**
    * Raw amounts in their own units (milliseconds, tokens, bytes, characters). Never Dream's prices; the one amount
-   * of money allowed is what the provider itself reported charging (`cost_usd`, OpenRouter's), a fact of the event.
+   * of money allowed is what a provider itself reported charging for the event (`cost_usd`), a fact of the event.
    */
   quantities: Schema.Record(Schema.String, Quantity),
   /** What the event can be grouped or filtered by: `project`, `payer`, `provider`, `model`, … */

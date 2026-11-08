@@ -68,7 +68,7 @@ the ids make retries safe), with customers keyed by the Dream user id, meters su
 `project`, and the platform's prices replacing the price book. The code that meters doesn't change, and the D1 rows
 can be replayed into it. Pricing stays out of the events, so a price change never rewrites history.
 
-**Reported costs.** A provider that says what a request cost (OpenRouter does, per request) gives the event a
+**Reported costs.** A provider that says what a request cost (none of today's does; some model routers do) gives the event a
 `cost_usd` quantity: a fact about the event, not Dream's pricing. The sink takes it as the event's cost, and the price
 book is only the fallback for events without one (`price` in Prices.ts).
 

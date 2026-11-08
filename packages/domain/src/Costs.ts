@@ -40,7 +40,7 @@ export const CostLine = Schema.Struct({
 })
 export type CostLine = typeof CostLine.Type
 
-/** What one model cost in a period, for the detail view: an OpenRouter-style id such as `openai/gpt-4o-mini-tts`. */
+/** What one model cost in a period, for the detail view, by the id the provider reports (`gpt-4o-mini-tts`). */
 export const ModelCost = Schema.Struct({
   model: Schema.String,
   payer: CostPayer,

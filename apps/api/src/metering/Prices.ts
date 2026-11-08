@@ -210,8 +210,8 @@ const daysInMonth = (at: DateTime.Utc) => {
 }
 
 /**
- * What the provider itself said the event cost, in dollars (`ReportedCost` in its quantities), when it says: OpenRouter
- * reports each request's charge. That's a fact about the event, not Dream's pricing, so it wins over the book.
+ * What the provider itself said the event cost, in dollars (`ReportedCost` in its quantities), when it says (none of
+ * today's providers does). That's a fact about the event, not Dream's pricing, so it wins over the book.
  */
 export const ReportedCost = "cost_usd"
 

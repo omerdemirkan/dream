@@ -99,7 +99,7 @@ describe("the price book", () => {
     assert.strictEqual(unknown.usd, 0)
     assert.strictEqual(unknown.units, 1)
     assert.strictEqual(unknown.unknownModel, "gpt-9-nova")
-    // A cost the provider reported (OpenRouter's) is the event's cost, known model or not.
+    // A cost the provider reported is the event's cost, known model or not.
     const reported = price(
       event({
         meter: "openai_request",
