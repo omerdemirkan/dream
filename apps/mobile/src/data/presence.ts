@@ -19,6 +19,8 @@ export type Presence =
   | { readonly _tag: "Starting"; readonly since: DateTime.Utc }
   /** Waiting for a usage window to reset, or (`by`) for them to raise or clear a limit they set. */
   | { readonly _tag: "Paused"; readonly until: DateTime.Utc; readonly by?: UsageLimitReached | undefined }
+  /** Waiting for the plan it runs on to be connected again: Dream holds its work meanwhile. */
+  | { readonly _tag: "NoPlan" }
   /** Between turns with its computer still up; `since` is when the last turn ended. */
   | {
       readonly _tag: "Awake"
@@ -38,6 +40,8 @@ export interface PresenceInput {
   readonly activity: AgentActivity | undefined
   readonly working: boolean
   readonly pausedUntil: DateTime.Utc | undefined
+  /** The plan it runs on isn't connected (see `planMissing`). */
+  readonly planMissing?: boolean | undefined
   /** With `pausedUntil`: a limit they set holds the project. */
   readonly pausedBy?: UsageLimitReached | undefined
   readonly now: DateTime.Utc
@@ -67,6 +71,7 @@ export const presenceOf = (input: PresenceInput): Presence => {
   ) {
     return { _tag: "Starting", since: activity.since }
   }
+  if (input.planMissing === true) return { _tag: "NoPlan" }
   if (input.pausedUntil !== undefined && isAfter(input.pausedUntil, now)) {
     return { _tag: "Paused", until: input.pausedUntil, ...(input.pausedBy ? { by: input.pausedBy } : {}) }
   }
@@ -87,6 +92,7 @@ export const dotOf = (presence: Presence): PresenceDot => {
     case "Starting":
       return "starting"
     case "Paused":
+    case "NoPlan":
       return "paused"
     case "Awake":
       return "awake"
@@ -167,6 +173,13 @@ const paused = (presence: Extract<Presence, { _tag: "Paused" }>, context: LineCo
   strong: false
 })
 
+const noPlan = (context: LineContext): StateLine => ({
+  lead: "Paused",
+  rest: `${planName(context.harness)} isn’t connected`,
+  strong: false,
+  need: true
+})
+
 /**
  * After a turn, the agent is "Done for now": it finished what it was doing, nothing of it is running (a turn lasts
  * while its background work does), and it picks up again when they write or at its next wake, which the line says.
@@ -199,6 +212,8 @@ export const homeLine = (
       return { lead: "Starting its computer…", strong: true }
     case "Paused":
       return paused(presence, context)
+    case "NoPlan":
+      return noPlan(context)
   }
   if (context.openAsks > 0) return { lead: "Waiting for you", rest: context.headline, strong: false, need: true }
   if (presence._tag === "Awake") {
@@ -225,6 +240,8 @@ export const headerLine = (
       return { lead: "Starting up", strong: true }
     case "Paused":
       return paused(presence, context)
+    case "NoPlan":
+      return noPlan(context)
   }
   if (presence._tag !== "Unknown" && sentPending(messages, now)) {
     return presence._tag === "Awake"
@@ -338,6 +355,7 @@ export const chatRowOf = (
     case "Starting":
       return { _tag: "Starting", fresh: !messages.some((m) => m._tag !== "Text" || m.from === "agent") }
     case "Paused":
+    case "NoPlan":
       return undefined
   }
   if (sentPending(messages, now)) return { _tag: "Sent" }

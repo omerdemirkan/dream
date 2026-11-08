@@ -9,6 +9,7 @@
  * Google and model sign-ins as if the person had completed them in a browser.
  */
 import {
+  harnessOf,
   type AccessMessage,
   type AppLink,
   type AppNotification,
@@ -57,6 +58,7 @@ import {
 import { Context, DateTime, Duration, Effect, Layer, Option, PubSub, Redacted, Schema, Stream } from "effect"
 import { Headers } from "effect/http"
 import type { Rpc, RpcGroup } from "effect/rpc"
+import { defaultPlan } from "../data/plans.ts"
 import { TolerantMessage } from "../data/Tolerant.ts"
 import {
   type FixtureWorld,
@@ -100,6 +102,8 @@ export const Scenario = [
   "cabin-resolved",
   "withdraw-cabin",
   "no-plan",
+  "two-plans",
+  "plan-removed",
   "signed-in",
   "signed-out",
   "spotify-ask",
@@ -682,7 +686,7 @@ export class FakeBackend extends Context.Service<
                 title: "New idea",
                 kind: "Just now",
                 idea,
-                harness: harness ?? "codex",
+                harness: harness ?? harnessOf(defaultPlan(connections, active().map(summaryOf)) ?? "chatgpt"),
                 phase: "new",
                 slug: `idea-${counter}`,
                 publicUrl: `https://idea-${counter}-q7x2k9.omer.build`,
@@ -830,7 +834,9 @@ export class FakeBackend extends Context.Service<
               return yield* new NotFound({ entity: "model connection", id: provider })
             return accountOf(
               usage,
-              active().map((r) => r.project),
+              active()
+                .map((r) => r.project)
+                .filter((p) => p.harness === "codex"),
               yield* DateTime.now
             )
           }),
@@ -1142,7 +1148,11 @@ export class FakeBackend extends Context.Service<
               provider,
               status: "pending"
             }
-            connections = [...connections.filter((c) => c.provider !== provider), connection]
+            // A plan already connected stays until the new sign-in works, as on the Worker.
+            connections = [
+              ...connections.filter((c) => c.provider !== provider || c.status === "connected"),
+              connection
+            ]
             if (provider === "chatgpt") {
               yield* later(8, completeConnection(connection.id))
               return {
@@ -1187,10 +1197,13 @@ export class FakeBackend extends Context.Service<
       const completeConnection = (connectionId: ModelConnectionId) =>
         Effect.gen(function* () {
           const now = yield* DateTime.now
-          connections = connections.map((c) =>
+          const provider = connections.find((c) => c.id === connectionId)?.provider
+          connections = connections.flatMap((c) =>
             c.id === connectionId
-              ? { ...c, status: "connected" as const, connectedAt: now, usage: usageFor(c.provider, now) }
-              : c
+              ? [{ ...c, status: "connected" as const, connectedAt: now, usage: usageFor(c.provider, now) }]
+              : c.provider === provider
+                ? []
+                : [c]
           )
         })
 
@@ -1518,6 +1531,24 @@ export class FakeBackend extends Context.Service<
           case "no-plan":
             connections = []
             return
+          case "two-plans":
+          case "plan-removed": {
+            // Claude connected next to ChatGPT, with Recipe Scaler on it; removed, Recipe Scaler waits for it.
+            const recipe = Array.from(records.values()).find((r) => r.project.slug === "recipe-scaler")
+            if (recipe) yield* setProject(recipe, { harness: "claude-code" })
+            const claude: ModelConnection = {
+              id: "mcn_claude" as ModelConnectionId,
+              provider: "claude",
+              status: "connected",
+              connectedAt: DateTime.subtract(now, { days: 3 }),
+              usage: usageFor("claude", now)
+            }
+            connections = [
+              ...connections.filter((c) => c.provider !== "claude"),
+              ...(name === "two-plans" ? [claude] : [])
+            ]
+            return
+          }
           case "spotify-ask":
             return yield* askSpotify(now)
           case "notify-ask":

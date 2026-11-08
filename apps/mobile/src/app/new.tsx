@@ -14,10 +14,14 @@
  * The paperclip beside the mic attaches photos and files, which wait above the
  * buttons and go with the idea as part of its first message.
  */
-import { useAtomSet } from "@effect/atom-react"
+import type { ModelConnection, ModelProvider, ProjectSummary } from "@dream/domain"
+import { useAtomSet, useAtomValue } from "@effect/atom-react"
+import { Option } from "effect"
+import { AsyncResult } from "effect/reactivity"
 import { useLocalSearchParams, useRouter } from "expo-router"
 import { useEffect, useRef, useState } from "react"
 import {
+  ActionSheetIOS,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -34,7 +38,9 @@ import { caretAt, ideaToSend, insertAt, placeTake, type Selection, wordCountLabe
 import { draftOf, type Idea, ideas } from "../data/ideas.ts"
 import { longIdea } from "../fake/fixtures.ts"
 import { useDictation } from "../platform/dictation.ts"
-import { createProjectFn } from "../state/atoms.ts"
+import { providerName } from "../data/format.ts"
+import { connectedPlans, defaultPlan, harnessToSend } from "../data/plans.ts"
+import { createProjectFn, modelConnectionsAtom, projectsAtom } from "../state/atoms.ts"
 import { askPushAtom } from "../state/ui.ts"
 import { useAction, useToast } from "../ui/actions.ts"
 import { useRequestId } from "../ui/hooks.ts"
@@ -117,6 +123,7 @@ export default function NewIdea() {
   const idea = ideaToSend(text, anchor, listening ? dictation.transcript : undefined)
   const has = idea.length > 0
   const busy = create.busy || attachments.uploading
+  const plan = usePlanChoice()
 
   useEffect(() => {
     if (params.dictate) {
@@ -188,7 +195,8 @@ export default function NewIdea() {
       {
         idea,
         requestId: requestId.for(attached.length === 0 ? idea : `${idea}\n${attached.join(",")}`),
-        ...(attached.length === 0 ? {} : { attachments: attached })
+        ...(attached.length === 0 ? {} : { attachments: attached }),
+        ...(plan.harness === undefined ? {} : { harness: plan.harness })
       },
       {
         onSuccess: (project) => {
@@ -330,7 +338,14 @@ export default function NewIdea() {
               </Text>
             </>
           ) : (
-            <Text style={{ fontSize: 14, color: color.t3 }}>{wordCountLabel(text)}</Text>
+            <>
+              <Text numberOfLines={1} style={{ flex: 1, fontSize: 14, color: color.t3 }}>
+                {wordCountLabel(text)}
+              </Text>
+              {plan.choices.length > 1 && plan.chosen !== undefined ? (
+                <PlanPicker chosen={plan.chosen} choices={plan.choices} onChoose={plan.choose} />
+              ) : null}
+            </>
           )}
         </View>
         <Pressable
@@ -354,6 +369,69 @@ export default function NewIdea() {
         </Pressable>
       </View>
     </KeyboardAvoidingView>
+  )
+}
+
+/**
+ * Which plan the idea runs on, when both are connected: the one their newest project runs on until they pick
+ * another. With one plan there's no choice, and nothing is sent, as before.
+ */
+function usePlanChoice() {
+  const connections = Option.getOrElse(
+    AsyncResult.value(useAtomValue(modelConnectionsAtom)),
+    (): ReadonlyArray<ModelConnection> => []
+  )
+  const projects = Option.getOrElse(
+    AsyncResult.value(useAtomValue(projectsAtom)),
+    (): ReadonlyArray<ProjectSummary> => []
+  )
+  const [picked, setPicked] = useState<ModelProvider | undefined>(undefined)
+  const choices = connectedPlans(connections)
+  const chosen = picked !== undefined && choices.includes(picked) ? picked : defaultPlan(connections, projects)
+  return { choices, chosen, choose: setPicked, harness: harnessToSend(connections, chosen) }
+}
+
+/** A quiet pill beside Send naming the plan; a tap offers the other. */
+function PlanPicker(props: {
+  readonly chosen: ModelProvider
+  readonly choices: ReadonlyArray<ModelProvider>
+  readonly onChoose: (provider: ModelProvider) => void
+}) {
+  const open = () =>
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        title: "Run this idea on",
+        options: [...props.choices.map(providerName), "Cancel"],
+        cancelButtonIndex: props.choices.length,
+        userInterfaceStyle: "dark"
+      },
+      (index) => {
+        const provider = props.choices[index]
+        if (provider !== undefined) props.onChoose(provider)
+      }
+    )
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Runs on ${providerName(props.chosen)}. Change plan`}
+      onPress={open}
+      hitSlop={6}
+      style={({ pressed }) => ({
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 5,
+        height: 34,
+        paddingLeft: 13,
+        paddingRight: 10,
+        borderRadius: 17,
+        backgroundColor: pressed ? color.s3 : color.s2,
+        borderWidth: 1,
+        borderColor: color.line2
+      })}
+    >
+      <Text style={{ fontSize: 14, fontWeight: "600", color: color.t2 }}>{providerName(props.chosen)}</Text>
+      <Icon name="chevUpDown" size={11} color={color.t3} weight="semibold" />
+    </Pressable>
   )
 }
 

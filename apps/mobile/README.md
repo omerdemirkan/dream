@@ -97,6 +97,8 @@ neutral "update Dream" row).
 
 Scenarios (`dream://fixtures/<name>?to=/path`, or `-dreamScenario a,b`): `signed-in`, `signed-out`, `reset`,
 `paused` (Lift Log waits for a usage reset), `all-clear`, `cabin-resolved`, `withdraw-cabin`, `no-plan`,
+`two-plans` (Claude connected next to ChatGPT, Recipe Scaler on Claude: Settings shows both plan cards and New idea
+the plan picker), `plan-removed` (the same with Claude removed: Recipe Scaler waits for it, and Home says so),
 `live-activity`, `live-activity-needs` (start a Live Activity on the phone), `spotify-ask` (Lift Log asks to connect
 Spotify), `spotify-stopped` (Lift Log's Spotify connection stopped working: its card says so and connects again),
 `long-question`, `desktop-sent` and `desktop-opened` (Cabin's Google Calendar card, emailed to finish on a

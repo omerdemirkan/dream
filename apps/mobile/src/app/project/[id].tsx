@@ -49,7 +49,7 @@ import { useStagedAttachments } from "../../ui/Attachments.tsx"
 import { ChatComposer } from "../../ui/Composer.tsx"
 import { HoldMenu } from "../../ui/HoldMenu.tsx"
 import { ThreadView } from "../../ui/Thread.tsx"
-import { useOpenMessage, useProject, useRequestId } from "../../ui/hooks.ts"
+import { useOpenMessage, usePlanMissing, useProject, useRequestId } from "../../ui/hooks.ts"
 import { useOpenOptions } from "../../ui/Options.tsx"
 import { IconButton } from "../../ui/kit.tsx"
 import { PresenceTile, StateLineText, useTickingNow } from "../../ui/Presence.tsx"
@@ -449,10 +449,12 @@ function Identity(props: {
   const { project, state, summary } = props
   const activity = state ? state.activity : summary?.activity
   const now = useTickingNow(activity?.state === "working" || state?.working === true)
+  const missing = usePlanMissing(project?.harness)
   const presence = presenceOf({
     activity,
     working: state?.working ?? false,
     pausedUntil: state ? state.status.pausedUntil : summary?.pausedUntil,
+    planMissing: missing,
     pausedBy: state ? state.status.pausedBy : summary?.pausedBy,
     now
   })

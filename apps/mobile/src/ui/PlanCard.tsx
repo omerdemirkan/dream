@@ -8,18 +8,16 @@ import { useAtomRefresh, useAtomValue } from "@effect/atom-react"
 import { DateTime, Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
 import { useEffect } from "react"
-import { Pressable, Text, View } from "react-native"
+import { Text, View } from "react-native"
 import { planCard } from "../data/usage.ts"
 import { accountUsageAtom } from "../state/atoms.ts"
-import { Icon } from "./kit.tsx"
+import { Icon, IconButton } from "./kit.tsx"
+import { usePlanMenu } from "./Plans.tsx"
 import { color } from "./theme.ts"
 import { Footnote, LimitCallout, SectionHeading, ShareRow, WindowBar } from "./Usage.tsx"
 
-export function PlanCard(props: {
-  readonly connection: ModelConnection
-  readonly disconnecting: boolean
-  readonly onDisconnect: () => void
-}) {
+export function PlanCard(props: { readonly connection: ModelConnection }) {
+  const menu = usePlanMenu(props.connection)
   const atom = accountUsageAtom(props.connection.provider)
   const result = useAtomValue(atom)
   // Fetched again each time Settings opens, so the shares are as fresh as the connection's own usage.
@@ -50,11 +48,14 @@ export function PlanCard(props: {
             {card.detail}
           </Text>
         </View>
-        <Pressable accessibilityRole="button" onPress={props.onDisconnect} disabled={props.disconnecting} hitSlop={8}>
-          <Text style={{ fontSize: 15, fontWeight: "600", color: props.disconnecting ? color.t3 : color.t2 }}>
-            Disconnect
-          </Text>
-        </Pressable>
+        <IconButton
+          icon="dots"
+          size={34}
+          tone="quiet"
+          label={`${card.title} options`}
+          busy={menu.busy}
+          onPress={menu.open}
+        />
       </View>
       {card.callout ? <LimitCallout callout={card.callout} /> : null}
       {card.windows.length > 0 ? <View style={{ height: 6 }} /> : null}

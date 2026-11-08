@@ -14,6 +14,7 @@ import { useEffect } from "react"
 import { Pressable, ScrollView, Text, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { phaseLabel, providerName } from "../data/format.ts"
+import { missingPlans, planMissing } from "../data/plans.ts"
 import { profileHint } from "../data/usage.ts"
 import { dotOf, homeLine, presenceOf, progressNote } from "../data/presence.ts"
 import { hiddenProjectsAtom, modelConnectionsAtom, projectsAtom } from "../state/atoms.ts"
@@ -114,12 +115,18 @@ export default function Home() {
         {/* Each project's row says whether it waits for them; Home has no summary section above the list. */}
         <View style={{ height: 12 }} />
         {unreachable ? <Unreachable onRetry={refreshProjects} /> : null}
-        <ConnectionBanner connections={connections} />
+        <ConnectionBanner connections={connections} projects={projects} />
         {projects.length > 0 ? (
           <Text style={{ fontSize: 13, fontWeight: "600", color: color.t3, marginBottom: 2 }}>Projects</Text>
         ) : null}
         {projects.map((summary, i) => (
-          <ProjectRow key={summary.project.id} summary={summary} first={i === 0} open={summary.openAsks} />
+          <ProjectRow
+            key={summary.project.id}
+            summary={summary}
+            first={i === 0}
+            open={summary.openAsks}
+            planMissing={planMissing(connections, summary.project.harness)}
+          />
         ))}
         {empty ? (
           <>
@@ -172,33 +179,49 @@ function Unreachable(props: { readonly onRetry: () => void }) {
   )
 }
 
-function ConnectionBanner(props: { readonly connections: ReadonlyArray<ModelConnection> }) {
+/** A plan their projects run on stopped working or was removed: those projects wait until it's connected again. */
+function ConnectionBanner(props: {
+  readonly connections: ReadonlyArray<ModelConnection>
+  readonly projects: ReadonlyArray<ProjectSummary>
+}) {
   const router = useRouter()
-  const broken = props.connections.find((c) => c.status === "expired" || c.status === "failed")
-  if (!broken || props.connections.some((c) => c.status === "connected")) return null
-  return (
-    <Pressable
-      onPress={() => router.push("/connect")}
-      style={{
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 12,
-        padding: 14,
-        borderRadius: 20,
-        backgroundColor: color.s1,
-        borderWidth: 1,
-        borderColor: color.needLine,
-        marginBottom: 22
-      }}
-    >
-      <Dot kind="need" />
-      <Text style={{ flex: 1, fontSize: 15, color: color.t1 }}>
-        Your {providerName(broken.provider)} sign-in {broken.status === "expired" ? "expired" : "stopped working"}.
-        Projects are waiting.
-      </Text>
-      <Icon name="chev" size={15} color={color.t3} />
-    </Pressable>
-  )
+  return missingPlans(props.connections, props.projects).map((missing) => {
+    const name = providerName(missing.provider)
+    const what =
+      missing.reason === "removed"
+        ? `${name} isn’t connected.`
+        : `Your ${name} sign-in ${missing.reason === "expired" ? "expired" : "stopped working"}.`
+    const waiting =
+      missing.waiting === 0
+        ? ""
+        : missing.waiting === 1
+          ? " A project is waiting."
+          : ` ${missing.waiting} projects are waiting.`
+    return (
+      <Pressable
+        key={missing.provider}
+        onPress={() => router.push({ pathname: "/connect", params: { provider: missing.provider } })}
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 12,
+          padding: 14,
+          borderRadius: 20,
+          backgroundColor: color.s1,
+          borderWidth: 1,
+          borderColor: color.needLine,
+          marginBottom: 22
+        }}
+      >
+        <Dot kind="need" />
+        <Text style={{ flex: 1, fontSize: 15, color: color.t1 }}>
+          {what}
+          {waiting}
+        </Text>
+        <Icon name="chev" size={15} color={color.t3} />
+      </Pressable>
+    )
+  })
 }
 
 function Progress(props: { readonly done: number; readonly total: number; readonly current: boolean }) {
@@ -223,7 +246,12 @@ function Progress(props: { readonly done: number; readonly total: number; readon
   )
 }
 
-function ProjectRow(props: { readonly summary: ProjectSummary; readonly first: boolean; readonly open: number }) {
+function ProjectRow(props: {
+  readonly summary: ProjectSummary
+  readonly first: boolean
+  readonly open: number
+  readonly planMissing: boolean
+}) {
   const { project, progress } = props.summary
   const { open } = props
   // The Status card's now line, as plain text: markdown and any lines after the first don't fit here.
@@ -233,6 +261,7 @@ function ProjectRow(props: { readonly summary: ProjectSummary; readonly first: b
     activity: props.summary.activity,
     working: false,
     pausedUntil: props.summary.pausedUntil,
+    planMissing: props.planMissing,
     pausedBy: props.summary.pausedBy,
     now
   })

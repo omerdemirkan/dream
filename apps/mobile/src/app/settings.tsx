@@ -1,6 +1,6 @@
 /**
- * Settings: the subscription Dream runs on, the services connected for every
- * project, and the account.
+ * Settings: the plans Dream runs on (Claude, ChatGPT or both), the services
+ * connected for every project, and the account.
  */
 import type { ArchivedProject, Integration, ModelConnection, ProjectId, ProjectSummary } from "@dream/domain"
 import { useAtomValue } from "@effect/atom-react"
@@ -13,6 +13,7 @@ import { type ReactNode, useState } from "react"
 import { Pressable, ScrollView, Text, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { dayLabel, providerName } from "../data/format.ts"
+import { settingsPlans } from "../data/plans.ts"
 import {
   archivedProjectsAtom,
   disconnectIntegrationFn,
@@ -30,6 +31,7 @@ import { appConfig } from "../state/runtime.ts"
 import { useAction, useToast } from "../ui/actions.ts"
 import { integrationReach, integrationSummary } from "../ui/describe.ts"
 import { PlanCard } from "../ui/PlanCard.tsx"
+import { AddPlanTile } from "../ui/Plans.tsx"
 import { useProjectActions } from "../ui/ProjectMenu.tsx"
 import { SecretField } from "../ui/Expanded.tsx"
 import { Button, Icon, IconButton, Lab } from "../ui/kit.tsx"
@@ -60,6 +62,7 @@ export default function Settings() {
   const projectTitle = (id: ProjectId) =>
     (projects.find((summary) => summary.project.id === id) ?? archived.find((row) => row.project.id === id))?.project
       .title
+  const plans = settingsPlans(connections)
   const signOut = useAction(signOutFn)
   return (
     <ScrollView
@@ -76,17 +79,13 @@ export default function Settings() {
         <View style={{ width: 40 }} />
       </View>
 
-      <Section title="Subscription">
-        {connections.length === 0 ? (
-          <Row
-            title="Not connected"
-            subtitle="Projects need Claude or ChatGPT to run."
-            action="Connect"
-            onAction={() => router.push("/connect")}
-          />
-        ) : (
-          connections.map((connection) => <ConnectionRow key={connection.id} connection={connection} />)
-        )}
+      <Section title={plans.connected.length > 1 ? "Plans" : "Plan"}>
+        {plans.shown.map((connection) => (
+          <ConnectionRow key={connection.id} connection={connection} />
+        ))}
+        {plans.addable.map((provider) => (
+          <AddPlanTile key={provider} provider={provider} />
+        ))}
       </Section>
 
       <Section title="Connected services">
@@ -236,15 +235,14 @@ function ConnectionRow(props: { readonly connection: ModelConnection }) {
   const router = useRouter()
   const disconnect = useAction(disconnectModelConnectionFn)
   const c = props.connection
-  // A connected subscription is the plan card: its usage, and each project's share of it.
-  if (c.status === "connected")
-    return <PlanCard connection={c} disconnecting={disconnect.busy} onDisconnect={() => disconnect.run(c.id)} />
+  // A connected plan is the plan card: its usage, each project's share of it, and its menu.
+  if (c.status === "connected") return <PlanCard connection={c} />
   return c.status === "pending" ? (
     <Row
       icon="spark"
       title={c.usage?.plan ?? providerName(c.provider)}
       subtitle="Finishing sign-in…"
-      action="Disconnect"
+      action="Cancel"
       busy={disconnect.busy}
       onAction={() => disconnect.run(c.id)}
     />
@@ -254,7 +252,7 @@ function ConnectionRow(props: { readonly connection: ModelConnection }) {
       title={providerName(c.provider)}
       subtitle={c.status === "expired" ? "Sign-in expired" : "Sign-in failed"}
       action="Reconnect"
-      onAction={() => router.push("/connect")}
+      onAction={() => router.push({ pathname: "/connect", params: { provider: c.provider } })}
     />
   )
 }

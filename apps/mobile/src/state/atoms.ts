@@ -12,6 +12,7 @@ import {
   type AppId,
   type AppLink,
   type LinkColor,
+  type Harness,
   type LinkIcon,
   type LinkId,
   type IntegrationId,
@@ -220,6 +221,8 @@ export const createProjectFn = appRuntime.fn(
     readonly idea: string
     readonly requestId: RequestId
     readonly attachments?: ReadonlyArray<MediaId>
+    /** Only with both plans connected: the one the new-idea picker shows. */
+    readonly harness?: Harness
   }) {
     const app = yield* AppClient
     return yield* app.CreateProject(input).pipe(withWriteTimeout)

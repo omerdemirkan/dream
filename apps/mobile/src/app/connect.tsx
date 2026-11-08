@@ -1,17 +1,29 @@
 /**
- * Connect Claude or ChatGPT, once per person. Each runs its own sign-in in a
- * short-lived sandbox and Dream relays it: a code to paste back for Claude, a
- * device code to enter for ChatGPT.
+ * Connect Claude or ChatGPT, or both: each project runs on one, picked when the
+ * idea is sent. Each runs its own sign-in in a short-lived sandbox and Dream
+ * relays it: a code to paste back for Claude, a device code to enter for
+ * ChatGPT. `/connect?provider=chatgpt` (Settings' add tile, Reconnect, Home's
+ * banner) starts that plan's sign-in straight away.
  */
 import type { ModelConnection, ModelConnectFlow, ModelProvider } from "@dream/domain"
 import * as Clipboard from "expo-clipboard"
-import { useRouter } from "expo-router"
+import { useAtomValue } from "@effect/atom-react"
+import { Option } from "effect"
+import { AsyncResult } from "effect/reactivity"
+import { useLocalSearchParams, useRouter } from "expo-router"
 import * as WebBrowser from "expo-web-browser"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native"
 import { KeyboardAvoidingView } from "react-native-keyboard-controller"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
-import { awaitModelConnectionFn, completeModelConnectionFn, startModelConnectionFn } from "../state/atoms.ts"
+import { providerName } from "../data/format.ts"
+import { connectedPlans } from "../data/plans.ts"
+import {
+  awaitModelConnectionFn,
+  completeModelConnectionFn,
+  modelConnectionsAtom,
+  startModelConnectionFn
+} from "../state/atoms.ts"
 import { useAction, useToast } from "../ui/actions.ts"
 import { Button, Dot, Icon, IconButton, LinkButton } from "../ui/kit.tsx"
 import { color, gutter } from "../ui/theme.ts"
@@ -43,6 +55,17 @@ export default function Connect() {
   const start = useAction(startModelConnectionFn)
   const toast = useToast()
   const [starting, setStarting] = useState<ModelProvider | undefined>(undefined)
+  const params = useLocalSearchParams<{ provider?: string }>()
+  const only = plans.find((p) => p.provider === params.provider)
+  const connections = Option.getOrElse(
+    AsyncResult.value(useAtomValue(modelConnectionsAtom)),
+    (): ReadonlyArray<ModelConnection> => []
+  )
+  // As it was on arrival: starting a sign-in adds a pending connection for the plan.
+  const [reconnecting] = useState(
+    () => only !== undefined && connections.some((c) => c.provider === only.provider && c.status !== "pending")
+  )
+  const both = connectedPlans(connections).length > 1
 
   const choose = (provider: ModelProvider) => {
     setStarting(provider)
@@ -59,6 +82,13 @@ export default function Connect() {
   }
 
   const finish = () => (router.canGoBack() ? router.back() : router.replace("/"))
+
+  // Asked for one plan: its sign-in starts at once.
+  useEffect(() => {
+    if (only !== undefined) choose(only.provider)
+    // Only on arrival.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: color.bg }}>
@@ -82,13 +112,27 @@ export default function Connect() {
         </View>
         {step._tag === "Choose" ? (
           <>
-            <Title>Which plan should Dream use?</Title>
-            <Lead>
-              Dream works on your own subscription. Connect it once; every project uses it, and you can see how much is
-              left.
-            </Lead>
+            {only === undefined ? (
+              <>
+                <Title>Which plan should Dream use?</Title>
+                <Lead>
+                  Dream works on your own subscription. Connect it once; every project uses it, and you can see how much
+                  is left.
+                </Lead>
+              </>
+            ) : reconnecting ? (
+              <>
+                <Title>{`Reconnect ${only.name}`}</Title>
+                <Lead>Sign in again, with the same account or another. Your projects carry on as they were.</Lead>
+              </>
+            ) : (
+              <>
+                <Title>{`Add ${only.name}`}</Title>
+                <Lead>With both plans connected, you pick which one each new idea runs on.</Lead>
+              </>
+            )}
             <View style={{ gap: 12, marginTop: 30 }}>
-              {plans.map((p) => (
+              {(only === undefined ? plans : [only]).map((p) => (
                 <Pressable
                   key={p.provider}
                   accessibilityRole="button"
@@ -148,8 +192,12 @@ export default function Connect() {
             >
               <Icon name="check" size={28} color={color.black} weight="bold" />
             </View>
-            <Title>{`${step.provider === "chatgpt" ? "ChatGPT" : "Claude"} is connected.`}</Title>
-            <Lead>Every project runs on it. Describe an idea whenever you’re ready.</Lead>
+            <Title>{`${providerName(step.provider)} is connected.`}</Title>
+            <Lead>
+              {both
+                ? "New ideas can run on either plan. You pick when you describe one."
+                : "Every project runs on it. Describe an idea whenever you’re ready."}
+            </Lead>
             <Button title="Continue" onPress={finish} style={{ marginTop: 30 }} />
           </View>
         )}

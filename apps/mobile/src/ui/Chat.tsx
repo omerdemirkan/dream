@@ -37,7 +37,7 @@ import { loadEarlierFn } from "../state/atoms.ts"
 import { heldAtom, holdRequestAtom, landingAtom, messageRects, threadOpenAtom } from "../state/ui.ts"
 import { nextOpenAsk } from "./asks.ts"
 import { useClearSeen } from "./clearSeen.ts"
-import { useNow, useOpenMessage } from "./hooks.ts"
+import { useNow, useOpenMessage, usePlanMissing } from "./hooks.ts"
 import { isNotificationsCard, NotificationsCard } from "./AppNotifications.tsx"
 import { AccessCard, AgentText, QuestionCard, UserBubble } from "./Messages.tsx"
 import { Icon } from "./kit.tsx"
@@ -379,10 +379,12 @@ export function MessageBody(props: {
 export function ChatActivity(props: { readonly state: ProjectState }) {
   const { state } = props
   const now = useNow(5000)
+  const missing = usePlanMissing(state.project.harness)
   const presence = presenceOf({
     activity: state.activity,
     working: state.working,
     pausedUntil: state.status.pausedUntil,
+    planMissing: missing,
     pausedBy: state.status.pausedBy,
     now
   })
