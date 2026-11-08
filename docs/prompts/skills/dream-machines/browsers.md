@@ -13,4 +13,4 @@ covers: The local headless Chromium and Playwright, and `dream browser` for a re
   the open web when the local one isn't enough: sites that block headless browsers or cloud IPs, signing in
   somewhere, pages with no API, and recordings worth showing them. It prints a CDP URL for Playwright or Stagehand,
   plus a live-view URL. Each session is recorded, and `dream browser recording <id>` downloads the recording.
-  `dream browser stop <id>` ends it.
+  `dream browser stop <id>` ends it; one left open keeps running, and billing, until its hour is up.
