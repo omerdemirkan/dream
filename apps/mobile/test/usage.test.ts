@@ -1,4 +1,11 @@
-import type { AccountUsage, ModelConnection, ModelConnectionId, ProjectUsage, ProjectUsageGlance } from "@dream/domain"
+import type {
+  AccountUsage,
+  ModelConnection,
+  ModelConnectionId,
+  ProjectId,
+  ProjectUsage,
+  ProjectUsageGlance
+} from "@dream/domain"
 import * as Fx from "@dream/domain/fixtures"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime, Effect, Layer } from "effect"
@@ -243,6 +250,33 @@ describe("Settings' plan card", () => {
     // Nothing known at all: just connected.
     const bare = planCard(connection(undefined), undefined, now, la)
     assert.deepStrictEqual([bare.title, bare.detail, bare.windows], ["ChatGPT", "Connected", []])
+  })
+
+  it("puts the deleted projects together in one row, after the others and before Outside Dream", () => {
+    const gone = (id: string, sharePercent: number) => ({
+      projectId: id as ProjectId,
+      title: "Deleted project",
+      sharePercent
+    })
+    const account: AccountUsage = {
+      ...Fx.accountUsage,
+      projects: [Fx.accountUsage.projects[0]!, gone("prj_gone1", 14), gone("prj_gone2", 0.3)],
+      outsideDreamPercent: 6
+    }
+    const card = planCard(connection(Fx.usage), account, now, la)
+    assert.deepStrictEqual(
+      card.projects.map((p) => [p.key, p.title, p.share, p.bar]),
+      [
+        [Fx.accountUsage.projects[0]!.projectId, Fx.accountUsage.projects[0]!.title, "19%", 1],
+        ["deleted", "Deleted projects", "14%", 14.3 / 19],
+        ["outside", "Outside Dream", "6%", 6 / 19]
+      ]
+    )
+    const one = planCard(connection(Fx.usage), { ...account, projects: [gone("prj_gone1", 2)] }, now, la)
+    assert.deepStrictEqual(
+      one.projects.map((p) => p.title),
+      ["Deleted project", "Outside Dream"]
+    )
   })
 
   it("says when it's paused at a limit, in amber", () => {

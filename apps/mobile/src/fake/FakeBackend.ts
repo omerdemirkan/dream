@@ -42,6 +42,7 @@ import {
   type Project,
   ProjectEvent,
   type ProjectId,
+  type ProjectShare,
   type ProjectSummary,
   type PushData,
   safeAttachmentName,
@@ -138,6 +139,7 @@ export const Scenario = [
   "usage-near-limit",
   "usage-limit",
   "usage-none",
+  "usage-deleted",
   "workstreams",
   "workstreams-waiting",
   "workstreams-many",
@@ -257,6 +259,8 @@ export class FakeBackend extends Context.Service<
       let devices = new Map<string, Device>()
       let links: Array<AppLink> = []
       let usage: UsageWorld = makeUsageWorld("normal")
+      // Shares of projects deleted this week (`usage-deleted`), as the API names them.
+      let deletedShares: ReadonlyArray<ProjectShare> = []
       // Projects' apps that notify, and what each sent (newest first).
       let appSenders = new Map<ProjectId, Array<AppSender>>()
       let appSent = new Map<ProjectId, Array<AppNotification>>()
@@ -267,6 +271,7 @@ export class FakeBackend extends Context.Service<
         integrations = [...world.integrations]
         links = [...world.links]
         usage = makeUsageWorld("normal")
+        deletedShares = []
         connections = [...world.modelConnections]
         appSenders = new Map(world.apps.map((a) => [a.projectId, [...a.senders]]))
         appSent = new Map(world.apps.map((a) => [a.projectId, [...a.notifications]]))
@@ -835,7 +840,14 @@ export class FakeBackend extends Context.Service<
             const on = active()
               .map((r) => r.project)
               .filter((p) => providerOf(p.harness) === provider)
-            const account = accountOf(usage, on, yield* DateTime.now)
+            const own = accountOf(usage, on, yield* DateTime.now)
+            const account =
+              own.weekly && deletedShares.length > 0
+                ? {
+                    ...own,
+                    projects: [...own.projects, ...deletedShares].sort((a, b) => b.sharePercent - a.sharePercent)
+                  }
+                : own
             if (provider === "chatgpt") return account
             // Claude's week (two-plans): the same project shares, beside Claude's own window.
             const week = connections.find((c) => c.provider === "claude")?.usage?.weekly?.usedPercent ?? 0
@@ -1625,6 +1637,12 @@ export class FakeBackend extends Context.Service<
             return yield* setUsage("near-limit")
           case "usage-none":
             return yield* setUsage("none")
+          case "usage-deleted":
+            deletedShares = [
+              { projectId: "prj_gone1" as ProjectId, title: "Deleted project", sharePercent: 2 },
+              { projectId: "prj_gone2" as ProjectId, title: "Deleted project", sharePercent: 0.3 }
+            ]
+            return
           case "usage-limit": {
             const lift = Array.from(records.values()).find((r) => r.project.slug === "lift-log")
             if (!lift) return

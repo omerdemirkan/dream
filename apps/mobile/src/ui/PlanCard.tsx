@@ -1,26 +1,29 @@
 /**
  * Settings' plan card (Deck v3, usage in Settings option B, mocks/screens/usage-settings B3/B4): the subscription,
- * what's left of its week, the five-hour and week bars with all their projects in white, and each project's share
- * of the week, drawn with the usage sheet's own pieces. Near the limit the border, bars and callout turn amber.
+ * what's left of its week and the five-hour and week bars with all their projects in white, drawn with the usage
+ * sheet's own pieces, then "See more", which opens each project's share of the week full screen (`app/plan`). Near
+ * the limit the border, bars and callout turn amber.
  */
 import type { ModelConnection } from "@dream/domain"
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react"
 import { DateTime, Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
 import { useEffect } from "react"
-import { Text, View } from "react-native"
+import { useRouter } from "expo-router"
+import { Pressable, StyleSheet, Text, View } from "react-native"
 import { planCard } from "../data/usage.ts"
 import { accountUsageAtom } from "../state/atoms.ts"
 import { Icon, IconButton } from "./kit.tsx"
 import { usePlanMenu } from "./Plans.tsx"
 import { color } from "./theme.ts"
-import { Footnote, LimitCallout, SectionHeading, ShareRow, WindowBar } from "./Usage.tsx"
+import { LimitCallout, WindowBar } from "./Usage.tsx"
 
 export function PlanCard(props: {
   readonly connection: ModelConnection
   /** Opens its menu, or the Remove warning, on arrival (`/settings?plan=menu:claude`, `remove:claude`). */
   readonly show?: "menu" | "remove" | undefined
 }) {
+  const router = useRouter()
   const menu = usePlanMenu(props.connection)
   useEffect(() => {
     if (props.show === undefined) return
@@ -74,14 +77,24 @@ export function PlanCard(props: {
         <WindowBar key={w.label} bar={w} focusColor={focusColor} />
       ))}
       {card.projects.length > 0 ? (
-        <>
-          <SectionHeading>This week, across your projects</SectionHeading>
-          {card.projects.map((p) => (
-            <ShareRow key={p.key} row={p} focusColor={focusColor} />
-          ))}
-        </>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityHint="Shows each project’s share of the week"
+          onPress={() => router.push({ pathname: "/plan/[provider]", params: { provider: props.connection.provider } })}
+          style={({ pressed }) => ({
+            flexDirection: "row",
+            alignItems: "center",
+            marginTop: 14,
+            paddingTop: 12,
+            borderTopWidth: StyleSheet.hairlineWidth,
+            borderColor: color.line,
+            opacity: pressed ? 0.6 : 1
+          })}
+        >
+          <Text style={{ flex: 1, fontSize: 14.5, color: color.t2 }}>See more</Text>
+          <Icon name="chev" size={13} color={color.t3} />
+        </Pressable>
       ) : null}
-      {card.footnote ? <Footnote>{card.footnote}</Footnote> : null}
     </View>
   )
 }

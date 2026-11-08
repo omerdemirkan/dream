@@ -70,6 +70,7 @@ function Shell() {
           <Stack.Screen name="new" options={{ presentation: "fullScreenModal", animation: "slide_from_bottom" }} />
           <Stack.Screen name="connect" />
           <Stack.Screen name="settings" />
+          <Stack.Screen name="plan/[provider]" />
           <Stack.Screen name="oauth/google" options={{ animation: "none" }} />
         </Stack.Protected>
         <Stack.Screen name="fixtures/[scenario]" options={{ animation: "none" }} />

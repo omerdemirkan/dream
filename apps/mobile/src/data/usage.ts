@@ -150,16 +150,26 @@ const windowBar = (
   }
 }
 
-/** Every project's share, largest first as given, then Outside Dream's; bars against the largest. */
+/** What the API calls a project that's gone (`apps/api/src/usage/ProjectUsage.ts`); it has no icon. */
+const deletedTitle = "Deleted project"
+
+/**
+ * Every project's share, largest first as given, then the deleted ones together as one row, then Outside Dream's;
+ * bars against the largest.
+ */
 const shareRows = (
   projects: ReadonlyArray<ProjectShare>,
   outsideDreamPercent: number | undefined,
   currentId: string | undefined
 ): ReadonlyArray<ShareRowView> => {
-  const largest = Math.max(0, ...projects.map((p) => p.sharePercent), outsideDreamPercent ?? 0)
+  const isDeleted = (p: ProjectShare) => p.title === deletedTitle && p.icon === undefined && p.projectId !== currentId
+  const named = projects.filter((p) => !isDeleted(p))
+  const deleted = projects.filter(isDeleted)
+  const deletedPercent = deleted.reduce((n, p) => n + p.sharePercent, 0)
+  const largest = Math.max(0, ...named.map((p) => p.sharePercent), deletedPercent, outsideDreamPercent ?? 0)
   const bar = (percent: number) => (largest > 0 ? percent / largest : 0)
   return [
-    ...projects.map((p) => ({
+    ...named.map((p) => ({
       key: p.projectId,
       title: p.title,
       ...(p.icon ? { icon: p.icon } : {}),
@@ -168,6 +178,19 @@ const shareRows = (
       current: p.projectId === currentId,
       outside: false
     })),
+    ...(deleted.length > 0
+      ? [
+          {
+            key: "deleted",
+            title: deleted.length > 1 ? "Deleted projects" : deletedTitle,
+            icon: "trash",
+            share: percentLabel(deletedPercent),
+            bar: bar(deletedPercent),
+            current: false,
+            outside: false
+          }
+        ]
+      : []),
     ...(outsideDreamPercent !== undefined
       ? [
           {
@@ -343,7 +366,10 @@ export interface PlanCard {
   readonly callout?: { readonly left: string; readonly rest: string }
   /** The five hours and the week, all their projects together in white. */
   readonly windows: ReadonlyArray<WindowBarView>
-  /** Every project's share of the week; empty when the API can't say (it predates `GetAccountUsage`). */
+  /**
+   * Every project's share of the week, shown full screen behind the card's "See more"; empty when the API can't say
+   * (it predates `GetAccountUsage`), and then there's no "See more".
+   */
   readonly projects: ReadonlyArray<ShareRowView>
   /** Shown with the shares, which it explains. */
   readonly footnote?: string

@@ -85,6 +85,7 @@ xcrun simctl launch --terminate-running-process booted build.omer.dream \
 | `/project/<id>?sheet=notifications` | The Notifications sheet: the project's apps that notify, their controls, what they sent (the bell opens it) |
 | `/project/<id>?tab=chat&attach=sample` · `/new?attach=sample` | Chat's composer, or a new idea, with two photos and a PDF attached (uploading, then ready) |
 | `/connect` · `/settings` | Subscription connect flow; settings, with the plan card at the top |
+| `/plan/chatgpt` · `/plan/claude` | A plan's week by project, full screen (the plan card's "See more"); `/plan/claude` with `two-plans` |
 
 Message ids: `msg_cabinrule`, `msg_cabinpick`, `msg_gcal` (Cabin), `msg_apple` (Lift Log), `msg_gmail` and
 `msg_brieftelegram` (Morning Brief; the last-resort key file card), `msg_recipewho` (Recipe Scaler), `msg_spotify`
@@ -200,11 +201,12 @@ simulated agent's turns adds a little (the header follows `ProjectEvent.Usage`).
 week: 92% used, the ring's arc and "8% left" in amber, and a line in the sheet saying what's left and until when.
 `usage-limit` gives Lift Log a limit at its share, so it's paused by it: "Paused · at its 4% limit" in the
 header, "paused" under the ring, and the sheet's callout. `usage-none` is a world where no usage is known: the header
-shows nothing, and the sheet has no ring. `usage-normal` goes back to the default.
+shows nothing, and the sheet has no ring. `usage-deleted` adds two deleted projects' shares to the plan's week. `usage-normal` goes back to the default.
 
 The plan's usage lives in Settings, not on Home (usage in Settings, option B): the connected subscription is a plan
-card with what's left of the week, the five-hour and week bars (all projects in white, everything else in grey),
-each project's share of the week, and the footnote, drawn with the sheet's own pieces (`ui/Usage.tsx`). Its shares
+card with what's left of the week and the five-hour and week bars (all projects in white, everything else in grey),
+drawn with the sheet's own pieces (`ui/Usage.tsx`). Its "See more" opens `/plan/<provider>`, each project's share of
+the week with its whole name (deleted projects together in one row), Outside Dream's, and the footnote. Its shares
 come from `GetAccountUsage`; against an API without it the card shows the connection's own windows and no shares.
 Near the limit (`usage-near-limit`) the card turns amber with the limit callout, and Home's profile button gets an
 amber dot, only then.

@@ -507,35 +507,68 @@ export function SectionHeading(props: { readonly children: string }) {
 
 /**
  * One project's share of the week (or Outside Dream's): its bar in grey, or in `focusColor` for the project whose
- * sheet this is.
+ * sheet this is. `wide`, for the full-screen breakdown: the whole name over its bar, the share on the right.
  */
-export function ShareRow(props: { readonly row: ShareRowView; readonly focusColor: string }) {
+export function ShareRow(props: { readonly row: ShareRowView; readonly focusColor: string; readonly wide?: boolean }) {
   const { row } = props
   const tint = row.current ? color.t1 : color.t2
-  return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 4 }}>
+  const bar = (
+    <View
+      style={{
+        flex: props.wide ? undefined : 1,
+        height: 6,
+        borderRadius: 3,
+        backgroundColor: "rgba(255,255,255,0.07)",
+        overflow: "hidden"
+      }}
+    >
       <View
         style={{
-          width: 24,
-          height: 24,
-          borderRadius: 7,
-          borderCurve: "continuous",
+          width: `${row.bar * 100}%`,
+          height: "100%",
+          borderRadius: 3,
+          backgroundColor: row.current ? props.focusColor : "rgba(255,255,255,0.32)"
+        }}
+      />
+    </View>
+  )
+  const share = (
+    <Text
+      style={{
+        width: 44,
+        textAlign: "right",
+        fontSize: props.wide ? 15 : 13.5,
+        color: props.wide ? color.t1 : tint,
+        fontWeight: row.current || props.wide ? "600" : "400",
+        fontVariant: ["tabular-nums"]
+      }}
+    >
+      {row.share}
+    </Text>
+  )
+  if (props.wide)
+    return (
+      <View
+        style={{
+          flexDirection: "row",
           alignItems: "center",
-          justifyContent: "center",
-          backgroundColor: row.outside ? "transparent" : color.s2,
-          borderWidth: 1,
-          borderStyle: row.outside ? "dashed" : "solid",
-          borderColor: row.outside ? color.line2 : color.line
+          gap: 12,
+          paddingVertical: 12,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderColor: color.line
         }}
       >
-        <SymbolView
-          name={(row.outside ? "globe" : symbolOr(row.icon)) as SymbolViewProps["name"]}
-          size={13}
-          tintColor={color.t2}
-          weight="medium"
-          style={{ width: 13, height: 13 }}
-        />
+        <ShareIcon row={row} size={30} />
+        <View style={{ flex: 1, gap: 8 }}>
+          <Text style={{ fontSize: 15.5, lineHeight: 20, letterSpacing: -0.15, color: color.t1 }}>{row.title}</Text>
+          {bar}
+        </View>
+        {share}
       </View>
+    )
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 4 }}>
+      <ShareIcon row={row} size={24} />
       <Text
         numberOfLines={1}
         style={{
@@ -548,30 +581,38 @@ export function ShareRow(props: { readonly row: ShareRowView; readonly focusColo
       >
         {row.title}
       </Text>
-      <View
-        style={{ flex: 1, height: 6, borderRadius: 3, backgroundColor: "rgba(255,255,255,0.07)", overflow: "hidden" }}
-      >
-        <View
-          style={{
-            width: `${row.bar * 100}%`,
-            height: "100%",
-            borderRadius: 3,
-            backgroundColor: row.current ? props.focusColor : "rgba(255,255,255,0.32)"
-          }}
-        />
-      </View>
-      <Text
-        style={{
-          width: 44,
-          textAlign: "right",
-          fontSize: 13.5,
-          color: tint,
-          fontWeight: row.current ? "600" : "400",
-          fontVariant: ["tabular-nums"]
-        }}
-      >
-        {row.share}
-      </Text>
+      {bar}
+      {share}
+    </View>
+  )
+}
+
+/** The project's icon on a tile; Outside Dream's globe on a dashed one. */
+function ShareIcon(props: { readonly row: ShareRowView; readonly size: number }) {
+  const { row, size } = props
+  const glyph = Math.round(size * 0.54)
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: Math.round(size * 0.29),
+        borderCurve: "continuous",
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: row.outside ? "transparent" : color.s2,
+        borderWidth: 1,
+        borderStyle: row.outside ? "dashed" : "solid",
+        borderColor: row.outside ? color.line2 : color.line
+      }}
+    >
+      <SymbolView
+        name={(row.outside ? "globe" : symbolOr(row.icon)) as SymbolViewProps["name"]}
+        size={glyph}
+        tintColor={color.t2}
+        weight="medium"
+        style={{ width: glyph, height: glyph }}
+      />
     </View>
   )
 }

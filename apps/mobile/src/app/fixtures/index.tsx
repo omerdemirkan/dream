@@ -23,6 +23,11 @@ const sections: ReadonlyArray<{ readonly title: string; readonly jumps: Readonly
       { title: "Nothing waiting", scenarios: ["reset", "all-clear"], to: "/" },
       { title: "Settings · archived projects", scenarios: ["reset", "archived"], to: "/settings" },
       { title: "Settings · two plans", scenarios: ["reset", "two-plans"], to: "/settings" },
+      {
+        title: "A plan's week by project",
+        scenarios: ["reset", "two-plans", "usage-deleted"],
+        to: "/plan/claude"
+      },
       { title: "Home · a plan removed", scenarios: ["reset", "plan-removed"], to: "/" },
       { title: "New idea · two plans", scenarios: ["reset", "two-plans"], to: "/new" },
       { title: "New idea", to: "/new" },
