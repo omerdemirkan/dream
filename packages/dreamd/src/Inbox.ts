@@ -67,8 +67,15 @@ export class Inbox extends Context.Service<
     ) => Effect.Effect<void, JsonFile.StateFileError>
     /** Scheduled `--run` commands still to run. */
     readonly commands: Effect.Effect<ReadonlyArray<WakeDueEvent>>
-    /** A command finished: success drops the wake, failure queues it with the result for the agent. */
-    readonly commandFinished: (id: EventId, result: RunResult) => Effect.Effect<void, JsonFile.StateFileError>
+    /**
+     * A command finished: success drops the wake, failure queues it with the result for the agent, unless `wake`
+     * says not to (it failed the same way a moment ago, and the agent heard then).
+     */
+    readonly commandFinished: (
+      id: EventId,
+      result: RunResult,
+      wake?: boolean
+    ) => Effect.Effect<void, JsonFile.StateFileError>
     /** A task's session finished: success (no failure) drops the wake, failure queues it with why for the agent. */
     readonly taskFinished: (
       id: EventId,
@@ -177,11 +184,11 @@ export class Inbox extends Context.Service<
             )
           )
         ),
-        commandFinished: (id, result) =>
+        commandFinished: (id, result, wake = result.exitCode !== 0) =>
           transact((state) => {
             const entries = state.entries.flatMap((entry): Array<Entry> => {
               if (entry.event.id !== id || entry.state !== "command" || entry.event._tag !== "WakeDue") return [entry]
-              if (result.exitCode === 0 || entry.event.run === undefined) return []
+              if (!wake || entry.event.run === undefined) return []
               return [
                 {
                   ...entry,

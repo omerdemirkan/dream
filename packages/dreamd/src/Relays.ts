@@ -15,6 +15,7 @@ import { RelayHeaders, type RelayForward, type RelayForwardResult, type RelayId 
 import { Clock, Context, Duration, Effect, FileSystem, Layer, Path, PubSub, Ref, Stream } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { DreamdConfig } from "./Config.ts"
+import { ProjectLog } from "./Log.ts"
 
 /** How long the app has to answer one delivery. */
 export const DeliveryTimeout = Duration.minutes(2)
@@ -48,6 +49,7 @@ export class RelayForwarder extends Context.Service<
       const fs = yield* FileSystem.FileSystem
       const path = yield* Path.Path
       const http = yield* HttpClient.HttpClient
+      const log = yield* ProjectLog
       const inFlight = yield* Ref.make(0)
       const done = yield* PubSub.unbounded<void>()
 
@@ -114,11 +116,25 @@ export class RelayForwarder extends Context.Service<
                 delivery: delivery.id,
                 ...failure
               })
+              yield* log.note(
+                "relay",
+                "error",
+                `POST localhost:${request.port}${request.path} didn't take event ${delivery.id}: ${failure.message}` +
+                  (delivered === 0 ? "" : ` (it took ${delivered} before it)`) +
+                  "; Dream tries again later, and the events behind it wait",
+                { name: request.relayId }
+              )
               return { delivered, failure }
             }
             delivered++
           }
           yield* Effect.logInfo("Relay deliveries went through", { relay: request.relayId, delivered })
+          yield* log.note(
+            "relay",
+            "info",
+            `POST localhost:${request.port}${request.path} took ${delivered === 1 ? "an event" : `${delivered} events`}`,
+            { name: request.relayId }
+          )
           return { delivered }
         })
 

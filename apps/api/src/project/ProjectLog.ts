@@ -253,7 +253,7 @@ export class ProjectLog extends Context.Service<
         for (const { kind, watch } of alerts) {
           const reason = troubleReason(kind, project.value.publicUrl, watch)
           yield* Effect.logInfo("the published app is in trouble; telling the agent", { kind })
-          yield* note("dream", "error", `Told the agent: ${reason.split("\n")[0]}`)
+          yield* note("dream", "error", `Told you: ${reason.split("\n")[0]}`)
           yield* core.enqueue(
             AgentEvent.cases.Alert.make({ id: yield* newEventId(), at: now, reason, noticed: kind })
           )

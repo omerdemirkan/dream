@@ -30,6 +30,27 @@ export const LogSources: ReadonlyArray<LogSource> = LogSource.literals
 export const LogLevel = Schema.Literals(["info", "warn", "error"])
 export type LogLevel = typeof LogLevel.Type
 
+/**
+ * One reading of the machine, which dreamd takes about once a minute while the sandbox is awake and writes to
+ * `machine.jsonl` (an entry with `sample`). Sizes are in MB. Stable: read by tools outside the agent too.
+ */
+export const MachineSample = Schema.Struct({
+  memoryTotalMb: Schema.Int,
+  /** The kernel's MemAvailable: what new work can use without swapping. */
+  memoryAvailableMb: Schema.Int,
+  swapTotalMb: Schema.Int,
+  swapUsedMb: Schema.Int,
+  /** The file system holding the home directory. */
+  diskTotalMb: Schema.Int,
+  diskFreeMb: Schema.Int,
+  /** The one-minute load average, and the CPUs it compares with. */
+  load1: Schema.Number,
+  cpus: Schema.Int,
+  /** Processes the kernel has killed for memory since the sandbox booted (`/proc/vmstat` `oom_kill`). */
+  oomKills: Schema.Int
+})
+export type MachineSample = typeof MachineSample.Type
+
 export const LogEntry = Schema.Struct({
   at: Schema.DateTimeUtc,
   source: LogSource,
@@ -39,9 +60,21 @@ export const LogEntry = Schema.Struct({
   /** What it's about within its source: an app log's name, a wake id, a relay id, an app id. */
   name: Schema.optionalKey(Schema.String),
   /** Further lines: a command's output, a task's report, what a page check saw. */
-  detail: Schema.optionalKey(Schema.String)
+  detail: Schema.optionalKey(Schema.String),
+  /** `machine`: the reading this entry reports. Routine readings show only when `machine` is asked for. */
+  sample: Schema.optionalKey(MachineSample)
 })
 export type LogEntry = typeof LogEntry.Type
+
+/** Where dreamd writes the sandbox's half: `<source>.jsonl`, and the one before it, `<source>.1.jsonl`. */
+export const LogDir = "/home/user/.dream/logs"
+
+/**
+ * Where servers the agent starts write their output, by convention (`… >> ~/logs/web.log 2>&1`): dreamd adds what
+ * they write to the project's log as `app` entries named after the file. It does the same for any file a server
+ * listening on a port writes its output to, wherever it is.
+ */
+export const AppLogDir = "/home/user/logs"
 
 /** Which entries to read; absent means all. */
 export const LogQuery = Schema.Struct({

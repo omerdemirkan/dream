@@ -35,6 +35,7 @@ import { renderSteerPrompt, renderTurnPrompt } from "@dream/agent-context"
 import { randomUUID } from "node:crypto"
 import { type AgentEvent, EventId, type ModelProvider, type TurnState, type UsageWindow } from "@dream/domain"
 import {
+  Cause,
   Clock,
   Context,
   DateTime,
@@ -59,6 +60,7 @@ import type { TurnHandlers } from "./harness/Turn.ts"
 import { Hold } from "./Hold.ts"
 import { Inbox, type InboxState, queuedCount } from "./Inbox.ts"
 import * as JsonFile from "./JsonFile.ts"
+import { ProjectLog } from "./Log.ts"
 import { Outreach } from "./Outreach.ts"
 import { Progress } from "./progress/Progress.ts"
 import { Published } from "./Published.ts"
@@ -109,6 +111,28 @@ const weeklyRise = (before: UsageWindow | undefined, after: UsageWindow | undefi
   return { before: before.usedPercent, after: after.usedPercent }
 }
 
+/** What woke a turn, for the log: "a message from them, a wake-up". */
+const wokenBy = (events: ReadonlyArray<AgentEvent>): string => {
+  const names: Record<AgentEvent["_tag"], string> = {
+    UserMessage: "a message from them",
+    QuestionAnswered: "an answer",
+    AccessConnected: "a connection",
+    AccessDeclined: "a declined request",
+    AccessRemoved: "a removed connection",
+    WakeDue: "a wake-up",
+    Alert: "an alert",
+    UsageReset: "a usage reset",
+    UsageLimitsChanged: "changed usage limits",
+    PublishedUrlBroken: "the published URL looking broken",
+    LinkEdited: "an edited app link",
+    AppNotificationsChanged: "a change to an app's notifications",
+    MachineMoved: "a machine move",
+    AppNotificationsHeld: "notifications held back",
+    BackgroundStopped: "stopped background work"
+  }
+  return [...new Set(events.map((event) => names[event._tag]))].join(", ")
+}
+
 const hasQueued = (state: InboxState) => state.entries.some((entry) => entry.state === "queued")
 const hasQueuedReset = (state: InboxState) =>
   state.entries.some((entry) => entry.state === "queued" && entry.event._tag === "UsageReset")
@@ -134,6 +158,7 @@ export class Agent extends Context.Service<
       const published = yield* Published
       const attachments = yield* Attachments
       const progress = yield* Progress
+      const log = yield* ProjectLog
       const config = yield* DreamdConfig
       const fs = yield* FileSystem.FileSystem
       const path = yield* Path.Path
@@ -165,6 +190,12 @@ export class Agent extends Context.Service<
             return
           }
           yield* inbox.deliver([event])
+          yield* log.note(
+            "dream",
+            "warn",
+            `Dream stopped background work that hadn't reported back (${stopped.reason}): ` +
+              stopped.tasks.map((task) => task.description).join("; ")
+          )
           yield* Effect.logInfo("Background work stopped before it reported back; told the agent", {
             reason: stopped.reason,
             tasks: stopped.tasks.length,
@@ -298,6 +329,7 @@ export class Agent extends Context.Service<
         yield* api.reportTurn("started", yield* Ref.get(taken))
         yield* progress.turnStarted(events)
         yield* Effect.logInfo("Turn started", { events: yield* Ref.get(taken) })
+        yield* log.note("dream", "info", `A turn started, woken by ${wokenBy(events)}`)
 
         const missingAttachments = yield* attachments.fetch(events)
         const lastTurn = yield* onDisk(lastTurnFile.read).pipe(
@@ -343,12 +375,18 @@ export class Agent extends Context.Service<
         yield* Ref.set(running, false)
         yield* Ref.set(lastTurnEndedMs, Option.some(yield* Clock.currentTimeMillis))
 
+        const took = Duration.format(
+          Duration.seconds(Math.round((DateTime.toEpochMillis(yield* DateTime.now) - DateTime.toEpochMillis(startedAt)) / 1000))
+        )
         if (Exit.isFailure(exit)) {
           yield* Effect.logError("The turn couldn't run", exit.cause)
+          yield* log.note("dream", "error", `The turn couldn't run: ${Cause.pretty(exit.cause).split("\n")[0]}`)
         } else if (TurnOutcome.$is("Failed")(exit.value.outcome)) {
           yield* Effect.logWarning("The turn failed", { error: exit.value.outcome.message, requeue, limited })
+          yield* log.note("dream", "warn", `The turn failed after ${took}: ${exit.value.outcome.message}`)
         } else {
           yield* Effect.logInfo("Turn finished", { events: ids })
+          yield* log.note("dream", "info", `The turn ended after ${took}`)
         }
         // Look at the published app once the agent is done, unless more work is already waiting.
         if (completed && !limited && !hasQueued(yield* inbox.state)) yield* published.checkAfterTurn

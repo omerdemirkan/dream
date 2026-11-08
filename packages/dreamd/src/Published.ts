@@ -20,6 +20,7 @@ import { PageCheck, type PageLoad } from "./cli/PageCheck.ts"
 import { DreamdConfig } from "./Config.ts"
 import { Inbox } from "./Inbox.ts"
 import * as JsonFile from "./JsonFile.ts"
+import { ProjectLog } from "./Log.ts"
 
 export const PublishedState = Schema.Struct({
   port: Schema.Int,
@@ -73,6 +74,7 @@ export class Published extends Context.Service<
       const api = yield* Api
       const pages = yield* PageCheck
       const inbox = yield* Inbox
+      const log = yield* ProjectLog
       const file = JsonFile.make(PublishedState, path.join(config.stateDir, "published.json"))
       const provide = <A, E>(effect: Effect.Effect<A, E, FileSystem.FileSystem | Path.Path>) =>
         effect.pipe(Effect.provideService(FileSystem.FileSystem, fs), Effect.provideService(Path.Path, path))
@@ -111,6 +113,13 @@ export class Published extends Context.Service<
         if (url === undefined) return
         const load = yield* pages.check(url)
         const key = brokenKey(load)
+        yield* log.note(
+          "dream",
+          key === undefined ? "info" : "warn",
+          `After the turn, Dream loaded the published URL ${url}: it looked ${key === undefined ? "healthy" : "broken"}` +
+            (key !== undefined && key === current.reported ? " (as at the last check, so you weren't told again)" : ""),
+          { detail: pageCheck(load) }
+        )
         if (key === undefined) {
           if (current.reported !== undefined) yield* Effect.logInfo("The published URL looks healthy again", { url })
           return yield* save({ port: current.port })
