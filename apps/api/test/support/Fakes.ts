@@ -502,6 +502,10 @@ export const fakeE2BEvents = (world: FakeWorld) =>
             secret: Redacted.value(settings.signatureSecret)
           })
           return Option.some({ id, url: settings.url, events: settings.events })
+        }),
+      deleteWebhook: (id) =>
+        Effect.sync(() => {
+          world.e2bWebhooks.delete(id)
         })
     })
   )

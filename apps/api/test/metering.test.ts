@@ -3,7 +3,6 @@
  * sent the live probe), storage and the migration from `usage_events`, and the cost report the app and agent read.
  */
 import { readFileSync } from "node:fs"
-import { createHash } from "node:crypto"
 import type { ProjectId, UserId } from "@dream/domain"
 import { Routes } from "@dream/domain"
 import { assert, describe, it } from "@effect/vitest"
@@ -100,6 +99,16 @@ describe("the price book", () => {
     assert.strictEqual(unknown.usd, 0)
     assert.strictEqual(unknown.units, 1)
     assert.strictEqual(unknown.unknownModel, "gpt-9-nova")
+    // A cost the provider reported (OpenRouter's) is the event's cost, known model or not.
+    const reported = price(
+      event({
+        meter: "openai_request",
+        quantities: { input_tokens: 1_000_000, cost_usd: 0.4321 },
+        dimensions: { model: "anthropic/some-model" }
+      })
+    )
+    assert.strictEqual(reported.usd, 0.4321)
+    assert.isUndefined(reported.unknownModel)
     const person = price(
       event({ meter: "openai_request", dimensions: { model: "gpt-6-luna", payer: "person" }, quantities: {} })
     )
@@ -178,14 +187,18 @@ const register = (cloud: Cloud, query = "") =>
   })
 
 /** Posts `body` signed as E2B signs it, with the secret the fake E2B was last given. */
+/** E2B's signature, computed apart from the code under test: base64 SHA-256, padding stripped. */
+const sign = (text: string) =>
+  Effect.promise(async () => {
+    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", utf8(text)))
+    return btoa(String.fromCharCode(...digest)).replace(/=+$/, "")
+  })
+
 const deliver = (cloud: Cloud, body: unknown, secret?: string) =>
   Effect.gen(function* () {
     const raw = JSON.stringify(body)
     const key = secret ?? [...cloud.world.e2bWebhooks.values()][0]!.secret
-    const signature = createHash("sha256")
-      .update(key + raw)
-      .digest("base64")
-      .replace(/=+$/, "")
+    const signature = yield* sign(key + raw)
     return yield* send(cloud, Routes.e2bWebhook, {
       method: "POST",
       headers: { "content-type": "application/json", "e2b-signature": signature, "e2b-signature-version": "v1" },
@@ -196,7 +209,8 @@ const deliver = (cloud: Cloud, body: unknown, secret?: string) =>
 describe("E2B sandbox time", () => {
   it.effect("signs like E2B: base64 SHA-256 of the secret and the raw body, unpadded", () =>
     Effect.gen(function* () {
-      const expected = createHash("sha256").update('s3cret{"a":1}').digest("base64").replace(/=+$/, "")
+      const expected = yield* sign('s3cret{"a":1}')
+      assert.notInclude(expected, "=")
       assert.strictEqual(yield* e2bSignature("s3cret", utf8('{"a":1}')), expected)
     })
   )

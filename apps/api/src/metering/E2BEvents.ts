@@ -169,6 +169,7 @@ export class E2BEvents extends Context.Service<
       id: string,
       settings: WebhookSettings
     ) => Effect.Effect<Option.Option<E2BWebhook>, UpstreamFailure>
+    readonly deleteWebhook: (id: string) => Effect.Effect<void, UpstreamFailure>
   }
 >()("@dream/api/metering/E2BEvents") {
   static readonly layer = Layer.effect(
@@ -251,7 +252,16 @@ export class E2BEvents extends Context.Service<
         return Option.some(updated)
       })
 
-      return E2BEvents.of({ billed, webhooks, createWebhook, updateWebhook })
+      const deleteWebhook = Effect.fn("E2BEvents.deleteWebhook")(function* (id: string) {
+        const http = yield* client
+        const response = yield* http
+          .del(`/events/webhooks/${encodeURIComponent(id)}`)
+          .pipe(Effect.mapError(failure("Deleting the webhook")))
+        if (response.status === 404) return
+        yield* okOrFail(response).pipe(Effect.mapError(failure("Deleting the webhook")))
+      })
+
+      return E2BEvents.of({ billed, webhooks, createWebhook, updateWebhook, deleteWebhook })
     })
   )
 }

@@ -46,7 +46,7 @@ const ProjectRow = Schema.Struct({
 })
 const UserRow = Schema.Struct({ id: Schema.String, email: Schema.String, name: Schema.NullOr(Schema.String) })
 
-/** Cents to the hundredth: enough for the app, and no float noise. */
+/** To a hundredth of a cent: enough for the app, and no float noise. */
 const round = (usd: number) => Math.round(usd * 10_000) / 10_000
 
 interface Window {

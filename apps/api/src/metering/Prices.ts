@@ -209,8 +209,23 @@ const daysInMonth = (at: DateTime.Utc) => {
   )
 }
 
-/** Prices one event. Never fails: what the book can't price is 0. */
+/**
+ * What the provider itself said the event cost, in dollars (`ReportedCost` in its quantities), when it says: OpenRouter
+ * reports each request's charge. That's a fact about the event, not Dream's pricing, so it wins over the book.
+ */
+export const ReportedCost = "cost_usd"
+
+/** Prices one event: the provider's reported cost when the event has one, else the book. Never fails. */
 export const price = (event: MeterEvent): Priced => {
+  const book = priceFromBook(event)
+  const reported = event.quantities[ReportedCost]
+  if (reported === undefined) return book
+  const { unknownModel: _, ...rest } = book
+  return { ...rest, usd: reported }
+}
+
+/** The book's estimate; what it can't price is 0. */
+const priceFromBook = (event: MeterEvent): Priced => {
   const q = event.quantities
   const get = (key: string) => q[key] ?? 0
   const center = centerOf[event.meter]

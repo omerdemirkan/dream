@@ -39,7 +39,10 @@ export const MeterEvent = Schema.Struct({
   meter: MeterName,
   /** When the cost was incurred: a run's end, a request's completion. */
   at: Schema.DateTimeUtc,
-  /** Raw amounts in their own units (milliseconds, tokens, bytes, characters), never money. */
+  /**
+   * Raw amounts in their own units (milliseconds, tokens, bytes, characters). Never Dream's prices; the one amount
+   * of money allowed is what the provider itself reported charging (`cost_usd`, OpenRouter's), a fact of the event.
+   */
   quantities: Schema.Record(Schema.String, Quantity),
   /** What the event can be grouped or filtered by: `project`, `payer`, `provider`, `model`, … */
   dimensions: Schema.Record(Schema.String, Schema.String)

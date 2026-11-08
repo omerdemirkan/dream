@@ -22,7 +22,7 @@ platform takes:
 | `owner` | The Dream user who caused it, or `dream` (`OperatorOwner`) for checks and throwaway sandboxes |
 | `meter` | `sandbox_run`, `browser_session`, `mac_session`, `openai_request`, `storage_day`, `email_sent` |
 | `at` | When the cost was incurred (a run's end, a request's completion) |
-| `quantities` | Raw amounts as numbers in their own units: milliseconds, tokens, bytes, characters; never money |
+| `quantities` | Raw amounts as numbers in their own units: milliseconds, tokens, bytes, characters; never Dream's prices (the one amount of money is `cost_usd`, what a provider reported charging) |
 | `dimensions` | Strings to group and filter by |
 
 Dimensions every event has when they apply: `project`, `payer` (`dream`, or `person` when their own key paid),
@@ -40,20 +40,37 @@ Dimensions every event has when they apply: `project`, `payer` (`dream`, or `per
 Only the keys that apply are present. Provider rules such as Browserbase's one-minute minimum are pricing, so they
 live in the price book, not in the quantities.
 
+OpenAI's token counts nest the way OpenAI reports them, and the price book prices them that way: `input_tokens` is
+every input token (cached, audio and image ones included), `cached_input_tokens` the cached ones of every modality,
+with `cached_audio_tokens` the audio ones among them; `input_audio_tokens` and `input_image_tokens` are the audio and
+image ones among `input_tokens` (cached included); `output_tokens` is every output token, with `reasoning_tokens`,
+`output_audio_tokens` and `output_image_tokens` among them. A model without a separate price for a modality
+(transcription) bills it at its text price. Speech estimated without usage should send `characters` for tts-1 and
+tokens for the token-priced voices; the book prices whatever quantities are there.
+
 **The sink today is D1** (`meter_events`, `MeterD1`): one row per event, the event exactly as above (quantities and
-dimensions as JSON columns, `project` and `owner` also as columns for queries) plus three columns that exist only
-for the app: `center` (a `CostCenter`), `payer` and `cost_usd`, an estimate from the **price book**
-(`apps/api/src/metering/Prices.ts`: dated list prices per provider and model, with their sources). Inserts are
-`ON CONFLICT (id) DO NOTHING`, and rows are never updated. An OpenAI model the price book doesn't know is recorded at
+dimensions as JSON columns, `project` and `owner` also as columns for queries) plus columns that exist only for the
+app: `center` (a `CostCenter`), `payer`, `cost_usd`, an estimate from the **price book**
+(`apps/api/src/metering/Prices.ts`: dated list prices per provider and model, with their sources), `units` (the
+amount in the center's `CostUnit`, as billed: hours, billed minutes, requests, GB-months, messages, so a line's
+quantity matches its dollars) and `price_book` (the book's date). The book prices everything past what plans include
+(Browserbase's 100 hours, R2's 10 GB, Email Service's 3,000 messages), so a project's estimate doesn't depend on
+what the others used first. Inserts are `ON CONFLICT (id) DO NOTHING`, and rows are never updated. An OpenAI model the price book doesn't know is recorded at
 0 with its tokens, and logged, so a new model shows up as tokens before it shows up as dollars.
 
 The existing `usage_events` rows (browser and Mac minutes, older sandbox estimates) are copied into `meter_events`
-by a migration, and the table stops being written.
+by a migration (0016), and the table stops being written. The sandbox estimates from the last 7 days are left out,
+because E2B still has those runs and the backfill records them exactly; older ones become `sandbox_run`s on the
+4 vCPU / 8 GB size of the time, with `estimated: "true"` (they counted only turns and their tail, so they're low).
 
 **When billing comes,** a platform becomes another layer for `Meter` that sends each event (batched and retried;
 the ids make retries safe), with customers keyed by the Dream user id, meters summing the quantities grouped by
 `project`, and the platform's prices replacing the price book. The code that meters doesn't change, and the D1 rows
 can be replayed into it. Pricing stays out of the events, so a price change never rewrites history.
+
+**Reported costs.** A provider that says what a request cost (OpenRouter does, per request) gives the event a
+`cost_usd` quantity: a fact about the event, not Dream's pricing. The sink takes it as the event's cost, and the price
+book is only the fallback for events without one (`price` in Prices.ts).
 
 ## Where each cost comes from
 
@@ -63,16 +80,26 @@ the secret it holds, answers at once, and records a `sandbox_run` for each `paus
 `execution` (milliseconds, vCPUs, memory), exactly one billed run each. The sandbox's metadata says whose it was:
 a project's sandbox and its refresh donors belong to the project (`cause` tells them apart), a model sign-in to the
 person, anything else (`devSandboxMetadata`) to `dream`. Because E2B keeps events only 7 days and a webhook can fail,
-a cron pages `GET /events/sandboxes?types=…paused&types=…killed` every hour and records what's missing (same ids).
+a cron pages `GET /events/sandboxes?types=…paused&types=…killed` every hour (`17 * * * *`) and records what's missing
+(same ids): the last 25 hours, and at 00:17 UTC the whole week. A signed delivery always gets a 2xx (204 recorded, 202
+when the body doesn't decode), so E2B never retries what it can't fix; a bad signature gets a 401. A run whose
+sandbox has a project but no user in its metadata is the project owner's.
 
 The Worker registers its own webhook: an operator route (`POST /admin/metering/e2b-webhook`, behind
 `x-dream-dev-secret`) generates the signing secret, keeps it sealed in D1, and creates or updates the webhook with
-the Worker's E2B key. Nobody handles the secret, and calling it again rotates it.
+the Worker's E2B key. Nobody handles the secret, and calling it again rotates it. E2B takes a few seconds to sign with
+a new secret (checked live: a delivery 2 s after the PATCH still had the old one, and one 15 s after had the new), so
+the Worker keeps the previous secret too and accepts either. `?backfill=7` on the same route also reads the week
+E2B still has, for the first deploy. The secret is sealed with the master key in `meter_webhooks`.
+`apps/api/scripts/metering-webhook-check.ts` checks all of this against the real E2B with a throwaway receiver.
 
 **Browserbase:** when a session ends (stopped, or found ended by the sweep), `GET /v1/sessions/{id}` gives
 `startedAt`, `endedAt` and `proxyBytes`; Machines records a `browser_session`. **Namespace:** when a Mac is destroyed
 (stopped, idle, or past its deadline), a `mac_session` with its shape and minutes from start to destruction (capped at
-the deadline). **R2:** a daily cron records each project's stored media bytes. **Email:** each send.
+the deadline, which Machines now moves forward with each ssh extension; past it, a failed destroy no longer keeps the
+Mac "running"). **R2:** the hourly job records each project's bytes once its UTC day has ended, summed from D1's
+`media` and `attachments` rows (uploaded ones, with a project); the updates bucket is Dream's and isn't metered.
+**Email:** each `EmailAccessLink` send, as one message ($0.35 per 1,000).
 
 Not metered: Cloudflare Workers, D1 and Durable Objects (account-level, not attributable), and plan fees (E2B Pro,
 Browserbase's plan, Namespace's). The operator's view says these are left out.
@@ -133,7 +160,11 @@ without `OPENAI_API_KEY`, calls for people without their own key fail with a cle
 `CostReport` (`apps/api/src/metering/Report.ts`) sums `meter_events` by center, payer and model for a UTC month and
 by day for the last 30 days. It serves `AppRpcs.GetProjectCosts`, `AppRpcs.GetAccountCosts` and
 `SandboxRpcs.GetProjectCosts` (shapes in `packages/domain/src/Costs.ts`). Operators (`DREAM_OPERATORS`, emails, a
-plain binding from `.env`) also get `everyone`: each person's month and the overhead no person caused.
+plain binding from `.env`) also get `everyone`: each person's month and the overhead no person caused. A refresh
+donor's run is its project's (`cause: refresh`), and a model sign-in's is its person's, with no project
+(`unattributed`); overhead is what has no person: checks, probes, throwaway sandboxes. A project that's gone keeps
+its costs, titled "A deleted project". `packages/sandbox-template/scripts/costs.ts` stays the operator's independent
+cross-check, rebuilt from E2B's log.
 
 ## In the app
 

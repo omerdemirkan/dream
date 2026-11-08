@@ -102,7 +102,8 @@ export type PersonCost = typeof PersonCost.Type
 
 /**
  * Everything Dream paid for, across a whole deployment: only for operators (`DREAM_OPERATORS`). `overhead` is what
- * no project or person caused: template builds, checks, refresh donors and other throwaway sandboxes.
+ * no project or person caused: template checks, probes and other throwaway sandboxes. (A refresh donor is its
+ * project's, and a model sign-in its person's, in `unattributed`.)
  */
 export const OperatorCosts = Schema.Struct({
   month: CostPeriod,
