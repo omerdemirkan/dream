@@ -97,8 +97,8 @@ neutral "update Dream" row).
 
 Scenarios (`dream://fixtures/<name>?to=/path`, or `-dreamScenario a,b`): `signed-in`, `signed-out`, `reset`,
 `paused` (Lift Log waits for a usage reset), `all-clear`, `cabin-resolved`, `withdraw-cabin`, `no-plan`,
-`two-plans` (Claude connected next to ChatGPT, Recipe Scaler on Claude: Settings shows both plan cards and New idea
-the plan picker), `plan-removed` (the same with Claude removed: Recipe Scaler waits for it, and Home says so; with `two-plans`,
+`two-plans` (Claude connected next to ChatGPT, Morning Brief and Recipe Scaler on Claude: Settings shows both plan cards and New idea
+the plan picker), `plan-removed` (the same with Claude removed: those two wait for it, and Home says so; with `two-plans`,
 `/settings?plan=menu:claude` and `?plan=remove:claude` open a plan card's menu and its Remove warning, and
 `/new?plan=open` the plan picker),
 `live-activity`, `live-activity-needs` (start a Live Activity on the phone), `spotify-ask` (Lift Log asks to connect

@@ -393,7 +393,7 @@ export const planCard = (
     projects,
     ...(projects.length > 0
       ? {
-          footnote: `Shares (≈) are estimated from how your plan moved while each project worked. Outside Dream is the rest: ${providerName(connection.provider)} used anywhere else.`
+          footnote: "Shares are estimates."
         }
       : {})
   }

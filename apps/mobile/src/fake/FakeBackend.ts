@@ -10,6 +10,7 @@
  */
 import {
   harnessOf,
+  providerOf,
   type AccessMessage,
   type AppLink,
   type AppNotification,
@@ -830,15 +831,25 @@ export class FakeBackend extends Context.Service<
         GetAccountUsage: ({ provider }) =>
           Effect.gen(function* () {
             const connected = connections.some((c) => c.status === "connected" && c.provider === provider)
-            if (!connected || provider !== "chatgpt")
-              return yield* new NotFound({ entity: "model connection", id: provider })
-            return accountOf(
-              usage,
-              active()
-                .map((r) => r.project)
-                .filter((p) => p.harness === "codex"),
-              yield* DateTime.now
+            if (!connected) return yield* new NotFound({ entity: "model connection", id: provider })
+            const on = active()
+              .map((r) => r.project)
+              .filter((p) => providerOf(p.harness) === provider)
+            const account = accountOf(usage, on, yield* DateTime.now)
+            if (provider === "chatgpt") return account
+            // Claude's week (two-plans): the same project shares, beside Claude's own window.
+            const week = connections.find((c) => c.provider === "claude")?.usage?.weekly?.usedPercent ?? 0
+            const dream = Math.min(
+              week,
+              account.projects.reduce((n, p) => n + p.sharePercent, 0)
             )
+            return {
+              ...account,
+              provider,
+              plan: "Claude Max",
+              ...(account.weekly ? { weekly: { ...account.weekly, usedPercent: week, dreamPercent: dream } } : {}),
+              ...(account.outsideDreamPercent === undefined ? {} : { outsideDreamPercent: week - dream })
+            }
           }),
         ListMessages: ({ projectId, before, limit }) =>
           Effect.gen(function* () {
@@ -1533,9 +1544,10 @@ export class FakeBackend extends Context.Service<
             return
           case "two-plans":
           case "plan-removed": {
-            // Claude connected next to ChatGPT, with Recipe Scaler on it; removed, Recipe Scaler waits for it.
-            const recipe = Array.from(records.values()).find((r) => r.project.slug === "recipe-scaler")
-            if (recipe) yield* setProject(recipe, { harness: "claude-code" })
+            // Claude connected next to ChatGPT, with Morning Brief and Recipe Scaler on it; removed, they wait for it.
+            for (const record of records.values())
+              if (record.project.slug === "recipe-scaler" || record.project.slug === "morning-brief")
+                yield* setProject(record, { harness: "claude-code" })
             const claude: ModelConnection = {
               id: "mcn_claude" as ModelConnectionId,
               provider: "claude",

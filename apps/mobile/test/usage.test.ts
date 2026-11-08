@@ -217,7 +217,7 @@ describe("Settings' plan card", () => {
       ]
     )
     assert.strictEqual(card.projects[0]?.bar, 1)
-    assert.match(card.footnote ?? "", /estimated/)
+    assert.strictEqual(card.footnote, "Shares are estimates.")
   })
 
   it("near the limit: amber, and says what's left until when", () => {
