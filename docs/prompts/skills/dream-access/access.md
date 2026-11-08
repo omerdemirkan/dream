@@ -23,7 +23,10 @@ can also be emailed to them, when they ask, to finish in a browser on a computer
 developer console; `--context` shows there too, so its links work on either.
 
 When they connect, you get an event naming the placeholder to use. Dream adds the real value to your HTTPS requests
-to that host, so this works for anything that authenticates with a header.
+to that host, so this works for anything that authenticates with a header. To do that, the sandbox's network re-signs
+those requests with a certificate only the system's CA bundle trusts. Everything started from your shell is pointed at
+that bundle (`NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`), so a server that fails a certificate check
+against a connected host was started without them and needs a restart from your shell.
 
 - `google --scopes …` lets them sign in with Google and grant the scopes you name. Like `oauth` below, it works only
   once whoever runs Dream has registered Dream's Google app, and when they haven't, `dream access google` says so

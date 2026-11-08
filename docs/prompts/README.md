@@ -98,7 +98,7 @@ Its description (32 words, in [frontmatter.yaml](skills/dream-chat/frontmatter.y
 | 7 | [Workstreams](skills/dream-chat/workstreams.md) | `dream work`: starting, updating, finishing and dropping workstreams, labelling what you send, and routing their messages. | 393 |
 | 8 | [Live Activity](skills/dream-chat/live-activity.md) | `dream live`: a Live Activity on their lock screen and Dynamic Island. | 54 |
 
-### The `dream-access` skill, 1,115 words
+### The `dream-access` skill, 1,169 words
 
 A skill (`SKILL.md`): the harness lists its name and description on every turn, and the agent or a task's session reads the rest when it judges it needs it.
 
@@ -106,7 +106,7 @@ Its description (38 words, in [frontmatter.yaml](skills/dream-access/frontmatter
 
 | # | Section | Covers | Words |
 | --- | --- | --- | --- |
-| 1 | [Access to services](skills/dream-access/access.md) | `dream access`: how Dream keeps their credentials out of the sandbox, the access card and what makes it quick to fulfil, each kind (Google, OAuth providers, keys in a header, Apple, key files), and connections over time. | 1115 |
+| 1 | [Access to services](skills/dream-access/access.md) | `dream access`: how Dream keeps their credentials out of the sandbox, the access card and what makes it quick to fulfil, each kind (Google, OAuth providers, keys in a header, Apple, key files), and connections over time. | 1169 |
 
 ### The `dream-hosting` skill, 950 words
 
