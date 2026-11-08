@@ -1,5 +1,5 @@
 /**
- * What Dream pays for to run a project: sandbox time, cloud browsers, Macs, OpenAI calls through Dream's gateway,
+ * What Dream pays for to run a project: sandbox time, cloud browsers, Macs, AI model calls through Dream's gateway,
  * media storage and email. Not the person's Claude or ChatGPT subscription, which is `Usage.ts`: the two are
  * measured differently (dollars at list prices here, a plan's percentages there) and are never added together.
  *
@@ -14,12 +14,12 @@ const Dollars = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))
 const Quantity = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))
 
 /** The things Dream pays a provider for. */
-export const CostCenter = Schema.Literals(["sandbox", "browser", "mac", "openai", "storage", "email"])
+export const CostCenter = Schema.Literals(["sandbox", "browser", "mac", "models", "storage", "email"])
 export type CostCenter = typeof CostCenter.Type
 
 /**
- * Who paid: Dream, or the person, for OpenAI calls Dream's gateway made with an OpenAI key of their own (a key they
- * connected for api.openai.com is used instead of Dream's).
+ * Who paid. Everything metered today is Dream's; `person` is kept for costs a person's own credential might carry
+ * through Dream later.
  */
 export const CostPayer = Schema.Literals(["dream", "person"])
 export type CostPayer = typeof CostPayer.Type
@@ -34,13 +34,13 @@ export const CostLine = Schema.Struct({
   payer: CostPayer,
   /** Estimated, at list prices. */
   usd: Dollars,
-  /** What the dollars are for, in `unit`: sandbox hours, browser and Mac minutes, OpenAI requests, … */
+  /** What the dollars are for, in `unit`: sandbox hours, browser and Mac minutes, model requests, … */
   quantity: Quantity,
   unit: CostUnit
 })
 export type CostLine = typeof CostLine.Type
 
-/** What one OpenAI model cost in a period, for the detail view. */
+/** What one model cost in a period, for the detail view: an OpenRouter-style id such as `openai/gpt-4o-mini-tts`. */
 export const ModelCost = Schema.Struct({
   model: Schema.String,
   payer: CostPayer,
@@ -58,7 +58,7 @@ export const CostPeriod = Schema.Struct({
   usd: Dollars,
   /** Largest first; centers with nothing in the period are left out. */
   lines: Schema.Array(CostLine),
-  /** OpenAI by model, largest first; empty without OpenAI calls. */
+  /** Model calls by model, largest first; empty without any. */
   models: Schema.Array(ModelCost)
 })
 export type CostPeriod = typeof CostPeriod.Type
@@ -84,7 +84,7 @@ export const ProjectCost = Schema.Struct({
   icon: Schema.optionalKey(Schema.String),
   /** What Dream paid for it this month. */
   usd: Dollars,
-  /** What their own OpenAI key paid through Dream's gateway this month; absent when nothing. */
+  /** What a credential of their own paid through Dream this month; absent when nothing (always, today). */
   personUsd: Schema.optionalKey(Dollars),
   /** Archived or deleted projects still count in the month they cost something. */
   archived: Schema.optionalKey(Schema.Boolean)
