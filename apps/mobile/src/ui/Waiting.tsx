@@ -34,7 +34,7 @@ export function WaitingCard(props: {
             Can’t reach Dream
           </Text>
           <Text style={{ fontSize: 15, lineHeight: 21, color: color.t2 }}>
-            {`${props.title ?? "Your project"} keeps running. Trying again.`}
+            {`${props.title ?? "Your project"} keeps running.`}
           </Text>
           <LinkButton title="Try again" onPress={props.onRetry} />
         </Animated.View>
