@@ -131,26 +131,65 @@ export const safetyIdentifier = (projectId: string, theirs?: string | undefined)
 
 const decodeObjectText = decodeJsonText(JsonObject)
 
-/** The fields of a request body the gateway reads; the body itself goes on whole. */
-const RequestFields = Schema.Struct({
-  model: Schema.optionalKey(Schema.String),
-  input: Schema.optionalKey(Schema.Unknown),
-  stream: Schema.optionalKey(Schema.Boolean),
-  store: Schema.optionalKey(Schema.Boolean),
-  background: Schema.optionalKey(Schema.Boolean),
-  safety_identifier: Schema.optionalKey(Schema.String),
-  previous_response_id: Schema.optionalKey(Schema.NullOr(Schema.String)),
-  conversation: Schema.optionalKey(Schema.Unknown),
-  stream_options: Schema.optionalKey(JsonObject),
-  n: Schema.optionalKey(Schema.Finite),
-  size: Schema.optionalKey(Schema.String),
-  quality: Schema.optionalKey(Schema.String),
-  transport: Schema.optionalKey(Schema.Struct({ type: Schema.optionalKey(Schema.String) })),
-  session: Schema.optionalKey(Schema.Struct({ model: Schema.optionalKey(Schema.String) }))
-})
-type RequestFields = typeof RequestFields.Type
-const decodeFields = decodeValue(RequestFields)
-const noFields: RequestFields = {}
+/**
+ * The fields of a request body the gateway reads; the body itself goes on whole. Each is read on its own and
+ * leniently, as OpenAI reads it (`null` or a value of another type means the default), so one odd field never
+ * hides the others; a field the gateway has to check but can't understand is `unreadable`, and refused.
+ */
+export interface RequestFields {
+  readonly model?: string | undefined
+  readonly input?: unknown
+  readonly stream: boolean
+  /** OpenAI stores a response unless `store` is `false`. */
+  readonly store: boolean
+  readonly background: boolean
+  readonly safety_identifier?: string | undefined
+  readonly previous_response_id?: string | undefined
+  readonly stream_options: JsonObject
+  readonly n?: number | undefined
+  readonly size?: string | undefined
+  readonly quality?: string | undefined
+  readonly transportType?: string | undefined
+  readonly sessionModel?: string | undefined
+  /** What the gateway couldn't make out of a field it checks. */
+  readonly unreadable?: string | undefined
+}
+
+const asString = decodeValue(Schema.String)
+const asNumber = decodeValue(Schema.Finite)
+const asObject = decodeValue(JsonObject)
+const string = (value: unknown) => Option.getOrUndefined(asString(value))
+const absent = (value: unknown) => value === undefined || value === null
+
+export const readFields = (json: JsonObject | undefined): RequestFields => {
+  if (json === undefined) return { stream: false, store: true, background: false, stream_options: {} }
+  const transport = asObject(json.transport)
+  const session = asObject(json.session)
+  const previous = json.previous_response_id
+  const unreadable =
+    !absent(previous) && string(previous) === undefined
+      ? "previous_response_id must be a response id."
+      : !absent(json.transport) &&
+          (Option.isNone(transport) || (!absent(transport.value.type) && string(transport.value.type) === undefined))
+        ? "transport must say its type."
+        : undefined
+  return {
+    model: string(json.model),
+    input: json.input,
+    stream: json.stream === true,
+    store: json.store !== false,
+    background: json.background === true,
+    safety_identifier: string(json.safety_identifier),
+    previous_response_id: string(previous),
+    stream_options: Option.getOrElse(asObject(json.stream_options), () => ({})),
+    n: Option.getOrUndefined(asNumber(json.n)),
+    size: string(json.size),
+    quality: string(json.quality),
+    transportType: Option.getOrUndefined(Option.map(transport, (t) => string(t.type))),
+    sessionModel: Option.getOrUndefined(Option.map(session, (t) => string(t.model))),
+    unreadable
+  }
+}
 
 /** What OpenAI answers that the gateway reads. */
 const AnswerFields = Schema.Struct({
@@ -196,7 +235,25 @@ export const foreignReference = (body: JsonObject): string | undefined => {
     }
     return undefined
   }
-  return visit(body.input) ?? visit(body.tools)
+  return storedItem(body.input) ?? visit(body.input) ?? visit(body.tools)
+}
+
+/** What an input item carries when it's the item itself, not a pointer to one OpenAI stored. */
+const ItemContent = ["content", "output", "arguments", "encrypted_content", "action", "result", "code", "queries"]
+
+/**
+ * An input item that names an id but carries none of its content is a reference to a stored item, whatever its
+ * `type` says (OpenAI lets `type` go unsaid): refused, since the gateway can't tell whose item it is.
+ */
+const storedItem = (input: unknown): string | undefined => {
+  if (!Array.isArray(input)) return undefined
+  for (const item of input) {
+    const object = Option.getOrUndefined(asObject(item))
+    if (object === undefined || string(object.id) === undefined) continue
+    if (!ItemContent.some((key) => object[key] !== undefined && object[key] !== null))
+      return "Items by reference aren't shared through Dream; send the item itself, or use previous_response_id."
+  }
+  return undefined
 }
 
 // ---------------------------------------------------------------------------
@@ -480,7 +537,7 @@ const jsonBody = (raw: Request) =>
     readRequest(() => raw.text()),
     (text) => {
       const json = Option.getOrUndefined(decodeObjectText(text))
-      const fields = json === undefined ? noFields : Option.getOrElse(decodeFields(json), () => noFields)
+      const fields = readFields(json)
       return { text, json, fields }
     }
   )
@@ -497,10 +554,11 @@ const isTerminal = (status: unknown) =>
 /** Refuses what reaches another project's stored data; `previous_response_id` must be one this project made. */
 const checkReferences = (caller: Caller, json: JsonObject, fields: RequestFields) =>
   Effect.gen(function* () {
+    if (fields.unreadable !== undefined) return yield* Effect.fail(problem(400, fields.unreadable, "invalid_body"))
     const foreign = foreignReference(json)
     if (foreign !== undefined) return yield* Effect.fail(problem(400, foreign, "unsupported_by_dream"))
     const previous = fields.previous_response_id
-    if (previous === undefined || previous === null) return
+    if (previous === undefined) return
     if (!(yield* madeBy(previous, caller)))
       return yield* Effect.fail(
         problem(404, `No ${previous} was made by this project through Dream.`, "previous_response_not_found")
@@ -542,9 +600,9 @@ const createResponse = (raw: Request, path: string, search: string, who: Authori
       return HttpServerResponse.raw(
         new Response(response.body, { status: response.status, headers: backHeaders(response.headers) })
       )
-    const background = fields.background === true
+    const background = fields.background
     // Stored responses are this project's to read back, and the sweep's to meter if nobody saw them finish.
-    const stored = fields.store !== false || background
+    const stored = fields.store || background
     const model = fields.model
     const type = response.headers.get("content-type") ?? ""
     if (response.ok && type.includes("json") && !type.includes("event-stream")) {
@@ -587,8 +645,8 @@ const chat = (raw: Request, path: string, search: string, who: Authorized) =>
       )
       return yield* metered(response, who.caller, "chat")
     }
-    const stream = fields.stream === true
-    const options = fields.stream_options ?? {}
+    const stream = fields.stream
+    const options = fields.stream_options
     const asked = options.include_usage === true
     // Never stored: the stored-completions list would show every project's to every other.
     const edited = {
@@ -747,10 +805,17 @@ const attachSideband = (who: Authorized, kind: "realtime" | "live", id: string, 
     })
   }).pipe(Effect.catchCause((cause) => Effect.logWarning("openai gateway: couldn't attach a sideband", cause)))
 
+/** `OpenAI-Safety-Identifier` for a realtime mint, call or session: the project's, with the app's folded in. */
+const safetyHeader = (raw: Request, who: Authorized) =>
+  Effect.map(
+    safetyIdentifier(who.caller.projectId, raw.headers.get("openai-safety-identifier") ?? undefined),
+    (id): Record<string, string> => ({ "openai-safety-identifier": id })
+  )
+
 const realtimeCall = (raw: Request, path: string, search: string, who: Authorized) =>
   Effect.gen(function* () {
     const config = yield* ApiConfig
-    const headers = forwardHeaders(raw.headers, who.auth)
+    const headers = forwardHeaders(raw.headers, who.auth, yield* safetyHeader(raw, who))
     const body = yield* readRequest(() => raw.arrayBuffer())
     const response = yield* send(new Request(upstreamUrl(config, path, search), { method: "POST", headers, body }))
     const answer = yield* readAnswer(() => response.arrayBuffer())
@@ -769,12 +834,13 @@ const liveSession = (raw: Request, path: string, search: string, who: Authorized
   Effect.gen(function* () {
     const config = yield* ApiConfig
     const { text, fields } = yield* jsonBody(raw)
-    if (fields.transport?.type === "sip")
+    if (fields.unreadable !== undefined) return problem(400, fields.unreadable, "invalid_body")
+    if (fields.transportType === "sip")
       return problem(400, "Dream's OpenAI gateway doesn't place phone calls (SIP) yet.", "unsupported_by_dream")
     const response = yield* send(
       new Request(upstreamUrl(config, path, search), {
         method: "POST",
-        headers: forwardHeaders(raw.headers, who.auth),
+        headers: forwardHeaders(raw.headers, who.auth, yield* safetyHeader(raw, who)),
         body: text
       })
     )
@@ -782,7 +848,7 @@ const liveSession = (raw: Request, path: string, search: string, who: Authorized
     const id = Option.getOrUndefined(
       Option.flatMap(Option.flatMap(decodeObjectText(answer), decodeAnswer), (a) => Option.fromNullishOr(a.id))
     )
-    if (response.ok && id !== undefined) yield* later(attachSideband(who, "live", id, fields.session?.model))
+    if (response.ok && id !== undefined) yield* later(attachSideband(who, "live", id, fields.sessionModel))
     return HttpServerResponse.raw(
       new Response(answer, { status: response.status, headers: backHeaders(response.headers) })
     )

@@ -695,6 +695,62 @@ describe("the OpenAI gateway", () => {
     })
   )
 
+  it.live("reads each checked field on its own, so an odd one never skips a check", () =>
+    Effect.gen(function* () {
+      const { call, cloud, fake, other } = yield* setup()
+      const theirs = yield* call("/v1/responses", {
+        ...post({ model: "gpt-6-luna", input: "hi" }),
+        projectId: other.id
+      })
+      const { id } = (yield* Effect.promise(() => theirs.json())) as { id: string }
+      const status = (body: unknown) => Effect.map(call("/v1/responses", post(body)), (r) => r.status)
+      // `store: null` (which OpenAI takes as the default) used to hide the ownership check.
+      assert.strictEqual(
+        yield* status({ model: "gpt-6-luna", input: "go on", previous_response_id: id, store: null }),
+        404
+      )
+      assert.strictEqual(yield* status({ model: "gpt-6-luna", input: "go on", previous_response_id: 7 }), 400)
+      // An input item that's only an id points at a stored item, whatever its type says.
+      assert.strictEqual(yield* status({ model: "gpt-6-luna", input: [{ id: "msg_theirs" }] }), 400)
+      assert.strictEqual(yield* status({ model: "gpt-6-luna", input: [{ type: "message", id: "msg_theirs" }] }), 400)
+      // Items sent whole go through, ids and all.
+      assert.strictEqual(
+        yield* status({
+          model: "gpt-6-luna",
+          input: [{ type: "message", id: "msg_mine", role: "user", content: [{ type: "input_text", text: "hi" }] }]
+        }),
+        200
+      )
+      // Chat still asks for usage when stream_options is null.
+      const chat = yield* call(
+        "/v1/chat/completions",
+        post({ model: "gpt-5-mini", stream: true, stream_options: null, messages: [] })
+      )
+      yield* Effect.promise(() => chat.text())
+      assert.strictEqual(JSON.parse(fake.seen.at(-1)!.body).stream_options.include_usage, true)
+      yield* cloud.close
+    })
+  )
+
+  it.live("gives WebRTC calls and GPT-Live sessions the project's safety identifier", () =>
+    Effect.gen(function* () {
+      const { call, cloud, fake } = yield* setup()
+      yield* call("/v1/responses", post({ model: "gpt-6-luna", input: "hi" }))
+      const project = JSON.parse(fake.seen.at(-1)!.body).safety_identifier as string
+      yield* call("/v1/realtime/calls", {
+        body: "v=0 offer",
+        headers: { "content-type": "application/sdp", "openai-safety-identifier": "user-1" }
+      })
+      assert.isTrue(fake.seen.at(-1)!.headers["openai-safety-identifier"]!.startsWith(`${project}:`))
+      yield* call(
+        "/v1/live/sessions",
+        post({ session: { model: "gpt-live-1" }, transport: { type: "webrtc", sdp: "v=0" } })
+      )
+      assert.strictEqual(fake.seen.at(-1)!.headers["openai-safety-identifier"], project)
+      yield* cloud.close
+    })
+  )
+
   it.live("always sets the project's safety identifier, folding in an app's own", () =>
     Effect.gen(function* () {
       const { call, cloud, fake } = yield* setup()
