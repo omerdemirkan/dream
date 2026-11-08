@@ -238,15 +238,17 @@ export function Holdable(props: {
   )
 }
 
-/** The little curve from the agent's message down to its thread's line. */
+/**
+ * The little curve from the agent's message down to its thread's line. It starts at the message's bottom edge and
+ * far enough in to clear a card's rounded corner, and ends level with the middle of the line.
+ */
 function Curve() {
   return (
     <View
       style={{
         width: 14,
-        height: 20,
-        marginTop: -6,
-        marginLeft: 10,
+        height: 26,
+        marginLeft: 18,
         borderColor: color.line2,
         borderBottomWidth: 1.5,
         borderLeftWidth: 1.5,
@@ -270,7 +272,7 @@ export function ThreadFold(props: {
         flexDirection: props.mine ? "row-reverse" : "row",
         alignItems: "flex-start",
         gap: 8,
-        marginTop: -6
+        marginTop: 2
       }}
     >
       {props.mine ? null : <Curve />}
@@ -286,7 +288,8 @@ export function ThreadFold(props: {
           flexDirection: "row",
           alignItems: "center",
           gap: 8,
-          marginTop: 6,
+          // About 10pt clear of the message above, so the line reads as under it rather than stuck to it.
+          marginTop: 8,
           paddingVertical: 7,
           paddingLeft: 8,
           paddingRight: 12,

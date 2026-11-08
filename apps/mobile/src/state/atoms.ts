@@ -29,7 +29,7 @@ import {
 } from "@dream/domain"
 import * as Application from "expo-application"
 import { getCalendars } from "expo-localization"
-import { type DateTime, Effect, Option, Redacted, Schema, Stream } from "effect"
+import { type DateTime, Effect, Option, Redacted, Schedule, Schema, Stream } from "effect"
 import { Atom } from "effect/reactivity"
 import { AppClient } from "../data/AppClient.ts"
 import { type AnswerInput, Answers, asksChanged } from "../data/Answers.ts"
@@ -96,8 +96,19 @@ export const modelConnectionsAtom = appRuntime
   .pipe(Atom.withReactivity(["connections"]), Atom.keepAlive)
 
 /** What the API can do; an API without `GetFeatures` (or unreachable) turns nothing extra on. */
+/**
+ * What this deployment can do (email links, …), fetched once per launch. A blip on that one call would hide those
+ * features until the app restarted, so it retries a few times before settling for "none".
+ */
 export const featuresAtom = appRuntime
-  .atom(AppClient.use((app) => app.GetFeatures().pipe(Effect.orElseSucceed((): Features => ({})))))
+  .atom(
+    AppClient.use((app) =>
+      app.GetFeatures().pipe(
+        Effect.retry({ schedule: Schedule.exponential("1 second"), times: 5 }),
+        Effect.orElseSucceed((): Features => ({}))
+      )
+    )
+  )
   .pipe(Atom.keepAlive)
 
 export const integrationsAtom = appRuntime
