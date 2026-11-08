@@ -69,6 +69,7 @@ import {
 import { Tokens } from "../auth/Tokens.ts"
 import { ApiConfig } from "../Config.ts"
 import { Connections } from "../db/Connections.ts"
+import { SandboxWakes, type WakeReason } from "../db/SandboxWakes.ts"
 import { TurnUsageLog } from "../db/TurnUsage.ts"
 import { Users } from "../db/Users.ts"
 import { Daemon } from "../e2b/Daemon.ts"
@@ -230,6 +231,22 @@ const withoutStarting = (record: SandboxRecord): SandboxRecord => {
 /** The `NotFound` entity `gatewayTarget` names for an archived project, so the gateway can say so. */
 export const ArchivedEntity = "archived project"
 
+/**
+ * Why a delivery uses the sandbox, for `SandboxWakes`: a scheduled command or task when that's all it carries (they
+ * start no turn when they succeed), else events for the agent, named by their tags.
+ */
+export const wakeReason = (
+  events: ReadonlyArray<AgentEvent>
+): readonly [WakeReason] | readonly [WakeReason, string] => {
+  if (events.length > 0 && events.every((event) => event._tag === "WakeDue" && event.task !== undefined)) {
+    return ["wake-task"]
+  }
+  if (events.length > 0 && events.every((event) => event._tag === "WakeDue" && event.run !== undefined)) {
+    return ["wake-run"]
+  }
+  return ["delivery", [...new Set(events.map((event) => event._tag))].sort().join(",")]
+}
+
 export const backoffMs = (failures: number): number => Math.min(15 * 60_000, 5_000 * 3 ** Math.max(0, failures - 1))
 
 export class SandboxManager extends Context.Service<
@@ -333,6 +350,7 @@ export class SandboxManager extends Context.Service<
       const mover = yield* SandboxMove
       const connections = yield* Connections
       const turnLog = yield* TurnUsageLog
+      const wakes = yield* SandboxWakes
       const usageReport = yield* UsageReport
       const live = yield* LiveFeed
       const busy = yield* Semaphore.make(1)
@@ -347,6 +365,11 @@ export class SandboxManager extends Context.Service<
       /** When the gateway last looked up where to send a visit (`expectVisit`). */
       const lastVisitMs = yield* Ref.make<number | undefined>(undefined)
       const handedOff = Effect.flatMap(Clock.currentTimeMillis, (now) => Ref.set(lastHandoffMs, now))
+      /** What the sandbox is being used for between turns, for the resource review (`SandboxWakes`). */
+      const noteWake = (projectId: ProjectId, reason: WakeReason, detail?: string) =>
+        Effect.flatMap(core.sandbox, (record) =>
+          record.working ? Effect.void : wakes.record(projectId, reason, detail)
+        )
 
       const update = (f: (record: SandboxRecord) => SandboxRecord) =>
         Effect.flatMap(core.sandbox, (r) => core.saveSandbox(f(r)))
@@ -663,6 +686,7 @@ export class SandboxManager extends Context.Service<
             from: { build: record.templateBuild, release: record.release },
             to: latest
           })
+          yield* noteWake(project.id, "refresh")
           const result = yield* refresher
             .run({
               target: access,
@@ -770,6 +794,8 @@ export class SandboxManager extends Context.Service<
         yield* core.markSeen(pending.map((event) => event.id))
         // Between turns, the phone says the agent is starting until a turn takes these (or delivery fails).
         const before = yield* core.sandbox
+        const [reason, detail] = wakeReason(pending)
+        yield* noteWake(project.id, reason, detail)
         if (!before.working && before.startingSince === undefined) {
           const since = yield* DateTime.now
           yield* update((r) => (r.working ? r : { ...r, startingSince: since }))
@@ -885,6 +911,7 @@ export class SandboxManager extends Context.Service<
         if (record.rulesDirty) yield* pushRules(record, true)
         yield* refreshSoon
         yield* expectVisit
+        yield* noteWake(project.id, "visit")
         return {
           origin: `https://${project.publishedPort}-${record.access.sandboxId}.${record.access.domain}`,
           trafficAccessToken: record.access.trafficAccessToken
@@ -1011,6 +1038,7 @@ export class SandboxManager extends Context.Service<
       const forwardRelay: Context.Service.Shape<typeof SandboxManager>["forwardRelay"] = (request) =>
         Effect.gen(function* () {
           if (yield* held) return { delivered: 0, failure: { message: "The project is archived." } }
+          yield* noteWake((yield* core.project.pipe(Effect.orDie)).id, "relay")
           const { access, daemonToken } = yield* ensureReady
           const record = yield* core.sandbox
           if (record.rulesDirty) yield* pushRules(record, true)
@@ -1378,6 +1406,7 @@ export class SandboxManager extends Context.Service<
             const old = record.access
             const project = yield* core.project.pipe(Effect.orDie)
             const started = yield* Clock.currentTimeMillis
+            yield* noteWake(project.id, "move")
             const result = yield* Effect.gen(function* () {
               // Up for the whole move, paused or not; and on the current Dream, which has the move script.
               yield* e2b

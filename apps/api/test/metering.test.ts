@@ -3,10 +3,11 @@
  * sent the live probe), storage and the migration from `usage_events`, and the cost report the app and agent read.
  */
 import { readFileSync } from "node:fs"
-import type { ProjectId, UserId } from "@dream/domain"
-import { Routes } from "@dream/domain"
+import type { EventId, ProjectId, UserId, WakeId } from "@dream/domain"
+import { AgentEvent, Routes } from "@dream/domain"
 import { assert, describe, it } from "@effect/vitest"
 import { Context, DateTime, Effect, Layer, Redacted } from "effect"
+import { TestClock } from "effect/testing"
 import * as HttpServerRequest from "effect/http/HttpServerRequest"
 import * as HttpServerResponse from "effect/http/HttpServerResponse"
 import { Tokens } from "../src/auth/Tokens.ts"
@@ -15,7 +16,10 @@ import { fromApi, toMeterEvent } from "../src/metering/E2BEvents.ts"
 import { E2BMetering, e2bSignature } from "../src/metering/E2BMetering.ts"
 import { Meter, type MeterEvent } from "../src/metering/Meter.ts"
 import { macMinutes, modelPrice, openaiUsd, price } from "../src/metering/Prices.ts"
+import { rollUp, SandboxUsage } from "../src/metering/SandboxUsage.ts"
 import { StorageMeter } from "../src/metering/Storage.ts"
+import { SandboxWakes } from "../src/db/SandboxWakes.ts"
+import { wakeReason } from "../src/project/SandboxManager.ts"
 import { utf8 } from "../src/lib/Bytes.ts"
 import { makeCloud } from "./support/Cloud.ts"
 
@@ -548,4 +552,135 @@ describe("the cost report", () => {
       yield* cloud.close
     })
   )
+})
+
+describe("resource telemetry", () => {
+  const sample = (atSeconds: number, cpu: number, memMb: number) => ({
+    timestampUnix: atSeconds,
+    cpuCount: 2,
+    cpuUsedPct: cpu,
+    memUsed: memMb * 1024 * 1024,
+    memTotal: 4096 * 1024 * 1024,
+    diskUsed: 6000 * 1024 * 1024,
+    diskTotal: 17000 * 1024 * 1024
+  })
+  const listed = (sandboxID: string, state: string, metadata: Record<string, string>, endAt?: string) => ({
+    sandboxID,
+    state,
+    cpuCount: 2,
+    memoryMB: 4096,
+    metadata,
+    ...(endAt === undefined ? {} : { endAt })
+  })
+
+  it("rolls samples up per UTC hour", () => {
+    const hour = Date.parse("2026-11-08T10:00:00Z") / 1000
+    const hours = rollUp([sample(hour + 60, 10, 500), sample(hour + 120, 30, 900), sample(hour + 3600, 80, 3000)])
+    assert.deepStrictEqual(
+      hours.map((h) => [h.hour, h.samples, h.cpuAvgPct, h.cpuMaxPct, h.memAvgMb, h.memMaxMb]),
+      [
+        ["2026-11-08T10:00:00.000Z", 2, 20, 30, 700, 900],
+        ["2026-11-08T11:00:00.000Z", 1, 80, 80, 3000, 3000]
+      ]
+    )
+    close(hours[0]!.diskTotalMb, 17000)
+  })
+
+  it.live("keeps each recent sandbox's hours, completing an hour read while it was going", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const usage = Context.get(cloud.workerContext, SandboxUsage)
+      const nowS = Math.floor(Date.now() / 1000)
+      const hourS = Math.floor(nowS / 3600) * 3600
+      cloud.world.e2bListed = [
+        listed("sbx-run", "running", { projectId: PROJECT, userId: OWNER }),
+        listed("sbx-dev", "paused", { purpose: "dev", script: "smoke" }, new Date().toISOString()),
+        listed("sbx-old", "paused", { projectId: PROJECT_B, userId: OWNER }, "2026-01-01T00:00:00Z")
+      ]
+      cloud.world.e2bMetrics.set("sbx-run", [sample(hourS - 3000, 40, 1200), sample(hourS + 1, 5, 800)])
+      cloud.world.e2bMetrics.set("sbx-dev", [sample(hourS + 2, 90, 3900)])
+      yield* usage.hourly
+      // A sandbox paused long ago didn't run since: its metrics aren't read.
+      assert.deepStrictEqual(cloud.world.e2bMetricReads.map((read) => read.sandboxId).sort(), ["sbx-dev", "sbx-run"])
+      assert.strictEqual(cloud.world.e2bMetricReads[0]!.start, hourS - 7200)
+      const read = () =>
+        cloud.db
+          .prepare(
+            "SELECT sandbox_id, hour, project_id, cause, samples, cpu_max_pct, mem_max_mb FROM sandbox_usage ORDER BY sandbox_id, hour"
+          )
+          .all() as Array<Record<string, unknown>>
+      assert.deepStrictEqual(
+        read().map((row) => [row.sandbox_id, row.project_id, row.cause, row.samples, row.cpu_max_pct, row.mem_max_mb]),
+        [
+          ["sbx-dev", null, "dev", 1, 90, 3900],
+          ["sbx-run", PROJECT, "project", 1, 40, 1200],
+          ["sbx-run", PROJECT, "project", 1, 5, 800]
+        ]
+      )
+      // The hour went on: the next run replaces it with the fuller reading.
+      cloud.world.e2bMetrics.get("sbx-run")!.push(sample(hourS + 2, 70, 2000))
+      yield* usage.hourly
+      const current = read()
+        .filter((row) => row.sandbox_id === "sbx-run")
+        .at(-1)!
+      assert.deepStrictEqual([current.samples, current.cpu_max_pct, current.mem_max_mb], [2, 70, 2000])
+      yield* cloud.close
+    })
+  )
+
+  it.effect("notes a sandbox's wakes at most once a minute per reason, and forgets them after 30 days", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const wakes = Context.get(cloud.workerContext, SandboxWakes)
+      yield* TestClock.setTime(Date.parse("2026-11-08T10:00:00Z"))
+      yield* wakes.record(PROJECT, "visit")
+      yield* wakes.record(PROJECT, "visit")
+      yield* wakes.record(PROJECT, "delivery", "UserMessage")
+      yield* wakes.record(PROJECT_B, "visit")
+      yield* TestClock.adjust("61 seconds")
+      yield* wakes.record(PROJECT, "visit")
+      const read = () =>
+        cloud.db
+          .prepare("SELECT project_id, reason, detail, at FROM sandbox_wakes ORDER BY at, project_id, reason")
+          .all() as Array<Record<string, unknown>>
+      assert.deepStrictEqual(
+        read().map((row) => [row.project_id, row.reason, row.detail]),
+        [
+          [PROJECT, "delivery", "UserMessage"],
+          [PROJECT, "visit", null],
+          [PROJECT_B, "visit", null],
+          [PROJECT, "visit", null]
+        ]
+      )
+      yield* TestClock.adjust("31 days")
+      yield* wakes.record(PROJECT, "relay")
+      yield* wakes.prune
+      assert.deepStrictEqual(
+        read().map((row) => row.reason),
+        ["relay"]
+      )
+      yield* cloud.close
+    })
+  )
+
+  it("names what a delivery wakes the sandbox for", () => {
+    const at = DateTime.makeUnsafe("2026-11-08T10:00:00Z")
+    const fields = { id: "evt_1" as EventId, at }
+    const run = AgentEvent.cases.WakeDue.make({
+      ...fields,
+      wakeId: "wak_1" as WakeId,
+      why: "check",
+      run: { command: "x" }
+    })
+    const task = AgentEvent.cases.WakeDue.make({
+      ...fields,
+      wakeId: "wak_2" as WakeId,
+      why: "digest",
+      task: { brief: "b", model: "m", effort: "low" }
+    })
+    const alert = AgentEvent.cases.Alert.make({ ...fields, reason: "boom" })
+    assert.deepStrictEqual(wakeReason([run, run]), ["wake-run"])
+    assert.deepStrictEqual(wakeReason([task]), ["wake-task"])
+    assert.deepStrictEqual(wakeReason([run, alert, alert]), ["delivery", "Alert,WakeDue"])
+  })
 })

@@ -150,6 +150,30 @@ const Webhook = Schema.Struct({
 })
 export type E2BWebhook = typeof Webhook.Type
 
+/** A running or paused sandbox, with its size: what the hourly usage job reads metrics for. */
+const ListedSandbox = Schema.Struct({
+  sandboxID: Schema.String,
+  state: Schema.String,
+  cpuCount: Schema.Finite,
+  memoryMB: Schema.Finite,
+  /** For a paused sandbox, when it paused. */
+  endAt: Nullish(Schema.String),
+  metadata: Nullish(Schema.Record(Schema.String, Schema.String))
+})
+export type ListedSandbox = typeof ListedSandbox.Type
+
+/** One of E2B's metric samples (`GET /sandboxes/{id}/metrics`); bytes, and CPU as a percentage of all its vCPUs. */
+const MetricSample = Schema.Struct({
+  timestampUnix: Schema.Finite,
+  cpuCount: Schema.Finite,
+  cpuUsedPct: Schema.Finite,
+  memUsed: Schema.Finite,
+  memTotal: Schema.Finite,
+  diskUsed: Schema.Finite,
+  diskTotal: Schema.Finite
+})
+export type MetricSample = typeof MetricSample.Type
+
 export interface WebhookSettings {
   readonly name: string
   readonly url: string
@@ -170,6 +194,17 @@ export class E2BEvents extends Context.Service<
       settings: WebhookSettings
     ) => Effect.Effect<Option.Option<E2BWebhook>, UpstreamFailure>
     readonly deleteWebhook: (id: string) => Effect.Effect<void, UpstreamFailure>
+    /** The team's running and paused sandboxes (the first 100 of each; Dream has a handful). */
+    readonly sandboxes: Effect.Effect<ReadonlyArray<ListedSandbox>, UpstreamFailure>
+    /**
+     * A sandbox's samples between two times, in epoch seconds, oldest first: one every 30 s to 5 min, coarser the
+     * longer the span, and only while it ran. None for a sandbox E2B no longer has.
+     */
+    readonly metrics: (
+      sandboxId: string,
+      startSeconds: number,
+      endSeconds: number
+    ) => Effect.Effect<ReadonlyArray<MetricSample>, UpstreamFailure>
   }
 >()("@dream/api/metering/E2BEvents") {
   static readonly layer = Layer.effect(
@@ -261,7 +296,38 @@ export class E2BEvents extends Context.Service<
         yield* okOrFail(response).pipe(Effect.mapError(failure("Deleting the webhook")))
       })
 
-      return E2BEvents.of({ billed, webhooks, createWebhook, updateWebhook, deleteWebhook })
+      const sandboxes = Effect.gen(function* () {
+        const http = yield* client
+        return yield* http
+          .get("/v2/sandboxes?state=running,paused&limit=100")
+          .pipe(
+            Effect.flatMap(okOrFail),
+            Effect.flatMap(HttpClientResponse.schemaBodyJson(Schema.Array(ListedSandbox))),
+            Effect.mapError(failure("Listing sandboxes"))
+          )
+      }).pipe(Effect.withSpan("E2BEvents.sandboxes"))
+
+      const metrics = Effect.fn("E2BEvents.metrics")(function* (
+        sandboxId: string,
+        startSeconds: number,
+        endSeconds: number
+      ) {
+        const http = yield* client
+        const params = new URLSearchParams({
+          start: String(Math.floor(startSeconds)),
+          end: String(Math.ceil(endSeconds))
+        })
+        const response = yield* http
+          .get(`/sandboxes/${encodeURIComponent(sandboxId)}/metrics?${params.toString()}`)
+          .pipe(Effect.mapError(failure("Reading sandbox metrics")))
+        if (response.status === 404) return []
+        return yield* okOrFail(response).pipe(
+          Effect.flatMap(HttpClientResponse.schemaBodyJson(Schema.Array(MetricSample))),
+          Effect.mapError(failure("Reading sandbox metrics"))
+        )
+      })
+
+      return E2BEvents.of({ billed, webhooks, createWebhook, updateWebhook, deleteWebhook, sandboxes, metrics })
     })
   )
 }

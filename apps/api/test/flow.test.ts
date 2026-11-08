@@ -2118,6 +2118,17 @@ describe("sandbox refresh", () => {
       // Up to date: the next visit brings over nothing.
       yield* visit
       assert.lengthOf(donors(), 1)
+
+      // The resource review hears what the sandbox was used for between turns: the first delivery, the visit and
+      // the refresh it set off (the visit during the turn and the repeat within a minute aren't noted).
+      const wakes = cloud.db
+        .prepare("SELECT reason, detail FROM sandbox_wakes WHERE project_id = ? ORDER BY at, reason")
+        .all(project.id) as Array<{ reason: string; detail: string | null }>
+      assert.deepStrictEqual(
+        wakes.map((row) => row.reason),
+        ["delivery", "visit", "refresh"]
+      )
+      assert.strictEqual(wakes[0]?.detail, "UserMessage")
       yield* cloud.close
     })
   )

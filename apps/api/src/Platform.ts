@@ -24,6 +24,7 @@ import { TestflightGrants } from "./db/TestflightGrants.ts"
 import { TestflightIdentity } from "./db/TestflightIdentity.ts"
 import { TurnUsageLog } from "./db/TurnUsage.ts"
 import { MacActivityLog } from "./db/MacActivity.ts"
+import { SandboxWakes } from "./db/SandboxWakes.ts"
 import { UpdateStore } from "./db/Updates.ts"
 import { Users } from "./db/Users.ts"
 import { Daemon } from "./e2b/Daemon.ts"
@@ -42,6 +43,7 @@ import { E2BEvents } from "./metering/E2BEvents.ts"
 import { E2BMetering } from "./metering/E2BMetering.ts"
 import { MeterD1 } from "./metering/MeterD1.ts"
 import { CostReport } from "./metering/Report.ts"
+import { SandboxUsage } from "./metering/SandboxUsage.ts"
 import { StorageMeter } from "./metering/Storage.ts"
 import { UsageReport } from "./usage/ProjectUsage.ts"
 import { OpenAIObjects } from "./openai/Objects.ts"
@@ -67,6 +69,7 @@ export const databaseLayer = (d1: D1Database) =>
     UpdateStore.layer,
     TurnUsageLog.layer,
     MacActivityLog.layer,
+    SandboxWakes.layer,
     DesktopLinks.layer,
     RateLimits.layer,
     ClientErrors.layer,
@@ -76,7 +79,7 @@ export const databaseLayer = (d1: D1Database) =>
 
 /** The ledger's readers and feeders, over D1 and the services above it. */
 export const meteringLayer = (d1: D1Database) =>
-  Layer.mergeAll(E2BMetering.layer, CostReport.layer, StorageMeter.layer).pipe(
+  Layer.mergeAll(E2BMetering.layer, CostReport.layer, StorageMeter.layer, SandboxUsage.layer).pipe(
     Layer.provide(D1Client.layer({ db: d1 }).pipe(Layer.orDie))
   )
 

@@ -15,7 +15,13 @@ import { OAuth, OAuthProviders } from "../../src/integrations/OAuth.ts"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Apns } from "../../src/push/Apns.ts"
 import { Tokens } from "../../src/auth/Tokens.ts"
-import { E2BEvents, type E2BWebhook, type LifecycleEvent } from "../../src/metering/E2BEvents.ts"
+import {
+  E2BEvents,
+  type E2BWebhook,
+  type LifecycleEvent,
+  type ListedSandbox,
+  type MetricSample
+} from "../../src/metering/E2BEvents.ts"
 
 const base64Url = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url")
 const unsignedJwt = (claims: object) => `${base64Url({ alg: "RS256", typ: "JWT" })}.${base64Url(claims)}.c2ln`
@@ -152,6 +158,10 @@ export class FakeWorld {
   readonly e2bWebhooks = new Map<string, E2BWebhook & { secret: string }>()
   /** Pages of events the backfill asked for, by offset. */
   readonly e2bEventPages: Array<number> = []
+  /** What E2B's list and metrics answer for metering (`E2BEvents.sandboxes`, `metrics`), and each metrics read. */
+  e2bListed: Array<ListedSandbox> = []
+  readonly e2bMetrics = new Map<string, Array<MetricSample>>()
+  readonly e2bMetricReads: Array<{ sandboxId: string; start: number; end: number }> = []
   /** Set to make E2B refuse webhook updates. */
   e2bWebhookUpdateFails = false
   private counter = 0
@@ -571,6 +581,14 @@ export const fakeE2BEvents = (world: FakeWorld) =>
       deleteWebhook: (id) =>
         Effect.sync(() => {
           world.e2bWebhooks.delete(id)
+        }),
+      sandboxes: Effect.sync(() => world.e2bListed),
+      metrics: (sandboxId, start, end) =>
+        Effect.sync(() => {
+          world.e2bMetricReads.push({ sandboxId, start, end })
+          return (world.e2bMetrics.get(sandboxId) ?? []).filter(
+            (sample) => sample.timestampUnix >= start && sample.timestampUnix <= end
+          )
         })
     })
   )

@@ -11,6 +11,8 @@ import { Mailer, type SendEmailBinding } from "./email/Mailer.ts"
 import { SandboxReaper } from "./e2b/Reaper.ts"
 import { MediaStore } from "./http/Media.ts"
 import { E2BMetering } from "./metering/E2BMetering.ts"
+import { SandboxWakes } from "./db/SandboxWakes.ts"
+import { SandboxUsage } from "./metering/SandboxUsage.ts"
 import { StorageMeter } from "./metering/Storage.ts"
 import { LiveForwarder } from "./http/Router.ts"
 import { UpdateAssets } from "./http/Updates.ts"
@@ -83,9 +85,12 @@ export const maintenance = Effect.gen(function* () {
 
 /**
  * Every hour: the metering ledger's backfills. E2B runs a webhook delivery missed (the last day; at midnight UTC,
- * the whole week E2B keeps), and yesterday's stored bytes per project.
+ * the whole week E2B keeps), and yesterday's stored bytes per project. Then the resource review's telemetry: how
+ * hard each sandbox that ran lately worked, and old wake notes dropped.
  */
 export const hourlyMetering = Effect.gen(function* () {
   yield* (yield* E2BMetering).hourly
   yield* (yield* StorageMeter).recordDay
+  yield* (yield* SandboxUsage).hourly
+  yield* (yield* SandboxWakes).prune
 }).pipe(Effect.withSpan("hourlyMetering"))
