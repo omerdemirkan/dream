@@ -21,6 +21,7 @@ import type {
   MacEntry,
   ProjectInfo,
   Turn,
+  TurnMachine,
   WakeNote
 } from "./analyze.ts"
 
@@ -114,12 +115,22 @@ const LedgerSql = Schema.Struct({
   quantities_json: JsonRecord(Schema.Finite),
   dimensions_json: JsonRecord(Schema.String)
 })
+/** The turn's machine summary from dreamd (agent-logs branch); absent before it, null for turns without one. */
+const MachineColumn = Schema.optionalKey(Schema.NullOr(Schema.Finite))
 const TurnSql = Schema.Struct({
   project_id: Schema.String,
   started_at: Schema.String,
   ended_at: Schema.String,
   output_tokens: Schema.NullOr(Schema.Finite),
-  wake_id: Schema.NullOr(Schema.String)
+  wake_id: Schema.NullOr(Schema.String),
+  mem_peak_mb: MachineColumn,
+  mem_total_mb: MachineColumn,
+  swap_peak_mb: MachineColumn,
+  swap_total_mb: MachineColumn,
+  swap_in_pages: MachineColumn,
+  swap_out_pages: MachineColumn,
+  oom_kills: MachineColumn,
+  disk_free_mb: MachineColumn
 })
 const ProjectSql = Schema.Struct({
   id: Schema.String,
@@ -255,6 +266,20 @@ const readLog = async (sinceMs: number): Promise<ReadonlyArray<E2BRun>> => {
 // Everything
 // ---------------------------------------------------------------------------
 
+const machineOf = (row: typeof TurnSql.Type): TurnMachine | undefined => {
+  const fields: TurnMachine = {
+    memPeakMb: row.mem_peak_mb ?? undefined,
+    memTotalMb: row.mem_total_mb ?? undefined,
+    swapPeakMb: row.swap_peak_mb ?? undefined,
+    swapTotalMb: row.swap_total_mb ?? undefined,
+    swapInPages: row.swap_in_pages ?? undefined,
+    swapOutPages: row.swap_out_pages ?? undefined,
+    oomKills: row.oom_kills ?? undefined,
+    diskFreeMb: row.disk_free_mb ?? undefined
+  }
+  return Object.values(fields).some((value) => value !== undefined) ? fields : undefined
+}
+
 export interface ReadOptions {
   readonly day: string
   readonly now: number
@@ -276,8 +301,8 @@ export const readInputs = async (options: ReadOptions): Promise<Inputs> => {
   const since = new Date(d0 - 8 * DayMs).toISOString()
   const database = await findDatabase()
 
-  const [ledger, turns, projects, mac, wakes, usage, live, browsers, macs, buckets, e2bLog, tables] = await Promise.all(
-    [
+  const [ledger, turns, olderTurns, projects, mac, wakes, usage, live, browsers, macs, buckets, e2bLog, tables] =
+    await Promise.all([
       attempt("the ledger (meter_events)", () =>
         query(
           database,
@@ -287,10 +312,14 @@ export const readInputs = async (options: ReadOptions): Promise<Inputs> => {
         )
       ),
       attempt("turns (turn_usage)", () =>
+        query(database, TurnSql, "SELECT * FROM turn_usage WHERE ended_at >= ?", [since])
+      ),
+      // Turns from before `turn_usage` (2026-11-06) are only in `usage_events`, whose end has a 5-minute idle tail.
+      attempt("older turns (usage_events)", () =>
         query(
           database,
-          TurnSql,
-          "SELECT project_id, started_at, ended_at, output_tokens, wake_id FROM turn_usage WHERE ended_at >= ?",
+          Schema.Struct({ project_id: Schema.String, started_at: Schema.String, ended_at: Schema.String }),
+          "SELECT project_id, started_at, ended_at FROM usage_events WHERE kind = 'sandbox' AND ended_at >= ?",
           [since]
         )
       ),
@@ -350,8 +379,7 @@ export const readInputs = async (options: ReadOptions): Promise<Inputs> => {
         }
         return Object.fromEntries(counts)
       })
-    ]
-  )
+    ])
 
   const liveSandboxes: Array<LiveSandbox> = (live ?? []).map((s) => ({
     id: s.sandboxID,
@@ -414,8 +442,15 @@ export const readInputs = async (options: ReadOptions): Promise<Inputs> => {
     start: Ms(row.started_at),
     end: Ms(row.ended_at),
     outputTokens: row.output_tokens ?? undefined,
-    task: row.wake_id !== null
+    task: row.wake_id !== null,
+    machine: machineOf(row)
   }))
+  const recorded = new Set(turnRows.map((turn) => `${turn.project} ${turn.start}`))
+  for (const row of olderTurns ?? []) {
+    const start = Ms(row.started_at)
+    if (recorded.has(`${row.project_id} ${start}`)) continue
+    turnRows.push({ project: row.project_id, start, end: Math.max(start, Ms(row.ended_at) - 5 * 60_000), task: false })
+  }
   const projectRows: Array<ProjectInfo> = (projects ?? []).map((row) => ({
     id: row.id,
     title: row.title,

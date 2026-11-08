@@ -260,6 +260,31 @@ describe("what it flags", () => {
     assert.isTrue(titles.some((t) => t.startsWith("The ledger's last sandbox run is 6.0 h old")))
   })
 
+  it("what dreamd saw inside: OOM kills, and turns that swapped", () => {
+    const turn = (hour: number, machine: object) => ({
+      project: PROJECT,
+      start: at(`${String(hour).padStart(2, "0")}:00:00`),
+      end: at(`${String(hour).padStart(2, "0")}:30:00`),
+      task: false,
+      machine: { memPeakMb: 3900, memTotalMb: 4096, ...machine }
+    })
+    const result = review(
+      base({
+        turns: [
+          turn(1, { swapInPages: 20_000, swapOutPages: 15_000 }),
+          turn(2, { swapInPages: 30_000, swapOutPages: 0, oomKills: 1 }),
+          turn(3, { swapInPages: 26_000 }),
+          turn(4, { swapInPages: 10, swapOutPages: 10 }),
+          // A turn from before the summaries: nothing to judge.
+          { project: PROJECT, start: at("05:00:00"), end: at("05:10:00"), task: false }
+        ]
+      })
+    )
+    const byTitle = (part: string) => result.findings.find((f) => f.title.includes(part))
+    assert.strictEqual(byTitle("killed 1 process(es) for memory")?.severity, "action")
+    assert.strictEqual(byTitle("swapped in 3 of 4 turns")?.severity, "action")
+  })
+
   it("a long turn that left its sandbox idle", () => {
     const result = review(
       base({

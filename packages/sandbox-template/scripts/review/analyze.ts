@@ -48,6 +48,21 @@ export interface LedgerRow {
   readonly dimensions: Readonly<Record<string, string>>
 }
 
+/**
+ * What dreamd saw of its machine over a turn (`turn_usage`'s machine columns, from its in-sandbox sampler): peaks,
+ * and the swap and OOM-kill counters' growth over the turn.
+ */
+export interface TurnMachine {
+  readonly memPeakMb?: number | undefined
+  readonly memTotalMb?: number | undefined
+  readonly swapPeakMb?: number | undefined
+  readonly swapTotalMb?: number | undefined
+  readonly swapInPages?: number | undefined
+  readonly swapOutPages?: number | undefined
+  readonly oomKills?: number | undefined
+  readonly diskFreeMb?: number | undefined
+}
+
 export interface Turn {
   readonly project: string
   readonly start: number
@@ -55,7 +70,11 @@ export interface Turn {
   readonly outputTokens?: number | undefined
   /** A scheduled task's session rather than a turn. */
   readonly task: boolean
+  readonly machine?: TurnMachine | undefined
 }
+
+/** Swapped pages (in and out, 4 KB each) in one turn past which the machine is short of memory: about 100 MB. */
+export const SwapPagesPerTurn = 25_000
 
 export interface ProjectInfo {
   readonly id: string
@@ -657,6 +676,43 @@ export const review = (inputs: Inputs): Review => {
         usdPerDay: 0,
         title: `${project.title}'s disk is ${line.diskPct.toFixed(0)}% full`,
         detail: "A full disk fails builds and installs; caches under /home/user are the usual culprit."
+      })
+    }
+  }
+
+  // What dreamd saw inside: swapping and OOM kills say a project needs more memory (or leaks) better than E2B's
+  // memory figure can, which has no swap in it.
+  for (const project of inputs.projects) {
+    const turns = inputs.turns.filter(
+      (turn) => turn.project === project.id && turn.machine !== undefined && turn.end >= weekStart && turn.end < d1
+    )
+    if (turns.length === 0) continue
+    const ooms = turns.reduce((sum, turn) => sum + (turn.machine?.oomKills ?? 0), 0)
+    const swapping = turns.filter(
+      (turn) => (turn.machine?.swapInPages ?? 0) + (turn.machine?.swapOutPages ?? 0) > SwapPagesPerTurn
+    )
+    const peak = Math.max(0, ...turns.map((turn) => turn.machine?.memPeakMb ?? 0))
+    const total = Math.max(0, ...turns.map((turn) => turn.machine?.memTotalMb ?? 0))
+    if (ooms > 0) {
+      findings.push({
+        severity: "action",
+        area: "sizing",
+        usdPerDay: 0,
+        title: `${project.title}: the kernel killed ${ooms} process(es) for memory in its turns this week`,
+        detail: `Peak memory ${(peak / 1024).toFixed(1)} of ${(total / 1024).toFixed(1)} GB. It needs the large size, or something in it leaks.`
+      })
+    }
+    if (swapping.length > 0) {
+      const pages = swapping.reduce(
+        (sum, turn) => sum + (turn.machine?.swapInPages ?? 0) + (turn.machine?.swapOutPages ?? 0),
+        0
+      )
+      findings.push({
+        severity: swapping.length >= 3 ? "action" : "watch",
+        area: "sizing",
+        usdPerDay: 0,
+        title: `${project.title} swapped in ${swapping.length} of ${turns.length} turns this week`,
+        detail: `About ${((pages * 4) / 1024).toFixed(0)} MB moved to and from swap in those turns; peak memory ${(peak / 1024).toFixed(1)} of ${(total / 1024).toFixed(1)} GB. Swapping slows every turn: the large size, or a leak to find.`
       })
     }
   }
