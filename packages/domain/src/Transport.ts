@@ -67,7 +67,14 @@ export const Routes = {
   /** GET `?channel=…`: `UpdatesStatus`. */
   updatesStatus: "/admin/updates/status",
   /** POST: creates the signing key if there's none; responds with `UpdatesCertificate`. */
-  updatesSigningKey: "/admin/updates/signing-key"
+  updatesSigningKey: "/admin/updates/signing-key",
+  /** POST from E2B: a sandbox lifecycle event, signed with `e2b-signature` (docs/metering.md). Added November 2026. */
+  e2bWebhook: "/webhooks/e2b",
+  /**
+   * POST with the operator's `x-dream-dev-secret`: the Worker generates a new signing secret and creates or updates
+   * its E2B webhook with it. `?backfill=7` also records the last 7 days of runs from E2B. Added November 2026.
+   */
+  meteringE2bWebhook: "/admin/metering/e2b-webhook"
 } as const
 
 /** HTTP RPC endpoints use NDJSON, which also carries streaming responses. */

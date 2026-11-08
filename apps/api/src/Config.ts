@@ -123,7 +123,20 @@ export const ApiConfigSchema = Config.all({
   /** The app record whose builds `Routes.testflightBuilds` lists by default. */
   ascTestflightBundleId: Config.NonEmptyString("ASC_TESTFLIGHT_BUNDLE_ID").pipe(Config.withDefault("build.omer.dream")),
   /** The app's URL scheme, for redirects back from OAuth. */
-  appScheme: Config.NonEmptyString("APP_URL_SCHEME").pipe(Config.withDefault("dream"))
+  appScheme: Config.NonEmptyString("APP_URL_SCHEME").pipe(Config.withDefault("dream")),
+  /**
+   * Who sees everyone's costs (`AccountCosts.everyone`): comma-separated emails, lowercased. A plain binding from
+   * the deploying shell's DREAM_OPERATORS (Api.ts), so it's in the repo's .env rather than the dashboard.
+   */
+  operators: Config.String("DREAM_OPERATORS").pipe(
+    Config.withDefault(""),
+    Config.map((value) =>
+      value
+        .split(",")
+        .map((email) => email.trim().toLowerCase())
+        .filter((email) => email.length > 0)
+    )
+  )
 })
 
 export type ApiConfigValues = typeof ApiConfigSchema extends Config.Config<infer A> ? A : never
@@ -182,7 +195,8 @@ export class ApiConfig extends Context.Service<ApiConfig, ApiConfigShape>()("@dr
         ascTestflightKeyId: "TESTKEY123",
         ascTestflightIssuerId: "00000000-0000-0000-0000-000000000000",
         ascTestflightBundleId: "build.omer.dream",
-        appScheme: "dream"
+        appScheme: "dream",
+        operators: []
       }),
       ...overrides
     })

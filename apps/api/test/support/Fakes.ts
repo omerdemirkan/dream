@@ -3,7 +3,7 @@
  * what it was asked so tests can assert on it.
  */
 import { DaemonEnv, DaemonEnvFile, DaemonRestarting, UpstreamFailure } from "@dream/domain"
-import { DateTime, Effect, Layer, Option, Stream } from "effect"
+import { DateTime, Effect, Layer, Option, Redacted, Stream } from "effect"
 import { Browserbase } from "../../src/brokers/Browserbase.ts"
 import { Namespace } from "../../src/brokers/Namespace.ts"
 import { ChatGpt } from "../../src/connect/ChatGpt.ts"
@@ -15,6 +15,7 @@ import { OAuth, OAuthProviders } from "../../src/integrations/OAuth.ts"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Apns } from "../../src/push/Apns.ts"
 import { Tokens } from "../../src/auth/Tokens.ts"
+import { E2BEvents, type E2BWebhook, type LifecycleEvent } from "../../src/metering/E2BEvents.ts"
 
 const base64Url = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url")
 const unsignedJwt = (claims: object) => `${base64Url({ alg: "RS256", typ: "JWT" })}.${base64Url(claims)}.c2ln`
@@ -132,6 +133,12 @@ export class FakeWorld {
       ]
     ]
   )
+  /** E2B's paused and killed events, newest first, as `GET /events/sandboxes` pages them. */
+  e2bEvents: Array<LifecycleEvent> = []
+  /** The team's webhooks, with the secret each was last given. */
+  readonly e2bWebhooks = new Map<string, E2BWebhook & { secret: string }>()
+  /** Pages of events the backfill asked for, by offset. */
+  readonly e2bEventPages: Array<number> = []
   private counter = 0
   nextId = (prefix: string) => `${prefix}${++this.counter}`
 }
@@ -463,6 +470,42 @@ export const fakeNamespace = (world: FakeWorld) =>
     })
   )
 
+export const fakeE2BEvents = (world: FakeWorld) =>
+  Layer.succeed(
+    E2BEvents,
+    E2BEvents.of({
+      billed: (offset, limit) =>
+        Effect.sync(() => {
+          world.e2bEventPages.push(offset)
+          return world.e2bEvents.slice(offset, offset + limit)
+        }),
+      webhooks: Effect.sync(() => [...world.e2bWebhooks.values()].map(({ secret: _, ...webhook }) => webhook)),
+      createWebhook: (settings) =>
+        Effect.sync(() => {
+          const id = world.nextId("wh")
+          const webhook = {
+            id,
+            url: settings.url,
+            events: settings.events,
+            secret: Redacted.value(settings.signatureSecret)
+          }
+          world.e2bWebhooks.set(id, webhook)
+          return { id, url: webhook.url, events: webhook.events }
+        }),
+      updateWebhook: (id, settings) =>
+        Effect.sync(() => {
+          if (!world.e2bWebhooks.has(id)) return Option.none()
+          world.e2bWebhooks.set(id, {
+            id,
+            url: settings.url,
+            events: settings.events,
+            secret: Redacted.value(settings.signatureSecret)
+          })
+          return Option.some({ id, url: settings.url, events: settings.events })
+        })
+    })
+  )
+
 /** HTTP that answers from `world.oauthResponses` (recording each request) instead of reaching the providers. */
 const providerHttp = (world: FakeWorld) => {
   const fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -548,6 +591,7 @@ export const fakeServices = (world: FakeWorld) =>
     Apns.layerTest(world.pushes as Array<{ readonly token: string; readonly kind: string; readonly payload: unknown }>),
     fakeBrowserbase(world),
     fakeNamespace(world),
+    fakeE2BEvents(world),
     fakeGoogle(world),
     OAuthProviders.layerTest(world.oauthConfigured),
     fakeOAuth(world),

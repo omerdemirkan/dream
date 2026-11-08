@@ -26,6 +26,7 @@ import {
   submitDesktopAccess
 } from "./DesktopPage.ts"
 import { gateway } from "./Gateway.ts"
+import { receiveE2bWebhook, registerE2bWebhook } from "./Metering.ts"
 import { downloadAttachmentForSandbox, downloadMedia, uploadAttachment, uploadMedia } from "./Media.ts"
 import { homePage, privacyPage } from "./PublicPages.ts"
 import { SandboxAuthServer, WorkerSandboxHandlers } from "./SandboxHandlers.ts"
@@ -96,6 +97,7 @@ export const route = (raw: Request) =>
     }
     if (path === Routes.app && request.method === "POST") return yield* appRpc
     if (path === Routes.sandbox && request.method === "POST") return yield* sandboxRpc
+    if (path === Routes.e2bWebhook && request.method === "POST") return yield* receiveE2bWebhook
 
     const live = /^\/projects\/([^/]+)\/live$/.exec(path)
     if (live !== null) {
@@ -224,6 +226,12 @@ export const route = (raw: Request) =>
           )
         )
       )
+    }
+
+    // Metering: the Worker registers (or rotates) its own E2B webhook, and can backfill E2B's week of runs.
+    if (path === Routes.meteringE2bWebhook && request.method === "POST") {
+      if (!operator()) return HttpServerResponse.text("Forbidden", { status: 403 })
+      return yield* registerE2bWebhook(url)
     }
 
     // Operator tool (e2e cleanup): delete a project for good. The path predates the name; scripts call it.

@@ -36,6 +36,11 @@ import { SandboxCredentials } from "./integrations/SandboxCredentials.ts"
 import { ProjectClients, ProjectDirectory, type ProjectFetch } from "./project/Client.ts"
 import { Apns } from "./push/Apns.ts"
 import { RelayClients, type RelayFetch } from "./relay/RelayClients.ts"
+import { E2BEvents } from "./metering/E2BEvents.ts"
+import { E2BMetering } from "./metering/E2BMetering.ts"
+import { MeterD1 } from "./metering/MeterD1.ts"
+import { CostReport } from "./metering/Report.ts"
+import { StorageMeter } from "./metering/Storage.ts"
 import { UsageReport } from "./usage/ProjectUsage.ts"
 
 export interface PlatformBindings {
@@ -58,8 +63,15 @@ export const databaseLayer = (d1: D1Database) =>
     UpdateStore.layer,
     TurnUsageLog.layer,
     DesktopLinks.layer,
-    RateLimits.layer
+    RateLimits.layer,
+    MeterD1
   ).pipe(Layer.provide(D1Client.layer({ db: d1 }).pipe(Layer.orDie)))
+
+/** The ledger's readers and feeders, over D1 and the services above it. */
+export const meteringLayer = (d1: D1Database) =>
+  Layer.mergeAll(E2BMetering.layer, CostReport.layer, StorageMeter.layer).pipe(
+    Layer.provide(D1Client.layer({ db: d1 }).pipe(Layer.orDie))
+  )
 
 /** Everything above the database: providers, credentials, and the project clients. */
 export const servicesLayer = Layer.mergeAll(
@@ -69,6 +81,7 @@ export const servicesLayer = Layer.mergeAll(
   Apns.layer,
   Browserbase.layer,
   Namespace.layer,
+  E2BEvents.layer,
   Google.layer.pipe(Layer.provideMerge(OAuth.layer)),
   OAuthProviders.layer,
   ChatGpt.layer,
@@ -91,8 +104,11 @@ export const platformLayer = (bindings: PlatformBindings, overrides: PlatformOve
   const credentials = CredentialStore.layer.pipe(
     Layer.provideMerge(ProjectDirectory.layer.pipe(Layer.provideMerge(base)))
   )
-  return Layer.mergeAll(SandboxCredentials.layer, KeyFiles.layer, UsageReport.layer, SandboxReaper.layer).pipe(
-    Layer.provideMerge(credentials),
-    Layer.provideMerge(overrides.config ?? ApiConfig.layer)
-  )
+  return Layer.mergeAll(
+    SandboxCredentials.layer,
+    KeyFiles.layer,
+    UsageReport.layer,
+    SandboxReaper.layer,
+    meteringLayer(bindings.d1)
+  ).pipe(Layer.provideMerge(credentials), Layer.provideMerge(overrides.config ?? ApiConfig.layer))
 }

@@ -42,6 +42,7 @@ import { timingSafeEqual } from "../lib/Bytes.ts"
 import { messageIdFor, newMediaId, newMessageId, newProjectId, projectIdFor } from "../lib/Ids.ts"
 import { ProjectClients } from "../project/Client.ts"
 import { deleteProject } from "../project/Deletion.ts"
+import { CostReport } from "../metering/Report.ts"
 import { UsageReport } from "../usage/ProjectUsage.ts"
 import { MediaStore } from "./Media.ts"
 
@@ -131,6 +132,7 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
     const appLinks = yield* AppLinks
     const links = yield* Links
     const usageReport = yield* UsageReport
+    const costReport = yield* CostReport
     const attachments = yield* Attachments
 
     const me = Effect.gen(function* () {
@@ -310,10 +312,8 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
           return yield* usageReport.projectUsage(project)
         }),
       GetAccountUsage: ({ provider }) => Effect.flatMap(me, (userId) => usageReport.accountUsage(userId, provider)),
-      // Placeholders until the cost report lands (docs/metering.md).
-      GetProjectCosts: ({ projectId }) =>
-        Effect.andThen(owned(projectId), Effect.die("GetProjectCosts: not built yet")),
-      GetAccountCosts: () => Effect.die("GetAccountCosts: not built yet"),
+      GetProjectCosts: ({ projectId }) => Effect.andThen(owned(projectId), costReport.project(projectId)),
+      GetAccountCosts: () => Effect.flatMap(me, costReport.account),
 
       ListMessages: ({ projectId, before, limit }) =>
         Effect.gen(function* () {

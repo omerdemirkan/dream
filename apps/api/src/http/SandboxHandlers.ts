@@ -37,6 +37,7 @@ import { OAuthProviders, scopesFor } from "../integrations/OAuth.ts"
 import { newMediaId } from "../lib/Ids.ts"
 import { type ProjectClient, ProjectClients } from "../project/Client.ts"
 import { bearer } from "./AppHandlers.ts"
+import { CostReport } from "../metering/Report.ts"
 import { MediaStore } from "./Media.ts"
 
 export const MaxUploadBytes = 200 * 1024 * 1024
@@ -73,6 +74,7 @@ export const WorkerSandboxHandlers = SandboxRpcs.toLayer(
     const users = yield* Users
     const mailer = yield* Mailer
     const rateLimits = yield* RateLimits
+    const costReport = yield* CostReport
 
     const current = Effect.gen(function* () {
       return yield* CurrentProject
@@ -256,7 +258,7 @@ export const WorkerSandboxHandlers = SandboxRpcs.toLayer(
           return connection.value.usage_json
         }),
       GetUsageLimits: () => forward((c) => c.GetUsageLimits()),
-      GetProjectCosts: () => Effect.die("GetProjectCosts: not built yet"),
+      GetProjectCosts: () => Effect.flatMap(current, ({ projectId }) => costReport.project(projectId)),
       ReportUsage: (payload) => forward((c) => c.ReportUsage(payload)),
       AddRelay: (payload) => forwardUnlessLeaking(payload, (c) => c.AddRelay(payload)),
       ListRelays: () => forward((c) => c.ListRelays()),

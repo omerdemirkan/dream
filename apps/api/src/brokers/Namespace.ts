@@ -13,6 +13,9 @@ import { describe, okOrFail } from "../e2b/E2B.ts"
 
 const service = "/namespace.cloud.compute.v1beta.ComputeService"
 
+/** Every Mac Dream rents: the smallest macOS shape (also what metering records). */
+export const MacShape = { virtualCpu: 4, memoryMegabytes: 7168 } as const
+
 const Metadata = Schema.Struct({
   instanceId: Schema.String,
   status: Schema.optionalKey(Schema.String),
@@ -115,8 +118,7 @@ export class Namespace extends Context.Service<
           "CreateInstance",
           {
             shape: {
-              virtualCpu: 4,
-              memoryMegabytes: 7168,
+              ...MacShape,
               os: "macos",
               machineArch: "arm64",
               selectors: [{ name: "macos.version", value: "27.x" }]

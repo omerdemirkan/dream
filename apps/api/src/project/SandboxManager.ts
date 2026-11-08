@@ -67,7 +67,6 @@ import {
 import { Tokens } from "../auth/Tokens.ts"
 import { ApiConfig } from "../Config.ts"
 import { Connections } from "../db/Connections.ts"
-import { Projects } from "../db/Projects.ts"
 import { TurnUsageLog } from "../db/TurnUsage.ts"
 import { Users } from "../db/Users.ts"
 import { Daemon } from "../e2b/Daemon.ts"
@@ -317,7 +316,6 @@ export class SandboxManager extends Context.Service<
       const tokens = yield* Tokens
       const credentials = yield* SandboxCredentials
       const keyFiles = yield* KeyFiles
-      const projects = yield* Projects
       const users = yield* Users
       const refresher = yield* SandboxRefresh
       const mover = yield* SandboxMove
@@ -1199,26 +1197,7 @@ export class SandboxManager extends Context.Service<
               .withPermits(1)(e2b.setTimeout(record.access.sandboxId, Duration.toSeconds(TurnTail)))
               .pipe(Effect.ignore)
           }
-          // Machine time for this turn, plus the idle tail before E2B pauses it.
-          yield* recordTurnUsage(record, DateTime.addDuration(now, TurnTail))
           yield* recordModelTurn(record, now, usage)
-        })
-
-      const recordTurnUsage = (record: SandboxRecord, ended: DateTime.Utc) =>
-        Effect.gen(function* () {
-          if (record.turnStartedAt === undefined) return
-          const project = yield* core.project.pipe(Effect.orDie)
-          const minutes = (DateTime.toEpochMillis(ended) - DateTime.toEpochMillis(record.turnStartedAt)) / 60_000
-          yield* projects.recordUsage({
-            id: `use_${randomToken(22)}`,
-            projectId: project.id,
-            userId: project.ownerId,
-            kind: "sandbox",
-            ref: record.access?.sandboxId,
-            startedAt: record.turnStartedAt,
-            endedAt: ended,
-            minutes: Math.round(minutes * 100) / 100
-          })
         })
 
       const pause = Effect.gen(function* () {
@@ -1236,7 +1215,6 @@ export class SandboxManager extends Context.Service<
         const record = yield* core.sandbox
         const now = yield* DateTime.now
         if (record.working) {
-          yield* recordTurnUsage(record, now)
           // The turn stops here: its tokens are never reported, but the window moved while it ran.
           yield* recordModelTurn(record, now, undefined)
         }

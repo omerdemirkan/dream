@@ -1,7 +1,7 @@
 /**
  * Machines the agent rents beyond its sandbox: Browserbase sessions and a
  * Namespace Mac. The DO tracks them for `dream browser|mac`, stops idle Macs,
- * and records their minutes in the usage ledger.
+ * and meters each one once it has ended (`browser_session`, `mac_session`).
  */
 import {
   type BrowserSession,
@@ -13,9 +13,9 @@ import {
   UpstreamFailure
 } from "@dream/domain"
 import { Clock, Context, DateTime, Duration, Effect, Layer, Option, Redacted } from "effect"
-import { Browserbase } from "../brokers/Browserbase.ts"
-import { Namespace } from "../brokers/Namespace.ts"
-import { type UsageKind, Projects } from "../db/Projects.ts"
+import { Browserbase, type BrowserbaseSession } from "../brokers/Browserbase.ts"
+import { MacShape, Namespace } from "../brokers/Namespace.ts"
+import { Meter } from "../metering/Meter.ts"
 import { newBrowserSessionId } from "../lib/Ids.ts"
 import { Alarm } from "./Alarm.ts"
 import { Core } from "./Core.ts"
@@ -26,9 +26,14 @@ export const MacIdleTimeout = Duration.minutes(20)
 const MacLifetime = Duration.minutes(90)
 const BrowserSweepEvery = Duration.minutes(10)
 
-/** Billed minutes: Browserbase and Namespace both bill a minimum of one minute. */
-const minutesBetween = (start: DateTime.Utc, end: DateTime.Utc) =>
-  Math.max(1, Math.ceil((DateTime.toEpochMillis(end) - DateTime.toEpochMillis(start)) / 60_000))
+/** How long Namespace extends a Mac's deadline each time the agent asks for ssh. */
+const MacExtension = Duration.minutes(30)
+
+const msBetween = (start: DateTime.Utc, end: DateTime.Utc) =>
+  Math.max(0, DateTime.toEpochMillis(end) - DateTime.toEpochMillis(start))
+
+const parsed = (iso: string | null | undefined) =>
+  iso ? Option.map(DateTime.make(iso), DateTime.toUtc) : Option.none<DateTime.Utc>()
 
 export class Machines extends Context.Service<
   Machines,
@@ -58,23 +63,30 @@ export class Machines extends Context.Service<
       const core = yield* Core
       const store = yield* Store
       const alarm = yield* Alarm
-      const projects = yield* Projects
+      const meter = yield* Meter
       const browserbase = yield* Browserbase
       const namespace = yield* Namespace
 
-      const recordUsage = (kind: UsageKind, ref: string, startedAt: DateTime.Utc, endedAt: DateTime.Utc) =>
+      /** Meters what Dream paid for a browser or a Mac, to the project and its owner. */
+      const meterMachine = (
+        meterName: "browser_session" | "mac_session",
+        id: string,
+        at: DateTime.Utc,
+        quantities: Readonly<Record<string, number>>,
+        dimensions: Readonly<Record<string, string>>
+      ) =>
         Effect.gen(function* () {
           const project = yield* core.project.pipe(Effect.orDie)
-          yield* projects.recordUsage({
-            id: `use_${kind}_${ref}`.slice(0, 120),
-            projectId: project.id,
-            userId: project.ownerId,
-            kind,
-            ref,
-            startedAt,
-            endedAt,
-            minutes: minutesBetween(startedAt, endedAt)
-          })
+          yield* meter.record([
+            {
+              id,
+              owner: project.ownerId,
+              meter: meterName,
+              at,
+              quantities,
+              dimensions: { project: project.id, payer: "dream", ...dimensions }
+            }
+          ])
         })
 
       const setTimerIn = (name: "mac-idle" | "browser-sweep", after: Duration.Input) =>
@@ -106,23 +118,30 @@ export class Machines extends Context.Service<
           })
         )
 
-      const markEnded = (
-        id: string,
-        providerId: string,
-        startedAt: DateTime.Utc,
-        endedAtIso: string | null | undefined
-      ) =>
+      /** Ends the record and meters the session, from Browserbase's own times and proxy bytes when it has them. */
+      const markEnded = (id: string, providerId: string, startedAt: DateTime.Utc, session: BrowserbaseSession) =>
         Effect.gen(function* () {
-          const endedAt = endedAtIso ? DateTime.makeUnsafe(endedAtIso) : yield* DateTime.now
+          const now = yield* DateTime.now
+          const endedAt = Option.getOrElse(parsed(session.endedAt), () => now)
           yield* store.putBrowser({ id, providerId, startedAt, endedAt })
-          yield* recordUsage("browser", providerId, startedAt, endedAt)
+          const started = Option.getOrElse(parsed(session.startedAt), () => startedAt)
+          yield* meterMachine(
+            "browser_session",
+            `browserbase:${providerId}`,
+            endedAt,
+            { ms: msBetween(started, endedAt), proxy_bytes: Math.max(0, session.proxyBytes ?? 0) },
+            { provider: "browserbase", session: providerId }
+          )
         })
 
       const stopBrowser = Effect.fn("Machines.stopBrowser")(function* (id: BrowserSessionId) {
         const record = yield* findBrowser(id)
         if (record.endedAt !== undefined) return
         const released = yield* browserbase.release(record.providerId)
-        yield* markEnded(record.id, record.providerId, record.startedAt, released.endedAt)
+        // The ended session has the final proxy bytes; the release's answer is what's known if it can't be read.
+        const ended = yield* browserbase.get(record.providerId).pipe(Effect.option)
+        const session = Option.isSome(ended) && ended.value.endedAt ? ended.value : released
+        yield* markEnded(record.id, record.providerId, record.startedAt, session)
       })
 
       const browserRecording = Effect.fn("Machines.browserRecording")(function* (id: BrowserSessionId) {
@@ -134,7 +153,7 @@ export class Machines extends Context.Service<
               message: `The browser session is still running. Stop it first with \`dream browser stop ${id}\`.`
             })
           }
-          yield* markEnded(record.id, record.providerId, record.startedAt, session.endedAt)
+          yield* markEnded(record.id, record.providerId, record.startedAt, session)
         }
         const result = yield* browserbase.recording(record.providerId)
         if (result._tag === "Ready") return { url: result.url, contentType: "video/mp4" }
@@ -149,7 +168,7 @@ export class Machines extends Context.Service<
         for (const record of open) {
           const session = yield* browserbase.get(record.providerId).pipe(Effect.option)
           if (Option.isSome(session) && session.value.status !== "RUNNING" && session.value.status !== "PENDING") {
-            yield* markEnded(record.id, record.providerId, record.startedAt, session.value.endedAt)
+            yield* markEnded(record.id, record.providerId, record.startedAt, session.value)
           }
         }
         const still = yield* store.openBrowsers
@@ -216,7 +235,15 @@ export class Machines extends Context.Service<
           return yield* new InvalidRequest({ message: "No Mac is running. Start one with `dream mac start`." })
         }
         yield* touch(record)
-        yield* namespace.extend(record.instanceId, 30 * 60).pipe(Effect.ignore)
+        const extended = yield* namespace.extend(record.instanceId, Duration.toSeconds(MacExtension)).pipe(
+          Effect.as(true),
+          Effect.orElseSucceed(() => false)
+        )
+        // Namespace keeps the later of the two deadlines; metering caps the Mac's minutes at it.
+        const until = DateTime.addDuration(yield* DateTime.now, MacExtension)
+        if (extended && (record.deadline === undefined || DateTime.isLessThan(record.deadline, until))) {
+          yield* saveMac({ ...(yield* macRecord), deadline: until })
+        }
         const ssh = yield* namespace.ssh(record.instanceId)
         const expiresAt = DateTime.add(yield* DateTime.now, { minutes: 30 })
         return {
@@ -232,9 +259,23 @@ export class Machines extends Context.Service<
       const stopMac = Effect.gen(function* () {
         const record = yield* macRecord
         if (record.instanceId !== undefined && record.state !== "stopped") {
-          yield* namespace.destroy(record.instanceId)
+          const now = yield* DateTime.now
+          // Past its deadline, Namespace destroyed it already: billed until then, and nothing left to stop.
+          const expired = record.deadline !== undefined && DateTime.isLessThanOrEqualTo(record.deadline, now)
+          yield* namespace.destroy(record.instanceId).pipe(expired ? Effect.ignore : (destroy) => destroy)
           if (record.startedAt !== undefined) {
-            yield* recordUsage("mac", record.instanceId, record.startedAt, yield* DateTime.now)
+            const endedAt = expired && record.deadline !== undefined ? record.deadline : now
+            yield* meterMachine(
+              "mac_session",
+              `namespace:${record.instanceId}`,
+              endedAt,
+              {
+                ms: msBetween(record.startedAt, endedAt),
+                vcpus: MacShape.virtualCpu,
+                memory_mb: MacShape.memoryMegabytes
+              },
+              { provider: "namespace", instance: record.instanceId }
+            )
           }
         }
         yield* saveMac({ state: "stopped" })

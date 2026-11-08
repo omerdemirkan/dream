@@ -110,9 +110,6 @@ const MediaRow = Schema.Struct({
 })
 export type MediaRow = typeof MediaRow.Type
 
-export const UsageKind = Schema.Literals(["sandbox", "browser", "mac"])
-export type UsageKind = typeof UsageKind.Type
-
 const stopWords = new Set(
   "a an and app for from i in is it me my of on or our so that the this to we with which who will would want build make me".split(
     " "
@@ -241,17 +238,6 @@ export class Projects extends Context.Service<
     readonly mediaKeys: (projectId: ProjectId) => Effect.Effect<ReadonlyArray<string>>
     readonly removeMedia: (projectId: ProjectId) => Effect.Effect<void>
     readonly markUploaded: (id: MediaId, at: DateTime.Utc) => Effect.Effect<void>
-
-    readonly recordUsage: (row: {
-      readonly id: string
-      readonly projectId: ProjectId
-      readonly userId: UserId
-      readonly kind: UsageKind
-      readonly ref?: string | undefined
-      readonly startedAt: DateTime.Utc
-      readonly endedAt: DateTime.Utc
-      readonly minutes: number
-    }) => Effect.Effect<void>
   }
 >()("@dream/api/Projects") {
   static readonly layer = Layer.effect(
@@ -465,25 +451,6 @@ export class Projects extends Context.Service<
       const markUploaded = (id: MediaId, at: DateTime.Utc) =>
         exec(sql`UPDATE media SET uploaded_at = ${DateTime.formatIso(at)} WHERE id = ${id}`)
 
-      const recordUsage = (row: {
-        readonly id: string
-        readonly projectId: ProjectId
-        readonly userId: UserId
-        readonly kind: UsageKind
-        readonly ref?: string | undefined
-        readonly startedAt: DateTime.Utc
-        readonly endedAt: DateTime.Utc
-        readonly minutes: number
-      }) =>
-        Effect.gen(function* () {
-          const now = yield* nowIso
-          yield* exec(sql`
-            INSERT INTO usage_events (id, project_id, user_id, kind, ref, started_at, ended_at, minutes, created_at)
-            VALUES (${row.id}, ${row.projectId}, ${row.userId}, ${row.kind}, ${orNull(row.ref)},
-                    ${DateTime.formatIso(row.startedAt)}, ${DateTime.formatIso(row.endedAt)}, ${row.minutes}, ${now})
-            ON CONFLICT (id) DO NOTHING`)
-        })
-
       return Projects.of({
         allocateHost,
         insert,
@@ -508,8 +475,7 @@ export class Projects extends Context.Service<
         media,
         mediaKeys,
         removeMedia,
-        markUploaded,
-        recordUsage
+        markUploaded
       })
     })
   )

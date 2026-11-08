@@ -1492,12 +1492,20 @@ describe("a project, end to end", () => {
       assert.include(Redacted.value(ssh.privateKey), "OPENSSH PRIVATE KEY")
       yield* dreamd.StopMac()
       assert.strictEqual((yield* dreamd.GetMac()).state, "stopped")
-      const usage = cloud.db.prepare("SELECT kind, minutes FROM usage_events ORDER BY kind").all()
+      const metered = cloud.db
+        .prepare("SELECT id, owner, meter, center, units, cost_usd, project_id FROM meter_events ORDER BY meter")
+        .all()
       assert.deepStrictEqual(
-        usage.map((row) => row.kind),
-        ["browser", "mac"]
+        metered.map((row) => row.meter),
+        ["browser_session", "mac_session"]
       )
-      assert.strictEqual(usage[0]?.minutes, 4)
+      assert.isTrue(String(metered[0]?.id).startsWith("browserbase:"))
+      assert.isTrue(String(metered[1]?.id).startsWith("namespace:"))
+      // The fake ends a session three and a half minutes after it started: billed as four, at $0.12 an hour.
+      assert.strictEqual(metered[0]?.units, 4)
+      assert.closeTo(Number(metered[0]?.cost_usd), 0.008, 1e-9)
+      assert.isTrue(metered.every((row) => row.project_id !== null && row.owner !== "dream"))
+      assert.strictEqual(cloud.db.prepare("SELECT COUNT(*) AS n FROM usage_events").all()[0]?.n, 0)
       yield* cloud.close
     })
   )

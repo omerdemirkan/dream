@@ -10,6 +10,8 @@ import { DesktopAccess } from "./desktop/DesktopAccess.ts"
 import { Mailer, type SendEmailBinding } from "./email/Mailer.ts"
 import { SandboxReaper } from "./e2b/Reaper.ts"
 import { MediaStore } from "./http/Media.ts"
+import { E2BMetering } from "./metering/E2BMetering.ts"
+import { StorageMeter } from "./metering/Storage.ts"
 import { LiveForwarder } from "./http/Router.ts"
 import { UpdateAssets } from "./http/Updates.ts"
 import { Access } from "./integrations/Access.ts"
@@ -57,3 +59,12 @@ export const maintenance = Effect.gen(function* () {
   yield* modelConnect.cleanup
   yield* reaper.sweep
 }).pipe(Effect.withSpan("maintenance"))
+
+/**
+ * Every hour: the metering ledger's backfills. E2B runs a webhook delivery missed (the last day; at midnight UTC,
+ * the whole week E2B keeps), and yesterday's stored bytes per project.
+ */
+export const hourlyMetering = Effect.gen(function* () {
+  yield* (yield* E2BMetering).hourly
+  yield* (yield* StorageMeter).recordDay
+}).pipe(Effect.withSpan("hourlyMetering"))

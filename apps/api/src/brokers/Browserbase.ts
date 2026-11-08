@@ -17,7 +17,9 @@ const Session = Schema.Struct({
   status: Schema.String,
   connectUrl: Schema.optionalKey(Schema.NullOr(Schema.String)),
   startedAt: Schema.optionalKey(Schema.NullOr(Schema.String)),
-  endedAt: Schema.optionalKey(Schema.NullOr(Schema.String))
+  endedAt: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  /** Bytes through Browserbase's proxies, billed per GB. */
+  proxyBytes: Schema.optionalKey(Schema.NullOr(Schema.Finite))
 })
 export type BrowserbaseSession = typeof Session.Type
 

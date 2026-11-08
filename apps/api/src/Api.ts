@@ -4,7 +4,8 @@
  * refresh, and the gateway that maps `<slug>-<rand>.<domain>` to a project's
  * sandbox port. It serves the API host as a custom domain and `*.<domain>/*`
  * as a zone route, and dispatches by host. A cron refreshes expiring
- * credentials and cleans up abandoned sign-ins.
+ * credentials and cleans up abandoned sign-ins; another, hourly, fills in the
+ * metering ledger (E2B runs a webhook missed, yesterday's storage).
  *
  * Config read here (init) is bound by alchemy at deploy from the deploying
  * shell's environment. Operator secrets are not: they're Cloudflare dashboard
@@ -22,7 +23,7 @@ import { route } from "./http/Router.ts"
 import type { ProjectFetch } from "./project/Client.ts"
 import ProjectDO from "./ProjectDO.ts"
 import RelayDO from "./RelayDO.ts"
-import { maintenance, type WorkerBindings, workerLayer } from "./WorkerLayer.ts"
+import { hourlyMetering, maintenance, type WorkerBindings, workerLayer } from "./WorkerLayer.ts"
 import { Database, Media, Updates } from "./Resources.ts"
 
 /** The apex domain Dream runs on, e.g. "omer.build". */
@@ -44,11 +45,15 @@ export const R2Enabled = Config.Boolean("DREAM_R2_ENABLED").pipe(Config.withDefa
  */
 export const EmailEnabled = Config.Boolean("DREAM_EMAIL_ENABLED").pipe(Config.withDefault(false))
 
+/** Emails of the people who see everyone's costs in the app, comma-separated (read at runtime by Config.ts). */
+export const Operators = Config.String("DREAM_OPERATORS").pipe(Config.withDefault(""))
+
 export default class Api extends Cloudflare.Worker<Api>()(
   "Api",
   Effect.gen(function* () {
     const domain = yield* DreamDomain
     const apiHost = Option.getOrElse(yield* ApiHost, () => `dream.${domain}`)
+    const operators = yield* Operators
     // DREAM_ENCRYPTION_KEY and DREAM_SIGNING_KEY are Worker secrets generated once by
     // infra/scripts/ensure-secrets.ts, outside alchemy's state, and never rotated by a deploy.
     return {
@@ -65,7 +70,7 @@ export default class Api extends Cloudflare.Worker<Api>()(
         logs: { enabled: true, invocationLogs: true, persist: true, headSamplingRate: 1 },
         redactQueryString: true
       },
-      env: { DREAM_API_HOST: apiHost }
+      env: { DREAM_API_HOST: apiHost, ...(operators.trim() === "" ? {} : { DREAM_OPERATORS: operators }) }
     }
   }),
   Effect.gen(function* () {
@@ -110,6 +115,12 @@ export default class Api extends Cloudflare.Worker<Api>()(
     yield* Cloudflare.Workers.cron("*/5 * * * *", () =>
       Effect.flatMap(bindings, (b) => maintenance.pipe(Effect.provide(workerLayer(b)))).pipe(
         Effect.catchCause((cause) => Effect.logError("maintenance failed", cause))
+      )
+    )
+
+    yield* Cloudflare.Workers.cron("17 * * * *", () =>
+      Effect.flatMap(bindings, (b) => hourlyMetering.pipe(Effect.provide(workerLayer(b)))).pipe(
+        Effect.catchCause((cause) => Effect.logError("hourly metering failed", cause))
       )
     )
 
