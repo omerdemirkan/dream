@@ -159,7 +159,7 @@ export function AdvancedSheet(props: {
                 row={{ value: view.limits.planLeftPercent, reached: false }}
                 onChange={(value) => props.onLimits(withLimit(view.limits, "planLeft", value))}
               />
-              <Footnote>The agent picks its helpers’ models itself. You can change all of this later.</Footnote>
+              <Footnote>The agent picks its helpers’ models itself.</Footnote>
             </ScrollView>
           </Animated.View>
         ) : null}
@@ -251,9 +251,9 @@ function EffortPicker(props: {
           >
             <View
               style={{
-                width: 22,
-                height: 8 + index * 5,
-                borderRadius: 4,
+                width: 7,
+                height: 9 + index * 6,
+                borderRadius: 3.5,
                 backgroundColor: index <= chosen ? color.t1 : "rgba(255,255,255,0.14)"
               }}
             />
