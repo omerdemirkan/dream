@@ -543,7 +543,7 @@ describe("the cost report", () => {
       assert.isUndefined(theirs.everyone)
       assert.deepStrictEqual(
         theirs.projects.map((project) => [project.projectId, project.title, project.archived]),
-        [["prj_x", "A deleted project", true]]
+        [["prj_x", "Deleted project", true]]
       )
       yield* cloud.close
     })

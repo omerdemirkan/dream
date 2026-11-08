@@ -185,7 +185,7 @@ export class CostReport extends Context.Service<
             const found = known.get(id)
             return {
               projectId: id,
-              title: found?.title ?? "A deleted project",
+              title: found?.title ?? "Deleted project",
               ...(found?.icon ? { icon: found.icon } : {}),
               usd: dreamUsd(mine),
               ...(personUsd > 0 ? { personUsd } : {}),

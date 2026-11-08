@@ -168,7 +168,7 @@ describe("Settings and the detail", () => {
       { projectId: Fx.liftLog.id, title: "Lift Log", icon: "dumbbell", usd: 8 },
       { projectId: "prj_old" as ProjectId, title: "Old idea", usd: 2, archived: true },
       { projectId: "prj_gone1" as ProjectId, title: "Deleted project", usd: 1, archived: true },
-      { projectId: "prj_gone2" as ProjectId, title: "Deleted project", usd: 0.5, archived: true }
+      { projectId: "prj_gone2" as ProjectId, title: "A deleted project", usd: 0.5, archived: true }
     ],
     unattributed: [{ center: "sandbox", payer: "dream", usd: 1, quantity: 6, unit: "hour" }],
     ...over

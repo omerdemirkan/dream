@@ -213,12 +213,13 @@ export interface ShareView {
 
 /**
  * What the API calls a project that's gone, as in the plan's breakdown (`usage.ts`); it comes archived, without an
- * icon.
+ * icon. Workers before Nov 8 said "A deleted project".
  */
 const deletedTitle = "Deleted project"
+const deletedTitles: ReadonlyArray<string> = [deletedTitle, "A deleted project"]
 
 const projectShares = (projects: ReadonlyArray<ProjectCost>, unattributedUsd: number): ReadonlyArray<ShareView> => {
-  const isDeleted = (p: ProjectCost) => p.title === deletedTitle && p.icon === undefined && p.archived === true
+  const isDeleted = (p: ProjectCost) => deletedTitles.includes(p.title) && p.icon === undefined && p.archived === true
   const named = projects.filter((p) => !isDeleted(p))
   const deleted = projects.filter(isDeleted)
   const deletedUsd = deleted.reduce((n, p) => n + p.usd, 0)

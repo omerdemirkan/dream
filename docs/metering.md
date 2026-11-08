@@ -219,7 +219,7 @@ by day for the last 30 days. It serves `AppRpcs.GetProjectCosts`, `AppRpcs.GetAc
 plain binding from `.env`) also get `everyone`: each person's month and the overhead no person caused. A refresh
 donor's run is its project's (`cause: refresh`), and a model sign-in's is its person's, with no project
 (`unattributed`); overhead is what has no person: checks, probes, throwaway sandboxes. A project that's gone keeps
-its costs, titled "A deleted project". `packages/sandbox-template/scripts/costs.ts` stays the operator's independent
+its costs, titled "Deleted project" and merged into one row by the app. `packages/sandbox-template/scripts/costs.ts` stays the operator's independent
 cross-check, rebuilt from E2B's log.
 
 ## In the app
