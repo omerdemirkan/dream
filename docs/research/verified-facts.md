@@ -452,7 +452,7 @@ subscription with real models. No ChatGPT account is connected, so nothing on Co
 
 ## Scheduled tasks in a session of their own (2026-11-07, feat/fresh-session-tasks; Claude Code 2.1.318, Codex 0.165.0)
 - `dream wake --task` runs through `@ai-sdk/harness`'s `HarnessAgent` like the agent's session, with its own
-  adapter instance (the effort is per adapter), `model`, `instructions: taskPrompt` and the `dream` skill, a new
+  adapter instance (the effort is per adapter), `model`, `instructions: taskPrompt` and the skills (one `dream` skill then; since 2026-11-08 Dream's eight), a new
   `sessionId` and a new local sandbox session in the project directory; `session.destroy()` after the run. Both
   harnesses work: `scripts/task-check.ts` on a test template (`dream-sandbox-tasks`), against `fake-anthropic.ts`
   and `fake-responses.ts`, saw the task's requests on claude-sonnet-5-5/medium and gpt-6-luna/low carrying the
@@ -478,7 +478,7 @@ subscription with real models. No ChatGPT account is connected, so nothing on Co
   Dream patches its bridge to add `snapshot: false` (`bridgePatches` in `src/harness/Bridges.ts`; a test fails if
   the patch stops applying). With it the rendered prompt is byte-identical across launches while the text is the
   same (the same hash as the old record), so the cache prefix only moves when the text does.
-- Skills on Claude Code refresh: the adapter rewrites `~/.claude/skills/dream/SKILL.md` on each session start,
+- Skills on Claude Code refresh: the adapter rewrites `~/.claude/skills/<name>/SKILL.md` on each session start,
   Claude Code announces a changed description in its next skill listing, and loading the skill gives the new
   body. Bodies loaded earlier stay in the conversation as they were.
 - A Codex thread keeps its developer instructions: `codex exec resume` with a new `developer_instructions`, and

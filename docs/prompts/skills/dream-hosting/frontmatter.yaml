@@ -1,0 +1,2 @@
+name: dream-hosting
+description: Serving what you build — `dream publish` for a public URL that wakes the sandbox, webhooks, servers that stay up between turns, `dream relay` for Discord's Gateway or WebSocket feeds while the sandbox sleeps, and outgrowing the sandbox.

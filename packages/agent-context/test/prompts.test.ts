@@ -4,28 +4,32 @@ import * as Fixtures from "@dream/domain/fixtures"
 import { DateTime } from "effect"
 import { readdirSync, readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
-import { buildPrompts, withMap } from "../src/extract.ts"
+import { buildPrompts, descriptionOf, withMap } from "../src/extract.ts"
 import {
-  dreamSkill,
   type LastTurn,
   renderLastTurn,
   renderSteerPrompt,
   renderTaskPrompt,
   renderTurnPrompt,
+  skills,
   systemPrompt,
   taskPrompt
 } from "../src/index.ts"
-import { layout } from "../src/sections.ts"
+import { prompts, skillLayout, skillNames } from "../src/sections.ts"
 
 const docs = (path: string) => fileURLToPath(new URL(`../../../docs/prompts/${path}`, import.meta.url))
 const built = buildPrompts((path) => readFileSync(docs(path), "utf8"))
+const builtSkills = built.filter((prompt) => prompt.frontmatter !== undefined)
 
 describe("prompts", () => {
   it("match the sections in docs/prompts (run `bun run sync-prompts` if this fails)", () => {
-    const text = Object.fromEntries(built.map((prompt) => [prompt.name, prompt.text]))
-    assert.strictEqual(systemPrompt, text.systemPrompt)
-    assert.strictEqual(dreamSkill, text.dreamSkill)
-    assert.strictEqual(taskPrompt, text.taskPrompt)
+    const text = (name: string) => built.find((prompt) => prompt.name === name)?.text ?? ""
+    assert.strictEqual(systemPrompt, text("systemPrompt"))
+    assert.strictEqual(taskPrompt, text("taskPrompt"))
+    assert.deepStrictEqual(
+      skills,
+      skillNames.map((name) => text(name))
+    )
   })
 
   it("have a current map in docs/prompts/README.md (run `bun run sync-prompts` if this fails)", () => {
@@ -33,27 +37,41 @@ describe("prompts", () => {
     assert.strictEqual(readme, withMap(readme, built))
   })
 
-  it("use every section file, each once", () => {
-    for (const prompt of Object.values(layout)) {
+  it("use every section file, each once, and every skill directory", () => {
+    for (const prompt of [...Object.values(prompts), ...skillNames.map(skillLayout)]) {
       const files = readdirSync(docs(prompt.dir)).filter((file) => file.endsWith(".md"))
       const listed = prompt.sections.map((section) => `${section}.md`)
       assert.deepStrictEqual([...files].sort(), [...listed].sort(), `docs/prompts/${prompt.dir} and src/sections.ts`)
     }
+    assert.deepStrictEqual(readdirSync(docs("skills")).sort(), [...skillNames].sort())
   })
 
-  it("give every section but an opening one a heading", () => {
+  it("give every section but a system prompt's opening one a heading", () => {
     for (const prompt of built) {
       prompt.sections.forEach((section, i) => {
-        if (i > 0 || prompt.name === "dreamSkill") assert.notStrictEqual(section.heading, "(opening)", section.file)
+        if (i > 0 || prompt.frontmatter !== undefined) {
+          assert.notStrictEqual(section.heading, "(opening)", section.file)
+        }
       })
     }
   })
 
-  it("keep the system prompt body only, and the skill's frontmatter", () => {
+  it("open each skill with its name and a description a harness can list, then a title", () => {
+    for (const skill of builtSkills) {
+      // Both harnesses write `description:` unquoted, so it has to stay a plain YAML scalar on one line.
+      const description = descriptionOf(skill.frontmatter ?? "") ?? ""
+      assert.isTrue(skill.text.startsWith(`---\nname: ${skill.name}\ndescription: `), skill.name)
+      assert.isAtMost(description.length, 1024, skill.name)
+      assert.notMatch(description, /: | #|^[`'"@|>%&*!?{[-]/, skill.name)
+      assert.include(skill.text, "\n---\n\n# ", skill.name)
+      // Anthropic's guidance for a SKILL.md body: under 500 lines, with more detail in files of its own.
+      assert.isBelow(skill.text.split("\n").length, 500, skill.name)
+    }
+  })
+
+  it("keep the system prompt body only", () => {
     assert.isTrue(systemPrompt.startsWith("You're the agent behind one project in Dream."))
     assert.isFalse(systemPrompt.includes("covers:"))
-    assert.isTrue(dreamSkill.startsWith("---\nname: dream\ndescription: "))
-    assert.isTrue(dreamSkill.includes("\n---\n\n# `dream`\n"))
   })
 })
 

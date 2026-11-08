@@ -1,26 +1,38 @@
 # Dream's prompts
 
-Everything Dream tells the models it runs, in one place. There are three prompts, each a directory of sections:
+Everything Dream tells the models it runs, in one place. There are two system prompts and a set of skills, each a
+directory of sections:
 
-- `system/` is the system prompt of the project's agent. It describes the world, the person, and what success looks
-  like, and it deliberately has no procedures; the `dream` command documents itself through the skill and
-  `dream --help`.
-- `skill/` is the `dream` skill: reference for every `dream` command, grouped by job. The agent loads it when it needs
-  it, and so does a scheduled task's session.
+- `system/` is the system prompt of the project's agent, sent on every turn. It holds what the agent needs on every
+  turn: who it is, who the person is and what they see, what good looks like, the world it works in, and how it works
+  as an orchestrator. It deliberately has no procedures.
+- `skills/<name>/` is one skill each (`dream-chat`, `dream-access`, `dream-hosting`, `dream-wake`, `dream-notify`,
+  `dream-links`, `dream-machines`, `dream-usage`): what one part of `dream` does for the person and when it's worth
+  using. The harness lists every skill's name and description on every turn, and the agent reads a skill's body when
+  it judges it needs it, so detail that matters only in some situations lives here rather than in the system prompt.
+  Flags belong to `dream <command> --help`, generated from the CLI's own descriptions (`packages/dreamd/src/Cli.ts`),
+  so a skill names a flag where it explains when or why to use it and leaves the full list to `--help`.
 - `task/` is the system prompt of a scheduled task's session (`dream wake --task`): a job the agent set up, run in a
   new session of its own from the agent's brief, on the model and effort the agent picked. Like the system prompt, it
-  describes the situation and what a good run looks like, and leaves the job itself to the brief.
+  describes the situation and what a good run looks like, and leaves the job itself to the brief. A task's session
+  gets the same skills.
 
 Each section is one markdown file with one concern. Its frontmatter's `covers:` line says what it covers and appears
 only in the map below; the rest of the file goes into the prompt as written, starting with its heading. The opening
-section of each system prompt has no heading.
+section of each system prompt has no heading; a skill opens with a `#` title. A skill's name and description, which
+decide when a model reads it, are in its `frontmatter.yaml`: the description says what the skill covers and when to
+read it, with the key words first, since both harnesses shorten descriptions when their list runs long. It stays one
+line of plain YAML, because the harnesses write it into `SKILL.md` unquoted.
 
 `bun run sync-prompts` joins the sections, in the order `packages/agent-context/src/sections.ts` lists them, into
-`systemPrompt`, `dreamSkill` and `taskPrompt` in `packages/agent-context/src/generated/prompts.ts`, which dreamd uses,
-and rewrites the map below. A new section is a new file here plus its name in `sections.ts`, where it reads best;
-`packages/agent-context/test/prompts.test.ts` fails when the generated module or the map is out of date, or a file
-here is missing from `sections.ts`. dreamd hashes the joined strings, so any change to a section reaches running
-projects on their next turn (`packages/dreamd/src/harness/Session.ts`), once a new template build is current.
+`systemPrompt`, `skills` and `taskPrompt` in `packages/agent-context/src/generated/prompts.ts`, which dreamd uses,
+and rewrites the map below. A new section is a new file here plus its name in `sections.ts`, where it reads best; a
+new skill is a new directory under `skills/` with a `frontmatter.yaml`, plus its entry in `sections.ts`.
+`packages/agent-context/test/prompts.test.ts` fails when the generated module or the map is out of date, a file or
+skill directory here is missing from `sections.ts`, or a skill's frontmatter wouldn't parse. dreamd hashes the
+joined strings, so any change to a section reaches running projects on their next turn
+(`packages/dreamd/src/harness/Session.ts`), once a new template build is current. The research behind this layout
+is in `docs/research/prompting-guidance.md`.
 
 ## What else the agent reads
 
@@ -34,7 +46,8 @@ Not everything the models read is written here. The turn prompt and a few notes 
 | "Dream updated its guidance for you", after a prompt or skill change | `renderGuidanceNote`, same file | Before the turn prompt, once, in a Claude Code session (`Session.ts`) |
 | The handoff to a new Codex thread after a prompt or skill change | `renderHandoff`, same file | Before the turn prompt in the new thread (`Session.ts`) |
 | What Claude Code's `AskUserQuestion` is turned into, and the final-text rule | `packages/dreamd/src/harness/PersonChannel.ts` | Tool results in the session |
-| The skill's name and one-line description, which decide when it gets loaded | `skill/frontmatter.yaml` | The harness's list of skills |
+| Each skill's name and description, which decide when it gets read | `skills/<name>/frontmatter.yaml` | The harness's list of skills, on every turn |
+| Every `dream` command's description, flags and examples | `packages/dreamd/src/Cli.ts` | What `dream <command> --help` prints |
 
 ## The map
 
@@ -42,7 +55,7 @@ Every section, in the order it reaches the model, with what it covers and its si
 
 <!-- map: generated by `bun run sync-prompts`; edit the sections, not this -->
 
-### System prompt, 3,681 words
+### System prompt, 3,297 words
 
 The system prompt of the project's agent, for every turn (`systemPrompt`).
 
@@ -50,52 +63,118 @@ The system prompt of the project's agent, for every turn (`systemPrompt`).
 | --- | --- | --- | --- |
 | 1 | [(opening)](system/opening.md) | Who you are and what the project you own is. The prompt opens with it, so it has no heading. | 40 |
 | 2 | [The person](system/person.md) | Who the person is, how they use Dream, and what helps or discourages them. | 217 |
-| 3 | [What they see](system/what-they-see.md) | The app as they see it, Chat, the Status card and Home, and that this session never reaches them. | 206 |
-| 4 | [Writing to them](system/writing-to-them.md) | How what you send reads on their phone, and what's worth a recording or a notification. | 223 |
-| 5 | [Workstreams](system/workstreams.md) | What a workstream is, how the Status card and Chat show them, and what's worth a message about one. | 249 |
-| 6 | [Apps that speak for themselves](system/apps-speak.md) | Notifications the apps you build send under their own name, and what makes them worth keeping on. | 148 |
+| 3 | [What they see](system/what-they-see.md) | The app as they see it, Chat, the Status card and Home, and that this session never reaches them. | 195 |
+| 4 | [Writing to them](system/writing-to-them.md) | How what you send reads on their phone, and what's worth a recording or a notification. | 222 |
+| 5 | [Workstreams](system/workstreams.md) | What a workstream is, how the Status card and Chat show them, and what's worth a message about one. | 173 |
+| 6 | [Apps that speak for themselves](system/apps-speak.md) | Notifications the apps you build send under their own name, and when that beats a message from you. | 85 |
 | 7 | [What success looks like](system/success.md) | The bar for the finished thing, and that large projects taking days or weeks is expected. | 54 |
-| 8 | [Where you are](system/where-you-are.md) | The sandbox as yours alone, where things are hosted, and what reaches beyond it (browser, Mac, TestFlight, `dream`). | 109 |
-| 9 | [The machine](system/machine.md) | The machine's size and tools, what shares it, what running out of memory does, and moving to a larger one. | 204 |
+| 8 | [Where you are](system/where-you-are.md) | The sandbox as yours alone, where things are hosted, what reaches beyond it, and the skills and `--help` that describe `dream`. | 165 |
+| 9 | [The machine](system/machine.md) | The machine's size and tools, what shares it, and what running out of memory does. | 163 |
 | 10 | [Sleep and wake](system/sleep-and-wake.md) | That you don't run continuously, what the sandbox's sleep freezes, and what wakes it. | 142 |
-| 11 | [What runs on its own](system/running-on-its-own.md) | The three ways something runs without you (webhooks, scheduled wake-ups, relays), and what a schedule costs. | 241 |
+| 11 | [What runs on its own](system/running-on-its-own.md) | The three ways something runs without you (webhooks, scheduled wake-ups, relays), what a schedule costs, and that recurring work costs differently by how it runs. | 296 |
 | 12 | [Once it's live](system/once-its-live.md) | Keeping what's live healthy, and how to hear about trouble in a sandbox that sleeps. | 138 |
 | 13 | [You orchestrate; subagents do the work](system/orchestrating.md) | Why you plan, brief and judge while subagents build, and how background work keeps your turn going. | 233 |
-| 14 | [What a step costs](system/step-cost.md) | Why every step re-sends the whole session, what made sessions costly (length, lapsed caches), and the note on the last turn. | 389 |
+| 14 | [What a step costs](system/step-cost.md) | Why every step re-sends the whole session, what made sessions costly (length, lapsed caches), and the note on the last turn. | 386 |
 | 15 | [Choosing a subagent's model and effort](system/subagent-models.md) | Choosing each subagent's model and reasoning effort, what each of the two decides, and what each saves. | 202 |
 | 16 | [Reviewing](system/reviewing.md) | Why review goes to separate subagents, and the adversarial review every piece of UI gets before they see it. | 136 |
 | 17 | [Offering versions](system/offering-versions.md) | When a choice is theirs to make between real versions, and how to offer them. | 248 |
-| 18 | [Credentials](system/credentials.md) | How Dream keeps their credentials out of the sandbox, the one exception, and what makes a request easy to fulfil. | 200 |
-| 19 | [Usage](system/usage.md) | Their subscription's limits, what happens when one runs out, and deciding with them when it runs low. | 75 |
-| 20 | [Recurring work](system/recurring-work.md) | What recurring work costs as a turn, as a scheduled task, or as an app calling a model API. | 175 |
-| 21 | [If it grows](system/if-it-grows.md) | What changes if a project outgrows the sandbox and has to serve many people. | 52 |
+| 18 | [Credentials](system/credentials.md) | That Dream keeps their credentials out of the sandbox, and what makes a request for one easy to fulfil. | 106 |
+| 19 | [Usage](system/usage.md) | Their subscription's limits, what happens when one runs out, deciding with them when it runs low, and the project's own limits. | 96 |
 
-### The `dream` skill, 6,059 words
+### The `dream-chat` skill, 1,976 words
 
-The `dream` skill (`SKILL.md`), which the agent and every task's session load when they need it (`dreamSkill`).
+A skill (`SKILL.md`): the harness lists its name and description on every turn, and the agent or a task's session reads the rest when it judges it needs it.
+
+Its description (32 words, in [frontmatter.yaml](skills/dream-chat/frontmatter.yaml)): Sending the person anything with `dream` — messages, notifications, email, questions and versions to choose between, thread replies, the Status card, workstreams and Live Activities, and how each shows on their phone.
 
 | # | Section | Covers | Words |
 | --- | --- | --- | --- |
-| 1 | [`dream`](skill/dream.md) | What goes through `dream`, where it works, and where every flag is listed. | 35 |
-| 2 | [Messages](skill/messages.md) | `dream message`: what Chat renders, attaching media, notifying, withdrawing a notification, and the files they attach. | 229 |
-| 3 | [Email](skill/email.md) | `dream email`: emailing them markdown you write, what the email looks like, the copy in Chat, and its limits. | 202 |
-| 4 | [Questions](skill/questions.md) | `dream ask`: the question card, options with screenshots, recordings or audio, answers, and withdrawing. | 490 |
-| 5 | [Access to services](skill/access.md) | `dream access`: the access card, each kind (Google, OAuth providers, keys in a header, Apple, key files), and connections over time. | 946 |
-| 6 | [Notifications from your apps](skill/app-notifications.md) | `dream notify`: readying an app to notify them, sending as the app, their controls and Dream's limits, and the history. | 436 |
-| 7 | [The Status card](skill/status.md) | `dream status`: the now sentence, milestones and their needs, media, and how the project shows on Home. | 228 |
-| 8 | [Workstreams](skill/workstreams.md) | `dream work`: starting, updating, finishing and dropping workstreams, labelling what you send, and routing their messages. | 393 |
-| 9 | [Threads](skill/threads.md) | Threads: their replies on any message, `--reply-to`, when a thread reply beats a new message, and `dream ask revise`. | 330 |
-| 10 | [Live Activity](skill/live-activity.md) | `dream live`: a Live Activity on their lock screen and Dynamic Island. | 54 |
-| 11 | [Waking](skill/waking.md) | `dream wake`: what wakes you, scheduled wake-ups and commands, scheduled tasks, waking you now, and listing or cancelling. | 522 |
-| 12 | [Hosting](skill/hosting.md) | `dream publish`: the public URL, how it wakes and checks the sandbox, webhooks, and keeping servers running between turns. | 292 |
-| 13 | [Relays](skill/relays.md) | `dream relay`: Discord's Gateway and WebSocket feeds held open by Dream, how events reach your app, signatures, state, and limits. | 606 |
-| 14 | [App links on their Home](skill/app-links.md) | `dream link`: the row of app icons on their Home, what a tile shows, their edits, Add to Home Screen, and sharing. | 520 |
-| 15 | [Browsers](skill/browsers.md) | The local headless Chromium and Playwright, and `dream browser` for a real Chrome in the cloud. | 147 |
-| 16 | [A Mac](skill/mac.md) | `dream mac`: renting a Mac with Xcode and simulators, running commands, copying files, and what's on it. | 241 |
-| 17 | [This machine](skill/machine.md) | `dream machine`: which size this is, when to move between sizes, and what a move carries over. | 201 |
-| 18 | [Usage](skill/usage.md) | `dream usage`: their subscription's windows, this project's share of the week, and the limits they set on it. | 187 |
+| 1 | [Talking to them through Dream](skills/dream-chat/chat.md) | What reaches them through `dream`, that it works from any process here, and where the flags are listed. | 61 |
+| 2 | [Messages](skills/dream-chat/messages.md) | `dream message`: what Chat renders, attaching media, notifying, withdrawing a notification, and the files they attach. | 229 |
+| 3 | [Email](skills/dream-chat/email.md) | `dream email`: emailing them markdown you write, what the email looks like, the copy in Chat, and its limits. | 202 |
+| 4 | [Questions](skills/dream-chat/questions.md) | `dream ask`: the question card, options with screenshots, recordings or audio, answers, and withdrawing. | 479 |
+| 5 | [Threads](skills/dream-chat/threads.md) | Threads: their replies on any message, `--reply-to`, when a thread reply beats a new message, and `dream ask revise`. | 330 |
+| 6 | [The Status card](skills/dream-chat/status.md) | `dream status`: the now sentence, milestones and their needs, media, and how the project shows on Home. | 228 |
+| 7 | [Workstreams](skills/dream-chat/workstreams.md) | `dream work`: starting, updating, finishing and dropping workstreams, labelling what you send, and routing their messages. | 393 |
+| 8 | [Live Activity](skills/dream-chat/live-activity.md) | `dream live`: a Live Activity on their lock screen and Dynamic Island. | 54 |
 
-### Task prompt, 420 words
+### The `dream-access` skill, 1,115 words
+
+A skill (`SKILL.md`): the harness lists its name and description on every turn, and the agent or a task's session reads the rest when it judges it needs it.
+
+Its description (38 words, in [frontmatter.yaml](skills/dream-access/frontmatter.yaml)): Asking the person for access to a service with `dream access` — Google and OAuth sign-ins, API keys Dream adds to your requests, App Store Connect for TestFlight, and key files. Read it before asking for any credential.
+
+| # | Section | Covers | Words |
+| --- | --- | --- | --- |
+| 1 | [Access to services](skills/dream-access/access.md) | `dream access`: how Dream keeps their credentials out of the sandbox, the access card and what makes it quick to fulfil, each kind (Google, OAuth providers, keys in a header, Apple, key files), and connections over time. | 1115 |
+
+### The `dream-hosting` skill, 950 words
+
+A skill (`SKILL.md`): the harness lists its name and description on every turn, and the agent or a task's session reads the rest when it judges it needs it.
+
+Its description (38 words, in [frontmatter.yaml](skills/dream-hosting/frontmatter.yaml)): Serving what you build — `dream publish` for a public URL that wakes the sandbox, webhooks, servers that stay up between turns, `dream relay` for Discord's Gateway or WebSocket feeds while the sandbox sleeps, and outgrowing the sandbox.
+
+| # | Section | Covers | Words |
+| --- | --- | --- | --- |
+| 1 | [Hosting](skills/dream-hosting/hosting.md) | `dream publish`: the public URL, how it wakes and checks the sandbox, webhooks, and keeping servers running between turns. | 292 |
+| 2 | [Relays](skills/dream-hosting/relays.md) | `dream relay`: Discord's Gateway and WebSocket feeds held open by Dream, how events reach your app, signatures, state, and limits. | 606 |
+| 3 | [If it grows](skills/dream-hosting/if-it-grows.md) | What changes if a project outgrows the sandbox and has to serve many people. | 52 |
+
+### The `dream-wake` skill, 695 words
+
+A skill (`SKILL.md`): the harness lists its name and description on every turn, and the agent or a task's session reads the rest when it judges it needs it.
+
+Its description (42 words, in [frontmatter.yaml](skills/dream-wake/frontmatter.yaml)): Scheduling with `dream wake` — wake-ups and commands at a time or on cron, scheduled tasks in a session of their own, what wakes you, and what recurring work costs as a turn, a task or an app calling a model API.
+
+| # | Section | Covers | Words |
+| --- | --- | --- | --- |
+| 1 | [Waking](skills/dream-wake/waking.md) | `dream wake`: what wakes you, scheduled wake-ups and commands, scheduled tasks, waking you now, and listing or cancelling. | 519 |
+| 2 | [Recurring work](skills/dream-wake/recurring-work.md) | What recurring work costs as a turn, as a scheduled task, or as an app calling a model API, and who weighs it. | 176 |
+
+### The `dream-notify` skill, 539 words
+
+A skill (`SKILL.md`): the harness lists its name and description on every turn, and the agent or a task's session reads the rest when it judges it needs it.
+
+Its description (32 words, in [frontmatter.yaml](skills/dream-notify/frontmatter.yaml)): Letting an app you build notify the person under its own name with `dream notify` — asking them to allow it, sending, replacing or quieting its notifications, their controls and Dream's limits.
+
+| # | Section | Covers | Words |
+| --- | --- | --- | --- |
+| 1 | [Notifications from your apps](skills/dream-notify/notify.md) | `dream notify`: what makes an app's notifications worth keeping on, readying an app to notify them, sending as the app, their controls and Dream's limits, and the history. | 539 |
+
+### The `dream-links` skill, 520 words
+
+A skill (`SKILL.md`): the harness lists its name and description on every turn, and the agent or a task's session reads the rest when it judges it needs it.
+
+Its description (32 words, in [frontmatter.yaml](skills/dream-links/frontmatter.yaml)): Putting what you built on the person's Dream Home as an app icon with `dream link` — the tile, its title and icon, their edits, Add to Home Screen and share previews.
+
+| # | Section | Covers | Words |
+| --- | --- | --- | --- |
+| 1 | [App links on their Home](skills/dream-links/links.md) | `dream link`: the row of app icons on their Home, what a tile shows, their edits, Add to Home Screen, and sharing. | 520 |
+
+### The `dream-machines` skill, 624 words
+
+A skill (`SKILL.md`): the harness lists its name and description on every turn, and the agent or a task's session reads the rest when it judges it needs it.
+
+Its description (34 words, in [frontmatter.yaml](skills/dream-machines/frontmatter.yaml)): This sandbox's size and moving to a larger one (`dream machine`), the local Chromium and Playwright, a real Chrome in the cloud (`dream browser`), and renting a Mac with Xcode and simulators (`dream mac`).
+
+| # | Section | Covers | Words |
+| --- | --- | --- | --- |
+| 1 | [Machines](skills/dream-machines/machines.md) | What the skill covers: this machine's sizes, the browsers, and the Mac. | 35 |
+| 2 | [This machine](skills/dream-machines/machine.md) | `dream machine`: which size this is, when to move between sizes, and what a move carries over. | 201 |
+| 3 | [Browsers](skills/dream-machines/browsers.md) | The local headless Chromium and Playwright, and `dream browser` for a real Chrome in the cloud. | 147 |
+| 4 | [A Mac](skills/dream-machines/mac.md) | `dream mac`: renting a Mac with Xcode and simulators, running commands, copying files, and what's on it. | 241 |
+
+### The `dream-usage` skill, 187 words
+
+A skill (`SKILL.md`): the harness lists its name and description on every turn, and the agent or a task's session reads the rest when it judges it needs it.
+
+Its description (31 words, in [frontmatter.yaml](skills/dream-usage/frontmatter.yaml)): The person's plan with `dream usage` — five-hour and weekly windows, this project's share of the week, the limits they set on it, and what Dream holds back at a limit.
+
+| # | Section | Covers | Words |
+| --- | --- | --- | --- |
+| 1 | [Usage](skills/dream-usage/usage.md) | `dream usage`: their subscription's windows, this project's share of the week, and the limits they set on it. | 187 |
+
+### Task prompt, 432 words
 
 The system prompt of a scheduled task's session, `dream wake --task` (`taskPrompt`).
 
@@ -104,7 +183,7 @@ The system prompt of a scheduled task's session, `dream wake --task` (`taskPromp
 | 1 | [(opening)](task/opening.md) | Who you are in a task's session, who scheduled the job, and what you know of the project. It opens the prompt, so it has no heading. | 66 |
 | 2 | [Why you're on your own](task/on-your-own.md) | Why the job runs in a fresh session, what it costs them, and keeping to the brief. | 97 |
 | 3 | [Nobody is watching](task/nobody-watching.md) | That nobody sees the session, so the job is yours to finish, and what to do when the brief is wrong. | 60 |
-| 4 | [Reaching them, and the agent](task/reaching-them.md) | When to send the person something, and when and how the agent gets woken. | 105 |
+| 4 | [Reaching them, and the agent](task/reaching-them.md) | When to send the person something, and when and how the agent gets woken. | 117 |
 | 5 | [Your report](task/report.md) | What your last message, the report for the agent, holds, and when it gets read. | 50 |
 | 6 | [The sandbox](task/sandbox.md) | Sharing the machine with the person's app and the agent. | 42 |
 
@@ -114,16 +193,8 @@ The system prompt of a scheduled task's session, `dream wake --task` (`taskPromp
 
 Left as they were, for review:
 
-- The skill's list under Waking ("Events wake you") leaves out events that also wake the agent: an access request
-  declined or removed, the published URL found broken, a link they edited, an app's notifications changed or held
-  back, and the machine moved. Other skill sections mention most of these as "you get an event".
-- The system prompt's Offering versions and the skill's Questions both describe offering versions, from two
+- The system prompt's Offering versions and `dream-chat`'s Questions both describe offering versions, from two
   sides: the prompt says when and why, the skill how `--show` displays them and that a subagent per option in its own
   worktree makes them cheap. They agree, but a change to one is likely to need the other.
-- The system prompt's Recurring work and the skill's Waking both explain that a turn re-sends the whole session and a
-  scheduled task doesn't. They agree; the same note applies.
-- The skill's description in `skill/frontmatter.yaml`, which decides when a model loads it, doesn't mention scheduled
-  tasks, Live Activities or moving the machine, though the skill covers all three.
-- The system prompt's "You orchestrate" says a subagent still running when the turn ends is stopped with it. That's
-  true while `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS` keeps subagents in the foreground, and goes stale once turns wait
-  for background subagents.
+- The system prompt's What a step costs and `dream-machines`' A Mac both explain waiting in rounds of a few minutes
+  to keep a session's cache; the skill is what a subagent waiting on the Mac reads.

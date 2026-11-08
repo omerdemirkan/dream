@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import type { ToolResultPart } from "@ai-sdk/provider-utils"
+import { skillNames } from "@dream/agent-context"
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Option, Ref, Stream } from "effect"
 import { claudeAutoCompactWindow } from "../src/harness/Fleet.ts"
@@ -204,7 +205,7 @@ describe("final text", () => {
 })
 
 describe("Claude Code's built-ins", () => {
-  it("are turned off in its settings, keeping the dream skill and what was there", () => {
+  it("are turned off in its settings, keeping Dream's skills and what was there", () => {
     const settings = claudeSettings({
       model: "opus",
       permissions: { deny: ["WebFetch", "CronCreate"], allow: ["Bash"] },
@@ -218,8 +219,10 @@ describe("Claude Code's built-ins", () => {
     const overrides = settings.skillOverrides as Record<string, string>
     assert.strictEqual(overrides["code-review"], "name-only")
     for (const skill of ["schedule", "loop", "update-config"]) assert.strictEqual(overrides[skill], "off")
-    assert.notInclude(disabledClaudeSkills, "dream")
-    assert.notProperty(overrides, "dream")
+    for (const skill of skillNames) {
+      assert.notInclude(disabledClaudeSkills, skill)
+      assert.notProperty(overrides, skill)
+    }
     for (const tool of ["CronCreate", "RemoteTrigger", "ScheduleWakeup", "ExitPlanMode"]) {
       assert.include(deniedClaudeTools, tool)
     }

@@ -6,16 +6,20 @@
 export interface PromptLayout {
   /** The directory under docs/prompts/. */
   readonly dir: string
+  /** Its heading in the map. */
+  readonly title: string
   /** Where the prompt ends up, for the map. */
   readonly role: string
-  /** A file in `dir` holding the prompt's own YAML frontmatter, emitted first between `---` lines (the skill's). */
+  /** A file in `dir` holding the prompt's own YAML frontmatter, emitted first between `---` lines (a skill's). */
   readonly frontmatter?: string
   readonly sections: ReadonlyArray<string>
 }
 
-export const layout = {
+/** The two system prompts. */
+export const prompts = {
   systemPrompt: {
     dir: "system",
+    title: "System prompt",
     role: "The system prompt of the project's agent, for every turn (`systemPrompt`).",
     sections: [
       "opening",
@@ -36,41 +40,44 @@ export const layout = {
       "reviewing",
       "offering-versions",
       "credentials",
-      "usage",
-      "recurring-work",
-      "if-it-grows"
-    ]
-  },
-  dreamSkill: {
-    dir: "skill",
-    role: "The `dream` skill (`SKILL.md`), which the agent and every task's session load when they need it (`dreamSkill`).",
-    frontmatter: "frontmatter.yaml",
-    sections: [
-      "dream",
-      "messages",
-      "email",
-      "questions",
-      "access",
-      "app-notifications",
-      "status",
-      "workstreams",
-      "threads",
-      "live-activity",
-      "waking",
-      "hosting",
-      "relays",
-      "app-links",
-      "browsers",
-      "mac",
-      "machine",
       "usage"
     ]
   },
   taskPrompt: {
     dir: "task",
+    title: "Task prompt",
     role: "The system prompt of a scheduled task's session, `dream wake --task` (`taskPrompt`).",
     sections: ["opening", "on-your-own", "nobody-watching", "reaching-them", "report", "sandbox"]
   }
 } as const satisfies Record<string, PromptLayout>
 
-export type PromptName = keyof typeof layout
+export type PromptName = keyof typeof prompts
+
+/**
+ * Dream's skills, each a directory under docs/prompts/skills/ named as the skill, with its frontmatter (name and
+ * description) in `frontmatter.yaml`. The agent and every task's session get all of them, in this order.
+ */
+export const skillSections = {
+  "dream-chat": ["chat", "messages", "email", "questions", "threads", "status", "workstreams", "live-activity"],
+  "dream-access": ["access"],
+  "dream-hosting": ["hosting", "relays", "if-it-grows"],
+  "dream-wake": ["waking", "recurring-work"],
+  "dream-notify": ["notify"],
+  "dream-links": ["links"],
+  "dream-machines": ["machines", "machine", "browsers", "mac"],
+  "dream-usage": ["usage"]
+} as const satisfies Record<string, ReadonlyArray<string>>
+
+export type SkillName = keyof typeof skillSections
+
+export const skillLayout = (name: SkillName): PromptLayout => ({
+  dir: `skills/${name}`,
+  title: `The \`${name}\` skill`,
+  role:
+    "A skill (`SKILL.md`): the harness lists its name and description on every turn, and the agent or a task's " +
+    "session reads the rest when it judges it needs it.",
+  frontmatter: "frontmatter.yaml",
+  sections: skillSections[name]
+})
+
+export const skillNames = Object.keys(skillSections) as Array<SkillName>

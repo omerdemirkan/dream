@@ -21,8 +21,8 @@ Re-sending a session is cheap only while the provider still has it cached, which
 without a step (an hour for your own session on Claude Code). The next step sends it all afresh at ten or more times
 the price: half a dollar to a dollar at API prices for a 200k session that sat through a ten-minute build. That day,
 subagents waiting on the Mac paid it about thirty times, a fifth of the day. A wait that comes back to the model every
-few minutes keeps the cache for the price of a small step, and a subagent knows to wait that way only if its brief or
-the skill says so.
+few minutes keeps the cache for the price of a small step, and a subagent knows to wait that way only if its brief
+says so.
 
 Each turn's prompt opens with what your last turn used: its cost at API prices, how far their weekly window moved, and
 each session's share, steps and largest context, so you can see where the cost went when you plan the next.

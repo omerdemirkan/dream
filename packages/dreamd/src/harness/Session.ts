@@ -1,6 +1,6 @@
 /**
  * What dreamd keeps of the agent's harness session (`session.json` in its state dir), and how new guidance from
- * Dream (the system prompt and the `dream` skill, which a template refresh brings) reaches it.
+ * Dream (the system prompt and Dream's skills, which a template refresh brings) reaches it.
  *
  * Neither harness changes a conversation's instructions once it has started: Claude Code sends the system prompt it
  * recorded on the conversation's first request, and a Codex thread keeps its developer instructions, until the
@@ -19,7 +19,7 @@ import { Effect, Option, Schema } from "effect"
 import * as Usage from "../Usage.ts"
 import type { Skill } from "./Skill.ts"
 
-/** Which guidance a conversation runs on, as hashes of the system prompt and the skill. */
+/** Which guidance a conversation runs on, as hashes of the system prompt and of the skills together. */
 export const Guidance = Schema.Struct({ prompt: Schema.String, skill: Schema.String })
 export type Guidance = typeof Guidance.Type
 
@@ -43,9 +43,9 @@ export type SavedSession = typeof SavedSession.Type
 
 const digest = (text: string) => createHash("sha256").update(text).digest("hex").slice(0, 16)
 
-export const guidanceOf = (instructions: string, skill: Skill): Guidance => ({
+export const guidanceOf = (instructions: string, skills: ReadonlyArray<Skill>): Guidance => ({
   prompt: digest(instructions),
-  skill: digest(JSON.stringify([skill.name, skill.description, skill.content]))
+  skill: digest(JSON.stringify(skills.map((skill) => [skill.name, skill.description, skill.content])))
 })
 
 /** The same session as a new conversation, under `sessionId`. */

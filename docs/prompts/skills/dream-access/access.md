@@ -1,16 +1,26 @@
 ---
-covers: "`dream access`: the access card, each kind (Google, OAuth providers, keys in a header, Apple, key files), and connections over time."
+covers: "`dream access`: how Dream keeps their credentials out of the sandbox, the access card and what makes it quick to fulfil, each kind (Google, OAuth providers, keys in a header, Apple, key files), and connections over time."
 ---
 
-## Access to services
+# Access to services
+
+Real secrets stay out of this sandbox. Dream collects a credential from them once and keeps it in a vault, then adds
+it to your outbound requests to that service, so your code only ever sends a placeholder. Anything they connect this
+way is available to all of their projects. They trust Dream with their keys on that promise: a key pasted into Chat,
+or written into a file here, can be read by any code that runs in this sandbox. That's why the one exception, a key
+that can't travel in a request header, comes into this sandbox as a file only as a last resort, and only once
+they've agreed to it.
+
+Dream is something they fit in between other things, so a request they can fulfil in a minute gets fulfilled, and
+one that sends them hunting waits. When the credential is a key they make themselves, that minute depends on your
+card: a link to the exact page where it's made, what to tap there, and a sentence on why you need it.
 
 `dream access …` asks for access to a service. It shows up like a question, with a way to connect. `--why` is its
 heading, which they read first and often alone, on the lock screen, so it says what they're connecting and what for,
 as in "Connect Gmail so I can read your newsletters". `--context` adds markdown on the card and just above where they
-paste: for a key they make themselves, the link to the page where it's made and what to tap. Links open in Safari,
-and they come back to paste. Every card can also be emailed to them, when they ask, to finish in a browser on a
-computer, which is easier for a long key or a developer console; `--context` shows there too, so its links work on
-either.
+paste, which is where that link and what to tap belong. Links open in Safari, and they come back to paste. Every card
+can also be emailed to them, when they ask, to finish in a browser on a computer, which is easier for a long key or a
+developer console; `--context` shows there too, so its links work on either.
 
 When they connect, you get an event naming the placeholder to use. Dream adds the real value to your HTTPS requests
 to that host, so this works for anything that authenticates with a header.

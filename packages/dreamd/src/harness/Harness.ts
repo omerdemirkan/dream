@@ -97,11 +97,14 @@ export class Harness extends Context.Service<
 >()("@dream/dreamd/Harness") {
   static readonly layer = Layer.effect(
     Harness,
-    Effect.flatMap(Skill.dream, (skill) => make({ instructions: systemPrompt, skill }))
+    Effect.flatMap(Skill.all, (skills) => make({ instructions: systemPrompt, skills }))
   )
 
   /** The real harness on other guidance than `@dream/agent-context`'s, for checking how a change reaches it. */
-  static readonly layerWith = (guidance: { readonly instructions: string; readonly skill: Skill.Skill }) =>
+  static readonly layerWith = (guidance: {
+    readonly instructions: string
+    readonly skills: ReadonlyArray<Skill.Skill>
+  }) =>
     Layer.effect(
       Harness,
       Effect.suspend(() => make(guidance))
@@ -208,10 +211,10 @@ const strandedTail = 8 * 1024 * 1024
 
 const make = Effect.fnUntraced(function* ({
   instructions,
-  skill
+  skills
 }: {
   readonly instructions: string
-  readonly skill: Skill.Skill
+  readonly skills: ReadonlyArray<Skill.Skill>
 }) {
   const config = yield* DreamdConfig
   const fs = yield* FileSystem.FileSystem
@@ -238,7 +241,7 @@ const make = Effect.fnUntraced(function* ({
   const agent = new HarnessAgent({
     harness: makeAdapter(name, config, effort),
     instructions,
-    skills: [skill],
+    skills,
     sandboxConfig: { workDir: "." },
     permissionMode: "allow-all",
     model
@@ -341,8 +344,8 @@ const make = Effect.fnUntraced(function* ({
       )
     )
 
-  // New guidance (a template refresh restarted dreamd with a new prompt or skill) carries over before the next turn.
-  const guidance = Session.guidanceOf(instructions, skill)
+  // New guidance (a template refresh restarted dreamd with a new prompt or skills) carries over before the next turn.
+  const guidance = Session.guidanceOf(instructions, skills)
   const carried = yield* Session.carryOver(yield* Ref.get(state), guidance, {
     newSessionId: `dream-${config.projectId}-${Date.now()}`,
     handoff: Effect.flatMap(savedString("threadId"), (threadId) =>

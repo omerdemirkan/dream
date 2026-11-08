@@ -16,5 +16,5 @@ and you can withdraw them.
 
 Some of what you need from them happens at a computer rather than on the phone: a console's settings, a registrar's
 DNS page, App Store Connect. Step-by-step instructions are hard to follow from a phone chat while sitting at a desk,
-so you can also email them (`dream email`). It reaches their own inbox, laid out properly, with a copy in Chat.
-Whether and when that helps, and whether to offer it or simply send it, is yours to judge.
+so you can also email them (`dream email`), to their own inbox, laid out properly, with a copy in Chat. Whether and
+when that helps, and whether to offer it or simply send it, is yours to judge.

@@ -1,6 +1,6 @@
 /**
  * @dream/agent-context — everything the agent reads from Dream:
- * the system prompt, the `dream` skill, and each turn's prompt.
+ * the system prompt, Dream's skills, and each turn's prompt.
  *
  * The prompt, skill and task-prompt text is canonical in the sections in
  * docs/prompts/; `bun run sync-prompts` regenerates ./generated/prompts.ts.
@@ -8,10 +8,8 @@
 import { renderAgentEvent, type AgentEvent, type MediaId } from "@dream/domain"
 import { DateTime, Order } from "effect"
 
-export { dreamSkill, systemPrompt, taskPrompt } from "./generated/prompts.ts"
-
-/** Where the skill goes: `<skills dir>/dream/SKILL.md` for Claude Code and Codex. */
-export const dreamSkillName = "dream"
+export { skills, systemPrompt, taskPrompt } from "./generated/prompts.ts"
+export { type SkillName, skillNames } from "./sections.ts"
 
 /** One session that worked in a turn: the agent's own, or a subagent's. */
 export interface SessionSpend {
@@ -189,7 +187,7 @@ export const renderTaskPrompt = ({ why, brief, now, timeZone }: TaskPromptInput)
 export interface GuidanceChange {
   /** Whether the system prompt changed. */
   readonly prompt: boolean
-  /** Whether the `dream` skill changed. */
+  /** Whether any of Dream's skills changed. */
   readonly skill: boolean
 }
 
@@ -200,7 +198,9 @@ export interface GuidanceChange {
 export const renderGuidanceNote = ({ prompt, skill }: GuidanceChange): string => {
   const changed = [
     ...(prompt ? ["your system prompt is the new version now"] : []),
-    ...(skill ? ["the dream skill changed, so load it again before you rely on what you remember of it"] : [])
+    ...(skill
+      ? ["Dream's skills changed, so read again any you need rather than rely on what you remember of them"]
+      : [])
   ]
   return `Dream updated its guidance for you since your last turn: ${changed.join(", and ")}.\n`
 }

@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { DiscordDefaultIntents, type IntegrationId, type Relay, type RelayId, RelaySource } from "@dream/domain"
-import { dreamSkill } from "@dream/agent-context"
+import { skillNames, skills } from "@dream/agent-context"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import { NodeServices } from "@effect/platform-node"
@@ -120,11 +120,18 @@ describe("the harness environment", () => {
     })
   })
 
-  it("installs the dream skill with its name and description", () => {
-    const skill = Option.getOrThrow(parseSkill(dreamSkill))
-    assert.strictEqual(skill.name, "dream")
-    assert.include(skill.description, "Reaching the person and Dream")
-    assert.isTrue(skill.content.startsWith("# `dream`"))
+  it("installs every skill with its name, description and body", () => {
+    const parsed = skills.map((markdown) => Option.getOrThrow(parseSkill(markdown)))
+    assert.deepStrictEqual(
+      parsed.map((skill) => skill.name),
+      [...skillNames]
+    )
+    for (const skill of parsed) {
+      assert.isAbove(skill.description.length, 40, skill.name)
+      assert.isTrue(skill.content.startsWith("# "), skill.name)
+    }
+    const chat = parsed.find((skill) => skill.name === "dream-chat")
+    assert.include(chat?.description, "Sending the person anything")
   })
 })
 
@@ -225,7 +232,11 @@ describe("dream usage errors", () => {
 
   it.effect("name missing arguments and bad values the same way", () =>
     Effect.gen(function* () {
-      assert.isTrue((yield* run(["wake", "cancel"])).startsWith("<wake-id> is missing.\nExample: dream wake cancel"))
+      assert.isTrue(
+        (yield* run(["wake", "cancel"])).startsWith(
+          "<wake-id> is missing: the wake-up (wak_…), from `dream wake list`.\nExample: dream wake cancel"
+        )
+      )
       assert.isTrue((yield* run(["publish", "--port", "abc"])).startsWith('Invalid value for flag --port: "abc".'))
       assert.isTrue((yield* run(["acess"])).startsWith('Unknown subcommand "acess" for "dream"'))
     })
@@ -553,7 +564,11 @@ describe("dream relay", () => {
       assert.include(yield* run(["relay", "discord", "--to", "hooks/discord"]), 'starts with "/"')
       assert.include(yield* run(["relay", "websocket", "ws://feed.example.com", "--to", "/hooks"]), "wss://")
       assert.isTrue((yield* run(["relay", "discord"])).startsWith("--to is missing: the path on your app"))
-      assert.isTrue((yield* run(["relay", "remove"])).startsWith("<relay-id> is missing.\nExample: dream relay remove"))
+      assert.isTrue(
+        (yield* run(["relay", "remove"])).startsWith(
+          "<relay-id> is missing: the relay (rly_…), from `dream relay list`.\nExample: dream relay remove"
+        )
+      )
       // A good invocation gets past the checks, to the socket (absent here).
       assert.notInclude(yield* run(["relay", "discord", "--to", "/hooks/discord"]), "--to")
     })

@@ -1,11 +1,17 @@
 ---
-covers: "`dream notify`: readying an app to notify them, sending as the app, their controls and Dream's limits, and the history."
+covers: "`dream notify`: what makes an app's notifications worth keeping on, readying an app to notify them, sending as the app, their controls and Dream's limits, and the history."
 ---
 
-## Notifications from your apps
+# Notifications from your apps
 
 An app you build can notify them as itself, with no turn of yours involved, usually from a scheduled job
-(`dream wake --cron … --run "curl -fsS http://localhost:<port>/tasks/…"`).
+(`dream wake --cron … --run "curl -fsS http://localhost:<port>/tasks/…"`). What an app finds or does on its schedule
+reads best in the app's voice; your own messages are about the project.
+
+They allow each app once, from a card that says what it will tell them and how often, and they hold it to that. An
+app is judged by its worst notifications: one that fires when nothing changed, repeats itself, or doesn't say enough
+to act on teaches them to turn it off. What they read on the lock screen, anyone nearby can read too, so the detail
+that's theirs alone belongs behind the tap.
 
 - `dream notify setup <app> --name "Fare watch" --why "…" --often "…"` readies an app to notify them, and puts a card
   in Chat asking them to allow it. The card reads "Let Fare watch notify you", then `--why`, what it will tell them,
@@ -30,4 +36,4 @@ An app you build can notify them as itself, with no turn of yours involved, usua
   project); those stay in its history, and you hear about it once that day.
 - `dream notify list [--app <app>]` shows what your apps sent in the last 30 days, what happened to each, and which
   ones they opened.
-- `dream notify withdraw <id>` removes one that no longer applies (see Messages).
+- `dream notify withdraw <id>` removes one that no longer applies, as it does for yours (dream-chat, under Messages).

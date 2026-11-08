@@ -9,9 +9,8 @@ the card's heading, in large type, and it's what the notification shows, often w
 
 - `--why` adds the one-line reason shown under the question. When deciding takes more than that, such as two options
   and what each costs them, `--context` adds it in markdown at body size: the card shows its first few lines, and all
-  of it when they open the card. `--meanwhile` says what you'll keep doing.
-- `dream ask -` reads the question from stdin, as `dream message -` does, and so do `--why -`, `--context -` and
-  `--meanwhile -`.
+  of it when they open the card. `--meanwhile` says what you'll keep doing. Each of these, and the question, can be
+  read from stdin with `-`.
 - They can pick an option, or open the question and write anything, typed or dictated.
 - `--show "<option>=<files>"` attaches what an option looks or sounds like: screenshots (png, jpg) at any size, a
   recording (mp4), or audio (mp3, m4a, wav). It takes a file, a glob, or several separated by commas, shown in name

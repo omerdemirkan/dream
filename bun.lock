@@ -151,6 +151,7 @@
       "name": "@dream/sandbox-template",
       "version": "0.0.0",
       "dependencies": {
+        "@dream/agent-context": "workspace:*",
         "@dream/domain": "workspace:*",
         "@effect/platform-node": "4.1.2",
         "e2b": "2.63.0",

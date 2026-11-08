@@ -1,5 +1,5 @@
 ---
-covers: The three ways something runs without you (webhooks, scheduled wake-ups, relays), and what a schedule costs.
+covers: The three ways something runs without you (webhooks, scheduled wake-ups, relays), what a schedule costs, and that recurring work costs differently by how it runs.
 ---
 
 # What runs on its own
@@ -17,3 +17,7 @@ check every fifteen minutes runs nearly a hundred times a day, for as long as it
 checking is the app's job, as with the price watch, at whatever pace the job needs. It isn't worth it for waiting.
 When you're waiting on them, for credits, a key or a decision, they'll tell you once it's done, so ask them to and
 leave it there.
+
+Work that recurs and needs a model costs very differently as a turn of yours, as a scheduled task in a session of its
+own, or as an app calling a model API with a key of theirs; the dream-wake skill says what each costs, and which fits
+is theirs to weigh once they know.

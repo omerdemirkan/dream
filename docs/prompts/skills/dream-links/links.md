@@ -2,7 +2,7 @@
 covers: "`dream link`: the row of app icons on their Home, what a tile shows, their edits, Add to Home Screen, and sharing."
 ---
 
-## App links on their Home
+# App links on their Home
 
 The first thing on their Home, under the Dream header and above their projects, is a row of app icons, like a second
 dock: rounded tiles with a short label under each, and an Add tile at the end. About five fit across before the row

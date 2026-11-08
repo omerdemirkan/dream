@@ -4,10 +4,11 @@
  * Claude Code or Codex release that breaks its adapter is caught before any project gets it. The turn also checks
  * the fleet: the top-level agent asks for the model and effort dreamd says it runs on, and starts a subagent on a
  * model and effort of its choosing (Claude Code's `Agent` tool, Codex's `spawn_agent`), which the subagent's own
- * requests carry. `build.ts` runs it on every build before tagging the build `default`; on its own:
+ * requests carry, and that the harness installed every one of Dream's skills where it reads them. `build.ts` runs it on every build before tagging the build `default`; on its own:
  *
  *   node scripts/harness-check.ts [template[:tag]]     (default: the current dream-sandbox build)
  */
+import { skillNames } from "@dream/agent-context"
 import { DaemonEnvFile, DefaultDaemonPort, devSandboxMetadata } from "@dream/domain"
 import { Sandbox } from "e2b"
 import { templateName } from "../src/index.ts"
@@ -85,7 +86,11 @@ const turn = async (sandbox: Sandbox, harness: HarnessResult["harness"]): Promis
   // Logged when the harness starts, before the turn.
   const runsOn = (await sh(sandbox, `grep "The agent runs on" ${log} | tail -1 | cut -c1-300`)).output
   const window = harness === "codex" ? await codexWindow(sandbox) : undefined
-  const fleet = [...fleetProblems(harness, runsOn, requests), ...(window?.problems ?? [])]
+  const fleet = [
+    ...fleetProblems(harness, runsOn, requests),
+    ...(window?.problems ?? []),
+    ...(await skillProblems(sandbox, harness))
+  ]
   const ok = ended.output.includes("Turn finished") && !ended.output.includes("The turn failed") && fleet.length === 0
   const asked = requests.map(
     (r) => `${r.model}/${r.effort ?? "-"}${r.did?.startsWith("reply") === false ? ` ${r.did}` : ""}`
@@ -123,6 +128,15 @@ const codexWindow = async (
       small.length === 0 ? [] : [`Codex ran with the default context window (${small.join(", ")}), not dreamd's`],
     found
   }
+}
+
+/** Every skill of Dream's, installed by the harness where it reads skills, with the name it's listed under. */
+const skillProblems = async (sandbox: Sandbox, harness: HarnessResult["harness"]): Promise<ReadonlyArray<string>> => {
+  const dir = harness === "claude-code" ? "/home/user/.claude/skills" : "/home/user/.agents/skills"
+  const names = (await sh(sandbox, `head -qn 2 ${dir}/*/SKILL.md 2>/dev/null | grep '^name: ' | cut -c7-`)).output
+  const installed = new Set(names.split("\n").filter((name) => name !== ""))
+  const missing = skillNames.filter((name) => !installed.has(name))
+  return missing.length === 0 ? [] : [`${harness} doesn't have ${missing.join(", ")} in ${dir}`]
 }
 
 /** One line for each fake: Claude Code's subagent runs on Haiku at low effort, Codex's on its own model at low. */

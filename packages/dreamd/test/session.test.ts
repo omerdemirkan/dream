@@ -7,8 +7,9 @@ import { Effect, Option } from "effect"
 import * as Session from "../src/harness/Session.ts"
 import { tempDir } from "./support.ts"
 
-const skill = { name: "dream", description: "The dream CLI", content: "Use dream." }
-const v1 = Session.guidanceOf("Prompt one.", skill)
+const skill = { name: "dream-chat", description: "Sending them things", content: "Use dream." }
+const other = { name: "dream-wake", description: "Scheduling", content: "Use dream wake." }
+const v1 = Session.guidanceOf("Prompt one.", [skill, other])
 
 const resumeFrom = (data: Record<string, string>) =>
   ({ type: "resume-session", harnessId: "x", specificationVersion: "harness-v1", data }) as const
@@ -33,13 +34,14 @@ const line = (role: string, text: string) =>
   JSON.stringify({ type: "response_item", payload: { type: "message", role, content: [{ type: "input_text", text }] } })
 
 describe("guidance", () => {
-  it("is a hash of the prompt and of the skill, each on its own", () => {
-    const prompt = Session.guidanceOf("Prompt two.", skill)
-    const body = Session.guidanceOf("Prompt one.", { ...skill, content: "Use dream better." })
+  it("is a hash of the prompt and of the skills, each on its own", () => {
+    const prompt = Session.guidanceOf("Prompt two.", [skill, other])
+    const body = Session.guidanceOf("Prompt one.", [{ ...skill, content: "Use dream better." }, other])
     assert.strictEqual(prompt.skill, v1.skill)
     assert.notStrictEqual(prompt.prompt, v1.prompt)
     assert.strictEqual(body.prompt, v1.prompt)
     assert.notStrictEqual(body.skill, v1.skill)
+    assert.notStrictEqual(Session.guidanceOf("Prompt one.", [skill]).skill, v1.skill, "a skill removed")
   })
 })
 
@@ -53,7 +55,7 @@ describe("carryOver", () => {
 
   it.effect("Claude Code keeps its conversation, with a note saying what changed", () =>
     Effect.gen(function* () {
-      const v2 = Session.guidanceOf("Prompt two.", skill)
+      const v2 = Session.guidanceOf("Prompt two.", [skill, other])
       const next = Option.getOrThrow(yield* carry(claude, v2))
       assert.deepStrictEqual(next, {
         ...claude,
@@ -77,14 +79,14 @@ describe("carryOver", () => {
   it.effect("Claude Code: a note still waiting makes the next one cover everything", () =>
     Effect.gen(function* () {
       const waiting = { ...claude, preamble: renderGuidanceNote({ prompt: false, skill: true }) }
-      const next = Option.getOrThrow(yield* carry(waiting, Session.guidanceOf("Prompt two.", skill)))
+      const next = Option.getOrThrow(yield* carry(waiting, Session.guidanceOf("Prompt two.", [skill, other])))
       assert.strictEqual(next.preamble, renderGuidanceNote({ prompt: true, skill: true }))
     })
   )
 
   it.effect("Codex starts a new conversation with the handoff", () =>
     Effect.gen(function* () {
-      const v2 = Session.guidanceOf("Prompt one.", { ...skill, description: "The dream CLI, revised" })
+      const v2 = Session.guidanceOf("Prompt one.", [{ ...skill, description: "The dream CLI, revised" }, other])
       const next = Option.getOrThrow(yield* carry(codex, v2))
       assert.deepStrictEqual(next, {
         harness: "codex",
@@ -98,7 +100,7 @@ describe("carryOver", () => {
   it.effect("Codex: a handoff still waiting is kept for the conversation after it", () =>
     Effect.gen(function* () {
       const waiting = { ...codex, preamble: "OLD HANDOFF" }
-      const next = Option.getOrThrow(yield* carry(waiting, Session.guidanceOf("Prompt two.", skill)))
+      const next = Option.getOrThrow(yield* carry(waiting, Session.guidanceOf("Prompt two.", [skill, other])))
       assert.strictEqual(next.preamble, "OLD HANDOFF")
       assert.isUndefined(next.resumeFrom)
     })

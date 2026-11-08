@@ -1,12 +1,12 @@
 /**
- * Checks that new guidance (Dream's system prompt and the `dream` skill) reaches a project's agent across a
+ * Checks that new guidance (Dream's system prompt and skills) reaches a project's agent across a
  * refresh, on dreamd's real harness, with the real Claude Code and Codex CLIs against the fake model servers
  * (fake-anthropic.ts, fake-responses.ts), so no account is needed:
  *
  *   node packages/dreamd/scripts/prompt-refresh-check.ts [claude-code|codex]     (default: both)
  *
  * Each turn runs in a process of its own, as dreamd does across a template refresh (which restarts it), on
- * Dream's prompt and skill with a `PROMPT-MARK` and `SKILL-MARK` added: two turns on version one, then two on
+ * Dream's prompt and skills with a `PROMPT-MARK` and `SKILL-MARK` added: two turns on version one, then two on
  * version two. It checks what each model request carried:
  *
  *   Claude Code   the same conversation throughout (the fake recalls REMEMBER words), the system prompt of the
@@ -35,10 +35,10 @@ const ports = { anthropic: 18799, responses: 18798 }
 
 /** One turn on `version` of the guidance, in this process (`turn <harness> <version> <prompt>`). */
 const turn = async (harness: HarnessName, version: string, prompt: string) => {
-  const skill = await Effect.runPromise(Skill.dream)
+  const skills = await Effect.runPromise(Skill.all)
   const guidance = {
     instructions: `${systemPrompt}\n\nPROMPT-MARK: v${version}`,
-    skill: { ...skill, content: `${skill.content}\n\nSKILL-MARK: v${version}` }
+    skills: skills.map((skill) => ({ ...skill, content: `${skill.content}\n\nSKILL-MARK: v${version}` }))
   }
   const config = DreamdConfig.layerFromRecord({
     HOME: home,

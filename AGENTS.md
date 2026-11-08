@@ -14,7 +14,7 @@ contracts in `packages/domain`. If those stay the single source of truth, the pi
 | Path | What | Owner |
 | --- | --- | --- |
 | `packages/domain` | Effect Schemas and RPC contracts for every shape that crosses a boundary | shared |
-| `packages/agent-context` | The agent's system prompt, the `dream` skill, the turn-prompt renderer | shared |
+| `packages/agent-context` | The agent's system prompt, Dream's skills, the task prompt, the turn-prompt renderer | shared |
 | `apps/api` | Cloudflare Worker: RPC + HTTP routes, ProjectDO, gateway, APNs, crons (alchemy v2) | control plane |
 | `infra/alchemy.run.ts` | The Stack: zone, DNS, the Worker and everything it binds | control plane |
 | `packages/dreamd` | Sandbox daemon (event loop, harness turns) and the `dream` CLI (Node 24) | sandbox runtime |
@@ -146,7 +146,9 @@ the other workstreams to agree first.
 3. Add a codec or RPC test in `packages/domain/test` if the shape is new or tricky.
 4. Implement the handler where the group is served (`Group.toLayer({...})` or `toLayerHandler`), and call it from the
    client with `RpcClient.make(Group)`. Typecheck fails until every handler exists.
-5. If the agent should know about it, update the command's section in `docs/prompts/skill/` and run
+5. For a `dream` command, give it and each flag a description that stands on its own in `dream <command> --help`,
+   which is where the agent looks up flags. If the agent should know when and why to use it, update its section in
+   the skill under `docs/prompts/skills/` (the skills say when and why, `--help` says how) and run
    `bun run sync-prompts`.
 
 ## Workstream notes
@@ -165,7 +167,7 @@ the other workstreams to agree first.
   in Node against layers and fakes.
 - **Sandbox runtime.** dreamd reads `DaemonConfig` (env set by the ProjectDO at sandbox creation). The `dream` CLI maps
   one-to-one onto `SandboxRpcs`. Turn prompts come from `renderTurnPrompt` in `@dream/agent-context`, and the system
-  prompt, skill and task prompt are exported there as strings, joined from the sections in `docs/prompts/` (its
+  prompt, the skills and the task prompt are exported there as strings, joined from the sections in `docs/prompts/` (its
   README maps them, and says where else the agent's text comes from). The bins run directly under Node 24 type stripping, which is why
   `erasableSyntaxOnly` is on (no enums, namespaces or parameter properties).
   The top-level agent's model and effort come from `src/harness/Fleet.ts` (each provider's flagship, effort high;

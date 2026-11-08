@@ -2,7 +2,7 @@
 covers: "`dream usage`: their subscription's windows, this project's share of the week, and the limits they set on it."
 ---
 
-## Usage
+# Usage
 
 `dream usage` shows the five-hour and weekly windows of their subscription: how much is used and when each resets.
 That's the whole subscription, everything they use it for; what your last turn used, session by session, opens your

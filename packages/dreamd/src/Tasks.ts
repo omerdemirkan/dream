@@ -1,7 +1,7 @@
 /**
  * Scheduled tasks (`dream wake --task`): when one comes due, dreamd runs it in a session of its own, a new
  * conversation on the harness the project uses, on the model and effort the agent picked, that starts from the
- * agent's brief. It has the project directory, the agent's environment (so `dream` works) and the `dream` skill,
+ * agent's brief. It has the project directory, the agent's environment (so `dream` works) and Dream's skills,
  * and its system prompt is `taskPrompt` from `@dream/agent-context`. The agent's own session isn't touched, so a
  * run costs what the job takes instead of re-sending everything that session holds.
  *
@@ -82,7 +82,7 @@ export class Tasks extends Context.Service<
       const config = yield* DreamdConfig
       const fs = yield* FileSystem.FileSystem
       const path = yield* Path.Path
-      const skill = yield* Skill.dream
+      const skills = yield* Skill.all
       const provide = <A, E>(effect: Effect.Effect<A, E, FileSystem.FileSystem | Path.Path>) =>
         effect.pipe(Effect.provideService(FileSystem.FileSystem, fs), Effect.provideService(Path.Path, path))
       const name = config.harness
@@ -104,7 +104,7 @@ export class Tasks extends Context.Service<
         const agent = new HarnessAgent({
           harness: makeAdapter(name, config, input.task.effort),
           instructions: taskPrompt,
-          skills: [skill],
+          skills,
           sandboxConfig: { workDir: "." },
           permissionMode: "allow-all",
           model: input.task.model

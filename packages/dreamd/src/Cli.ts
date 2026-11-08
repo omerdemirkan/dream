@@ -344,7 +344,9 @@ const previewsFor = (options: ReadonlyArray<string>, show: ReadonlyArray<string>
 const askRevise = Command.make(
   "revise",
   {
-    messageId: Argument.String("message-id"),
+    messageId: Argument.String("message-id").pipe(
+      Argument.withDescription("The open question (msg_…), as `dream ask` printed it or their reply's event names it.")
+    ),
     question: Flag.String("question").pipe(Flag.withDescription("The question's new wording."), Flag.optional),
     option: Flag.String("option").pipe(
       Flag.withDescription("The new options, all of them, in order (repeat for each). Leave out to keep them."),
@@ -413,12 +415,20 @@ const askRevise = Command.make(
   ])
 )
 
-const askWithdraw = Command.make("withdraw", { messageId: Argument.String("message-id"), json }, (input) =>
-  Effect.gen(function* () {
-    const dream = yield* Dream
-    const question = yield* userFacing(dream.WithdrawQuestion({ messageId: input.messageId as MessageId }))
-    yield* show(input.json, QuestionMessage, question, Format.withdrawn(question))
-  })
+const askWithdraw = Command.make(
+  "withdraw",
+  {
+    messageId: Argument.String("message-id").pipe(
+      Argument.withDescription("The question (msg_…), as `dream ask` printed it.")
+    ),
+    json
+  },
+  (input) =>
+    Effect.gen(function* () {
+      const dream = yield* Dream
+      const question = yield* userFacing(dream.WithdrawQuestion({ messageId: input.messageId as MessageId }))
+      yield* show(input.json, QuestionMessage, question, Format.withdrawn(question))
+    })
 ).pipe(
   Command.withDescription("Take back a question that no longer needs an answer."),
   Command.withExamples([{ command: "dream ask withdraw msg_\u2026" }])
@@ -887,12 +897,21 @@ const notifyList = Command.make(
   )
 )
 
-const notifyWithdraw = Command.make("withdraw", { notificationId: Argument.String("notification-id") }, (input) =>
-  Effect.gen(function* () {
-    const dream = yield* Dream
-    yield* userFacing(dream.WithdrawNotification({ notificationId: input.notificationId as NotificationId }))
-    yield* Console.log(`Withdrew notification ${input.notificationId}.`)
-  })
+const notifyWithdraw = Command.make(
+  "withdraw",
+  {
+    notificationId: Argument.String("notification-id").pipe(
+      Argument.withDescription(
+        "The notification's id, as the command that sent it printed it, or from `dream notify list`."
+      )
+    )
+  },
+  (input) =>
+    Effect.gen(function* () {
+      const dream = yield* Dream
+      yield* userFacing(dream.WithdrawNotification({ notificationId: input.notificationId as NotificationId }))
+      yield* Console.log(`Withdrew notification ${input.notificationId}.`)
+    })
 ).pipe(
   Command.withDescription("Remove a notification that no longer applies: one you sent, or one of your apps'."),
   Command.withExamples([{ command: "dream notify withdraw <notification-id>" }])
@@ -1202,22 +1221,31 @@ const workEnd = (state: "done" | "dropped") =>
     ])
   )
 
-const workRoute = Command.make("route", { messageId: Argument.String("message-id"), workstreamId, json }, (input) =>
-  Effect.gen(function* () {
-    const dream = yield* Dream
-    const routed = yield* work(
-      dream.RouteMessage({
-        messageId: input.messageId as MessageId,
-        workstreamId: input.workstreamId as WorkstreamId
-      })
-    )
-    yield* show(
-      input.json,
-      Message,
-      routed,
-      `Filed ${routed.id} under ${input.workstreamId}: it carries that label in Chat. Nothing was sent to them.`
-    )
-  })
+const workRoute = Command.make(
+  "route",
+  {
+    messageId: Argument.String("message-id").pipe(
+      Argument.withDescription("Their message (msg_…) to file under the workstream, as its event names it.")
+    ),
+    workstreamId,
+    json
+  },
+  (input) =>
+    Effect.gen(function* () {
+      const dream = yield* Dream
+      const routed = yield* work(
+        dream.RouteMessage({
+          messageId: input.messageId as MessageId,
+          workstreamId: input.workstreamId as WorkstreamId
+        })
+      )
+      yield* show(
+        input.json,
+        Message,
+        routed,
+        `Filed ${routed.id} under ${input.workstreamId}: it carries that label in Chat. Nothing was sent to them.`
+      )
+    })
 ).pipe(
   Command.withDescription("File a message (usually theirs) under a workstream, so it carries that label."),
   Command.withExamples([{ command: "dream work route msg_\u2026 ws_\u2026" }])
@@ -1326,12 +1354,15 @@ const wakeList = Command.make("list", { json }, (input) =>
   })
 ).pipe(Command.withDescription("Show scheduled wake-ups."))
 
-const wakeCancel = Command.make("cancel", { wakeId: Argument.String("wake-id") }, (input) =>
-  Effect.gen(function* () {
-    const dream = yield* Dream
-    yield* userFacing(dream.CancelWake({ wakeId: input.wakeId as WakeId }))
-    yield* Console.log(`Cancelled ${input.wakeId}.`)
-  })
+const wakeCancel = Command.make(
+  "cancel",
+  { wakeId: Argument.String("wake-id").pipe(Argument.withDescription("The wake-up (wak_…), from `dream wake list`.")) },
+  (input) =>
+    Effect.gen(function* () {
+      const dream = yield* Dream
+      yield* userFacing(dream.CancelWake({ wakeId: input.wakeId as WakeId }))
+      yield* Console.log(`Cancelled ${input.wakeId}.`)
+    })
 ).pipe(
   Command.withDescription("Remove a scheduled wake-up."),
   Command.withExamples([{ command: "dream wake cancel wak_\u2026" }])
@@ -1340,7 +1371,12 @@ const wakeCancel = Command.make("cancel", { wakeId: Argument.String("wake-id") }
 const wake = Command.make(
   "wake",
   {
-    why: Argument.String("why").pipe(Argument.optional),
+    why: Argument.String("why").pipe(
+      Argument.withDescription(
+        "What it's for, in a sentence: the reason your turn opens with when it wakes you, and what `dream wake list` shows."
+      ),
+      Argument.optional
+    ),
     at: Flag.String("at").pipe(
       Flag.withDescription("When: an ISO time with a zone (2026-11-05T07:00:00-08:00) or a span (30m, 2h, 1d)."),
       Flag.optional
@@ -1598,7 +1634,11 @@ const relayList = Command.make("list", { json }, (input) =>
   })
 ).pipe(Command.withDescription("Each relay with its state, what's waiting, and recent problems."))
 
-const relayRemove = Command.make("remove", { relayId: Argument.String("relay-id") }, (input) =>
+const relayId = Argument.String("relay-id").pipe(
+  Argument.withDescription("The relay (rly_…), from `dream relay list`.")
+)
+
+const relayRemove = Command.make("remove", { relayId }, (input) =>
   Effect.gen(function* () {
     const dream = yield* Dream
     yield* userFacing(dream.RemoveRelay({ relayId: input.relayId as RelayId }))
@@ -1609,7 +1649,7 @@ const relayRemove = Command.make("remove", { relayId: Argument.String("relay-id"
   Command.withExamples([{ command: "dream relay remove rly_abc123" }])
 )
 
-const relayRestart = Command.make("restart", { relayId: Argument.String("relay-id"), json }, (input) =>
+const relayRestart = Command.make("restart", { relayId, json }, (input) =>
   Effect.gen(function* () {
     const dream = yield* Dream
     const restarted = yield* userFacing(dream.RestartRelay({ relayId: input.relayId as RelayId }))
@@ -1761,6 +1801,8 @@ const linkList = Command.make("list", { json }, (input) =>
   })
 ).pipe(Command.withDescription("This project's links on their Home, theirs too, and the ones they removed."))
 
+const linkId = Argument.String("link-id").pipe(Argument.withDescription("The link (lnk_…), from `dream link list`."))
+
 const link = Command.make("link", { json }, (input) =>
   Effect.gen(function* () {
     const dream = yield* Dream
@@ -1815,7 +1857,7 @@ const link = Command.make("link", { json }, (input) =>
     Command.make(
       "update",
       {
-        linkId: Argument.String("link-id"),
+        linkId,
         url: Flag.String("url").pipe(
           Flag.withDescription("Point it somewhere else; it shows a dot again."),
           Flag.optional
@@ -1841,7 +1883,7 @@ const link = Command.make("link", { json }, (input) =>
       Command.withDescription('Change a link you made. `--icon ""` makes the tile the title\'s first letter.'),
       Command.withExamples([{ command: "dream link update lnk_\u2026 --icon figure.strengthtraining.traditional" }])
     ),
-    Command.make("remove", { linkId: Argument.String("link-id") }, (input) =>
+    Command.make("remove", { linkId }, (input) =>
       Effect.gen(function* () {
         const dream = yield* Dream
         yield* userFacing(dream.RemoveLink({ linkId: input.linkId as LinkId }))
@@ -1858,6 +1900,10 @@ const link = Command.make("link", { json }, (input) =>
 // ---------------------------------------------------------------------------
 // Beyond the sandbox
 // ---------------------------------------------------------------------------
+
+const browserSessionId = Argument.String("session-id").pipe(
+  Argument.withDescription("The browser session (brs_…), as `dream browser` printed it.")
+)
 
 const browserStart = Command.make("start", { json }, (input) =>
   Effect.gen(function* () {
@@ -1879,7 +1925,7 @@ const browser = Command.make("browser", { json }, (input) =>
   ),
   Command.withSubcommands([
     browserStart.pipe(Command.withDescription("Same as `dream browser`.")),
-    Command.make("stop", { sessionId: Argument.String("session-id") }, (input) =>
+    Command.make("stop", { sessionId: browserSessionId }, (input) =>
       Effect.gen(function* () {
         const dream = yield* Dream
         yield* userFacing(dream.StopBrowser({ sessionId: input.sessionId as BrowserSessionId }))
@@ -1892,7 +1938,7 @@ const browser = Command.make("browser", { json }, (input) =>
     Command.make(
       "recording",
       {
-        sessionId: Argument.String("session-id"),
+        sessionId: browserSessionId,
         out: Flag.String("out").pipe(Flag.withDescription("Where to save it."), Flag.optional)
       },
       (input) =>

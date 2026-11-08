@@ -2,7 +2,7 @@
 covers: "`dream publish`: the public URL, how it wakes and checks the sandbox, webhooks, and keeping servers running between turns."
 ---
 
-## Hosting
+# Hosting
 
 `dream publish --port <port>` gives a port a stable public URL, `https://<slug>-<random>.<domain>`. A request to it
 wakes the sandbox. From their phone it opens in Safari.
