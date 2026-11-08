@@ -11,9 +11,13 @@
  *   Only models with Codex's multi-agent tools can start subagents (gpt-6.1-sol has them; gpt-5.5, the
  *   adapter's default, doesn't), and a thread keeps the tools it started with.
  *
- * The operator can override either for a run (`DaemonEnv.model`, `DaemonEnv.effort`), e.g. a cheap model for QA.
+ * The flagship is the domain's `DefaultAgent`, beside the models a project may choose instead (`AgentModels`).
+ * dreamd's env says which it runs on (`DaemonEnv.model`, `DaemonEnv.effort`): the Worker writes the operator's QA
+ * override if there is one, else the project's choice, and nothing for Dream's default (`daemonSettings` in the
+ * ProjectDO's `SandboxManager.ts`). A changed choice rewrites the env file between turns, which restarts dreamd on
+ * the new model in the same session.
  */
-import type { Harness, ReasoningEffort } from "@dream/domain"
+import { DefaultAgent, type Harness, type ReasoningEffort } from "@dream/domain"
 import { Option } from "effect"
 
 export interface TopLevel {
@@ -21,10 +25,7 @@ export interface TopLevel {
   readonly effort: ReasoningEffort
 }
 
-export const flagship: Readonly<Record<Harness, TopLevel>> = {
-  "claude-code": { model: "opus", effort: "high" },
-  codex: { model: "gpt-6.1-sol", effort: "high" }
-}
+export const flagship: Readonly<Record<Harness, TopLevel>> = DefaultAgent
 
 /**
  * Codex's context window, as `model_context_window` in its config: the most any model allows. Codex clamps it to

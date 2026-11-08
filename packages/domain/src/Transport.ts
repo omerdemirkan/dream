@@ -109,11 +109,11 @@ export const DaemonEnv = {
   port: "DREAM_DAEMON_PORT",
   socket: "DREAM_SOCKET",
   /**
-   * Optional: the model the top-level agent runs on instead of the fleet's flagship (an operator override, e.g. a
-   * cheap model for QA): a name the project's harness accepts.
+   * Optional: the model the top-level agent runs on instead of the fleet's flagship: the operator's override (e.g. a
+   * cheap model for QA) or else the project's choice (`Project.agentModel`); a name the project's harness accepts.
    */
   model: "DREAM_MODEL",
-  /** Optional: the top-level agent's `ReasoningEffort` instead of the fleet's ("high"). */
+  /** Optional: the top-level agent's `ReasoningEffort` instead of the fleet's ("high"), chosen the same way. */
   effort: "DREAM_EFFORT",
   /**
    * Optional: what the ProjectDO calls this file's settings (a hash). dreamd reports it back in `Health`, so the

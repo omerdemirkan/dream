@@ -5,6 +5,9 @@
  */
 import {
   providerOf,
+  agentChoice,
+  agentOf,
+  type Project,
   accessHostProblem,
   AccessMessage,
   AccessState,
@@ -523,6 +526,18 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
         }),
 
       SetUsageLimits: ({ limits }) => limiter.set(limits),
+
+      SetAgentModel: ({ model, effort }) =>
+        Effect.gen(function* () {
+          const { agentModel: _m, agentEffort: _e, ...project } = yield* core.project
+          const next: Project = { ...project, ...agentChoice(project.harness, { model, effort }) }
+          yield* core.saveProject(next)
+          yield* Effect.logInfo("the agent's model changed", {
+            model: agentOf(next).model,
+            effort: agentOf(next).effort
+          })
+          return next
+        }),
       CheckUsageLimits: () => limiter.check,
 
       GatewayTarget: () => sandbox.gatewayTarget,

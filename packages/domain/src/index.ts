@@ -2,6 +2,7 @@
  * @dream/domain — every shape that crosses a boundary between the phone, the
  * Worker / ProjectDO, and the sandbox (dreamd and the `dream` CLI).
  */
+export * from "./Agent.ts"
 export * from "./AgentEvent.ts"
 export * from "./AppNotifications.ts"
 export * from "./Auth.ts"

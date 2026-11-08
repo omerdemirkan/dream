@@ -16,9 +16,9 @@ export interface DreamdConfigShape extends Config.Success<typeof DaemonConfig> {
   readonly home: string
   /** The env file this config was read from, watched for changes. */
   readonly envFile: string
-  /** The operator's override of the top-level agent's model (see `harness/Fleet.ts`). */
+  /** The top-level agent's model, when not the fleet's: the operator's override or the project's choice (see `harness/Fleet.ts`). */
   readonly model: Option.Option<string>
-  /** The operator's override of the top-level agent's reasoning effort. */
+  /** The top-level agent's reasoning effort, when not the fleet's. */
   readonly effort: Option.Option<ReasoningEffort>
   /** What the ProjectDO called the env file's settings; `Health` reports it. */
   readonly envHash: Option.Option<string>

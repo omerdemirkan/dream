@@ -176,6 +176,44 @@ describe("small rules", () => {
     }
   })
 
+  it("runs the agent on the operator's override, else the project's choice, else the fleet's default", () => {
+    const base = {
+      apiUrl: "https://api.dream.test",
+      projectId: "prj_1" as any,
+      daemonToken: "t",
+      agentModel: Option.none<string>(),
+      codexAgentModel: Option.none<string>(),
+      agentEffort: Option.none<"low">()
+    }
+    const chosen = { agentModel: "sonnet", agentEffort: "medium" as const }
+    const plain = daemonSettings({ ...base, harness: "claude-code", chosen: {} })
+    assert.notProperty(plain, "DREAM_MODEL")
+    assert.notProperty(plain, "DREAM_EFFORT")
+    const theirs = daemonSettings({ ...base, harness: "claude-code", chosen })
+    assert.strictEqual(theirs.DREAM_MODEL, "sonnet")
+    assert.strictEqual(theirs.DREAM_EFFORT, "medium")
+    // Each override wins on its own: the QA model with their effort, or their model with the QA effort.
+    const qaModel = daemonSettings({ ...base, harness: "claude-code", agentModel: Option.some("haiku"), chosen })
+    assert.strictEqual(qaModel.DREAM_MODEL, "haiku")
+    assert.strictEqual(qaModel.DREAM_EFFORT, "medium")
+    const qaEffort = daemonSettings({
+      ...base,
+      harness: "codex",
+      agentEffort: Option.some("low"),
+      chosen: { agentModel: "gpt-6-luna" }
+    })
+    assert.strictEqual(qaEffort.DREAM_MODEL, "gpt-6-luna")
+    assert.strictEqual(qaEffort.DREAM_EFFORT, "low")
+    // The other harness's QA model doesn't touch this one's choice.
+    const codex = daemonSettings({
+      ...base,
+      harness: "codex",
+      agentModel: Option.some("haiku"),
+      chosen: { agentModel: "gpt-6-astra" }
+    })
+    assert.strictEqual(codex.DREAM_MODEL, "gpt-6-astra")
+  })
+
   it("slugs ideas into short DNS-safe names", () => {
     assert.strictEqual(
       slugFromIdea("A strength log that reads Apple Health and tells me when to add weight."),

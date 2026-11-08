@@ -26,6 +26,7 @@ import {
   NotFound,
   Project,
   QuestionAnswer,
+  ReasoningEffort,
   RelayForward,
   RelayForwardResult,
   RelayId,
@@ -166,6 +167,15 @@ export class ProjectRpcs extends RpcGroup.make(
   Rpc.make("UsageLimited", { payload: { window: UsageWindowName, until: Schema.DateTimeUtc } }),
   /** They set this project's usage limits (`AppRpcs.SetUsageLimits`); a key that's absent clears that limit. */
   Rpc.make("SetUsageLimits", { payload: { limits: UsageLimits } }),
+  /**
+   * They chose this project's agent model and effort (`AppRpcs.SetAgentModel`, checked by the Worker): only what
+   * differs from Dream's default is kept. dreamd runs on it from the next delivery (`refreshDaemonEnv`).
+   */
+  Rpc.make("SetAgentModel", {
+    payload: { model: Schema.optionalKey(Schema.NonEmptyString), effort: Schema.optionalKey(ReasoningEffort) },
+    success: Project,
+    error: NotFound
+  }),
   /** The plan's usage moved (a reading from another of their projects): check this project's limits. */
   Rpc.make("CheckUsageLimits", {}),
   /** Where the gateway sends this project's public traffic. */

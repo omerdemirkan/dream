@@ -35,6 +35,7 @@ import {
   type MachineMove,
   machineInfo,
   NotFound,
+  type Project,
   type ProjectId,
   ProjectEvent,
   type RelayForward,
@@ -140,6 +141,9 @@ export const refreshBackoff = (failures: number): Duration.Duration =>
 /**
  * What dreamd's env file says, but for the project token (signed afresh on every write). Each harness gets only
  * its own model override: Codex would send a Claude model name to the ChatGPT backend, and the other way round.
+ * The agent's model and effort are each the operator's override (for QA runs), else the project's choice
+ * (`Project.agentModel`, `agentEffort`), else left out for dreamd's fleet default. A changed choice changes the
+ * settings, so the env file is written again before the next delivery (`refreshDaemonEnv`).
  */
 export const daemonSettings = (options: {
   readonly apiUrl: string
@@ -149,11 +153,15 @@ export const daemonSettings = (options: {
   readonly agentModel: Option.Option<string>
   readonly codexAgentModel: Option.Option<string>
   readonly agentEffort: Option.Option<ReasoningEffort>
+  readonly chosen?: Pick<Project, "agentModel" | "agentEffort">
   readonly progressLine?: "off" | "model" | "model-free"
   /** Dream's OpenAI gateway (`OpenAIGateway.baseUrl`), while it's on. */
   readonly openaiBaseUrl?: string | undefined
 }): Record<string, string> => {
-  const model = options.harness === "claude-code" ? options.agentModel : options.codexAgentModel
+  const model = Option.orElse(options.harness === "claude-code" ? options.agentModel : options.codexAgentModel, () =>
+    Option.fromUndefinedOr(options.chosen?.agentModel)
+  )
+  const effort = Option.orElse(options.agentEffort, () => Option.fromUndefinedOr(options.chosen?.agentEffort))
   return {
     [DaemonEnv.apiUrl]: options.apiUrl,
     [DaemonEnv.projectId]: options.projectId,
@@ -162,7 +170,7 @@ export const daemonSettings = (options: {
     [DaemonEnv.port]: String(DefaultDaemonPort),
     [DaemonEnv.socket]: DefaultDaemonSocket,
     ...Option.match(model, { onNone: () => ({}), onSome: (value) => ({ [DaemonEnv.model]: value }) }),
-    ...Option.match(options.agentEffort, { onNone: () => ({}), onSome: (value) => ({ [DaemonEnv.effort]: value }) }),
+    ...Option.match(effort, { onNone: () => ({}), onSome: (value) => ({ [DaemonEnv.effort]: value }) }),
     ...(options.progressLine === "model"
       ? { [DaemonEnv.progressLine]: "on" }
       : options.progressLine === "model-free"
@@ -409,6 +417,7 @@ export class SandboxManager extends Context.Service<
             agentModel: config.agentModel,
             codexAgentModel: config.codexAgentModel,
             agentEffort: config.agentEffort,
+            chosen: project,
             progressLine: config.progressLine,
             openaiBaseUrl: config.aiGatewayEnabled ? OpenAIGateway.baseUrl(config.domain) : undefined
           })

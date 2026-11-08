@@ -261,6 +261,72 @@ describe("a project, end to end", () => {
     })
   )
 
+  it.live("starts a project on the model, effort and limits they chose, and changes the model between turns", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      yield* setup(cloud)
+      const project = yield* cloud.phone.CreateProject({
+        idea: "Scale any recipe up or down",
+        model: "sonnet",
+        effort: "xhigh",
+        limits: { projectWeekPercent: 20, planLeftPercent: 10 }
+      })
+      assert.strictEqual(project.agentModel, "sonnet")
+      assert.strictEqual(project.agentEffort, "xhigh")
+      yield* cloud.alarm(project.id)
+      const first = envFileOf(cloud, project.id).env
+      assert.strictEqual(first.DREAM_MODEL, "sonnet")
+      assert.strictEqual(first.DREAM_EFFORT, "xhigh")
+      // The limits are set as if right after: the agent hears of them with its first message.
+      const told = cloud.world.delivered.at(-1)!.events as ReadonlyArray<any>
+      assert.deepStrictEqual(
+        told.map((e) => e._tag),
+        ["UserMessage", "UsageLimitsChanged"]
+      )
+      assert.deepStrictEqual(told[1].limits, { projectWeekPercent: 20, planLeftPercent: 10 })
+      assert.deepStrictEqual((yield* cloud.phone.GetProjectUsage({ projectId: project.id })).limits, {
+        projectWeekPercent: 20,
+        planLeftPercent: 10
+      })
+
+      // Back to Dream's default model, at low effort: only the effort is kept, and dreamd's env says so next turn.
+      const changed = yield* cloud.phone.SetAgentModel({ projectId: project.id, model: "opus", effort: "low" })
+      assert.notProperty(changed, "agentModel")
+      assert.strictEqual(changed.agentEffort, "low")
+      yield* cloud.phone.SendMessage({ projectId: project.id, text: "Metric too" })
+      yield* cloud.alarm(project.id)
+      const second = envFileOf(cloud, project.id).env
+      assert.notProperty(second, "DREAM_MODEL")
+      assert.strictEqual(second.DREAM_EFFORT, "low")
+      assert.notStrictEqual(second.DREAM_ENV_HASH, first.DREAM_ENV_HASH)
+
+      // A model the harness doesn't offer is refused, at creation and later.
+      const wrong = yield* Effect.flip(cloud.phone.SetAgentModel({ projectId: project.id, model: "gpt-6.1-sol" }))
+      assert.strictEqual(wrong._tag, "InvalidRequest")
+      const refused = yield* Effect.flip(cloud.phone.CreateProject({ idea: "Another", model: "gpt-5.5" }))
+      assert.strictEqual(refused._tag, "InvalidRequest")
+      // Without any of it, as older builds create projects: Dream's default, and no limits.
+      const plain = yield* cloud.phone.CreateProject({ idea: "A packing list for trips" })
+      assert.notProperty(plain, "agentModel")
+      assert.notProperty(plain, "agentEffort")
+      assert.isUndefined((yield* cloud.phone.GetProjectUsage({ projectId: plain.id })).limits)
+      yield* cloud.close
+    })
+  )
+
+  it.live("runs a project on the operator's QA model over the one they chose", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud({ agentModel: Option.some("haiku"), agentEffort: Option.some("low") })
+      yield* setup(cloud)
+      const project = yield* cloud.phone.CreateProject({ idea: "Scale recipes", model: "fable", effort: "max" })
+      yield* cloud.alarm(project.id)
+      const { env } = envFileOf(cloud, project.id)
+      assert.strictEqual(env.DREAM_MODEL, "haiku")
+      assert.strictEqual(env.DREAM_EFFORT, "low")
+      yield* cloud.close
+    })
+  )
+
   it.live("a dreamd that's restarting is delivered to again later, without restarting it again", () =>
     Effect.gen(function* () {
       const cloud = yield* makeCloud()

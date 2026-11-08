@@ -32,7 +32,7 @@ import {
   TextMessage
 } from "../Message.ts"
 import { Attachment, AttachmentContentType, AttachmentLimits, MediaUploadTarget } from "../Media.ts"
-import { ArchivedProject, Harness, Project, ProjectSummary } from "../Project.ts"
+import { ArchivedProject, Harness, Project, ProjectSummary, ReasoningEffort } from "../Project.ts"
 import { AccountCosts, ProjectCosts } from "../Costs.ts"
 import { AccountUsage, ModelProvider, ProjectUsage, UsageLimits } from "../Usage.ts"
 import { Device, Features, TimeZone, User } from "../User.ts"
@@ -132,13 +132,20 @@ export class AuthedAppRpcs extends RpcGroup.make(
    * subscription runs; with both connected, to their newest project's (the new-idea picker sends it). With a `requestId`, a retry returns the project the
    * first attempt created (`InvalidRequest` if that id belongs to someone else). `attachments` (November 2026):
    * uploads from `CreateAttachmentUpload` that go with the idea.
+   *
+   * Added November 2026, from the new-idea screen's Advanced sheet: `model` and `effort` for the project's agent
+   * (one of `AgentModels` for the harness, else `InvalidRequest`; absent: Dream's default), and `limits`, set as if
+   * by `SetUsageLimits` right after.
    */
   Rpc.make("CreateProject", {
     payload: {
       idea: Schema.NonEmptyString,
       harness: Schema.optionalKey(Harness),
       requestId: Schema.optionalKey(RequestId),
-      attachments: Schema.optionalKey(Attachments)
+      attachments: Schema.optionalKey(Attachments),
+      model: Schema.optionalKey(Schema.NonEmptyString),
+      effort: Schema.optionalKey(ReasoningEffort),
+      limits: Schema.optionalKey(UsageLimits)
     },
     success: Project,
     error: Schema.Union([NoModelConnection, UpstreamFailure, InvalidRequest])
@@ -268,6 +275,20 @@ export class AuthedAppRpcs extends RpcGroup.make(
     payload: { projectId: ProjectId, limits: UsageLimits },
     success: ProjectUsage,
     error: NotFound
+  }),
+  /**
+   * Choose the model and reasoning effort of this project's agent, both at once: a key that's absent means Dream's
+   * default. The model must be one of `AgentModels` for the project's harness (`InvalidRequest` otherwise). It takes
+   * effect from the next turn, in the same conversation. Returns the project. Added November 2026.
+   */
+  Rpc.make("SetAgentModel", {
+    payload: {
+      projectId: ProjectId,
+      model: Schema.optionalKey(Schema.NonEmptyString),
+      effort: Schema.optionalKey(ReasoningEffort)
+    },
+    success: Project,
+    error: Schema.Union([NotFound, InvalidRequest])
   }),
   /**
    * Settings' plan card: how full each window of their `provider` subscription is, about how much of it their

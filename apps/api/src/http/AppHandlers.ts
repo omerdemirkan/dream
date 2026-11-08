@@ -4,6 +4,7 @@
  * check ownership in D1, then go to that project's DO.
  */
 import {
+  agentChoice,
   AppAuth,
   AttachmentLimits,
   AuthedAppRpcs,
@@ -13,6 +14,7 @@ import {
   NoModelConnection,
   NotFound,
   NotInvited,
+  offersModel,
   type Project,
   type ProjectId,
   PublicAppRpcs,
@@ -147,6 +149,11 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
         return project.value
       })
 
+    const unofferedModel = (harness: Harness) =>
+      new InvalidRequest({
+        message: `That model isn’t one Dream offers on ${harness === "codex" ? "ChatGPT" : "Claude"}. Choose another.`
+      })
+
     const harnessFor = (userId: UserId, requested: Harness | undefined) =>
       Effect.gen(function* () {
         const claude = yield* connections.connectedModel(userId, "claude")
@@ -236,7 +243,7 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
           return summary.value
         }),
 
-      CreateProject: ({ idea, harness, requestId, attachments: attachmentIds = [] }) =>
+      CreateProject: ({ idea, harness, requestId, attachments: attachmentIds = [], model, effort, limits }) =>
         Effect.gen(function* () {
           const userId = yield* me
           const start = (project: Project) =>
@@ -244,7 +251,16 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
               // A retry takes the same attachments again, so a half-started project still starts with them.
               const attached = yield* attachments.claim(userId, project.id, project.id, attachmentIds)
               return yield* clients.use(project.id, (client) =>
-                client.Init({ project, ...(attached.length === 0 ? {} : { attachments: attached }) })
+                Effect.gen(function* () {
+                  const started = yield* client.Init({
+                    project,
+                    ...(attached.length === 0 ? {} : { attachments: attached })
+                  })
+                  // As if set from the usage sheet right after: the agent hears of them with its first message.
+                  // Setting the same limits again (a retry) does nothing.
+                  if (limits !== undefined && Object.keys(limits).length > 0) yield* client.SetUsageLimits({ limits })
+                  return started
+                })
               )
             }).pipe(
               Effect.catchDefect((defect) =>
@@ -265,6 +281,7 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
             }
           }
           const chosen = yield* harnessFor(userId, harness)
+          if (model !== undefined && !offersModel(chosen, model)) return yield* unofferedModel(chosen)
           // Refuse attachments that aren't theirs before the project exists.
           yield* attachments.claim(userId, id, id, attachmentIds)
           const { slug, host } = yield* projects.allocateHost(idea, config.domain)
@@ -275,6 +292,7 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
             title: titleFromIdea(idea),
             idea,
             harness: chosen,
+            ...agentChoice(chosen, { model, effort }),
             phase: "new",
             slug,
             publicUrl: `https://${host}`,
@@ -310,6 +328,19 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
           const project = yield* owned(projectId)
           yield* clients.use(projectId, (client) => client.SetUsageLimits({ limits }))
           return yield* usageReport.projectUsage(project)
+        }),
+      SetAgentModel: ({ projectId, model, effort }) =>
+        Effect.gen(function* () {
+          const project = yield* owned(projectId)
+          if (model !== undefined && !offersModel(project.harness, model)) {
+            return yield* unofferedModel(project.harness)
+          }
+          return yield* clients.use(projectId, (client) =>
+            client.SetAgentModel({
+              ...(model === undefined ? {} : { model }),
+              ...(effort === undefined ? {} : { effort })
+            })
+          )
         }),
       GetAccountUsage: ({ provider }) => Effect.flatMap(me, (userId) => usageReport.accountUsage(userId, provider)),
       GetProjectCosts: ({ projectId }) => Effect.andThen(owned(projectId), costReport.project(projectId)),

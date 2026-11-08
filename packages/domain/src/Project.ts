@@ -41,6 +41,14 @@ export const Project = Schema.Struct({
   /** What they first asked for, verbatim. */
   idea: Schema.String,
   harness: Harness,
+  /**
+   * The model its top-level agent runs on, when they chose one other than Dream's default (`agentOf` in `Agent.ts`
+   * resolves either). Only the project's own record carries it (`GetProject`, the live snapshot); Home's rows leave
+   * it out. Added November 2026.
+   */
+  agentModel: Schema.optionalKey(Schema.NonEmptyString),
+  /** Its top-level agent's reasoning effort, when they chose one other than Dream's default. Added November 2026. */
+  agentEffort: Schema.optionalKey(ReasoningEffort),
   phase: ProjectPhase,
   /** The one line Home shows under the title: the Status card's `now`, else its `justDid`. */
   headline: Schema.optionalKey(Schema.String),
