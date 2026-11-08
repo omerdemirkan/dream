@@ -5,7 +5,8 @@
  *
  * It also watches the published app's requests, so the agent hears that the app is failing whoever uses it before
  * the person has to say so: an `Alert` with `noticed` (`server-errors` or `unreachable`), once per problem
- * (`watchRequests`). Requests during a turn don't count, since the agent is likely working on the app then.
+ * (`watchRequests`). Requests during a turn and the minute after it don't count: the agent is likely working on the
+ * app then, and dreamd loads the published URL itself when a turn ends (`PublishedUrlBroken` covers that load).
  */
 import {
   AgentEvent,
@@ -21,6 +22,9 @@ import { newEventId } from "../lib/Ids.ts"
 import { Core } from "./Core.ts"
 import type { GatewayRequest } from "./ProjectRpcs.ts"
 import { Singletons, Store } from "./Store.ts"
+
+/** Requests this soon after a turn ended don't count as trouble. */
+export const AfterTurnGrace = Duration.minutes(1)
 
 /** Slower than this to answer, and a request is logged as a warning. */
 export const SlowRequest = Duration.seconds(3)
@@ -243,12 +247,12 @@ export class ProjectLog extends Context.Service<
         if (Option.isNone(project)) return
         const before = Option.getOrElse(yield* store.getSingleton(...TroubleSingleton), (): TroubleState => ({}))
         const now = yield* DateTime.now
-        const { state, alerts } = watchRequests(
-          before,
-          requests,
-          DateTime.toEpochMillis(now),
-          (yield* core.sandbox).working
-        )
+        const record = yield* core.sandbox
+        const nowMs = DateTime.toEpochMillis(now)
+        const justEnded =
+          record.turnEndedAt !== undefined &&
+          nowMs - DateTime.toEpochMillis(record.turnEndedAt) < Duration.toMillis(AfterTurnGrace)
+        const { state, alerts } = watchRequests(before, requests, nowMs, record.working || justEnded)
         yield* store.putSingleton(...TroubleSingleton, state)
         for (const { kind, watch } of alerts) {
           const reason = troubleReason(kind, project.value.publicUrl, watch)
