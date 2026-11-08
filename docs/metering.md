@@ -37,11 +37,7 @@ Dimensions every event has when they apply: `project`, `payer` (`dream`, or `per
 | `storage_day` | `r2:<project id>:<YYYY-MM-DD>` | `bytes` (stored at the end of the UTC day) | |
 | `email_sent` | `email:<message id>` | `recipients` | |
 
-Only the keys that apply are present. A `model_request`'s tokens are as OpenAI reports them: `input_tokens` includes
-the cached, audio and image input broken out beside it, `output_tokens` the reasoning and audio output, and
-`cached_audio_tokens` is part of `cached_input_tokens`. The image tool's model isn't reported, so its event says
-`gpt-image (tool)`; a realtime input transcription whose session didn't name its model says `realtime-transcription`.
-OpenAI reports no cost, so the price book prices these. Provider rules such as Browserbase's one-minute minimum are pricing, so they
+Only the keys that apply are present. Provider rules such as Browserbase's one-minute minimum are pricing, so they
 live in the price book, not in the quantities.
 
 OpenAI's token counts nest the way OpenAI reports them, and the price book prices them that way: `input_tokens` is
@@ -50,7 +46,13 @@ with `cached_audio_tokens` the audio ones among them; `input_audio_tokens` and `
 image ones among `input_tokens` (cached included); `output_tokens` is every output token, with `reasoning_tokens`,
 `output_audio_tokens` and `output_image_tokens` among them. A model without a separate price for a modality
 (transcription) bills it at its text price. Speech estimated without usage should send `characters` for tts-1 and
-tokens for the token-priced voices; the book prices whatever quantities are there.
+tokens for the token-priced voices; the book prices whatever quantities are there. The gateway does exactly that: `characters` always,
+and for a token-priced voice `input_tokens` at about four characters a token and `output_tokens` =
+`output_audio_tokens` at about 1,250 a minute of speech and 900 characters a minute, `estimated: true`; speech that
+reports usage (`stream_format: "sse"`) has its output tokens counted as audio. The image tool's model isn't
+reported, so its event says `gpt-image (tool)` (priced at 0 until the book knows it); a realtime input
+transcription whose session didn't name its model says `realtime-transcription`. OpenAI reports no cost, so these
+events never carry `cost_usd`.
 
 **The sink today is D1** (`meter_events`, `MeterD1`): one row per event, the event exactly as above (quantities and
 dimensions as JSON columns, `project` and `owner` also as columns for queries) plus columns that exist only for the
@@ -178,7 +180,7 @@ sees the usage), and a sideband's call when `OpenAICallDO` restarts mid-call (a 
 
 **Off by default.** `DREAM_AI_GATEWAY_ENABLED` (a plain binding from `.env`, like `DREAM_EMAIL_ENABLED`). Off, the
 host answers 404, sandboxes get neither the variables nor the egress rule, and the agent isn't told: dreamd installs
-the `openai` skill (`docs/prompts/openai/`) only while `DREAM_OPENAI_BASE_URL` is in its env, and its listing in the
+the `dream-openai` skill (`docs/prompts/skills/dream-openai/`) only while `DREAM_OPENAI_BASE_URL` is in its env, and its listing in the
 harness's skills is the agent's pointer to it. Turning it on reaches a running sandbox between turns (the env file and
 the rules are pushed together). On without `OPENAI_API_KEY`, every call answers 503 "isn't configured".
 
@@ -226,8 +228,7 @@ usage is known).
 
 ## The agent
 
-While the AI gateway is on, the agent and every task's session get the `openai` skill (`docs/prompts/openai/`): the
-apps can call OpenAI through Dream with the usual SDK variables, Dream pays and meters it per project, and the person
-can see it. The system prompt doesn't mention the gateway, so a project without it hears nothing; the skill's listing
-is the pointer. `dream usage` prints what the
-project cost this month. No rules: the agent weighs cost like any other judgment.
+While the AI gateway is on, the agent and every task's session get the `dream-openai` skill
+(`docs/prompts/skills/dream-openai/`): the apps can call OpenAI through Dream with the usual SDK variables, Dream pays
+and meters it per project, and the person can see it. The system prompt doesn't mention the gateway, so a project
+without it hears nothing; the skill's listing is the pointer. `dream usage` prints what the project cost this month. No rules: the agent weighs cost like any other judgment.
