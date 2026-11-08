@@ -138,7 +138,7 @@ export const centerOf: Record<MeterName, CostCenter> = {
   sandbox_run: "sandbox",
   browser_session: "browser",
   mac_session: "mac",
-  openai_request: "openai",
+  openai_request: "models",
   storage_day: "storage",
   email_sent: "email"
 }
@@ -147,7 +147,7 @@ export const unitOf: Record<CostCenter, CostUnit> = {
   sandbox: "hour",
   browser: "minute",
   mac: "minute",
-  openai: "request",
+  models: "request",
   storage: "gbMonth",
   email: "message"
 }

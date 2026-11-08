@@ -163,6 +163,12 @@ describe("dream email", () => {
       const { project, dreamd } = yield* setup(cloud)
       const sent = yield* dreamd.SendEmail({ subject: "Set up Tide Clock in Apple Developer", markdown: steps })
       assert.strictEqual(cloud.mail.sent.length, 1)
+      // Metered to the project as one message.
+      const metered = cloud.db.prepare("SELECT meter, project_id, units FROM meter_events").all()
+      assert.deepStrictEqual(
+        metered.map((row) => [row.meter, row.units]),
+        [["email_sent", 1]]
+      )
       const mail = cloud.mail.sent[0]!
       assert.strictEqual(mail.to, "ada@example.com")
       assert.strictEqual(mail.from.name, "Dream")

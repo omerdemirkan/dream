@@ -99,7 +99,8 @@ E2B still has, for the first deploy. The secret is sealed with the master key in
 the deadline, which Machines now moves forward with each ssh extension; past it, a failed destroy no longer keeps the
 Mac "running"). **R2:** the hourly job records each project's bytes once its UTC day has ended, summed from D1's
 `media` and `attachments` rows (uploaded ones, with a project); the updates bucket is Dream's and isn't metered.
-**Email:** each `EmailAccessLink` send, as one message ($0.35 per 1,000).
+**Email:** each send, as one message ($0.35 per 1,000): an `EmailAccessLink` and each email the agent sends
+(`SandboxRpcs.SendEmail`).
 
 Not metered: Cloudflare Workers, D1 and Durable Objects (account-level, not attributable), and plan fees (E2B Pro,
 Browserbase's plan, Namespace's). The operator's view says these are left out.

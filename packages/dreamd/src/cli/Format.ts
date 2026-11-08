@@ -379,7 +379,7 @@ const costNames: Record<CostLine["center"], string> = {
   sandbox: "this sandbox",
   browser: "browsers",
   mac: "Macs",
-  openai: "OpenAI",
+  models: "AI models",
   storage: "media storage",
   email: "email"
 }
@@ -415,7 +415,7 @@ export const costs = (report: ProjectCosts): string => {
     lines.push(`${paid.map((line) => `${costNames[line.center]} ${dollars(line.usd)}${amount(line)}`).join(", ")}.`)
   }
   for (const line of theirs) {
-    lines.push(`Their own OpenAI key paid ${dollars(line.usd)} more${amount(line)}.`)
+    lines.push(`Their own key paid ${dollars(line.usd)} more for ${costNames[line.center]}${amount(line)}.`)
   }
   return lines.join("\n")
 }

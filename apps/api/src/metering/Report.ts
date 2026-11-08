@@ -2,7 +2,7 @@
  * The read side of the ledger: what Dream paid, summed from `meter_events` for the app (`AppRpcs.GetProjectCosts`,
  * `GetAccountCosts`) and the agent (`SandboxRpcs.GetProjectCosts`, `dream usage`). Months are UTC calendar months;
  * `days` are the last 30 UTC days, today included. Every figure is the price book's estimate, recorded with each
- * event; `usd` totals count what Dream paid, while lines and models show the person's own OpenAI key too.
+ * event; `usd` totals count what Dream paid; lines and models also show anything a `person` payer paid.
  */
 import type {
   AccountCosts,
@@ -99,7 +99,7 @@ export const linesOf = (rows: ReadonlyArray<SumRow>): Array<CostLine> => {
 const modelsOf = (rows: ReadonlyArray<SumRow>): Array<ModelCost> => {
   const models = new Map<string, ModelCost>()
   for (const row of rows) {
-    if (row.center !== "openai") continue
+    if (row.center !== "models") continue
     const model = row.model ?? "unknown"
     const key = `${model}:${row.payer}`
     const found = models.get(key)
@@ -152,7 +152,7 @@ export class CostReport extends Context.Service<
       const sums = (window: Window, scope: { readonly project?: string; readonly owner?: string }) =>
         sql`
           SELECT owner, project_id, center, payer,
-            CASE WHEN center = 'openai' THEN json_extract(dimensions_json, '$.model') END AS model,
+            CASE WHEN center = 'models' THEN json_extract(dimensions_json, '$.model') END AS model,
             substr(at, 1, 10) AS day, SUM(cost_usd) AS usd, SUM(units) AS units, COUNT(*) AS n
           FROM meter_events
           WHERE at >= ${DateTime.formatIso(window.from)} AND at < ${DateTime.formatIso(window.monthEnd)}

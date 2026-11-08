@@ -37,6 +37,7 @@ import { OAuthProviders, scopesFor } from "../integrations/OAuth.ts"
 import { newMediaId } from "../lib/Ids.ts"
 import { type ProjectClient, ProjectClients } from "../project/Client.ts"
 import { bearer } from "./AppHandlers.ts"
+import { Meter } from "../metering/Meter.ts"
 import { CostReport } from "../metering/Report.ts"
 import { MediaStore } from "./Media.ts"
 
@@ -75,6 +76,7 @@ export const WorkerSandboxHandlers = SandboxRpcs.toLayer(
     const mailer = yield* Mailer
     const rateLimits = yield* RateLimits
     const costReport = yield* CostReport
+    const meter = yield* Meter
 
     const current = Effect.gen(function* () {
       return yield* CurrentProject
@@ -132,6 +134,17 @@ export const WorkerSandboxHandlers = SandboxRpcs.toLayer(
               project: Option.match(project, { onNone: () => "", onSome: (p) => p.title })
             })
           )
+          // Sent, so paid for, whatever happens to the Chat row; the binding gives no message id to key it on.
+          yield* meter.record([
+            {
+              id: `email:agent-${projectId}-${now}`,
+              owner: userId,
+              meter: "email_sent",
+              at: DateTime.makeUnsafe(now),
+              quantities: { recipients: 1 },
+              dimensions: { project: projectId, payer: "dream", provider: "cloudflare-email" }
+            }
+          ])
           return yield* forward((c) =>
             c.RecordEmail({
               markdown,

@@ -470,8 +470,8 @@ describe("the cost report", () => {
       assert.deepStrictEqual(
         costs.month.lines.map((line) => [line.center, line.payer, line.unit]),
         [
-          ["openai", "dream", "request"],
-          ["openai", "person", "request"],
+          ["models", "dream", "request"],
+          ["models", "person", "request"],
           ["sandbox", "dream", "hour"],
           ["browser", "dream", "minute"]
         ]

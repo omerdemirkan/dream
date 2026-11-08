@@ -178,8 +178,8 @@ describe("what Dream paid, in `dream usage`", () => {
     const text = Format.costs(
       report(
         period(3.19, [
-          { center: "openai", payer: "dream", usd: 3, quantity: 12, unit: "request" },
-          { center: "openai", payer: "person", usd: 2, quantity: 1, unit: "request" },
+          { center: "models", payer: "dream", usd: 3, quantity: 12, unit: "request" },
+          { center: "models", payer: "person", usd: 2, quantity: 1, unit: "request" },
           { center: "sandbox", payer: "dream", usd: 0.17, quantity: 1.24, unit: "hour" },
           { center: "browser", payer: "dream", usd: 0.002, quantity: 1, unit: "minute" }
         ]),
@@ -190,8 +190,8 @@ describe("what Dream paid, in `dream usage`", () => {
       text,
       [
         "Dream has paid about $3.19 to run this project this month, at list prices. Last month: $0.60.",
-        "OpenAI $3.00 (12 calls), this sandbox $0.17 (1.2 hours), browsers under a cent (1 minute).",
-        "Their own OpenAI key paid $2.00 more (1 call)."
+        "AI models $3.00 (12 calls), this sandbox $0.17 (1.2 hours), browsers under a cent (1 minute).",
+        "Their own key paid $2.00 more for AI models (1 call)."
       ].join("\n")
     )
   })
