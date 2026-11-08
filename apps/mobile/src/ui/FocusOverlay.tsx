@@ -10,7 +10,7 @@ import { Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
 import { usePathname, useRouter } from "expo-router"
 import { useEffect, useRef } from "react"
-import { StyleSheet, useWindowDimensions, View } from "react-native"
+import { Keyboard, StyleSheet, useWindowDimensions, View } from "react-native"
 import { KeyboardAvoidingView } from "react-native-keyboard-controller"
 import Animated, {
   Easing,
@@ -82,6 +82,8 @@ function FocusLayer(props: { readonly focus: Focus }) {
   }
 
   useEffect(() => {
+    // Drilling into a message puts the keyboard (Chat's composer, a thread's) away first.
+    Keyboard.dismiss()
     if (focus.advanced) {
       slide.value = withTiming(0, { duration: 340, easing })
       onExpanded()
@@ -159,6 +161,10 @@ function FocusLayer(props: { readonly focus: Focus }) {
 
   // Reply opens the card's thread over the project's Chat, which is already underneath.
   const setThread = useAtomSet(threadOpenAtom)
+  // Hands the animation's end back to React: the callback below runs on the UI runtime, so it may only schedule
+  // functions made here. A closure made inside it (one that called `setFocus(Option.none())`) threw there, and an
+  // exception on the UI runtime ends a release build.
+  const close = () => setFocus(Option.none())
   const reply = {
     count: live?.messages.filter((m) => m.replyTo === focus.messageId).length ?? 0,
     onPress: () => {
@@ -166,7 +172,7 @@ function FocusLayer(props: { readonly focus: Focus }) {
       closing.current = true
       setThread(Option.some({ projectId: focus.projectId, messageId: focus.messageId, compose: true, at: Date.now() }))
       fade.value = withTiming(0, { duration: 200 }, (finished) => {
-        if (finished) scheduleOnRN(() => setFocus(Option.none()))
+        if (finished) scheduleOnRN(close)
       })
     }
   }
