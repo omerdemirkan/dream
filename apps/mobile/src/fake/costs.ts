@@ -1,7 +1,7 @@
 /**
  * The fixtures world's costs (docs/metering.md): what Dream paid this month and last to run the sample projects,
  * at the price book's list prices (a standard sandbox is about $0.17 an hour, a cloud browser $0.002 a minute, a
- * Mac $0.06 a minute), and the AI models their apps call through Dream's gateway, named as it names them.
+ * Mac $0.06 a minute), and the OpenAI calls their apps make through Dream's gateway.
  * `operator` adds everyone's costs; `none` is before anything cost anything.
  */
 import type {
@@ -61,25 +61,25 @@ const email = (messages: number): Use => ({
   unit: "message"
 })
 const aiModels = (models: ReadonlyArray<Omit<ModelCost, "payer">>): Use => ({
-  center: "openai",
+  center: "models",
   usd: models.reduce((n, m) => n + m.usd, 0),
   quantity: models.reduce((n, m) => n + m.requests, 0),
   unit: "request"
 })
 
 const liftModels = [
-  { model: "anthropic/claude-haiku-4.5", usd: 0.62, requests: 316 },
-  { model: "mistralai/voxtral-mini", usd: 0.31, requests: 96 }
+  { model: "gpt-realtime-2.1-mini", usd: 0.71, requests: 96 },
+  { model: "gpt-6.1-terra", usd: 0.22, requests: 316 }
 ]
 const briefModels = [
-  { model: "openai/gpt-4o-mini-tts", usd: 0.19, requests: 31 },
-  { model: "google/gemini-2.5-flash", usd: 0.04, requests: 186 }
+  { model: "gpt-4o-mini-tts", usd: 0.19, requests: 31 },
+  { model: "gpt-6-luna", usd: 0.04, requests: 186 }
 ]
 const recipeModels = [
-  { model: "google/gemini-2.5-flash-image", usd: 2.94, requests: 84 },
-  { model: "openai/text-embedding-3-small", usd: 0.01, requests: 412 }
+  { model: "gpt-image-2", usd: 2.94, requests: 84 },
+  { model: "text-embedding-3-small", usd: 0.01, requests: 412 }
 ]
-const othersModels = [{ model: "anthropic/claude-sonnet-4.5", usd: 5.4, requests: 1840 }]
+const othersModels = [{ model: "gpt-6.1-terra", usd: 5.4, requests: 1840 }]
 
 /** This month so far, per project. */
 const bills: ReadonlyMap<ProjectId, Bill> = new Map<ProjectId, Bill>([

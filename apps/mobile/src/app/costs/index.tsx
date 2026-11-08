@@ -1,6 +1,6 @@
 /**
  * What Dream pays to run their projects, in full: what Settings' costs card opens. This month's total and last
- * month's, the 30 days, what it paid for (the AI models one by one), the projects largest first (each opens its
+ * month's, the 30 days, what it paid for (OpenAI by model), the projects largest first (each opens its
  * usage sheet), and for an operator a way into everyone's. Settings' own header, so back
  * (or the edge swipe) returns to it.
  */

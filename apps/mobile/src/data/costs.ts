@@ -29,7 +29,7 @@ export const centerTitle = {
   sandbox: "Machine time",
   browser: "Cloud browsers",
   mac: "Macs",
-  openai: "AI models",
+  models: "OpenAI",
   storage: "Storage",
   email: "Email"
 } as const
@@ -73,37 +73,7 @@ export const quantityLabel = (line: Pick<CostLine, "quantity" | "unit">): string
 export const monthName = (period: Pick<CostPeriod, "from">) =>
   new Intl.DateTimeFormat("en-US", { month: "long", timeZone: "UTC" }).format(DateTime.toDateUtc(period.from))
 
-/**
- * A model as Dream's gateway names it (`openai/gpt-4o-mini-tts`, `anthropic/claude-haiku-4.5`): the model, and who
- * makes it, readably.
- */
-export const modelParts = (id: string): { readonly model: string; readonly maker?: string } => {
-  const slash = id.indexOf("/")
-  if (slash <= 0) return { model: id }
-  const vendor = id.slice(0, slash)
-  const model = id.slice(slash + 1)
-  return { model, maker: makers[vendor] ?? vendor.charAt(0).toUpperCase() + vendor.slice(1) }
-}
-
-const makers: Record<string, string> = {
-  openai: "OpenAI",
-  anthropic: "Anthropic",
-  google: "Google",
-  mistralai: "Mistral",
-  "meta-llama": "Meta",
-  "x-ai": "xAI",
-  deepseek: "DeepSeek",
-  qwen: "Qwen",
-  cohere: "Cohere",
-  moonshotai: "Moonshot",
-  "black-forest-labs": "Black Forest Labs",
-  perplexity: "Perplexity",
-  nvidia: "NVIDIA",
-  microsoft: "Microsoft",
-  amazon: "Amazon"
-}
-
-/** One row: what it paid for, how much of it, and the amount; the AI models under their line. */
+/** One row: what it paid for, how much of it, and the amount; the models under their line. */
 export interface CostRowView {
   readonly key: string
   readonly title: string
@@ -112,20 +82,17 @@ export interface CostRowView {
   readonly models: ReadonlyArray<CostRowView>
 }
 
-const modelRow = (m: ModelCost): CostRowView => {
-  const { model, maker } = modelParts(m.model)
-  return {
-    key: `${m.payer}:${m.model}`,
-    title: model,
-    detail: [maker, count(m.requests, "request", "requests")].filter(Boolean).join(" · "),
-    amount: dollars(m.usd),
-    models: []
-  }
-}
+const modelRow = (m: ModelCost): CostRowView => ({
+  key: `${m.payer}:${m.model}`,
+  title: m.model,
+  detail: count(m.requests, "request", "requests"),
+  amount: dollars(m.usd),
+  models: []
+})
 
 /**
- * Dream's lines, largest first as given. The AI models go under theirs, or into its title when there's only one
- * ("AI models · claude-haiku-4.5").
+ * Dream's lines, largest first as given. The models go under theirs, or into its title when there's only one
+ * ("OpenAI · gpt-4o-mini-tts").
  */
 const lineRows = (period: CostPeriod): ReadonlyArray<CostRowView> => {
   const payer: CostLine["payer"] = "dream"
@@ -134,11 +101,11 @@ const lineRows = (period: CostPeriod): ReadonlyArray<CostRowView> => {
     .filter((l) => l.payer === payer)
     .map((l) => {
       const detail = quantityLabel(l)
-      const openai = l.center === "openai"
+      const openai = l.center === "models"
       const only = openai && models.length === 1 ? models[0] : undefined
       return {
         key: `${payer}:${l.center}`,
-        title: only ? `${centerTitle[l.center]} · ${modelParts(only.model).model}` : centerTitle[l.center],
+        title: only ? `${centerTitle[l.center]} · ${only.model}` : centerTitle[l.center],
         ...(detail ? { detail } : {}),
         amount: dollars(l.usd),
         models: openai && models.length > 1 ? models.map(modelRow) : []

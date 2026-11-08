@@ -74,7 +74,7 @@ export function Total(props: { readonly total: string; readonly aside?: string |
   )
 }
 
-/** What it paid for, how much of it, and the amount; the AI models under theirs, quieter, when `nested`. */
+/** What it paid for, how much of it, and the amount; the models under theirs, quieter, when `nested`. */
 export function CostRow(props: { readonly row: CostRowView; readonly nested: boolean }) {
   const { row } = props
   return (

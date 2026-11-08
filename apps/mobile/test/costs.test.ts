@@ -14,7 +14,6 @@ import {
   dayBars,
   dollars,
   everyoneView,
-  modelParts,
   projectCostsView,
   quantityLabel
 } from "../src/data/costs.ts"
@@ -75,16 +74,16 @@ describe("projectCostsView", () => {
     assert.isUndefined(projectCostsView(costs({})))
   })
 
-  it("names the month, compares with the last, and puts a single AI model in the line's title", () => {
+  it("names the month, compares with the last, and puts a single model in the line's title", () => {
     const view = projectCostsView(
       costs(
         {
           usd: 7.72,
           lines: [
             { center: "sandbox", payer: "dream", usd: 6.79, quantity: 41, unit: "hour" },
-            { center: "openai", payer: "dream", usd: 0.93, quantity: 412, unit: "request" }
+            { center: "models", payer: "dream", usd: 0.93, quantity: 412, unit: "request" }
           ],
-          models: [{ model: "anthropic/claude-haiku-4.5", payer: "dream", usd: 0.93, requests: 412 }]
+          models: [{ model: "gpt-4o-mini-tts", payer: "dream", usd: 0.93, requests: 412 }]
         },
         7.42
       )
@@ -96,45 +95,39 @@ describe("projectCostsView", () => {
       view?.rows.map((r) => [r.title, r.detail, r.amount, r.models.length]),
       [
         ["Machine time", "41 hours", "$6.79", 0],
-        ["AI models · claude-haiku-4.5", "412 requests", "$0.93", 0]
+        ["OpenAI · gpt-4o-mini-tts", "412 requests", "$0.93", 0]
       ]
     )
   })
 
-  it("lists several models by name and maker, and leaves out anything Dream didn't pay", () => {
+  it("lists several models by name, and leaves out anything Dream didn't pay", () => {
     const view = projectCostsView(
       costs({
         usd: 6.59,
         lines: [
           { center: "sandbox", payer: "dream", usd: 3.64, quantity: 22, unit: "hour" },
-          { center: "openai", payer: "dream", usd: 2.95, quantity: 496, unit: "request" },
-          { center: "openai", payer: "person", usd: 9, quantity: 9, unit: "request" }
+          { center: "models", payer: "dream", usd: 2.95, quantity: 496, unit: "request" },
+          { center: "models", payer: "person", usd: 9, quantity: 9, unit: "request" }
         ],
         models: [
-          { model: "google/gemini-2.5-flash-image", payer: "dream", usd: 2.94, requests: 84 },
-          { model: "openai/text-embedding-3-small", payer: "dream", usd: 0.01, requests: 412 },
+          { model: "gpt-image-2", payer: "dream", usd: 2.94, requests: 84 },
+          { model: "text-embedding-3-small", payer: "dream", usd: 0.01, requests: 412 },
           { model: "openai/gpt-x", payer: "person", usd: 9, requests: 9 }
         ]
       })
     )
     assert.deepStrictEqual(
       view?.rows.map((r) => r.title),
-      ["Machine time", "AI models"]
+      ["Machine time", "OpenAI"]
     )
     assert.deepStrictEqual(
       view?.rows[1]?.models.map((m) => [m.title, m.detail]),
       [
-        ["gemini-2.5-flash-image", "Google · 84 requests"],
-        ["text-embedding-3-small", "OpenAI · 412 requests"]
+        ["gpt-image-2", "84 requests"],
+        ["text-embedding-3-small", "412 requests"]
       ]
     )
     assert.isUndefined(view?.lastMonth)
-  })
-
-  it("reads gateway model ids", () => {
-    assert.deepStrictEqual(modelParts("mistralai/voxtral-mini"), { model: "voxtral-mini", maker: "Mistral" })
-    assert.deepStrictEqual(modelParts("someone/model-1"), { model: "model-1", maker: "Someone" })
-    assert.deepStrictEqual(modelParts("gpt-4o"), { model: "gpt-4o" })
   })
 })
 
@@ -255,7 +248,7 @@ describe("the fixtures' costs through the app's services", () => {
         const view = projectCostsView(lift as ProjectCosts)
         assert.deepStrictEqual(
           view?.rows.map((r) => r.title),
-          ["Machine time", "Macs", "AI models", "Storage"]
+          ["Machine time", "Macs", "OpenAI", "Storage"]
         )
       })
     )

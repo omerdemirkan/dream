@@ -178,22 +178,21 @@ fixtures `costs-*`.)
 
 - **A project:** the usage sheet ends, under a hairline, with "What Dream paid in November": the total, last month
   beside it, and a line per cost center with what it bought ("Machine time · 41 hours", "Cloud browsers · 52
-  minutes", "AI models · 412 requests"; a single model goes in the line's title). Nothing at all for a project
+  minutes", "OpenAI · 412 requests"; a single model goes in the line's title). Nothing at all for a project
   that hasn't cost anything this month or last, or against an API without costs. Storage shows no quantity, since
   GB-months so far this month don't read as anything.
 - **All projects:** Settings has a "What Dream pays" card under the plans (this month, last month, the 30 days as
   small bars), absent until something cost anything. Its "See more" opens `/costs`, full screen like the plan
-  cards' breakdown (`/plan/<provider>`): the 30 days (touch a bar to read a day), what it paid for with each AI
-  model under its line, the projects largest first (each opens its usage sheet; archived ones say so; deleted ones
+  cards' breakdown (`/plan/<provider>`): the 30 days (touch a bar to read a day), what it paid for with OpenAI by
+  model, the projects largest first (each opens its usage sheet; archived ones say so; deleted ones
   are one row; `unattributed` is "Outside your projects").
 - **Operators:** "Everyone on this Dream" at the foot of `/costs`, which only an operator's response makes appear,
   opens `/costs/everyone`: the month, the 30 days, what it paid for, each person's share, and the overhead no one
   caused; its line says Cloudflare and plan fees aren't counted.
 
-What the app assumes of the API's shapes, for the Worker side to match: models are the gateway's ids
-(`openai/gpt-4o-mini-tts`, `anthropic/…`), shown as the model with its maker ("gpt-4o-mini-tts", "OpenAI · 31
-requests"); the AI models' cost center reads "AI models" whatever its literal is (one mapping, `centerTitle` in
-`data/costs.ts`); a deleted project comes as `{ title: "Deleted project", archived: true }` with no icon, as
+What the app assumes of the API's shapes, for the Worker side to match: the `models` center reads "OpenAI" (one
+mapping, `centerTitle` in `data/costs.ts`) and its models are shown by their ids as they come (`gpt-4o-mini-tts`);
+a deleted project comes as `{ title: "Deleted project", archived: true }` with no icon, as
 `GetAccountUsage` names one (the app folds them into one row); an API without the cost RPCs (or a failed fetch)
 shows no costs anywhere rather than an error, since they're extra. The project's section is reachable only where
 its usage sheet is (the header's ring, and each project row in `/costs`, which opens the sheet even when no plan
