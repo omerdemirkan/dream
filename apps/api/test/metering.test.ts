@@ -267,6 +267,14 @@ describe("E2B sandbox time", () => {
       assert.strictEqual((yield* deliver(cloud, webhookBody("evt-4", {}), old)).status, 204)
       assert.strictEqual((yield* deliver(cloud, webhookBody("evt-5", {}))).status, 204)
       assert.strictEqual(rows(cloud).length, 3)
+
+      // A rotation E2B refuses, retried: E2B still signs with the secret it has, so that one keeps verifying.
+      const kept = [...cloud.world.e2bWebhooks.values()][0]!.secret
+      cloud.world.e2bWebhookUpdateFails = true
+      assert.notStrictEqual((yield* register(cloud)).status, 200)
+      assert.notStrictEqual((yield* register(cloud)).status, 200)
+      assert.strictEqual((yield* deliver(cloud, webhookBody("evt-6", {}), kept)).status, 204)
+      assert.strictEqual(rows(cloud).length, 4)
       yield* cloud.close
     })
   )

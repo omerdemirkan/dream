@@ -139,6 +139,8 @@ export class FakeWorld {
   readonly e2bWebhooks = new Map<string, E2BWebhook & { secret: string }>()
   /** Pages of events the backfill asked for, by offset. */
   readonly e2bEventPages: Array<number> = []
+  /** Set to make E2B refuse webhook updates. */
+  e2bWebhookUpdateFails = false
   private counter = 0
   nextId = (prefix: string) => `${prefix}${++this.counter}`
 }
@@ -493,16 +495,22 @@ export const fakeE2BEvents = (world: FakeWorld) =>
           return { id, url: webhook.url, events: webhook.events }
         }),
       updateWebhook: (id, settings) =>
-        Effect.sync(() => {
-          if (!world.e2bWebhooks.has(id)) return Option.none()
-          world.e2bWebhooks.set(id, {
-            id,
-            url: settings.url,
-            events: settings.events,
-            secret: Redacted.value(settings.signatureSecret)
+        Effect.suspend(() =>
+          world.e2bWebhookUpdateFails
+            ? Effect.fail(new UpstreamFailure({ service: "E2B", message: "HTTP 500" }))
+            : Effect.void
+        ).pipe(
+          Effect.map(() => {
+            if (!world.e2bWebhooks.has(id)) return Option.none()
+            world.e2bWebhooks.set(id, {
+              id,
+              url: settings.url,
+              events: settings.events,
+              secret: Redacted.value(settings.signatureSecret)
+            })
+            return Option.some({ id, url: settings.url, events: settings.events })
           })
-          return Option.some({ id, url: settings.url, events: settings.events })
-        }),
+        ),
       deleteWebhook: (id) =>
         Effect.sync(() => {
           world.e2bWebhooks.delete(id)
