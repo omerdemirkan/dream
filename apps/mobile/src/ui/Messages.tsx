@@ -3,7 +3,14 @@
  * media), a question, and an access request, plus their resolved rows.
  * Questions and access requests open into the expanded view when tapped.
  */
-import { type AccessMessage, accessHeading, type MediaRef, type QuestionMessage, type TextMessage } from "@dream/domain"
+import {
+  type AccessMessage,
+  accessHeading,
+  type MediaRef,
+  type QuestionMessage,
+  type SentEmail,
+  type TextMessage
+} from "@dream/domain"
 import * as Clipboard from "expo-clipboard"
 import { forwardRef, type ReactNode, useState } from "react"
 import { type HostInstance, Pressable, Text, View, useWindowDimensions } from "react-native"
@@ -106,9 +113,46 @@ export function AgentText(props: { readonly message: TextMessage; readonly time:
   if (props.message.text === unsupportedText) return <Unsupported time={props.time} />
   return (
     <View style={{ maxWidth: "94%" }}>
+      {props.message.email ? <Emailed email={props.message.email} /> : null}
       <Markdown source={props.message.text} selectable={false} />
       <Attachments media={props.message.media} />
       {props.time ? <Time text={props.time} /> : null}
+    </View>
+  )
+}
+
+/** Over a message the agent also emailed them (`dream email`): what it was called, and where it went. */
+function Emailed(props: { readonly email: SentEmail }) {
+  return (
+    <View
+      accessible
+      accessibilityLabel={`Emailed to ${props.email.to}: ${props.email.subject}`}
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 12,
+        marginBottom: 14,
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        borderRadius: 15,
+        backgroundColor: color.s1,
+        borderWidth: 1,
+        borderColor: color.line
+      }}
+    >
+      <Icon name="mail" size={18} color={color.cool} />
+      <View style={{ flex: 1 }}>
+        <Text numberOfLines={2} style={{ fontSize: 14, lineHeight: 19, fontWeight: "600", color: color.t1 }}>
+          {props.email.subject}
+        </Text>
+        <Text
+          numberOfLines={1}
+          ellipsizeMode="middle"
+          style={{ fontSize: 13, lineHeight: 17, color: color.t2, marginTop: 1 }}
+        >
+          Emailed to {props.email.to}
+        </Text>
+      </View>
     </View>
   )
 }

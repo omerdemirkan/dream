@@ -151,6 +151,32 @@ const liftToday = answered(
   "2026-10-14T20:00:00Z"
 )
 
+/** Steps the agent emailed them to follow on a computer (`dream email`), with Chat's copy. */
+export const liftEmailed: TextMessage = {
+  ...text(
+    liftLog.id,
+    "msg_liftemail",
+    "2026-11-03T18:01:00Z",
+    "agent",
+    [
+      "Two things in Apple Developer so I can ship Lift Log to TestFlight. About ten minutes.",
+      "",
+      "## Register the app's identifier",
+      "",
+      "1. Open [Certificates, Identifiers & Profiles](https://developer.apple.com/account/resources/identifiers/list).",
+      "2. Click **+**, choose **App IDs**, then **App**.",
+      "3. Paste `build.omer.liftlog` as the Bundle ID and tick **HealthKit**.",
+      "",
+      "## Make an App Store Connect key",
+      "",
+      "1. Go to [Users and Access → Integrations](https://appstoreconnect.apple.com/access/integrations/api).",
+      "2. Generate a key with **App Manager** access and download the `.p8`.",
+      "3. Add it on the request card here in Dream."
+    ].join("\n")
+  ),
+  email: { subject: "Set up Lift Log in Apple Developer", to: "omer@example.com", sentAt: at("2026-11-03T18:01:00Z") }
+}
+
 const liftMessages: ReadonlyArray<Message> = [
   text(liftLog.id, "msg_liftidea", "2026-10-13T16:00:00Z", "user", liftLog.idea),
   liftRead,
@@ -164,6 +190,7 @@ const liftMessages: ReadonlyArray<Message> = [
     "Starting the real build. I’ll only write when I need something from you or have something worth seeing."
   ),
   Fx.appleAccess,
+  liftEmailed,
   {
     ...Fx.liftLogUpdate,
     text: "Apple Health import works in the simulator — 214 workouts from a sample export.",
