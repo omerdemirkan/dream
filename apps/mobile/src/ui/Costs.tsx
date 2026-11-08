@@ -172,7 +172,10 @@ export function CostsCard() {
         <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 16 }}>
           <View style={{ flex: 1 }}>
             <Total total={tile.total} size={26} />
-            <Text style={{ fontSize: 13.5, lineHeight: 19, color: color.t2 }}>{tile.caption}</Text>
+            <Text style={{ fontSize: 13.5, lineHeight: 19, color: color.t2 }}>{tile.month}</Text>
+            {tile.lastMonth ? (
+              <Text style={{ fontSize: 13.5, lineHeight: 19, color: color.t3 }}>{tile.lastMonth}</Text>
+            ) : null}
           </View>
           <DayBars days={tile.days} height={36} width={112} />
         </View>

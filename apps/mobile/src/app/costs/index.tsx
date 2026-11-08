@@ -29,12 +29,14 @@ export default function CostsDetail() {
     <DetailScreen title="What Dream pays">
       {view ? (
         <>
-          <Total total={view.total} size={34} />
-          <Text style={{ fontSize: 14, color: color.t2 }}>{view.caption}</Text>
           {view.rows.length === 0 ? (
-            <Text style={{ fontSize: 14.5, color: color.t2, marginTop: 16 }}>Nothing yet this month.</Text>
+            <Text style={{ fontSize: 15, lineHeight: 21, color: color.t2, marginTop: 4 }}>
+              {view.lastMonth ? `Nothing yet this month. ${view.lastMonth}.` : "Nothing yet this month."}
+            </Text>
           ) : (
             <>
+              <Total total={view.total} size={34} />
+              <Text style={{ fontSize: 14, color: color.t2 }}>{view.caption}</Text>
               <DayChart days={view.days} />
               <SectionHeading>What it paid for</SectionHeading>
               {view.rows.map((row) => (

@@ -178,6 +178,7 @@ describe("Settings and the detail", () => {
     const tile = costsTile(account())
     assert.strictEqual(tile.total, "$12.50")
     assert.strictEqual(tile.caption, "so far in November · $9.85 in October")
+    assert.deepStrictEqual([tile.month, tile.lastMonth], ["so far in November", "$9.85 in October"])
     assert.strictEqual(costsTile(account({ lastMonth: period(oct, nov) })).caption, "so far in November")
   })
 
@@ -189,7 +190,7 @@ describe("Settings and the detail", () => {
         ["Lift Log", undefined, "$8.00", Fx.liftLog.id, false],
         ["Old idea", "Archived", "$2.00", undefined, false],
         ["Deleted projects", undefined, "$1.50", undefined, false],
-        ["Outside your projects", "Signing in to your plan", "$1.00", undefined, true]
+        ["Outside your projects", undefined, "$1.00", undefined, true]
       ]
     )
     assert.strictEqual(view.projects[0]?.bar, 1)

@@ -179,14 +179,20 @@ export interface CostsTileView {
   readonly total: string
   /** "so far in November · $15.10 in October" */
   readonly caption: string
+  /** The caption in two parts, for Settings' narrower card: "so far in November", "$15.10 in October". */
+  readonly month: string
+  readonly lastMonth?: string
   readonly days: ReadonlyArray<DayBar>
 }
 
 export const costsTile = (costs: Pick<AccountCosts, "month" | "lastMonth" | "days">): CostsTileView => {
   const last = lastMonthLabel(costs.lastMonth)
+  const month = `so far in ${monthName(costs.month)}`
   return {
     total: dollars(costs.month.usd),
-    caption: [`so far in ${monthName(costs.month)}`, last].filter(Boolean).join(" · "),
+    caption: [month, last].filter(Boolean).join(" · "),
+    month,
+    ...(last ? { lastMonth: last } : {}),
     days: dayBars(costs.days)
   }
 }
@@ -242,7 +248,6 @@ const projectShares = (projects: ReadonlyArray<ProjectCost>, unattributedUsd: nu
     rows.push({
       key: "outside",
       title: "Outside your projects",
-      detail: "Signing in to your plan",
       amount: dollars(unattributedUsd),
       bar: bar(unattributedUsd),
       outside: true,
@@ -254,6 +259,8 @@ const projectShares = (projects: ReadonlyArray<ProjectCost>, unattributedUsd: nu
 export interface AccountCostsView {
   readonly total: string
   readonly caption: string
+  /** "$15.10 in October", for when this month has nothing yet. */
+  readonly lastMonth?: string
   readonly days: ReadonlyArray<DayBar>
   readonly rows: ReadonlyArray<CostRowView>
   readonly projects: ReadonlyArray<ShareView>
@@ -267,6 +274,7 @@ export const accountCostsView = (costs: AccountCosts): AccountCostsView => {
   return {
     total: tile.total,
     caption: tile.caption,
+    ...(tile.lastMonth ? { lastMonth: tile.lastMonth } : {}),
     days: tile.days,
     rows: lineRows(costs.month),
     projects: projectShares(costs.projects, unattributed),

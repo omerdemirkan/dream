@@ -90,7 +90,7 @@ const bills: ReadonlyMap<ProjectId, Bill> = new Map<ProjectId, Bill>([
       ...(Fx.liftLog.icon ? { icon: Fx.liftLog.icon } : {}),
       uses: [sandbox(41), mac(38), aiModels(liftModels), storage(0.4)],
       models: liftModels,
-      lastMonth: 7.42
+      lastMonth: 34.8
     }
   ],
   [
@@ -100,7 +100,7 @@ const bills: ReadonlyMap<ProjectId, Bill> = new Map<ProjectId, Bill>([
       ...(Fx.recipeScaler.icon ? { icon: Fx.recipeScaler.icon } : {}),
       uses: [sandbox(22), aiModels(recipeModels), storage(1.2)],
       models: recipeModels,
-      lastMonth: 4.1
+      lastMonth: 21.4
     }
   ],
   [
@@ -120,12 +120,12 @@ const bills: ReadonlyMap<ProjectId, Bill> = new Map<ProjectId, Bill>([
       ...(Fx.morningBrief.icon ? { icon: Fx.morningBrief.icon } : {}),
       uses: [sandbox(9.5), browser(52), aiModels(briefModels), email(31)],
       models: briefModels,
-      lastMonth: 2.64
+      lastMonth: 8.1
     }
   ],
   [
     "prj_gone1" as ProjectId,
-    { title: "Deleted project", archived: true, uses: [sandbox(3.1)], models: [], lastMonth: 1.2 }
+    { title: "Deleted project", archived: true, uses: [sandbox(3.1)], models: [], lastMonth: 6.2 }
   ]
 ])
 
@@ -230,7 +230,7 @@ const everyoneOf = (now: DateTime.Utc, mine: CostPeriod, myLast: number): Operat
     linesOf([...Array.from(bills.values()).flatMap((b) => b.uses), ...unattributed, ...othersUses, ...overhead]),
     modelsOf([...Array.from(bills.values()).flatMap((b) => b.models), ...othersModels])
   )
-  const lastMonth = myLast + 38.6 + 9.3
+  const lastMonth = myLast + 148 + 19.4 + 40
   return {
     month,
     lastMonth: lastMonthOf(now, lastMonth),
