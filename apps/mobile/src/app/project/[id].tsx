@@ -352,22 +352,29 @@ function Project(props: {
             onPress={() => (router.canGoBack() ? router.back() : router.replace("/"))}
           />
           <Identity project={project} state={state} summary={summary} />
-          {notifies ? (
-            <IconButton
-              icon="bell"
-              size={38}
-              label="Notifications"
-              onPress={() => {
-                Keyboard.dismiss()
-                openNotifications(props.projectId)
-              }}
-            />
-          ) : null}
-          <UsageBadge
-            projectId={props.projectId}
-            pausedBy={pausedByLimit(state, summary)}
-            onPress={() => setUsage(true)}
-          />
+          {typing ? (
+            // While they type, the keyboard's way down takes the place of the bell and the ring.
+            <IconButton icon="keyboardDown" size={38} label="Hide the keyboard" onPress={() => Keyboard.dismiss()} />
+          ) : (
+            <>
+              {notifies ? (
+                <IconButton
+                  icon="bell"
+                  size={38}
+                  label="Notifications"
+                  onPress={() => {
+                    Keyboard.dismiss()
+                    openNotifications(props.projectId)
+                  }}
+                />
+              ) : null}
+              <UsageBadge
+                projectId={props.projectId}
+                pausedBy={pausedByLimit(state, summary)}
+                onPress={() => setUsage(true)}
+              />
+            </>
+          )}
         </View>
         {state ? (
           <View style={{ marginTop: gap }}>

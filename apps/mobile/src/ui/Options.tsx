@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from "react"
 import {
   FlatList,
   type FlatListProps,
+  Keyboard,
   Modal,
   Pressable,
   ScrollView,
@@ -249,6 +250,10 @@ export function OptionsViewerHost() {
   const view = Option.getOrUndefined(viewing)
   const setFocus = useAtomSet(focusAtom)
   const setThread = useAtomSet(threadOpenAtom)
+  const open = view !== undefined
+  useEffect(() => {
+    if (open) Keyboard.dismiss()
+  }, [open])
   return (
     <Modal
       visible={view !== undefined}

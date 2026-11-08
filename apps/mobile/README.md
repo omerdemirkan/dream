@@ -260,6 +260,18 @@ Simulator, and open `dream://expo-development-client/?url=http%3A%2F%2Flocalhost
 builds unchanged. The `26.x` image stops at Xcode 26.3. In November 2026 a fresh checkout built for the Simulator
 (Release) in about 7 minutes, and an unsigned device archive in about 4.
 
+## Crash and error reports
+
+`src/platform/errorReporting.ts` reports uncaught JS errors (React Native's global handler), unhandled promise
+rejections (release builds) and screens that fail to render (`ui/ErrorBoundary.tsx`: `ScreenBoundary` around the
+navigator, `LayerBoundary` around each layer over it, which closes that layer rather than ending the app) to the
+Worker's `POST /client-errors`, with the stack, the route without its query, and the build and update. A fatal one is
+kept on disk and sent on the next launch if it didn't make it. Live builds send; fixtures builds only log. Read them
+with `curl -H "x-dream-dev-secret: …" https://dream.omer.build/admin/client-errors`. An exception inside a worklet
+(an animation callback on the UI runtime) aborts the app natively before any of this runs; those show up only in
+TestFlight's crash reports, so worklets hand work back with `scheduleOnRN(fn)` where `fn` is made on the React side
+(`test/worklets.test.ts`).
+
 ## Building for TestFlight
 
 ```sh

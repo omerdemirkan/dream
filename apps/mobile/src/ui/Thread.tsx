@@ -9,8 +9,8 @@ import { useAtomValue } from "@effect/atom-react"
 import { Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
 import { useEffect, useRef, useState } from "react"
-import { type ScrollViewInstance, Text, type TextInputInstance, View } from "react-native"
-import { KeyboardChatScrollView, KeyboardStickyView } from "react-native-keyboard-controller"
+import { Keyboard, type ScrollViewInstance, Text, type TextInputInstance, View } from "react-native"
+import { KeyboardChatScrollView, KeyboardStickyView, useKeyboardState } from "react-native-keyboard-controller"
 import Animated, { FadeOut, SlideInDown } from "react-native-reanimated"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { dayLabel, sameDay, timeLabel } from "../data/format.ts"
@@ -63,10 +63,15 @@ function ThreadLayer(
   const scroll = useRef<ScrollViewInstance>(null)
   const { root, replies } = threadOf(state.messages, open.messageId, props.fetched)
   const [highlight, setHighlight] = useState(open.highlight)
+  const typing = useKeyboardState((k) => k.isVisible)
 
-  // Reply (from a menu, or the expanded view) gives the composer the keyboard, again each time it's asked.
+  // Reply (from a menu, or the expanded view) gives the composer the keyboard, again each time it's asked; opening it
+  // otherwise (its folded line, a notification) puts away the keyboard Chat's composer had.
   useEffect(() => {
-    if (!open.compose) return
+    if (!open.compose) {
+      Keyboard.dismiss()
+      return
+    }
     const timer = setTimeout(() => input.current?.focus(), 380)
     return () => clearTimeout(timer)
   }, [open.compose, open.at])
@@ -143,7 +148,11 @@ function ThreadLayer(
               {props.label ?? state.project.title}
             </Text>
           </View>
-          <View style={{ width: 38 }} />
+          {typing ? (
+            <IconButton icon="keyboardDown" size={38} label="Hide the keyboard" onPress={() => Keyboard.dismiss()} />
+          ) : (
+            <View style={{ width: 38 }} />
+          )}
         </View>
         <View
           pointerEvents="none"

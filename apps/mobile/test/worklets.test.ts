@@ -9,11 +9,7 @@ import { describe, expect, it } from "@effect/vitest"
 
 const sources = (dir: string): Array<string> =>
   readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
-    entry.isDirectory()
-      ? sources(join(dir, entry.name))
-      : /\.(ts|tsx)$/.test(entry.name)
-        ? [join(dir, entry.name)]
-        : []
+    entry.isDirectory() ? sources(join(dir, entry.name)) : /\.(ts|tsx)$/.test(entry.name) ? [join(dir, entry.name)] : []
   )
 
 describe("scheduleOnRN", () => {
