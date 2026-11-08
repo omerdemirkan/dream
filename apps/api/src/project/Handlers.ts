@@ -1137,9 +1137,7 @@ export const AgentHandlers = SandboxRpcs.toLayer(
       // A finished turn or task is credited its share of the week: check before dreamd hears back and starts more.
       ReportTask: (report) => Effect.andThen(sandbox.taskFinished(report), limiter.check),
       ReportTurn: ({ state, usage, machine }) =>
-        state === "started"
-          ? sandbox.turnStarted
-          : Effect.andThen(sandbox.turnFinished(usage, machine), limiter.check),
+        state === "started" ? sandbox.turnStarted : Effect.andThen(sandbox.turnFinished(usage, machine), limiter.check),
       ReportProgress: (report) => sandbox.reportProgress(report),
       StayAwake: () => sandbox.stayAwake,
       Sleep: ({ reason, checkedAt }) => sandbox.sleep(reason, checkedAt),

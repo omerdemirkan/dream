@@ -98,7 +98,18 @@ export const fakeApi = (calls: Ref.Ref<ReadonlyArray<string>>, port: number) => 
           if (tag === "SendMessage") return Fixtures.liftLogUpdate
           if (tag === "Publish") return { url: "https://lift-log-x7k2.dream.test" }
           if (tag === "ListRelays") return []
-          if (tag === "ReadLog") return { entries: [] }
+          if (tag === "ReadLog") {
+            return {
+              entries: [
+                {
+                  at: DateTime.makeUnsafe("2026-11-08T14:00:30Z"),
+                  source: "gateway",
+                  level: "error",
+                  text: "GET /api/items → 500 in 12 ms"
+                }
+              ]
+            }
+          }
           if (tag === "ScheduleWake") {
             return { id: "wak_test", ...(payload as object), createdAt: DateTime.makeUnsafe("2026-11-06T20:00:00Z") }
           }

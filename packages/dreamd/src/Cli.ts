@@ -2130,7 +2130,9 @@ const machine = Command.make("machine", { json }, (input) =>
 
 /** The sources only the ProjectDO's half has, and those both halves can. */
 const remoteSources: ReadonlyArray<LogSource> = ["gateway", "notify", "relay", "dream"]
-const localSources: ReadonlyArray<LogSource> = LogSources.filter((source) => source !== "gateway" && source !== "notify")
+const localSources: ReadonlyArray<LogSource> = LogSources.filter(
+  (source) => source !== "gateway" && source !== "notify"
+)
 
 /** `dream logs --json`: the entries, and a note when Dream's half couldn't be read. */
 const LogReport = Schema.Struct({ entries: Schema.Array(LogEntry), note: Schema.optionalKey(Schema.String) })
@@ -2155,7 +2157,9 @@ const logs = Command.make(
       Flag.optional
     ),
     errors: Flag.Boolean("errors").pipe(
-      Flag.withDescription("Only warnings and errors: server errors, slow or failed requests, failed runs, an app's error lines."),
+      Flag.withDescription(
+        "Only warnings and errors: server errors, slow or failed requests, failed runs, an app's error lines."
+      ),
       Flag.withDefault(false)
     ),
     limit: Flag.Int("limit").pipe(
@@ -2175,8 +2179,16 @@ const logs = Command.make(
         return yield* fail(`No log source ${unknown.join(", ")}. The sources are ${LogSources.join(", ")}.`)
       }
       const asked = sources.length === 0 ? undefined : (sources as ReadonlyArray<LogSource>)
-      const since = Option.isNone(input.since) ? undefined : yield* fromResult(Parse.parseSince(input.since.value, yield* now))
-      const limit = Math.max(1, Math.min(Option.getOrElse(input.limit, () => LogLimits.shown), LogLimits.read))
+      const since = Option.isNone(input.since)
+        ? undefined
+        : yield* fromResult(Parse.parseSince(input.since.value, yield* now))
+      const limit = Math.max(
+        1,
+        Math.min(
+          Option.getOrElse(input.limit, () => LogLimits.shown),
+          LogLimits.read
+        )
+      )
       const query = defined({
         since,
         errors: input.errors ? true : undefined,
@@ -2205,7 +2217,10 @@ const logs = Command.make(
             )
       // Minute-by-minute machine readings only when machine is asked for.
       const routine = (entry: LogEntry) =>
-        entry.source === "machine" && entry.sample !== undefined && entry.level === "info" && !asked?.includes("machine")
+        entry.source === "machine" &&
+        entry.sample !== undefined &&
+        entry.level === "info" &&
+        !asked?.includes("machine")
       const entries = [...here, ...there]
         .filter((entry) => !routine(entry))
         .sort(byTime)

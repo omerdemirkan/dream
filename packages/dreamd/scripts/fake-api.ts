@@ -88,7 +88,9 @@ const tellAgent = (reason: string) =>
     const client = yield* RpcClient.make(DaemonRpcs)
     const at = yield* DateTime.now
     yield* client.Deliver({
-      events: [AgentEvent.cases.Alert.make({ id: EventId.make(`evt_${randomUUID()}`), at, reason, noticed: "server-errors" })]
+      events: [
+        AgentEvent.cases.Alert.make({ id: EventId.make(`evt_${randomUUID()}`), at, reason, noticed: "server-errors" })
+      ]
     })
     yield* log("TroubleNoticed", { reason })
   }).pipe(
@@ -124,7 +126,12 @@ const Gateway = HttpRouter.add(
     const at = yield* DateTime.now
     const ms = Date.now() - started
     if (Option.isNone(response)) {
-      gatewayLog.push({ at, source: "gateway", level: "warn", text: `${request.method} ${path} never reached the app: nothing answered` })
+      gatewayLog.push({
+        at,
+        source: "gateway",
+        level: "warn",
+        text: `${request.method} ${path} never reached the app: nothing answered`
+      })
       return HttpServerResponse.text("Waking up", { status: 503 })
     }
     const status = response.value.status
@@ -136,7 +143,10 @@ const Gateway = HttpRouter.add(
       yield* Effect.forkDetach(
         tellAgent(
           `Your published app answered ${serverErrors.length} requests with server errors outside your turns, so ` +
-            `whoever was using it saw them fail. The latest:\n${serverErrors.slice(-5).map((line) => `- ${line}`).join("\n")}`
+            `whoever was using it saw them fail. The latest:\n${serverErrors
+              .slice(-5)
+              .map((line) => `- ${line}`)
+              .join("\n")}`
         )
       )
     }
@@ -584,7 +594,9 @@ const Handlers = SandboxRpcs.toLayer(
           return relay
         }),
       ReportTurn: (payload) =>
-        log("ReportTurn", payload).pipe(Effect.tap(() => Effect.sync(() => (turnRunning = payload.state === "started")))),
+        log("ReportTurn", payload).pipe(
+          Effect.tap(() => Effect.sync(() => (turnRunning = payload.state === "started")))
+        ),
       ReportTask: (payload) =>
         log("ReportTask", encode(SandboxRpcs.requests.get("ReportTask")!.payloadSchema, payload)),
       ReportProgress: (payload) => log("ReportProgress", payload),

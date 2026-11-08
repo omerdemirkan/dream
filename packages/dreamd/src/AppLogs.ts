@@ -26,7 +26,7 @@ export const ReadMax = 256 * 1024
 export const FirstRead = 16 * 1024
 
 const looksLikeError =
-  /\b(error|errors?:|exception|fatal|panic|traceback|uncaught|unhandled|segmentation fault|econnrefused|eaddrinuse|enoent|eacces|killed)\b/i
+  /(error|exception)\b|\b(fatal|panic|traceback|uncaught|unhandled|segmentation fault|econnrefused|eaddrinuse|enoent|eacces|killed)\b/i
 const notAnError = /\b(0|no) errors?\b/i
 const looksLikeWarning = /\b(warn|warning|deprecated|deprecation)\b/i
 /** An access log line with a 5xx status: `GET /x 500 12ms`, `"GET /x HTTP/1.1" 502`. */

@@ -457,12 +457,18 @@ export const LogDetailLines = 12
 export const logEntries = (entries: ReadonlyArray<LogEntry>): string =>
   entries
     .map((entry) => {
-      const at = DateTime.formatIso(entry.at).replace(/^\d{4}-/, "").replace("T", " ").replace(/\.\d{3}Z$/, "Z")
+      const at = DateTime.formatIso(entry.at)
+        .replace(/^\d{4}-/, "")
+        .replace("T", " ")
+        .replace(/\.\d{3}Z$/, "Z")
       const where = entry.name === undefined ? entry.source : `${entry.source} ${entry.name}`
       const head = `${at}  ${where}  ${levelMark[entry.level]}${entry.text}`
       if (entry.detail === undefined) return head
       const lines = entry.detail.split("\n")
-      const shown = lines.length > LogDetailLines ? [`(${lines.length - LogDetailLines} lines before)`, ...lines.slice(-LogDetailLines)] : lines
+      const shown =
+        lines.length > LogDetailLines
+          ? [`(${lines.length - LogDetailLines} lines before)`, ...lines.slice(-LogDetailLines)]
+          : lines
       return [head, ...shown.map((line) => `    ${line}`)].join("\n")
     })
     .join("\n")

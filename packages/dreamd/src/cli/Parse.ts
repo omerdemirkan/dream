@@ -29,7 +29,10 @@ export const parseAt = (input: string, now: DateTime.Utc): Result.Result<DateTim
 
 /** `dream logs --since`: an ISO 8601 time with a zone, or a span back from now ("30m", "2h", "1d"). */
 export const parseSince = (input: string, now: DateTime.Utc): Result.Result<DateTime.Utc, string> => {
-  const text = input.trim().replace(/\s+ago$/i, "").replace(/^-/, "")
+  const text = input
+    .trim()
+    .replace(/\s+ago$/i, "")
+    .replace(/^-/, "")
   if (/^(\d+(?:\.\d+)?[smhdw])+$/i.test(text.replace(/\s+/g, ""))) {
     let millis = 0
     for (const [, amount, unit] of text.replace(/\s+/g, "").matchAll(/(\d+(?:\.\d+)?)([smhdw])/gi)) {

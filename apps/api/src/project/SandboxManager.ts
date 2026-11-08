@@ -582,7 +582,11 @@ export class SandboxManager extends Context.Service<
           })
         }))
         yield* Effect.logInfo("sandbox ready", { sandboxId: access.sandboxId })
-        yield* projectLog.note("dream", "info", `A new sandbox started (${made}), with dreamd from release ${health.release ?? "unknown"}`)
+        yield* projectLog.note(
+          "dream",
+          "info",
+          `A new sandbox started (${made}), with dreamd from release ${health.release ?? "unknown"}`
+        )
         return { access, daemonToken }
       }).pipe(
         Effect.tapError((error) => update((r) => ({ ...r, status: "failed", lastError: error.message }))),

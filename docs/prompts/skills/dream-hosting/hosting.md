@@ -11,7 +11,8 @@ wakes the sandbox. From their phone it opens in Safari.
   frozen with everything else, and its open connections close.
 - Publishing then loads the URL from this sandbox and tells you what it answers and any page errors; running it again
   re-checks. Dream also loads it when each of your turns ends, and wakes you when that finds a new error status, page
-  error, or no answer.
+  error, or no answer. Between turns, Dream's gateway logs every request to it (`dream logs --source gateway`), and
+  wakes you once when requests start failing with server errors or never reaching the app.
 - Requests reach your server with `Host` set to the sandbox's internal name (`<port>-<sandbox id>.e2b.app`), so a
   server that checks hosts (Vite's dev server does) has to allow it.
 - The public URL works from inside this sandbox too, so you can load exactly what they'll see.
@@ -21,5 +22,7 @@ wakes the sandbox. From their phone it opens in Safari.
   server as the app. Some senders want an answer within three seconds, so answer first and do the slow part after. A
   service that only talks down a connection you keep open needs a relay (below).
 - A server you start as a background task of your shell keeps your turn going until Dream stops it, and doesn't
-  outlive the turn. To keep one running between turns, start it detached, e.g.
-  `setsid nohup npm start > server.log 2>&1 &`.
+  outlive the turn. To keep one running between turns, start it detached, with its output in `~/logs`, e.g.
+  `setsid nohup npm start >> ~/logs/web.log 2>&1 &`. Dream adds what lands there to the project's log, timestamped
+  beside the gateway's requests, so `dream logs --source gateway,app` shows a failing request next to the error your
+  server printed for it.

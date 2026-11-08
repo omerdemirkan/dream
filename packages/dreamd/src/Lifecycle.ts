@@ -40,8 +40,8 @@ export const startLine = (release: string | undefined, previous: LifeState | und
 
 /** "12 min", "3 h 5 min". */
 export const span = (ms: number): string => {
+  if (ms < 60_000) return `${Math.round(ms / 1000)} s`
   const minutes = Math.round(ms / 60_000)
-  if (minutes < 1) return `${Math.round(ms / 1000)} s`
   if (minutes < 60) return `${minutes} min`
   const hours = Math.floor(minutes / 60)
   return `${hours} h${minutes % 60 === 0 ? "" : ` ${minutes % 60} min`}`

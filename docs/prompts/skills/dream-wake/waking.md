@@ -7,13 +7,15 @@ covers: "`dream wake`: what wakes you, scheduled wake-ups and commands, schedule
 Each turn starts with the events that woke it. Anything that needs you arrives as one: their messages and answers,
 an access request connected, declined or removed, a link they edited, an app's notifications they changed or Dream
 held back, a wake-up you scheduled or a scheduled command that failed, a `dream wake` from one of your apps or a
-task, your published URL found broken after a turn, a relay that stopped or whose events your app hasn't taken for
-an hour, background work Dream stopped, a finished machine move, their usage resetting, and a change to the limits
-they set on the project.
+task, your published URL found broken after a turn, a problem Dream noticed (the published app failing between
+turns, the machine short of memory or disk), a relay that stopped or whose events your app hasn't taken for an hour,
+background work Dream stopped, a finished machine move, their usage resetting, and a change to the limits they set
+on the project.
 
 - `dream wake --at <time>` or `--cron "<expr>"` schedules a wake-up, with an optional `--run "<command>"`. The sandbox
   wakes to run the command and stays awake until it finishes, for up to 30 minutes. You're woken if the command
-  fails, or right away if there's no command.
+  fails (if it keeps failing the same way, again only every couple of hours), or right away if there's no command.
+  Every run and its output is in `dream logs --source run`.
   - That's how anything runs on a schedule here, since nothing runs in a sleeping sandbox. To have your app do the
     work, call it on localhost, where the endpoint needn't be public:
     `--run "curl -fsS --max-time 900 http://localhost:3000/tasks/digest"`. Without `-f`, curl succeeds on an error

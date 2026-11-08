@@ -88,7 +88,14 @@ const setup = Effect.gen(function* () {
     (...args: Array<string>) =>
       Command.runWith(dream, { version: "test" })(args).pipe(
         Effect.provide(Layer.mergeAll(Dream.layer, FetchHttpClient.layer, NodeServices.layer, pageCheck)),
-        Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnvRecord({ DREAM_SOCKET: env.DREAM_SOCKET! })))
+        Effect.provide(
+          ConfigProvider.layer(
+            ConfigProvider.fromEnvRecord({
+              DREAM_SOCKET: env.DREAM_SOCKET!,
+              DREAM_LOG_DIR: join(dir, ".dream", "logs")
+            })
+          )
+        )
       )
   const waitFor = (predicate: (calls: ReadonlyArray<string>) => boolean) =>
     Effect.gen(function* () {
@@ -411,6 +418,48 @@ describe("relay deliveries", () => {
       assert.strictEqual(
         calls.find((call) => call.startsWith("AddRelay")),
         'AddRelay {"source":{"_tag":"WebSocket","url":"wss://ws-feed.exchange.coinbase.com","send":["{\\"type\\":\\"subscribe\\"}"],"ping":{"message":"ping","everySeconds":30},"silenceSeconds":60,"match":"BTC"},"target":{"path":"/hooks/prices"},"label":"prices"}'
+      )
+    }).pipe(Effect.scoped)
+  )
+})
+
+describe("dream logs", () => {
+  it.live("shows the sandbox's half beside Dream's, by time, with filters", () =>
+    Effect.gen(function* () {
+      const { daemonPort, cli } = yield* setup
+      const app = yield* fakeApp([200, 404])
+      const client = yield* daemonClient(daemonPort, "daemon-token")
+      const deliveries = [1, 2].map((n) => ({ id: `discord:MESSAGE_CREATE:${n}`, body: "{}" }))
+      const forward = (n: number) =>
+        client.ForwardRelay({
+          relayId: "rly_1" as never,
+          port: app.port,
+          path: "/hooks/discord",
+          deliveries: [deliveries[n]!]
+        })
+      yield* forward(0)
+      yield* forward(1)
+      const printed = (...args: Array<string>) =>
+        cli("logs", ...args).pipe(
+          Effect.andThen(TestConsole.logLines),
+          Effect.map((lines) => lines.join("\n")),
+          Effect.provide(TestConsole.layer)
+        )
+      const all = yield* printed("--source", "relay,gateway")
+      const lines = all.split("\n")
+      // The fake API's request comes first: it's the oldest.
+      assert.match(lines[0]!, /^11-08 14:00:30Z {2}gateway {2}ERROR GET \/api\/items → 500 in 12 ms$/)
+      assert.include(all, "relay rly_1  POST localhost:")
+      assert.include(all, "took an event")
+      assert.include(all, "relay rly_1  ERROR POST localhost:")
+      assert.include(all, "didn't take event discord:MESSAGE_CREATE:2: The app answered 404: nope.")
+
+      const errors = yield* printed("--source", "relay", "--errors")
+      assert.notInclude(errors, "took an event")
+      assert.include(errors, "didn't take event")
+      assert.include(
+        yield* printed("--source", "nonsense").pipe(Effect.flip, Effect.map(String)),
+        "No log source nonsense"
       )
     }).pipe(Effect.scoped)
   )

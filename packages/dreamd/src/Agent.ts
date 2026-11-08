@@ -380,7 +380,9 @@ export class Agent extends Context.Service<
         yield* Ref.set(lastTurnEndedMs, Option.some(yield* Clock.currentTimeMillis))
 
         const took = Duration.format(
-          Duration.seconds(Math.round((DateTime.toEpochMillis(yield* DateTime.now) - DateTime.toEpochMillis(startedAt)) / 1000))
+          Duration.seconds(
+            Math.round((DateTime.toEpochMillis(yield* DateTime.now) - DateTime.toEpochMillis(startedAt)) / 1000)
+          )
         )
         if (Exit.isFailure(exit)) {
           yield* Effect.logError("The turn couldn't run", exit.cause)
