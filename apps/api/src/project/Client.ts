@@ -5,7 +5,10 @@
  * SandboxAuth middleware attaches nothing.
  */
 import {
+  type Harness,
+  harnessOf,
   HttpRpcSerialization,
+  type ModelProvider,
   type Integration,
   type ProjectId,
   SandboxAuth,
@@ -74,10 +77,12 @@ export class ProjectDirectory extends Context.Service<
     readonly integrationRestored: (userId: UserId, integration: Integration, answered: ProjectId) => Effect.Effect<void>
     /** An integration other than a file key is gone (see `ProjectRpcs.IntegrationGone`). */
     readonly integrationGone: (userId: UserId, integration: Integration, failure?: string) => Effect.Effect<void>
-    /** A reading of the plan arrived from `except`: every other project of theirs with a usage limit checks it. */
-    readonly usageChanged: (userId: UserId, except: ProjectId) => Effect.Effect<void>
+    /** A reading of the plan arrived from `except`: every other project of theirs on that plan with a usage limit checks it. */
+    readonly usageChanged: (userId: UserId, provider: ModelProvider, except: ProjectId) => Effect.Effect<void>
+    /** `provider`'s limit was hit in `except`: their other projects on it wait for the reset too. */
     readonly usageLimited: (
       userId: UserId,
+      provider: ModelProvider,
       window: UsageWindowName,
       until: DateTime.Utc,
       except: ProjectId
@@ -89,8 +94,8 @@ export class ProjectDirectory extends Context.Service<
     Effect.gen(function* () {
       const projects = yield* Projects
       const clients = yield* ProjectClients
-      const each = (userId: UserId, f: (projectId: ProjectId) => Effect.Effect<void>) =>
-        Effect.flatMap(projects.projectIdsFor(userId), (ids) =>
+      const each = (userId: UserId, f: (projectId: ProjectId) => Effect.Effect<void>, harness?: Harness) =>
+        Effect.flatMap(projects.projectIdsFor(userId, harness), (ids) =>
           Effect.forEach(
             ids,
             (id) => f(id).pipe(Effect.catchCause((cause) => Effect.logWarning("project fan-out failed", cause))),
@@ -115,8 +120,8 @@ export class ProjectDirectory extends Context.Service<
               client.IntegrationGone({ integration, ...(failure === undefined ? {} : { failure }) })
             )
           ),
-        usageChanged: (userId, except) =>
-          Effect.flatMap(projects.limitedProjectIdsFor(userId), (ids) =>
+        usageChanged: (userId, provider, except) =>
+          Effect.flatMap(projects.limitedProjectIdsFor(userId, harnessOf(provider)), (ids) =>
             Effect.forEach(
               ids.filter((id) => id !== except),
               (id) =>
@@ -126,11 +131,14 @@ export class ProjectDirectory extends Context.Service<
               { concurrency: 4, discard: true }
             )
           ),
-        usageLimited: (userId, window, until, except) =>
-          each(userId, (projectId) =>
-            projectId === except
-              ? Effect.void
-              : clients.use(projectId, (client) => client.UsageLimited({ window, until }))
+        usageLimited: (userId, provider, window, until, except) =>
+          each(
+            userId,
+            (projectId) =>
+              projectId === except
+                ? Effect.void
+                : clients.use(projectId, (client) => client.UsageLimited({ window, until })),
+            harnessOf(provider)
           )
       })
     })

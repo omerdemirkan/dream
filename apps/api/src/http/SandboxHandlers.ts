@@ -5,6 +5,7 @@
  * project's file keys to the person, which are refused here.
  */
 import {
+  providerOf,
   AccessRequest,
   CurrentProject,
   InvalidRequest,
@@ -189,7 +190,7 @@ export const WorkerSandboxHandlers = SandboxRpcs.toLayer(
           const project = yield* projects.find(projectId)
           const provider = Option.match(project, {
             onNone: () => "claude" as const,
-            onSome: (p) => (p.harness === "codex" ? ("chatgpt" as const) : ("claude" as const))
+            onSome: (p) => providerOf(p.harness)
           })
           const connection = yield* connections.connectedModel(userId, provider)
           if (Option.isNone(connection) || connection.value.usage_json === null) {

@@ -4,6 +4,7 @@
  * dreamd and the Worker), plus `ProjectLiveRpcs` for the phone's socket.
  */
 import {
+  providerOf,
   accessHostProblem,
   AccessMessage,
   AccessState,
@@ -434,7 +435,16 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
           )
         }),
 
-      CredentialsChanged: () => Effect.andThen(sandbox.refreshRules, relays.keysChanged),
+      CredentialsChanged: () =>
+        Effect.gen(function* () {
+          yield* sandbox.refreshRules
+          yield* relays.keysChanged
+          // Its plan may be back: what waited for it goes now (delivery checks again).
+          if ((yield* store.pendingEvents(1)).length > 0) {
+            yield* store.setTimer("deliver", yield* Clock.currentTimeMillis)
+            yield* alarm.reschedule
+          }
+        }),
 
       UsageLimited: ({ window, until }) =>
         Effect.gen(function* () {
@@ -1044,17 +1054,23 @@ export const AgentHandlers = SandboxRpcs.toLayer(
       ReportUsage: ({ usage }) =>
         Effect.gen(function* () {
           const current = yield* project
+          // A project reads only its own plan; a report of another would land on the wrong connection.
+          if (usage.provider !== providerOf(current.harness)) {
+            return yield* Effect.logWarning("usage report for another plan ignored", { provider: usage.provider })
+          }
           yield* connections.recordUsage(current.ownerId, usage)
           yield* sandbox.usageReported(usage)
-          // The plan's week moved: this project's limits, and those of any other project of theirs with limits.
-          yield* directory.usageChanged(current.ownerId, current.id).pipe(Effect.forkDetach)
+          // The plan's week moved: this project's limits, and those of their other projects on the plan with limits.
+          yield* directory.usageChanged(current.ownerId, usage.provider, current.id).pipe(Effect.forkDetach)
           if (usage.limitedUntil === undefined) return yield* limiter.check
           const { window, until } = usage.limitedUntil
           if (DateTime.toEpochMillis(until) <= (yield* Clock.currentTimeMillis)) return
           yield* core.saveUsagePause(Option.some({ window, until, wakeOnReset: true }))
           yield* store.setTimer("usage-reset", DateTime.toEpochMillis(until))
           yield* alarm.reschedule
-          yield* directory.usageLimited(current.ownerId, window, until, current.id).pipe(Effect.forkDetach)
+          yield* directory
+            .usageLimited(current.ownerId, usage.provider, window, until, current.id)
+            .pipe(Effect.forkDetach)
         }),
 
       AddRelay: ({ source, target, label }) => relays.add({ source, target, label }),

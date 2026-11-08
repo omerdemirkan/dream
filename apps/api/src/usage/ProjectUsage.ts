@@ -5,6 +5,7 @@
  * (`AppRpcs.GetAccountUsage`) is the same windows and shares seen from all their projects together.
  */
 import {
+  providerOf,
   type AccountUsage,
   type AccountWindow,
   type ModelProvider,
@@ -40,8 +41,7 @@ import {
   type WindowReading
 } from "./Shares.ts"
 
-export const providerFor = (project: Pick<Project, "harness">): ModelProvider =>
-  project.harness === "codex" ? "chatgpt" : "claude"
+export const providerFor = (project: Pick<Project, "harness">): ModelProvider => providerOf(project.harness)
 
 /**
  * Every connection is a subscription today. An API-key connection would be `apiKey`: no windows, and each period's

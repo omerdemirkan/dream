@@ -26,6 +26,7 @@ const claudeUrl =
 const claudeToken = `sk-ant-oat01-${"x".repeat(60)}`
 
 type Cloud = Effect.Success<ReturnType<typeof makeCloud>>
+const chatGptToken = "chatgpt-access-token"
 
 /** Signs in, registers a device, connects Claude, and creates a project. */
 const setup = (cloud: Cloud) =>
@@ -65,6 +66,31 @@ const setup = (cloud: Cloud) =>
       idea: "A strength log that reads Apple Health and tells me when to add weight."
     })
     return { user: signedIn.user, started, connection, project }
+  })
+
+/** Connects ChatGPT for whoever is signed in: Codex's device code, then the auth file it writes once approved. */
+const connectChatGpt = (cloud: Cloud) =>
+  Effect.gen(function* () {
+    cloud.world.scripts.set("codex login", [
+      {
+        _tag: "Output",
+        text: "Follow these steps to sign in with ChatGPT:\n1. Open https://auth.openai.com/codex/device\n2. Enter WXYZ-12345\n"
+      }
+    ])
+    const started = yield* cloud.phone.StartModelConnection({ provider: "chatgpt" })
+    assert.strictEqual(started.flow._tag, "DeviceCode")
+    const authSandbox = [...cloud.world.sandboxes.values()].findLast(
+      (s) => s.metadata.purpose === "model-connect" && s.metadata.connectionId === started.connection.id
+    )!
+    authSandbox.files.set(
+      "/home/user/.codex/auth.json",
+      JSON.stringify({
+        tokens: { id_token: "id", access_token: chatGptToken, refresh_token: "refresh", account_id: "acct" }
+      })
+    )
+    const connection = yield* cloud.phone.GetModelConnection({ connectionId: started.connection.id })
+    assert.strictEqual(connection.status, "connected")
+    return connection
   })
 
 const envFileOf = (cloud: Cloud, projectId: ProjectId) => {
@@ -1619,6 +1645,110 @@ describe("a project, end to end", () => {
       sandbox.endAt = DateTime.add(yield* DateTime.now, { minutes: 1 })
       yield* dreamd.StayAwake({ reason: "command" })
       assert.strictEqual(sandbox.timeoutsSet, archived)
+      yield* cloud.close
+    })
+  )
+})
+
+describe("two plans", () => {
+  it.live("each project runs on the plan it was started on, and a new one defaults to the newest project's", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project: onClaude } = yield* setup(cloud)
+      yield* connectChatGpt(cloud)
+      // Connecting ChatGPT leaves Claude connected.
+      const connections = yield* cloud.phone.ListModelConnections()
+      assert.deepStrictEqual(connections.map((c) => [c.provider, c.status]).sort(), [
+        ["chatgpt", "connected"],
+        ["claude", "connected"]
+      ])
+
+      const onChatGpt = yield* cloud.phone.CreateProject({ idea: "A podcast of the week's papers", harness: "codex" })
+      assert.strictEqual(onChatGpt.harness, "codex")
+      yield* cloud.alarm(onChatGpt.id)
+      const { sandbox, env } = envFileOf(cloud, onChatGpt.id)
+      assert.strictEqual(env.DREAM_HARNESS, "codex")
+      assert.include(JSON.stringify(sandbox.rules["chatgpt.com"]), chatGptToken)
+      assert.notProperty(sandbox.rules, "api.anthropic.com")
+      yield* cloud.alarm(onClaude.id)
+      assert.notProperty(envFileOf(cloud, onClaude.id).sandbox.rules, "chatgpt.com")
+
+      // An app without the picker gets the plan of their newest project.
+      const next = yield* cloud.phone.CreateProject({ idea: "A tide clock for the kitchen" })
+      assert.strictEqual(next.harness, "codex")
+      yield* cloud.close
+    })
+  )
+
+  it.live("a plan's limit pauses only the projects on that plan", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project: onClaude } = yield* setup(cloud)
+      const other = yield* cloud.phone.CreateProject({ idea: "A recipe scaler that keeps eggs whole" })
+      yield* connectChatGpt(cloud)
+      const onChatGpt = yield* cloud.phone.CreateProject({ idea: "A podcast of the week's papers", harness: "codex" })
+      for (const id of [onClaude.id, other.id, onChatGpt.id]) yield* cloud.alarm(id)
+      const codexd = yield* cloud.sandbox(envFileOf(cloud, onChatGpt.id).env.DREAM_PROJECT_TOKEN)
+      const now = yield* DateTime.now
+      yield* codexd.ReportUsage({
+        usage: {
+          provider: "chatgpt",
+          weekly: { usedPercent: 100 },
+          limitedUntil: { window: "weekly", until: DateTime.add(now, { days: 2 }) },
+          observedAt: now
+        }
+      })
+      // The fan-out to their other projects is forked.
+      yield* Effect.sleep("100 millis")
+      const paused = (yield* cloud.phone.ListProjects()).filter((s) => s.pausedUntil !== undefined)
+      assert.deepStrictEqual(
+        paused.map((s) => s.project.id),
+        [onChatGpt.id]
+      )
+      // The reading went to the ChatGPT plan; Claude's projects read their own.
+      assert.strictEqual((yield* cloud.phone.GetAccountUsage({ provider: "chatgpt" })).weekly?.usedPercent, 100)
+      const sheet = yield* cloud.phone.GetProjectUsage({ projectId: onClaude.id })
+      assert.strictEqual(sheet.provider, "claude")
+
+      // A report naming the other plan is ignored rather than recorded on it.
+      const claudeD = yield* cloud.sandbox(envFileOf(cloud, onClaude.id).env.DREAM_PROJECT_TOKEN)
+      yield* claudeD.ReportUsage({ usage: { provider: "chatgpt", weekly: { usedPercent: 3 }, observedAt: now } })
+      assert.strictEqual((yield* cloud.phone.GetAccountUsage({ provider: "chatgpt" })).weekly?.usedPercent, 100)
+      yield* cloud.close
+    })
+  )
+
+  it.live("removing a plan holds its projects' work until it's connected again", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project: onClaude } = yield* setup(cloud)
+      const chatgpt = yield* connectChatGpt(cloud)
+      const onChatGpt = yield* cloud.phone.CreateProject({ idea: "A podcast of the week's papers", harness: "codex" })
+      yield* cloud.alarm(onChatGpt.id)
+      yield* cloud.alarm(onClaude.id)
+      const delivered = () => cloud.world.delivered.length
+      assert.strictEqual(delivered(), 2)
+
+      yield* cloud.phone.DisconnectModelConnection({ connectionId: chatgpt.id })
+      yield* cloud.phone.SendMessage({ projectId: onChatGpt.id, text: "Keep it under ten minutes" })
+      yield* cloud.alarm(onChatGpt.id)
+      assert.strictEqual(delivered(), 2)
+      // The phone isn't told it's starting while it waits.
+      const waiting = (yield* cloud.phone.ListProjects()).find((s) => s.project.id === onChatGpt.id)
+      assert.notStrictEqual(waiting?.activity?.state, "starting")
+      // Projects on Claude carry on.
+      yield* cloud.phone.SendMessage({ projectId: onClaude.id, text: "Track RPE too" })
+      yield* cloud.alarm(onClaude.id)
+      assert.strictEqual(delivered(), 3)
+
+      yield* connectChatGpt(cloud)
+      yield* Effect.sleep("100 millis")
+      yield* cloud.alarm(onChatGpt.id)
+      assert.strictEqual(delivered(), 4)
+      assert.deepStrictEqual(
+        cloud.world.delivered.at(-1)!.events.map((e: any) => e.text),
+        ["Keep it under ten minutes"]
+      )
       yield* cloud.close
     })
   )

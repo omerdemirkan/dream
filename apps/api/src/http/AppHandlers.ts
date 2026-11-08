@@ -159,19 +159,23 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
             return yield* new NoModelConnection({ message: "Connect your ChatGPT subscription first." })
           return requested
         }
-        // Their connected subscription; the more recently connected one if they have both.
-        const options = [
+        // With both connected: the plan their newest project runs on (an app without the picker keeps getting
+        // what they last chose), else the one connected more recently.
+        const connected = [
           ...Option.toArray(Option.map(claude, (row) => ({ harness: "claude-code" as const, at: row.connected_at }))),
           ...Option.toArray(Option.map(chatgpt, (row) => ({ harness: "codex" as const, at: row.connected_at })))
-        ].sort(
-          (a, b) =>
-            (b.at === null ? 0 : DateTime.toEpochMillis(b.at)) - (a.at === null ? 0 : DateTime.toEpochMillis(a.at))
-        )
-        const first = options[0]
-        if (first === undefined) {
+        ]
+        const only = connected.length === 1 ? connected[0] : undefined
+        if (only !== undefined) return only.harness
+        if (connected.length === 0) {
           return yield* new NoModelConnection({ message: "Connect your Claude or ChatGPT subscription first." })
         }
-        return first.harness
+        const newest = (yield* projects.summaries(userId))
+          .map((summary) => summary.project)
+          .sort((a, b) => DateTime.toEpochMillis(b.createdAt) - DateTime.toEpochMillis(a.createdAt))[0]
+        if (newest !== undefined) return newest.harness
+        const millis = (at: DateTime.Utc | null) => (at === null ? 0 : DateTime.toEpochMillis(at))
+        return connected.sort((a, b) => millis(b.at) - millis(a.at))[0]!.harness
       })
 
     return {

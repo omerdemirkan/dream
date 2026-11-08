@@ -1,10 +1,17 @@
 import { Schema } from "effect"
 import { ProjectId, UserId } from "./Ids.ts"
+import type { ModelProvider } from "./Usage.ts"
 import { UsageLimitReached } from "./Usage.ts"
 
 /** The coding agent that runs the project. Fixed when the project is created. */
 export const Harness = Schema.Literals(["claude-code", "codex"])
 export type Harness = typeof Harness.Type
+
+/** The subscription a harness runs on: a person can connect both, and each project uses its harness's. */
+export const providerOf = (harness: Harness): ModelProvider => (harness === "codex" ? "chatgpt" : "claude")
+
+/** The harness a subscription runs. */
+export const harnessOf = (provider: ModelProvider): Harness => (provider === "chatgpt" ? "codex" : "claude-code")
 
 /**
  * How hard the top-level agent reasons: the levels both harnesses take for a session (Claude Code's `effort`,

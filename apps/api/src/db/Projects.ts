@@ -197,9 +197,10 @@ export class Projects extends Context.Service<
     readonly archived: (userId: UserId) => Effect.Effect<ReadonlyArray<ArchivedProject>>
     /** Archives the project (`at`) or restores it (`undefined`). Only its DO calls this. */
     readonly setArchived: (id: ProjectId, at: DateTime.Utc | undefined) => Effect.Effect<void>
-    readonly projectIdsFor: (userId: UserId) => Effect.Effect<ReadonlyArray<ProjectId>>
+    /** Every project of theirs, or only those on `harness`. */
+    readonly projectIdsFor: (userId: UserId, harness?: Harness) => Effect.Effect<ReadonlyArray<ProjectId>>
     /** Their projects with a usage limit set, for checking them when the plan's usage moves. */
-    readonly limitedProjectIdsFor: (userId: UserId) => Effect.Effect<ReadonlyArray<ProjectId>>
+    readonly limitedProjectIdsFor: (userId: UserId, harness: Harness) => Effect.Effect<ReadonlyArray<ProjectId>>
     /** The usage limits set on a project, and the one that holds it, as its DO last projected them. */
     readonly usageLimits: (
       id: ProjectId
@@ -325,14 +326,18 @@ export class Projects extends Context.Service<
           sql`UPDATE projects SET archived_at = ${at === undefined ? null : DateTime.formatIso(at)} WHERE id = ${id}`
         )
 
-      const projectIdsFor = (userId: UserId) =>
-        sql`SELECT id FROM projects WHERE owner_id = ${userId}`.pipe(
+      const projectIdsFor = (userId: UserId, harness?: Harness) =>
+        (harness === undefined
+          ? sql`SELECT id FROM projects WHERE owner_id = ${userId}`
+          : sql`SELECT id FROM projects WHERE owner_id = ${userId} AND harness = ${harness}`
+        ).pipe(
           decodeRows(Schema.Struct({ id: ProjectId })),
           Effect.map((rows) => rows.map((row) => row.id))
         )
 
-      const limitedProjectIdsFor = (userId: UserId) =>
-        sql`SELECT id FROM projects WHERE owner_id = ${userId} AND usage_limits_json IS NOT NULL`.pipe(
+      const limitedProjectIdsFor = (userId: UserId, harness: Harness) =>
+        sql`SELECT id FROM projects
+            WHERE owner_id = ${userId} AND harness = ${harness} AND usage_limits_json IS NOT NULL`.pipe(
           decodeRows(Schema.Struct({ id: ProjectId })),
           Effect.map((rows) => rows.map((row) => row.id))
         )

@@ -128,7 +128,7 @@ export class AuthedAppRpcs extends RpcGroup.make(
   /**
    * Start a project from an idea. The idea becomes its first message and the
    * agent's first event. `harness` defaults to the one their connected
-   * subscription runs. With a `requestId`, a retry returns the project the
+   * subscription runs; with both connected, to their newest project's (the new-idea picker sends it). With a `requestId`, a retry returns the project the
    * first attempt created (`InvalidRequest` if that id belongs to someone else). `attachments` (November 2026):
    * uploads from `CreateAttachmentUpload` that go with the idea.
    */

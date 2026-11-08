@@ -746,6 +746,12 @@ export class SandboxManager extends Context.Service<
         // A usage hold is over: dreamd may start what it was holding.
         if (pending.length === 0) return yield* holdTurns(false)
         const project = yield* core.project.pipe(Effect.orDie)
+        // The plan it runs on isn't connected (removed, or its sign-in lapsed): the agent can't work, so what
+        // arrives waits, and connecting the plan again delivers it (`CredentialsChanged`).
+        if (Option.isNone(yield* connections.connectedModel(project.ownerId, providerFor(project)))) {
+          if ((yield* core.sandbox).startingSince !== undefined) yield* update(withoutStarting)
+          return yield* Effect.logInfo("held until its plan is connected", { provider: providerFor(project) })
+        }
         // Their messages have reached the agent's machine: they read "Seen" from here on.
         yield* core.markSeen(pending.map((event) => event.id))
         // Between turns, the phone says the agent is starting until a turn takes these (or delivery fails).
