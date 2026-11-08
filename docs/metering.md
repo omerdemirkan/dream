@@ -224,6 +224,23 @@ donor's run is its project's (`cause: refresh`), and a model sign-in's is its pe
 its costs, titled "Deleted project" and merged into one row by the app. `packages/sandbox-template/scripts/costs.ts` stays the operator's independent
 cross-check, rebuilt from E2B's log.
 
+## Watching it
+
+`packages/sandbox-template/scripts/resource-review.ts` is the operator's daily review, read-only: a UTC day's spend by
+center and project against the week before, each project's machine time by cause (turns, the tail after them, wakes
+with no turn by what woke the sandbox, refresh donors), sandbox sizes against their CPU, memory and disk, the Macs'
+idle tails and holds, browsers left open, storage, and whether the ledger keeps up with E2B. Findings come ranked by
+what they cost a day, and it exits 2 when one needs action. Two tables exist for it:
+
+- `sandbox_usage` (`metering/SandboxUsage.ts`): the hourly job reads E2B's metrics for every sandbox that ran in
+  the last two hours and keeps CPU average and peak, memory used and disk per sandbox and UTC hour. E2B drops a
+  sandbox's metrics when it's killed, and answers a long span only every five minutes, so this is what sizing is
+  judged from later. E2B reports no swap; memory used near the total stands in for it.
+- `sandbox_wakes` (`db/SandboxWakes.ts`): the ProjectDO notes, at most once a minute per reason, each time it uses
+  a project's sandbox between turns (a delivery, a scheduled command or task, a visit, a relay delivery, a refresh,
+  a move). E2B's runs say when a sandbox ran and `turn_usage` when the agent worked; these say why the rest
+  happened. Kept 30 days.
+
 ## In the app
 
 Costs sit beside the subscription's usage, never mixed into it: dollars here, the plan's percentages there, no

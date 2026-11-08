@@ -195,7 +195,9 @@ the other workstreams to agree first.
   the app (the client gave up during the resume) leaves dreamd nothing to see, so when the gateway looks up a visit's
   target the ProjectDO pauses the sandbox two minutes later unless dreamd's `StayAwake` says it's serving it
   (`visit-check`). Machine time is the bulk of Dream's E2B bill:
-  `node packages/sandbox-template/scripts/costs.ts` prints it per day and cause. dreamd posts relay deliveries to the app on
+  `node packages/sandbox-template/scripts/costs.ts` prints it per day and cause, and
+  `node packages/sandbox-template/scripts/resource-review.ts` is the daily review of all of Dream's spend and waste
+  (exits 2 when something needs action; see `docs/metering.md`). dreamd posts relay deliveries to the app on
   localhost, signed with `~/.dream/relay.key` (`src/Relays.ts`).
   A scheduled task (`dream wake --task`) runs like a `--run` command, but in a new harness session of its own, on the
   model and effort the agent picked, from its brief and `taskPrompt` (`docs/prompts/task/`; `src/Tasks.ts`). Each
