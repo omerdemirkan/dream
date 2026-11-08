@@ -2,15 +2,16 @@
  * Checks the project's log end to end on real E2B, with fakes for the Worker and Claude
  * (packages/dreamd/scripts/fake-api.ts and fake-anthropic.ts, run inside the sandbox), so no account is needed:
  *
- *   DREAM_TEMPLATE=<template> node scripts/logs-check.ts [refresh-to]
+ *   DREAM_TEMPLATE=<template> [FROM=<template>:<tag>] node scripts/logs-check.ts
  *
  * In a throwaway sandbox of the template it starts dreamd on Claude Code against the fakes, has the agent start a
  * server that writes to ~/logs and publish it, and a second server that writes to a file of its own; then runs a
  * scheduled command that fails, and sends requests the app answers with 500 through the fake API's stand-in for the
  * gateway (`/gw/…`), which tells the agent once, as the ProjectDO would. It checks that the agent's turns got the
  * failure and the alert, and that `dream logs` shows the gateway's requests, the servers' output, the failed run's
- * output and dreamd's own events; then that all of it is still there after the sandbox sleeps and wakes, and after a
- * refresh to `refresh-to`'s build and back (default dream-sandbox; skipped with `none`). The fake API stands in for
+ * output and dreamd's own events; then that all of it is still there after the sandbox sleeps and wakes, and, with
+ * `FROM` (an older build of the template, e.g. `dream-sandbox-x:release-…`, to start the sandbox from), after a
+ * refresh to the template's current build. The fake API stands in for
  * the gateway and its rule (three server errors outside a turn); the ProjectDO's real rules are checked in
  * apps/api/test/projectLog.test.ts. KEEP=1 leaves the sandbox up. Prints no token: the sandbox has only test values.
  */
@@ -26,7 +27,7 @@ const connection = {
   apiKey: process.env.E2B_API_KEY ?? "placeholder-added-by-proxy",
   ...(process.env.HTTPS_PROXY === undefined ? {} : { proxy: process.env.HTTPS_PROXY })
 }
-const refreshTo = process.argv[2] ?? "dream-sandbox"
+const from = process.env.FROM ?? templateName
 const fakeAnthropic = fileURLToPath(new URL("../../dreamd/scripts/fake-anthropic.ts", import.meta.url))
 const refreshSandbox = fileURLToPath(new URL("../../../apps/api/scripts/refresh-sandbox.ts", import.meta.url))
 
@@ -73,13 +74,13 @@ http.createServer((req, res) => {
 `
 }
 
-const sandbox = await Sandbox.create(templateName, {
+const sandbox = await Sandbox.create(from, {
   ...connection,
   timeoutMs: 60 * 60_000,
   metadata: devSandboxMetadata("logs-check")
 })
 const daemonToken = randomBytes(20).toString("hex")
-console.log(`sandbox ${sandbox.sandboxId} from ${templateName}`)
+console.log(`sandbox ${sandbox.sandboxId} from ${from}`)
 const deliver = (args: string) =>
   `node --disable-warning=ExperimentalWarning /opt/dream/packages/dreamd/scripts/deliver.ts http://127.0.0.1:${DefaultDaemonPort} ${daemonToken} ${args}`
 
@@ -200,25 +201,18 @@ try {
   const awake = await verify("after a sleep")
   check("dreamd noticed the sleep", /The sandbox slept for about \d+ (s|min)/.test(awake), awake)
 
-  if (refreshTo !== "none") {
-    for (const template of [refreshTo, templateName]) {
-      const out = clean(
-        execFileSync("node", [refreshSandbox, sandbox.sandboxId, daemonToken, template], {
-          encoding: "utf8",
-          stdio: ["ignore", "pipe", "pipe"],
-          env: { ...process.env, NODE_USE_ENV_PROXY: "1" }
-        })
-      )
-      console.log(
-        `refreshed to ${template}: ${out
-          .split("\n")
-          .filter((l) => /Refreshed|Current|refreshed/.test(l))
-          .join(" ")
-          .slice(0, 300)}`
-      )
-      await sleep(10_000)
-    }
-    const refreshed = await verify("after a refresh and back")
+  if (from !== templateName) {
+    const out = clean(
+      execFileSync("node", [refreshSandbox, sandbox.sandboxId, daemonToken, templateName], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+        env: { ...process.env, NODE_USE_ENV_PROXY: "1" }
+      })
+    )
+    const said = out.split("\n").filter((line) => /Refreshed|Current/.test(line))
+    console.log(`refreshed to ${templateName}: ${said.join(" ").slice(0, 300)}`)
+    await sleep(10_000)
+    const refreshed = await verify("after a refresh")
     check("dreamd's start after the refresh says so", /Dream refreshed it from release/.test(refreshed), refreshed)
   }
   console.log(`--- dream logs --source dream\n${await logs("--source dream --limit 40")}`)
