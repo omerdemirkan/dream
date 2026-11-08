@@ -135,7 +135,8 @@ const skillProblems = async (sandbox: Sandbox, harness: HarnessResult["harness"]
   const dir = harness === "claude-code" ? "/home/user/.claude/skills" : "/home/user/.agents/skills"
   const names = (await sh(sandbox, `head -qn 2 ${dir}/*/SKILL.md 2>/dev/null | grep '^name: ' | cut -c7-`)).output
   const installed = new Set(names.split("\n").filter((name) => name !== ""))
-  const missing = skillNames.filter((name) => !installed.has(name))
+  // dream-openai comes only with Dream's AI gateway, which this check's dreamd isn't given (gateway-check.ts is).
+  const missing = skillNames.filter((name) => name !== "dream-openai" && !installed.has(name))
   return missing.length === 0 ? [] : [`${harness} doesn't have ${missing.join(", ")} in ${dir}`]
 }
 

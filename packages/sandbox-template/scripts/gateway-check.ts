@@ -8,7 +8,7 @@
  *   - a turn runs a command (the fakes' `RUN:`) that calls the gateway over HTTPS and opens a realtime WebSocket
  *     with plain Node, and both arrive with the egress credential, not the placeholder the command sent;
  *   - the turn still reaches only its own fake model, and the harness process (Codex's) holds no gateway variable;
- *   - nothing Codex sent itself reached the gateway.
+ *   - nothing Codex sent itself reached the gateway, and the `dream-openai` skill was installed for the agent.
  *
  *   node scripts/gateway-check.ts <template[:tag]> <gateway host>
  *   e.g. node scripts/gateway-check.ts dream-sandbox-gw 18791-xxxx.e2b.app
@@ -114,6 +114,12 @@ const turn = async (sandbox: Sandbox, harness: "claude-code" | "codex") => {
     330_000
   )
   if (!ended.output.includes("Turn finished")) problems.push(`the turn didn't finish: ${ended.output}`)
+
+  // The agent was told: the gateway's skill is installed where the harness reads skills.
+  const skillDir = harness === "claude-code" ? "/home/user/.claude/skills" : "/home/user/.agents/skills"
+  const skill = await sh(sandbox, `test -f ${skillDir}/dream-openai/SKILL.md && echo installed || ls ${skillDir}`)
+  console.log(`${harness}: the dream-openai skill: ${skill.output.replace(/\n/g, " ")}`)
+  if (skill.output !== "installed") problems.push("the dream-openai skill isn't installed")
 
   // The command reached the gateway, over HTTPS and a WebSocket, with what egress added.
   const result = await sh(sandbox, `cat ${out}`)
