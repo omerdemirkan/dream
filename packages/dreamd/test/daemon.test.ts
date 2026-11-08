@@ -113,7 +113,12 @@ describe("dreamd", () => {
       assert.isTrue(calls.some((call) => call.startsWith("ReportTurn") && call.includes('"started"')))
       assert.isTrue(calls.some((call) => call.startsWith("ReportUsage") && call.includes('"usedPercent":4')))
       assert.include((yield* Ref.get(log))[0], "(Europe/Berlin)")
-      const health = yield* client.Health()
+      // dreamd marks the turn over just after reporting it finished.
+      let health = yield* client.Health()
+      for (let i = 0; i < 50 && health.turn !== "idle"; i++) {
+        yield* Effect.sleep("10 millis")
+        health = yield* client.Health()
+      }
       assert.deepStrictEqual(health, { version: "0.1.0", turn: "idle", queued: 0 })
     }).pipe(Effect.scoped)
   )
