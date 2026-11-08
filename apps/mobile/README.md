@@ -227,7 +227,8 @@ to read the day), what it paid for with OpenAI by model, each project largest fi
 opens its usage sheet; archived ones say so, deleted ones are one row, sign-ins are Outside your projects). An
 operator (`costs-operator`) also gets "Everyone on this Dream" at the foot, which opens `/costs/everyone`: each
 person's month and the overhead no one caused. `costs-none` is before anything cost anything (no section, no
-card); `costs-normal` goes back to the default. Against an API without the cost RPCs, nothing shows.
+card); `costs-normal` goes back to the default. Against an API without the cost RPCs, nothing shows. `screenshots/costs/` has
+each state from the Simulator.
 
 ```sh
 xcrun simctl launch --terminate-running-process booted build.omer.dream \
