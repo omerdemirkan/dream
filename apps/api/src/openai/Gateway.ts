@@ -14,7 +14,7 @@
  *   Metering never fails a call.
  */
 import type { ProjectId, UserId } from "@dream/domain"
-import { Clock, DateTime, Duration, Effect, Option, Redacted } from "effect"
+import { Clock, DateTime, Duration, Effect, Option, Redacted, Schema } from "effect"
 import * as HttpServerResponse from "effect/http/HttpServerResponse"
 import { Tokens } from "../auth/Tokens.ts"
 import { ApiConfig } from "../Config.ts"
@@ -24,17 +24,21 @@ import { Meter, type MeterEvent } from "../metering/Meter.ts"
 import { ClientSecrets, WrappedPrefix } from "./ClientSecrets.ts"
 import { type MeteredEndpoint, type Route, routeOf } from "./Endpoints.ts"
 import { type ObjectKind, OpenAIObjects } from "./Objects.ts"
+import { decodeJsonText, decodeValue, JsonObject } from "./Json.ts"
 import { bridge, sessionMeter } from "./Realtime.ts"
 import { AfterResponse, CallSideband, OpenAIUpstream } from "./Runtime.ts"
 import { observe } from "./Sse.ts"
 import {
+  asImages,
   asSpeech,
   type Caller,
   createdResponseId,
   fromEvent,
   fromJson,
+  imagesEstimate,
   speechEstimate,
   toEvent,
+  transcriptionEstimate,
   type Usage
 } from "./Usage.ts"
 
@@ -79,6 +83,7 @@ const dropRequest = new Set([
   "x-real-ip",
   "true-client-ip",
   "originator",
+  "openai-safety-identifier",
   "sec-websocket-key",
   "sec-websocket-version",
   "sec-websocket-extensions",
@@ -109,24 +114,90 @@ const backHeaders = (upstream: Headers, extra: Record<string, string> = {}) => {
   return headers
 }
 
-/** A stable, opaque per-project id for OpenAI's abuse checks on Dream's key (`safety_identifier`). */
-const safetyIdentifier = (projectId: string) =>
-  Effect.promise(async () =>
-    toHex(new Uint8Array(await crypto.subtle.digest("SHA-256", utf8(`dream-openai:${projectId}`)))).slice(0, 32)
-  )
+const sha256 = (text: string) =>
+  Effect.promise(async () => toHex(new Uint8Array(await crypto.subtle.digest("SHA-256", utf8(text)))))
 
-const parseJson = (text: string): Record<string, unknown> | undefined => {
-  try {
-    const value: unknown = JSON.parse(text)
-    return typeof value === "object" && value !== null && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : undefined
-  } catch {
+/**
+ * The id OpenAI's abuse checks see for a call on Dream's key (`safety_identifier`, or the
+ * `OpenAI-Safety-Identifier` header): always the project's, so no app can pick or rotate it. An app's own (one per
+ * end user, say) is folded in after it, so its users stay apart inside the project but never cross into another.
+ */
+export const safetyIdentifier = (projectId: string, theirs?: string | undefined) =>
+  Effect.gen(function* () {
+    const project = (yield* sha256(`dream-openai:${projectId}`)).slice(0, 32)
+    if (theirs === undefined || theirs === "") return project
+    return `${project}:${(yield* sha256(`dream-openai-user:${theirs}`)).slice(0, 24)}`
+  })
+
+const decodeObjectText = decodeJsonText(JsonObject)
+
+/** The fields of a request body the gateway reads; the body itself goes on whole. */
+const RequestFields = Schema.Struct({
+  model: Schema.optionalKey(Schema.String),
+  input: Schema.optionalKey(Schema.Unknown),
+  stream: Schema.optionalKey(Schema.Boolean),
+  store: Schema.optionalKey(Schema.Boolean),
+  background: Schema.optionalKey(Schema.Boolean),
+  safety_identifier: Schema.optionalKey(Schema.String),
+  previous_response_id: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  conversation: Schema.optionalKey(Schema.Unknown),
+  stream_options: Schema.optionalKey(JsonObject),
+  n: Schema.optionalKey(Schema.Finite),
+  size: Schema.optionalKey(Schema.String),
+  quality: Schema.optionalKey(Schema.String),
+  transport: Schema.optionalKey(Schema.Struct({ type: Schema.optionalKey(Schema.String) })),
+  session: Schema.optionalKey(Schema.Struct({ model: Schema.optionalKey(Schema.String) }))
+})
+type RequestFields = typeof RequestFields.Type
+const decodeFields = decodeValue(RequestFields)
+const noFields: RequestFields = {}
+
+/** What OpenAI answers that the gateway reads. */
+const AnswerFields = Schema.Struct({
+  id: Schema.optionalKey(Schema.String),
+  status: Schema.optionalKey(Schema.String),
+  model: Schema.optionalKey(Schema.String),
+  value: Schema.optionalKey(Schema.String),
+  expires_at: Schema.optionalKey(Schema.Finite),
+  session: Schema.optionalKey(Schema.Struct({ model: Schema.optionalKey(Schema.String) }))
+})
+const decodeAnswer = decodeValue(AnswerFields)
+
+const ChatChunk = Schema.Struct({ choices: Schema.Array(Schema.Unknown), usage: Schema.Unknown })
+const decodeChatChunk = decodeValue(ChatChunk)
+
+/**
+ * What in a Responses request reaches what OpenAI stored for someone else: a conversation, an item by reference, a
+ * file, a vector store or a container by id. The gateway lets none of these through, since nothing a project
+ * makes through it is stored as any of them; `previous_response_id` is checked against the project's own.
+ */
+export const foreignReference = (body: JsonObject): string | undefined => {
+  if (body.conversation !== undefined && body.conversation !== null)
+    return "Conversations aren't shared through Dream, since one key serves many projects; use previous_response_id."
+  const visit = (value: unknown): string | undefined => {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const found = visit(item)
+        if (found !== undefined) return found
+      }
+      return undefined
+    }
+    const object = Option.getOrUndefined(decodeValue(JsonObject)(value))
+    if (object === undefined) return undefined
+    if (object.type === "item_reference")
+      return "Items by reference aren't shared through Dream; send the item itself, or use previous_response_id."
+    if (typeof object.file_id === "string") return "Files aren't shared through Dream; send the file's content inline."
+    if (Array.isArray(object.vector_store_ids) && object.vector_store_ids.length > 0)
+      return "Vector stores aren't shared through Dream."
+    if (typeof object.container === "string") return 'Use a container of type "auto"; ids aren\'t shared through Dream.'
+    for (const nested of Object.values(object)) {
+      const found = visit(nested)
+      if (found !== undefined) return found
+    }
     return undefined
   }
+  return visit(body.input) ?? visit(body.tools)
 }
-
-const str = (value: unknown) => (typeof value === "string" ? value : undefined)
 
 // ---------------------------------------------------------------------------
 // Who's calling
@@ -138,8 +209,6 @@ interface Authorized {
   readonly auth: Redacted.Redacted<string>
   /** The model a client secret was minted for. */
   readonly model?: string | undefined
-  /** Came with a wrapped client secret, from a browser. */
-  readonly browser: boolean
 }
 
 const projectCache = new Map<ProjectId, { readonly ownerId: UserId | null; readonly atMs: number }>()
@@ -161,7 +230,6 @@ const protocolKey = (headers: Headers) =>
 const authorize = (raw: Request, route: Route) =>
   Effect.gen(function* () {
     const tokens = yield* Tokens
-    const projects = yield* Projects
     const secrets = yield* ClientSecrets
     const bearer = bearerOf(raw.headers) ?? (route.kind === "realtime-socket" ? protocolKey(raw.headers) : undefined)
     if (bearer === undefined) return yield* Effect.fail(noCredential)
@@ -170,29 +238,37 @@ const authorize = (raw: Request, route: Route) =>
       const claims = yield* secrets
         .unwrap(bearer, yield* Clock.currentTimeMillis)
         .pipe(Effect.mapError(() => problem(401, "This client secret is invalid or expired.", "invalid_client_secret")))
+      // A deleted project's secrets stop working with it.
+      if ((yield* ownerOf(claims.projectId as ProjectId)) !== claims.userId)
+        return yield* Effect.fail(problem(401, "This project no longer exists.", "project_gone"))
       return {
         caller: { projectId: claims.projectId, userId: claims.userId },
         auth: Redacted.make(claims.secret),
-        model: claims.model,
-        browser: true
+        model: claims.model
       } satisfies Authorized
     }
 
     const claims = yield* tokens.verifyOpenAIGateway(bearer).pipe(Effect.mapError(() => noCredential))
-    const now = yield* Clock.currentTimeMillis
-    let cached = projectCache.get(claims.projectId)
-    if (cached === undefined || now - cached.atMs > ProjectCacheMs) {
-      const project = yield* projects.find(claims.projectId)
-      cached = { ownerId: Option.match(project, { onNone: () => null, onSome: (p) => p.ownerId }), atMs: now }
-      projectCache.set(claims.projectId, cached)
-    }
-    if (cached.ownerId !== claims.userId)
+    if ((yield* ownerOf(claims.projectId)) !== claims.userId)
       return yield* Effect.fail(problem(401, "This project no longer exists.", "project_gone"))
     return {
       caller: { projectId: claims.projectId, userId: claims.userId },
-      auth: yield* dreamKey,
-      browser: false
+      auth: yield* dreamKey
     } satisfies Authorized
+  })
+
+/** Who owns the project now, if it still exists (looked up at most once a minute per isolate). */
+const ownerOf = (projectId: ProjectId) =>
+  Effect.gen(function* () {
+    const projects = yield* Projects
+    const now = yield* Clock.currentTimeMillis
+    let cached = projectCache.get(projectId)
+    if (cached === undefined || now - cached.atMs > ProjectCacheMs) {
+      const project = yield* projects.find(projectId)
+      cached = { ownerId: Option.match(project, { onNone: () => null, onSome: (p) => p.ownerId }), atMs: now }
+      projectCache.set(projectId, cached)
+    }
+    return cached.ownerId
   })
 
 /** Dream's key, which every call through the gateway uses. */
@@ -266,7 +342,12 @@ const meter = (
     if (usages.length === 0) return
     const at = yield* DateTime.now
     const events: Array<MeterEvent> = usages.map((usage) =>
-      toEvent(caller, endpoint, endpoint === "speech" ? asSpeech(usage) : usage, { ...fallback, at })
+      toEvent(
+        caller,
+        endpoint,
+        endpoint === "speech" ? asSpeech(usage) : endpoint === "images" ? asImages(usage) : usage,
+        { ...fallback, at }
+      )
     )
     yield* (yield* Meter).record(events)
     if (endpoint === "responses") {
@@ -278,18 +359,27 @@ const meter = (
 const requestIdOf = (response: Response) =>
   response.headers.get("x-request-id") ?? `dream_${crypto.randomUUID().replaceAll("-", "")}`
 
+/** How long after a stored response is made the sweep first looks for it, if nothing metered it by then. */
+const FirstCheckMs = 120_000
+
+/**
+ * Records `id` as this project's. Never fails the call: if D1 refuses, the response still goes back, and at worst
+ * the project's later reads of it are refused.
+ */
 const own = (caller: Caller, id: string, kind: ObjectKind, background: boolean) =>
   Effect.gen(function* () {
     const objects = yield* OpenAIObjects
+    const nowMs = yield* Clock.currentTimeMillis
     yield* objects.record({
       id,
       projectId: caller.projectId,
       ownerId: caller.userId,
       kind,
       background,
-      nowMs: yield* Clock.currentTimeMillis
+      nowMs,
+      firstCheckMs: nowMs + FirstCheckMs
     })
-  })
+  }).pipe(Effect.catchCause((cause) => Effect.logWarning("openai gateway: couldn't record what a project made", cause)))
 
 /**
  * Passes `response` on while metering what it says. JSON bodies and event streams are watched as they go by;
@@ -302,6 +392,8 @@ const metered = (
   options: {
     readonly model?: string | undefined
     readonly estimate?: Usage | undefined
+    /** A body that isn't JSON or events (a transcription as text, srt or vtt), metered from its text. */
+    readonly fromText?: ((text: string) => Usage) | undefined
     readonly onData?: (data: unknown, spawn: (effect: Effect.Effect<void, never, Services>) => void) => void
     readonly drop?: (data: unknown) => boolean
     readonly headers?: Record<string, string>
@@ -310,7 +402,13 @@ const metered = (
   Effect.gen(function* () {
     const headers = backHeaders(response.headers, options.headers)
     const type = response.headers.get("content-type") ?? ""
-    const kind = type.includes("text/event-stream") ? "sse" : type.includes("json") ? "json" : undefined
+    const kind = type.includes("text/event-stream")
+      ? "sse"
+      : type.includes("json")
+        ? "json"
+        : options.fromText !== undefined && type.startsWith("text/")
+          ? "text"
+          : undefined
     if (endpoint === undefined || response.status >= 400 || response.body === null || kind === undefined) {
       if (endpoint !== undefined && response.ok && options.estimate !== undefined)
         yield* later(
@@ -330,7 +428,14 @@ const metered = (
       kind,
       {
         onData: (data) => {
-          const found = kind === "json" ? fromJson(data) : fromEvent(data)
+          const found =
+            kind === "text"
+              ? typeof data === "string" && options.fromText !== undefined
+                ? [options.fromText(data)]
+                : []
+              : kind === "json"
+                ? fromJson(data)
+                : fromEvent(data)
           usages.push(...found)
           options.onData?.(data, spawn)
         },
@@ -361,46 +466,100 @@ const send = (request: Request) =>
       .pipe(Effect.mapError((failure) => problem(502, failure.message, "openai_unreachable")))
   })
 
-/** A JSON request's body, with Dream's changes (`edit`), as the text to send. */
+/** The app hung up, or sent a body that can't be read: a typed answer, never a defect. */
+const readRequest = <A>(read: () => Promise<A>) =>
+  Effect.tryPromise({ try: read, catch: () => problem(400, "The request body couldn't be read.", "invalid_body") })
+
+/** OpenAI's answer, read whole (small ones the gateway changes or needs before answering). */
+const readAnswer = <A>(read: () => Promise<A>) =>
+  Effect.tryPromise({ try: read, catch: () => problem(502, "OpenAI's answer was cut off.", "openai_unreachable") })
+
+/** A JSON request's body: the object (to send on, with Dream's changes) and the fields the gateway reads. */
 const jsonBody = (raw: Request) =>
   Effect.map(
-    Effect.promise(() => raw.text()),
-    (text) => ({ text, json: parseJson(text) })
+    readRequest(() => raw.text()),
+    (text) => {
+      const json = Option.getOrUndefined(decodeObjectText(text))
+      const fields = json === undefined ? noFields : Option.getOrElse(decodeFields(json), () => noFields)
+      return { text, json, fields }
+    }
   )
 
-const withSafety = (caller: Caller, json: Record<string, unknown>) =>
-  Effect.gen(function* () {
-    if (json.safety_identifier !== undefined) return json
-    return { ...json, safety_identifier: yield* safetyIdentifier(caller.projectId) }
-  })
+const withSafety = (caller: Caller, json: JsonObject, fields: RequestFields) =>
+  Effect.map(safetyIdentifier(caller.projectId, fields.safety_identifier), (safety_identifier) => ({
+    ...json,
+    safety_identifier
+  }))
 
 const isTerminal = (status: unknown) =>
   status === "completed" || status === "incomplete" || status === "failed" || status === "cancelled"
 
-const createResponse = (raw: Request, path: string, search: string, who: Authorized) =>
+/** Refuses what reaches another project's stored data; `previous_response_id` must be one this project made. */
+const checkReferences = (caller: Caller, json: JsonObject, fields: RequestFields) =>
+  Effect.gen(function* () {
+    const foreign = foreignReference(json)
+    if (foreign !== undefined) return yield* Effect.fail(problem(400, foreign, "unsupported_by_dream"))
+    const previous = fields.previous_response_id
+    if (previous === undefined || previous === null) return
+    if (!(yield* madeBy(previous, caller)))
+      return yield* Effect.fail(
+        problem(404, `No ${previous} was made by this project through Dream.`, "previous_response_not_found")
+      )
+  })
+
+/** Whether `id` was made by this project; a stream's id is recorded a moment after the app saw it, so ask twice. */
+const madeBy = (id: string, caller: Caller) =>
+  Effect.gen(function* () {
+    const objects = yield* OpenAIObjects
+    const look = objects
+      .projectOf(id)
+      .pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("openai gateway: couldn't look up an owner", cause).pipe(Effect.as(Option.none<string>()))
+        )
+      )
+    let owner = yield* look
+    if (Option.isNone(owner)) {
+      yield* Effect.sleep(Duration.seconds(1))
+      owner = yield* look
+    }
+    return Option.isSome(owner) && owner.value === caller.projectId
+  })
+
+const createResponse = (raw: Request, path: string, search: string, who: Authorized, count: boolean) =>
   Effect.gen(function* () {
     const config = yield* ApiConfig
-    const { text, json } = yield* jsonBody(raw)
-    const body = json === undefined ? text : JSON.stringify(yield* withSafety(who.caller, json))
-    const background = json?.background === true
-    const stored = json?.store !== false
-    const model = str(json?.model)
-    const response = yield* send(
-      new Request(upstreamUrl(config, path, search), {
-        method: "POST",
-        headers: forwardHeaders(raw.headers, who.auth, { "content-type": "application/json" }),
-        body
-      })
-    )
+    const { text, json, fields } = yield* jsonBody(raw)
+    if (json !== undefined) yield* checkReferences(who.caller, json, fields)
+    const body = json === undefined ? text : JSON.stringify(yield* withSafety(who.caller, json, fields))
+    const request = new Request(upstreamUrl(config, path, search), {
+      method: "POST",
+      headers: forwardHeaders(raw.headers, who.auth, { "content-type": "application/json" }),
+      body
+    })
+    const response = yield* send(request)
+    if (count)
+      return HttpServerResponse.raw(
+        new Response(response.body, { status: response.status, headers: backHeaders(response.headers) })
+      )
+    const background = fields.background === true
+    // Stored responses are this project's to read back, and the sweep's to meter if nobody saw them finish.
+    const stored = fields.store !== false || background
+    const model = fields.model
     const type = response.headers.get("content-type") ?? ""
     if (response.ok && type.includes("json") && !type.includes("event-stream")) {
       // Small, and its id must be this project's before the app can ask for it again (a background poll).
-      const answer = yield* Effect.promise(() => response.text())
-      const parsed = parseJson(answer)
-      const id = str(parsed?.id)
-      if (id !== undefined && (stored || background)) yield* own(who.caller, id, "response", background)
-      if (parsed !== undefined && isTerminal(parsed.status))
-        yield* later(meter(who.caller, "responses", fromJson(parsed), { requestId: requestIdOf(response), model }))
+      const answer = yield* readAnswer(() => response.text())
+      const parsed = Option.flatMap(decodeObjectText(answer), decodeAnswer)
+      const id = Option.getOrUndefined(Option.flatMap(parsed, (a) => Option.fromNullishOr(a.id)))
+      if (id !== undefined && stored) yield* own(who.caller, id, "response", background)
+      if (Option.isSome(parsed) && isTerminal(parsed.value.status))
+        yield* later(
+          meter(who.caller, "responses", fromJson(Option.getOrUndefined(decodeObjectText(answer))), {
+            requestId: requestIdOf(response),
+            model
+          })
+        )
       return HttpServerResponse.raw(
         new Response(answer, { status: response.status, headers: backHeaders(response.headers) })
       )
@@ -409,7 +568,7 @@ const createResponse = (raw: Request, path: string, search: string, who: Authori
       model,
       onData: (data, spawn) => {
         const id = createdResponseId(data)
-        if (id !== undefined && (stored || background)) spawn(own(who.caller, id, "response", background))
+        if (id !== undefined && stored) spawn(own(who.caller, id, "response", background))
       }
     })
   })
@@ -417,7 +576,7 @@ const createResponse = (raw: Request, path: string, search: string, who: Authori
 const chat = (raw: Request, path: string, search: string, who: Authorized) =>
   Effect.gen(function* () {
     const config = yield* ApiConfig
-    const { text, json } = yield* jsonBody(raw)
+    const { text, json, fields } = yield* jsonBody(raw)
     if (json === undefined) {
       const response = yield* send(
         new Request(upstreamUrl(config, path, search), {
@@ -428,12 +587,12 @@ const chat = (raw: Request, path: string, search: string, who: Authorized) =>
       )
       return yield* metered(response, who.caller, "chat")
     }
-    const stream = json.stream === true
-    const options = typeof json.stream_options === "object" && json.stream_options !== null ? json.stream_options : {}
-    const asked = (options as { include_usage?: unknown }).include_usage === true
+    const stream = fields.stream === true
+    const options = fields.stream_options ?? {}
+    const asked = options.include_usage === true
     // Never stored: the stored-completions list would show every project's to every other.
     const edited = {
-      ...(yield* withSafety(who.caller, json)),
+      ...(yield* withSafety(who.caller, json, fields)),
       store: false,
       ...(stream ? { stream_options: { ...options, include_usage: true } } : {})
     }
@@ -445,14 +604,15 @@ const chat = (raw: Request, path: string, search: string, who: Authorized) =>
       })
     )
     return yield* metered(response, who.caller, "chat", {
-      model: str(json.model),
+      model: fields.model,
       // The usage chunk Dream asked for, which an app that didn't may not expect.
       ...(stream && !asked
         ? {
-            drop: (data: unknown) => {
-              const chunk = data as { readonly choices?: ReadonlyArray<unknown>; readonly usage?: unknown }
-              return Array.isArray(chunk.choices) && chunk.choices.length === 0 && chunk.usage != null
-            }
+            drop: (data: unknown) =>
+              Option.match(decodeChatChunk(data), {
+                onNone: () => false,
+                onSome: (chunk) => chunk.choices.length === 0 && chunk.usage != null
+              })
           }
         : {})
     })
@@ -482,19 +642,34 @@ const forward = (
       const headers = forwardHeaders(raw.headers, who.auth)
       // fetch writes the multipart boundary itself.
       headers.delete("content-type")
-      const model = str(form.get("model"))
+      const field = (name: string) => {
+        const value = form.get(name)
+        return typeof value === "string" ? value : undefined
+      }
+      const model = field("model")
+      const format = field("response_format") ?? "json"
       const response = yield* send(new Request(url, { method: "POST", headers, body: form }))
-      return yield* metered(response, who.caller, route.endpoint, { model })
+      return yield* metered(response, who.caller, route.endpoint, {
+        model,
+        ...(route.endpoint === "transcription"
+          ? { fromText: (text: string) => transcriptionEstimate(model, format, text) }
+          : route.endpoint === "images" && model?.startsWith("dall-e") === true
+            ? { estimate: imagesEstimate(Number(field("n") ?? 1) || 1, field("size"), field("quality")) }
+            : {})
+      })
     }
-    const { text, json } = yield* jsonBody(raw)
-    const model = str(json?.model)
-    const input = str(json?.input)
+    const { text, fields } = yield* jsonBody(raw)
+    const model = fields.model
+    const input = typeof fields.input === "string" ? fields.input : undefined
     const response = yield* send(
       new Request(url, { method: "POST", headers: forwardHeaders(raw.headers, who.auth), body: text })
     )
     return yield* metered(response, who.caller, route.endpoint, {
       model,
-      ...(route.endpoint === "speech" && input !== undefined ? { estimate: speechEstimate(model, input) } : {})
+      ...(route.endpoint === "speech" && input !== undefined ? { estimate: speechEstimate(model, input) } : {}),
+      ...(route.endpoint === "images" && model?.startsWith("dall-e") === true
+        ? { estimate: imagesEstimate(fields.n ?? 1, fields.size, fields.quality) }
+        : {})
     })
   })
 
@@ -507,21 +682,14 @@ const owned = (
 ) =>
   Effect.gen(function* () {
     const config = yield* ApiConfig
-    const objects = yield* OpenAIObjects
-    let owner = yield* objects.projectOf(route.id)
-    // A stream's id is recorded as it goes by, a moment after the app saw it.
-    if (Option.isNone(owner)) {
-      yield* Effect.sleep(Duration.seconds(1))
-      owner = yield* objects.projectOf(route.id)
-    }
-    if (Option.isNone(owner) || owner.value !== who.caller.projectId)
+    if (!(yield* madeBy(route.id, who.caller)))
       return problem(404, `No ${route.id} was made by this project through Dream.`, "not_found")
     const hasBody = raw.method === "POST"
     const response = yield* send(
       new Request(upstreamUrl(config, path, search), {
         method: raw.method,
         headers: forwardHeaders(raw.headers, who.auth),
-        ...(hasBody ? { body: yield* Effect.promise(() => raw.text()) } : {})
+        ...(hasBody ? { body: yield* readRequest(() => raw.text()) } : {})
       })
     )
     return yield* metered(response, who.caller, route.endpoint)
@@ -532,7 +700,12 @@ const clientSecret = (raw: Request, path: string, search: string, who: Authorize
     const config = yield* ApiConfig
     const secrets = yield* ClientSecrets
     const { text } = yield* jsonBody(raw)
-    const extra = { "openai-safety-identifier": yield* safetyIdentifier(who.caller.projectId) }
+    const extra = {
+      "openai-safety-identifier": yield* safetyIdentifier(
+        who.caller.projectId,
+        raw.headers.get("openai-safety-identifier") ?? undefined
+      )
+    }
     const response = yield* send(
       new Request(upstreamUrl(config, path, search), {
         method: "POST",
@@ -540,17 +713,16 @@ const clientSecret = (raw: Request, path: string, search: string, who: Authorize
         body: text
       })
     )
-    const answer = yield* Effect.promise(() => response.text())
-    const parsed = parseJson(answer)
-    const value = str(parsed?.value)
-    if (!response.ok || parsed === undefined || value === undefined)
+    const answer = yield* readAnswer(() => response.text())
+    const whole = Option.getOrUndefined(decodeObjectText(answer))
+    const parsed = whole === undefined ? undefined : Option.getOrUndefined(decodeAnswer(whole))
+    const value = parsed?.value
+    if (!response.ok || whole === undefined || value === undefined)
       return HttpServerResponse.raw(
         new Response(answer, { status: response.status, headers: backHeaders(response.headers) })
       )
-    const session = parsed.session as { readonly model?: unknown } | undefined
-    const expiresAt =
-      typeof parsed.expires_at === "number" ? parsed.expires_at : (yield* Clock.currentTimeMillis) / 1000 + 600
-    const model = str(session?.model)
+    const expiresAt = parsed?.expires_at ?? (yield* Clock.currentTimeMillis) / 1000 + 600
+    const model = parsed?.session?.model
     const wrapped = yield* secrets.wrap({
       secret: value,
       projectId: who.caller.projectId,
@@ -558,7 +730,7 @@ const clientSecret = (raw: Request, path: string, search: string, who: Authorize
       ...(model === undefined ? {} : { model }),
       expiresAt
     })
-    return HttpServerResponse.jsonUnsafe({ ...parsed, value: wrapped }, { status: response.status })
+    return HttpServerResponse.jsonUnsafe({ ...whole, value: wrapped }, { status: response.status })
   })
 
 /** Starts the sideband that meters a call or Live session the gateway can't see. */
@@ -579,9 +751,9 @@ const realtimeCall = (raw: Request, path: string, search: string, who: Authorize
   Effect.gen(function* () {
     const config = yield* ApiConfig
     const headers = forwardHeaders(raw.headers, who.auth)
-    const body = yield* Effect.promise(() => raw.arrayBuffer())
+    const body = yield* readRequest(() => raw.arrayBuffer())
     const response = yield* send(new Request(upstreamUrl(config, path, search), { method: "POST", headers, body }))
-    const answer = yield* Effect.promise(() => response.arrayBuffer())
+    const answer = yield* readAnswer(() => response.arrayBuffer())
     const location = response.headers.get("location") ?? ""
     const callId = /\/(rtc_[A-Za-z0-9_-]+)/.exec(location)?.[1]
     if (response.ok && callId !== undefined)
@@ -589,16 +761,15 @@ const realtimeCall = (raw: Request, path: string, search: string, who: Authorize
         attachSideband(who, "realtime", callId, who.model ?? new URL(raw.url).searchParams.get("model") ?? undefined)
       )
     return HttpServerResponse.raw(
-      new Response(answer, { status: response.status, headers: backHeaders(response.headers, who.browser ? cors : {}) })
+      new Response(answer, { status: response.status, headers: backHeaders(response.headers, cors) })
     )
   })
 
 const liveSession = (raw: Request, path: string, search: string, who: Authorized) =>
   Effect.gen(function* () {
     const config = yield* ApiConfig
-    const { text, json } = yield* jsonBody(raw)
-    const transport = json?.transport as { readonly type?: unknown } | undefined
-    if (transport?.type === "sip")
+    const { text, fields } = yield* jsonBody(raw)
+    if (fields.transport?.type === "sip")
       return problem(400, "Dream's OpenAI gateway doesn't place phone calls (SIP) yet.", "unsupported_by_dream")
     const response = yield* send(
       new Request(upstreamUrl(config, path, search), {
@@ -607,12 +778,11 @@ const liveSession = (raw: Request, path: string, search: string, who: Authorized
         body: text
       })
     )
-    const answer = yield* Effect.promise(() => response.text())
-    const id = str(parseJson(answer)?.id)
-    if (response.ok && id !== undefined) {
-      const session = json?.session as { readonly model?: unknown } | undefined
-      yield* later(attachSideband(who, "live", id, str(session?.model)))
-    }
+    const answer = yield* readAnswer(() => response.text())
+    const id = Option.getOrUndefined(
+      Option.flatMap(Option.flatMap(decodeObjectText(answer), decodeAnswer), (a) => Option.fromNullishOr(a.id))
+    )
+    if (response.ok && id !== undefined) yield* later(attachSideband(who, "live", id, fields.session?.model))
     return HttpServerResponse.raw(
       new Response(answer, { status: response.status, headers: backHeaders(response.headers) })
     )
@@ -628,7 +798,14 @@ const socket = (raw: Request, path: string, search: string, who: Authorized, kin
       .filter((p) => p !== "" && !p.startsWith("openai-insecure-api-key."))
     const extra: Record<string, string> = {
       ...(protocols.length > 0 ? { "sec-websocket-protocol": protocols.join(", ") } : {}),
-      ...(kind === "realtime" ? { "openai-safety-identifier": yield* safetyIdentifier(who.caller.projectId) } : {})
+      ...(kind === "realtime"
+        ? {
+            "openai-safety-identifier": yield* safetyIdentifier(
+              who.caller.projectId,
+              raw.headers.get("openai-safety-identifier") ?? undefined
+            )
+          }
+        : {})
     }
     const headers: Record<string, string> = {}
     forwardHeaders(raw.headers, who.auth, extra).forEach((value, name) => {
@@ -665,6 +842,28 @@ const socket = (raw: Request, path: string, search: string, who: Authorized, kin
     return HttpServerResponse.raw(served.response(opened.protocol ?? protocols[0]))
   })
 
+/** Model names and intents, in a strict set of characters. */
+const QueryValue = /^[A-Za-z0-9._:-]{1,100}$/
+
+/**
+ * What a socket's query may say: the realtime model and intent, nothing for GPT-Live (its model is in
+ * `session.start`). `call_id` would attach to someone's WebRTC call; Dream's sideband is the only one that does.
+ */
+const socketQuery = (url: URL, kind: "realtime-socket" | "live-socket") =>
+  Effect.gen(function* () {
+    const allowed = kind === "realtime-socket" ? ["model", "intent"] : []
+    const kept = new URLSearchParams()
+    for (const [name, value] of url.searchParams) {
+      if (!allowed.includes(name) || !QueryValue.test(value))
+        return yield* Effect.fail(
+          problem(400, `Dream's gateway doesn't pass ?${name} on to OpenAI's WebSocket.`, "unsupported_by_dream")
+        )
+      kept.set(name, value)
+    }
+    const query = kept.toString()
+    return query === "" ? "" : `?${query}`
+  })
+
 /** Everything at `openai.<domain>`. */
 export const openaiGateway = (raw: Request) =>
   Effect.gen(function* () {
@@ -689,14 +888,15 @@ export const openaiGateway = (raw: Request) =>
         "not_for_harness"
       )
     const who = yield* authorize(raw, route)
-    if (who.browser && route.kind !== "realtime-call" && route.kind !== "realtime-socket")
-      return problem(401, "A client secret only starts a realtime call.", "invalid_client_secret")
-    const search = url.search
+    const search =
+      route.kind === "realtime-socket" || route.kind === "live-socket"
+        ? yield* socketQuery(url, route.kind)
+        : url.search
     switch (route.kind) {
       case "forward":
         return yield* forward(raw, path, search, who, route)
       case "create-response":
-        return yield* createResponse(raw, path, search, who)
+        return yield* createResponse(raw, path, search, who, route.count)
       case "chat":
         return yield* chat(raw, path, search, who)
       case "owned":
@@ -715,27 +915,43 @@ export const openaiGateway = (raw: Request) =>
   }).pipe(
     // Answers carried as failures (refusals, OpenAI unreachable) are just answers.
     Effect.catch((answer) => Effect.succeed(answer)),
+    // A browser starting a call reads the answer, refusals included, only with CORS.
+    Effect.map((answer) =>
+      new URL(raw.url).pathname.replace(/\/+$/, "") === "/v1/realtime/calls"
+        ? HttpServerResponse.setHeaders(answer, cors)
+        : answer
+    ),
     Effect.withSpan("openaiGateway")
   )
 
 // ---------------------------------------------------------------------------
-// Background responses nobody polled to the end
+// Stored responses nobody saw finish
 // ---------------------------------------------------------------------------
 
+/** How long the sweep keeps looking for a response, and how far apart: two minutes, doubling, up to an hour. */
+const SweepFor = Duration.days(1)
+const nextLook = (attempts: number) => Math.min(60, 2 * 2 ** attempts) * 60_000
+
 /**
- * Meters background responses whose end nobody watched through the gateway (the app stopped polling, or never
- * streamed them): every few minutes, each one older than two minutes and younger than a day gets one look, and is
- * metered once it's done. Older ones are given up on, and ownership records are kept for OpenAI's 30 days.
+ * Meters stored responses nobody watched finish through the gateway: background ones the app stopped polling, and
+ * streams it hung up on before their last event. Each is looked up when due, later each time it isn't done, and
+ * given up on after a day; ownership records stay for OpenAI's 30 days.
  */
 export const sweepBackgroundResponses = Effect.gen(function* () {
   const config = yield* ApiConfig
   if (!config.aiGatewayEnabled) return
+  const key = yield* dreamKey.pipe(Effect.option)
+  if (Option.isNone(key)) return
   const objects = yield* OpenAIObjects
   const upstream = yield* OpenAIUpstream
   const now = yield* Clock.currentTimeMillis
-  for (const row of yield* objects.unmetered(now - Duration.toMillis(Duration.days(1)), now - 120_000, 25)) {
-    const key = yield* dreamKey.pipe(Effect.option)
-    if (Option.isNone(key)) return
+  for (const row of yield* objects.due(now, 25)) {
+    if (now - row.created_at_ms > Duration.toMillis(SweepFor)) {
+      yield* Effect.logWarning("openai gateway: gave up metering a response", { id: row.id })
+      yield* objects.giveUp(row.id)
+      continue
+    }
+    const later = objects.checkLater(row.id, now + nextLook(row.attempts))
     const response = yield* upstream
       .fetch(
         new Request(upstreamUrl(config, `/responses/${row.id}`), {
@@ -743,15 +959,26 @@ export const sweepBackgroundResponses = Effect.gen(function* () {
         })
       )
       .pipe(Effect.option)
-    if (Option.isNone(response)) continue
-    if (response.value.status === 404) {
-      yield* objects.markMetered(row.id)
+    if (Option.isNone(response)) {
+      yield* later
       continue
     }
-    const parsed = parseJson(yield* Effect.promise(() => response.value.text()))
-    if (parsed === undefined || !isTerminal(parsed.status)) continue
+    if (response.value.status === 404) {
+      yield* objects.giveUp(row.id)
+      continue
+    }
+    const text = yield* Effect.tryPromise(() => response.value.text()).pipe(Effect.option)
+    const whole = Option.flatMap(text, decodeObjectText)
+    const parsed = Option.flatMap(whole, decodeAnswer)
+    if (Option.isNone(parsed) || !isTerminal(parsed.value.status)) {
+      yield* later
+      continue
+    }
     const caller: Caller = { projectId: row.project_id, userId: row.owner_id }
-    yield* meter(caller, "responses", fromJson(parsed), { requestId: row.id, model: str(parsed.model) })
+    yield* meter(caller, "responses", fromJson(Option.getOrUndefined(whole)), {
+      requestId: row.id,
+      model: parsed.value.model
+    })
     yield* objects.markMetered(row.id)
   }
   yield* objects.prune(now - Duration.toMillis(Duration.days(31)))

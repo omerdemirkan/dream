@@ -137,7 +137,6 @@ export default class Api extends Cloudflare.Worker<Api>()(
                   ? Effect.void
                   : Effect.fail(new UpstreamFailure({ service: "OpenAI", message: `sideband ${response.status}` }))
               ),
-              Effect.catchTag("UpstreamFailure", Effect.fail),
               Effect.catch((error) =>
                 Effect.fail(
                   error instanceof UpstreamFailure

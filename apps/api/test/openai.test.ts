@@ -157,6 +157,22 @@ const fakeOpenAI = () => {
       return new Response(new Uint8Array(64), {
         headers: { "content-type": "audio/mpeg", "x-request-id": `req_speech_${seen.length}` }
       })
+    if (path === "/v1/audio/transcriptions" && /name="response_format"\r\n\r\nsrt/.test(body))
+      return new Response("1\n00:00:00,000 --> 00:00:04,500\nhello there\n", {
+        headers: { "content-type": "text/plain; charset=utf-8", "x-request-id": `req_srt_${seen.length}` }
+      })
+    if (path === "/v1/images/generations")
+      return parsed.model === "dall-e-3"
+        ? json({ created: 1, data: [{ url: "https://x" }] })
+        : json({
+            created: 1,
+            data: [{ b64_json: "x" }],
+            usage: {
+              input_tokens: 50,
+              input_tokens_details: { text_tokens: 20, image_tokens: 30, cached_tokens_details: { image_tokens: 10 } },
+              output_tokens: 1056
+            }
+          })
     if (path === "/v1/audio/transcriptions")
       return json({
         text: "hello",
@@ -588,8 +604,10 @@ describe("the OpenAI gateway", () => {
       const response = yield* call("/v1/responses", post({ model: "gpt-6-luna", input: "hi", background: true }))
       const { id } = (yield* Effect.promise(() => response.json())) as { id: string }
       assert.strictEqual((yield* events).length, 0)
-      // Two minutes on, the sweep looks.
-      cloud.db.prepare("UPDATE openai_objects SET created_at_ms = created_at_ms - 180000").run()
+      // Too soon: the sweep waits two minutes before it looks.
+      yield* sweepBackgroundResponses.pipe(Effect.provide(Layer.succeedContext(cloud.workerContext)))
+      assert.strictEqual((yield* events).length, 0)
+      cloud.db.prepare("UPDATE openai_objects SET next_check_ms = next_check_ms - 180000").run()
       yield* sweepBackgroundResponses.pipe(Effect.provide(Layer.succeedContext(cloud.workerContext)))
       const metered = yield* events
       assert.deepStrictEqual(
@@ -598,6 +616,140 @@ describe("the OpenAI gateway", () => {
       )
       yield* sweepBackgroundResponses.pipe(Effect.provide(Layer.succeedContext(cloud.workerContext)))
       assert.strictEqual((yield* events).length, 1)
+      yield* cloud.close
+    })
+  )
+
+  it.live("meters a stored stream the app hung up on, and keeps looking at what isn't done yet", () =>
+    Effect.gen(function* () {
+      const { call, cloud, events } = yield* setup()
+      const response = yield* call("/v1/responses", post({ model: "gpt-6-luna", input: "hi", stream: true }))
+      // The app reads the first event, then leaves.
+      const reader = response.body!.getReader()
+      yield* Effect.promise(() => reader.read())
+      yield* Effect.promise(() => reader.cancel())
+      yield* Effect.sleep("50 millis")
+      assert.strictEqual((yield* events).length, 0)
+      cloud.db.prepare("UPDATE openai_objects SET next_check_ms = 0").run()
+      yield* sweepBackgroundResponses.pipe(Effect.provide(Layer.succeedContext(cloud.workerContext)))
+      assert.strictEqual((yield* events).length, 1)
+      // One OpenAI no longer knows is given up on, not looked at forever.
+      cloud.db
+        .prepare(
+          "INSERT INTO openai_objects (id, project_id, owner_id, kind, background, metered, attempts, next_check_ms, created_at_ms) VALUES ('resp_gone', 'prj_x', 'usr_x', 'response', 1, 0, 0, 0, ?)"
+        )
+        .run(Date.now())
+      yield* sweepBackgroundResponses.pipe(Effect.provide(Layer.succeedContext(cloud.workerContext)))
+      const gone = cloud.db
+        .prepare("SELECT metered FROM openai_objects WHERE id = 'resp_gone'")
+        .all() as unknown as ReadonlyArray<{
+        metered: number
+      }>
+      assert.strictEqual(gone[0]?.metered, 2)
+      yield* cloud.close
+    })
+  )
+
+  it.live("refuses what reaches another project's stored data", () =>
+    Effect.gen(function* () {
+      const { call, cloud, other } = yield* setup()
+      const theirs = yield* call("/v1/responses", {
+        ...post({ model: "gpt-6-luna", input: "hi" }),
+        projectId: other.id
+      })
+      const { id } = (yield* Effect.promise(() => theirs.json())) as { id: string }
+      const status = (body: unknown, path = "/v1/responses") => Effect.map(call(path, post(body)), (r) => r.status)
+      assert.strictEqual(yield* status({ model: "gpt-6-luna", input: "go on", previous_response_id: id }), 404)
+      assert.strictEqual(
+        yield* status({ model: "gpt-6-luna", input: "go on", previous_response_id: id }, "/v1/responses/input_tokens"),
+        404
+      )
+      assert.strictEqual(yield* status({ model: "gpt-6-luna", input: "hi", conversation: "conv_1" }), 400)
+      assert.strictEqual(yield* status({ model: "gpt-6-luna", input: [{ type: "item_reference", id: "msg_1" }] }), 400)
+      assert.strictEqual(
+        yield* status({
+          model: "gpt-6-luna",
+          input: [{ role: "user", content: [{ type: "input_file", file_id: "file_1" }] }]
+        }),
+        400
+      )
+      assert.strictEqual(
+        yield* status({ model: "gpt-6-luna", input: "hi", tools: [{ type: "code_interpreter", container: "cntr_1" }] }),
+        400
+      )
+      // Its own goes through.
+      const mine = yield* call("/v1/responses", post({ model: "gpt-6-luna", input: "hi" }))
+      const own = (yield* Effect.promise(() => mine.json())) as { id: string }
+      assert.strictEqual(yield* status({ model: "gpt-6-luna", input: "go on", previous_response_id: own.id }), 200)
+      // No sideband on someone's call, and no encoded paths.
+      assert.strictEqual(
+        (yield* call("/v1/realtime?model=gpt-realtime-2.1&call_id=rtc_theirs", { headers: { upgrade: "websocket" } }))
+          .status,
+        400
+      )
+      assert.strictEqual((yield* call("/v1/models/..%2Ffiles")).status, 404)
+      // Refusals of a browser's call carry CORS, so the page can read them.
+      const refused = yield* call("/v1/realtime/calls", { body: "x", auth: "Bearer dream_ek_forged" })
+      assert.strictEqual(refused.headers.get("access-control-allow-origin"), "*")
+      yield* cloud.close
+    })
+  )
+
+  it.live("always sets the project's safety identifier, folding in an app's own", () =>
+    Effect.gen(function* () {
+      const { call, cloud, fake } = yield* setup()
+      yield* call("/v1/responses", post({ model: "gpt-6-luna", input: "hi" }))
+      const plain = JSON.parse(fake.seen.at(-1)!.body).safety_identifier as string
+      yield* call("/v1/responses", post({ model: "gpt-6-luna", input: "hi", safety_identifier: "user-42" }))
+      const theirs = JSON.parse(fake.seen.at(-1)!.body).safety_identifier as string
+      assert.match(plain, /^[0-9a-f]{32}$/)
+      assert.isTrue(theirs.startsWith(`${plain}:`))
+      assert.notInclude(theirs, "user-42")
+      yield* call("/v1/realtime/client_secrets", {
+        ...post({ session: { type: "realtime", model: "gpt-realtime-2.1" } }),
+        headers: { "content-type": "application/json", "openai-safety-identifier": "chosen" }
+      })
+      assert.isTrue(fake.seen.at(-1)!.headers["openai-safety-identifier"]!.startsWith(`${plain}:`))
+      yield* cloud.close
+    })
+  )
+
+  it.live("meters what reports no usage: subtitles by their length, dall-e by the image", () =>
+    Effect.gen(function* () {
+      const { call, cloud, events } = yield* setup()
+      const form = new FormData()
+      form.set("model", "whisper-1")
+      form.set("response_format", "srt")
+      form.set("file", new Blob([new Uint8Array(10)]), "a.wav")
+      const srt = yield* call("/v1/audio/transcriptions", { body: form })
+      yield* Effect.promise(() => srt.text())
+      const dalle = yield* call("/v1/images/generations", post({ model: "dall-e-3", prompt: "a cat", quality: "hd" }))
+      yield* Effect.promise(() => dalle.text())
+      const image = yield* call("/v1/images/generations", post({ model: "gpt-image-2", prompt: "a cat" }))
+      yield* Effect.promise(() => image.text())
+      const metered = yield* events
+      assert.deepStrictEqual(
+        metered.map((e) => [e.dimensions.model, e.quantities, e.dimensions.estimated]),
+        [
+          ["whisper-1", { audio_ms: 4500 }, "true"],
+          ["dall-e-3", { images: 1 }, undefined],
+          [
+            "gpt-image-2",
+            {
+              input_tokens: 50,
+              input_image_tokens: 30,
+              cached_image_tokens: 10,
+              output_tokens: 1056,
+              output_image_tokens: 1056
+            },
+            undefined
+          ]
+        ]
+      )
+      assert.closeTo(metered[0]!.usd, (4.5 / 60) * 0.006, 1e-12)
+      assert.closeTo(metered[1]!.usd, 0.08, 1e-9)
+      // 20 text and 20 fresh plus 10 cached image tokens in, 1,056 image tokens out, at gpt-image-2's prices.
+      assert.closeTo(metered[2]!.usd, (20 * 5 + 20 * 8 + 10 * 2 + 1056 * 30) / 1e6, 1e-12)
       yield* cloud.close
     })
   )

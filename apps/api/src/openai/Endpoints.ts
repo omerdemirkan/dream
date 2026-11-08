@@ -24,8 +24,11 @@ export type Route =
       readonly endpoint: MeteredEndpoint | undefined
       readonly body: "json" | "form" | "none"
     }
-  /** `POST /responses`: forwarded, metered, and the response id recorded as this project's. */
-  | { readonly kind: "create-response" }
+  /**
+   * `POST /responses`: forwarded, metered, and the response id recorded as this project's; `POST
+   * /responses/input_tokens` (`count`) only forwarded. Both refuse references to what other projects stored.
+   */
+  | { readonly kind: "create-response"; readonly count: boolean }
   /** A call on a stored response or Live session: forwarded only for the project that made it. */
   | {
       readonly kind: "owned"
@@ -63,9 +66,9 @@ export const routeOf = (method: string, path: string, upgrade: boolean): Route =
   if (method === "POST") {
     switch (p) {
       case "/responses":
-        return { kind: "create-response" }
+        return { kind: "create-response", count: false }
       case "/responses/input_tokens":
-        return { kind: "forward", endpoint: undefined, body: "json" }
+        return { kind: "create-response", count: true }
       case "/chat/completions":
         return { kind: "chat" }
       case "/embeddings":
@@ -92,7 +95,8 @@ export const routeOf = (method: string, path: string, upgrade: boolean): Route =
         return refuse("Mint a client secret with POST /v1/realtime/client_secrets instead.")
     }
   }
-  if (method === "GET" && (p === "/models" || /^\/models\/[^/]+$/.test(p)))
+  // Ids in paths are a strict set of characters, so nothing encoded (`%2F`, `..`) reaches OpenAI's path.
+  if (method === "GET" && (p === "/models" || /^\/models\/[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(p)))
     return { kind: "forward", endpoint: undefined, body: "none" }
 
   const response = /^\/responses\/(resp_[A-Za-z0-9_-]+)(\/cancel|\/input_items)?$/.exec(p)

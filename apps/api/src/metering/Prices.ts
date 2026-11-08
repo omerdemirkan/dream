@@ -50,6 +50,8 @@ export interface ModelPrice {
   readonly audioMinute?: number
   /** Per minute of a session (GPT-Live). */
   readonly sessionMinute?: number
+  /** Per image, by `quality` and `size` ("standard 1024x1024"), for the image models that report no usage. */
+  readonly perImage?: Readonly<Record<string, number>>
 }
 
 const text = (input: number, cachedInput: number, output: number): ModelPrice => ({ input, cachedInput, output })
@@ -71,6 +73,18 @@ export const OpenAIModels: Readonly<Record<string, ModelPrice>> = {
   "gpt-4o-mini": text(0.15, 0.075, 0.6),
   "text-embedding-3-small": { input: 0.02 },
   "text-embedding-3-large": { input: 0.13 },
+  // openai.com/api/pricing (dall-e-3, dall-e-2 per image; they report no tokens).
+  "dall-e-3": {
+    perImage: {
+      "standard 1024x1024": 0.04,
+      "standard 1024x1792": 0.08,
+      "standard 1792x1024": 0.08,
+      "hd 1024x1024": 0.08,
+      "hd 1024x1792": 0.12,
+      "hd 1792x1024": 0.12
+    }
+  },
+  "dall-e-2": { perImage: { "standard 256x256": 0.016, "standard 512x512": 0.018, "standard 1024x1024": 0.02 } },
   "gpt-image-2": { input: 5, cachedInput: 1.25, imageInput: 8, cachedImageInput: 2, output: 30, imageOutput: 30 },
   "gpt-image-1.5": { input: 5, cachedInput: 1.25, imageInput: 8, cachedImageInput: 2, output: 10, imageOutput: 32 },
   "gpt-image-1-mini": {
@@ -170,13 +184,19 @@ const perMillion = (tokens: number, price: number | undefined) => (tokens * (pri
  * (`cached_audio_tokens` the audio ones among them), `output_tokens` every output token (`reasoning_tokens`,
  * `output_audio_tokens` and `output_image_tokens` among them).
  */
-export const openaiUsd = (price: ModelPrice, q: Readonly<Record<string, number>>, tier?: string): number => {
+export const openaiUsd = (
+  price: ModelPrice,
+  q: Readonly<Record<string, number>>,
+  tier?: string,
+  image?: { readonly size?: string | undefined; readonly quality?: string | undefined }
+): number => {
   const get = (key: string) => q[key] ?? 0
   const cachedAudio = get("cached_audio_tokens")
-  const cached = Math.max(0, get("cached_input_tokens") - cachedAudio)
+  const cachedImage = get("cached_image_tokens")
+  const cached = Math.max(0, get("cached_input_tokens") - cachedAudio - cachedImage)
   const audioIn = Math.max(0, get("input_audio_tokens") - cachedAudio)
-  const imageIn = get("input_image_tokens")
-  const textIn = Math.max(0, get("input_tokens") - get("input_audio_tokens") - imageIn - cached)
+  const imageIn = Math.max(0, get("input_image_tokens") - cachedImage)
+  const textIn = Math.max(0, get("input_tokens") - get("input_audio_tokens") - get("input_image_tokens") - cached)
   const audioOut = get("output_audio_tokens")
   const imageOut = get("output_image_tokens")
   const textOut = Math.max(0, get("output_tokens") - audioOut - imageOut)
@@ -186,13 +206,15 @@ export const openaiUsd = (price: ModelPrice, q: Readonly<Record<string, number>>
     perMillion(audioIn, price.audioInput ?? price.input) +
     perMillion(cachedAudio, price.cachedAudioInput ?? price.cachedInput ?? price.audioInput ?? price.input) +
     perMillion(imageIn, price.imageInput ?? price.input) +
+    perMillion(cachedImage, price.cachedImageInput ?? price.cachedInput ?? price.imageInput ?? price.input) +
     perMillion(textOut, price.output) +
     perMillion(audioOut, price.audioOutput ?? price.output) +
     perMillion(imageOut, price.imageOutput ?? price.output)
   const units =
     perMillion(get("characters"), price.characters) +
     (get("audio_ms") / 60_000) * (price.audioMinute ?? 0) +
-    (get("session_ms") / 60_000) * (price.sessionMinute ?? 0)
+    (get("session_ms") / 60_000) * (price.sessionMinute ?? 0) +
+    get("images") * (price.perImage?.[`${image?.quality ?? "standard"} ${image?.size ?? "1024x1024"}`] ?? 0)
   return (tokens + units) * tierFactor(tier) + get("web_search_calls") * WebSearchCall
 }
 
@@ -259,7 +281,15 @@ const priceFromBook = (event: MeterEvent): Priced => {
       const model = event.dimensions.model
       const known = modelPrice(model)
       if (known === undefined) return { center, payer, usd: 0, units: 1, unknownModel: model ?? "(none)" }
-      return { center, payer, usd: openaiUsd(known, q, event.dimensions.service_tier), units: 1 }
+      return {
+        center,
+        payer,
+        usd: openaiUsd(known, q, event.dimensions.service_tier, {
+          size: event.dimensions.size,
+          quality: event.dimensions.quality
+        }),
+        units: 1
+      }
     }
   }
 }

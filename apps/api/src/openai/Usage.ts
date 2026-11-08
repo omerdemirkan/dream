@@ -24,6 +24,8 @@ export interface Usage {
   readonly quantities: Readonly<Record<string, number>>
   /** A quantity was inferred rather than reported (speech without usage). */
   readonly estimated?: boolean | undefined
+  /** More to group or price it by (an image's `size` and `quality`). */
+  readonly dimensions?: Readonly<Record<string, string>> | undefined
 }
 
 const Num = Schema.optionalKey(Schema.Finite)
@@ -92,6 +94,7 @@ export const quantitiesOf = (usage: AnyUsage): Record<string, number> => {
   put(q, "cached_input_tokens", input?.cached_tokens)
   put(q, "input_audio_tokens", input?.audio_tokens)
   put(q, "cached_audio_tokens", input?.cached_tokens_details?.audio_tokens)
+  put(q, "cached_image_tokens", input?.cached_tokens_details?.image_tokens)
   put(q, "input_image_tokens", input?.image_tokens)
   put(q, "output_tokens", usage.output_tokens ?? usage.completion_tokens)
   put(q, "reasoning_tokens", output?.reasoning_tokens)
@@ -180,12 +183,15 @@ export const fromEvent = (data: unknown): ReadonlyArray<Usage> =>
     }
   })
 
+const Created = Schema.Struct({
+  type: Schema.Literal("response.created"),
+  response: Schema.Struct({ id: Schema.String })
+})
+const decodeCreated = Schema.decodeUnknownOption(Created)
+
 /** The response id a Responses stream announces first (`response.created`), for ownership. */
-export const createdResponseId = (data: unknown): string | undefined => {
-  if (typeof data !== "object" || data === null) return undefined
-  const event = data as { readonly type?: unknown; readonly response?: { readonly id?: unknown } }
-  return event.type === "response.created" && typeof event.response?.id === "string" ? event.response.id : undefined
-}
+export const createdResponseId = (data: unknown): string | undefined =>
+  Option.getOrUndefined(Option.map(decodeCreated(data), (event) => event.response.id))
 
 /**
  * Speech without usage (binary audio): its characters, which tts-1 and tts-1-hd are priced by, and for the
@@ -213,6 +219,45 @@ export const asSpeech = (usage: Usage): Usage =>
     ? usage
     : { ...usage, quantities: { ...usage.quantities, output_audio_tokens: usage.quantities.output_tokens } }
 
+/** An image model's output is image tokens, which its usage breaks out only sometimes. */
+export const asImages = (usage: Usage): Usage =>
+  usage.quantities.output_tokens === undefined || usage.quantities.output_image_tokens !== undefined
+    ? usage
+    : { ...usage, quantities: { ...usage.quantities, output_image_tokens: usage.quantities.output_tokens } }
+
+/** dall-e-2 and dall-e-3 report no usage: they're priced per image, by size and quality. */
+export const imagesEstimate = (count: number, size: string | undefined, quality: string | undefined): Usage => ({
+  quantities: { images: count },
+  dimensions: { size: size ?? "1024x1024", quality: quality === "hd" ? "hd" : "standard" }
+})
+
+/**
+ * A transcription in a format without usage (`text`, `srt`, `vtt`): how long the audio was, from the subtitles' last
+ * timestamp, or from the words at about 150 a minute; and for the token-priced models, tokens from that, at OpenAI's
+ * one audio token per 100 ms in and about four characters a token out. Always `estimated`.
+ */
+export const transcriptionEstimate = (model: string | undefined, format: string, text: string): Usage => {
+  const stamps = [...text.matchAll(/(\d{2}):(\d{2}):(\d{2})[,.](\d{3})/g)].map(
+    ([, h, m, sec, ms]) => ((Number(h) * 60 + Number(m)) * 60 + Number(sec)) * 1000 + Number(ms)
+  )
+  const words = text.split(/\s+/).filter((word) => word.length > 0).length
+  const audioMs = Math.max(
+    1000,
+    Math.round(format !== "text" && stamps.length > 0 ? Math.max(...stamps) : (words / 150) * 60_000)
+  )
+  if (model === undefined || model === "whisper-1") return { quantities: { audio_ms: audioMs }, estimated: true }
+  const audio = Math.round(audioMs / 100)
+  return {
+    quantities: {
+      audio_ms: audioMs,
+      input_tokens: audio,
+      input_audio_tokens: audio,
+      output_tokens: Math.ceil(text.length / 4)
+    },
+    estimated: true
+  }
+}
+
 export const toEvent = (
   caller: Caller,
   endpoint: MeteredEndpoint,
@@ -233,7 +278,8 @@ export const toEvent = (
       endpoint,
       ...(model === undefined ? {} : { model }),
       ...(usage.serviceTier === undefined ? {} : { service_tier: usage.serviceTier }),
-      ...(usage.estimated === true ? { estimated: "true" } : {})
+      ...(usage.estimated === true ? { estimated: "true" } : {}),
+      ...usage.dimensions
     }
   }
 }

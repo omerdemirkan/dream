@@ -8,13 +8,17 @@
  * - GPT-Live bills by the second: `session.usage.updated` is cumulative, and `session.closed` has the final count,
  *   so the session is one event when it ends (with the last count seen, if it never said it closed).
  */
+import { Option } from "effect"
 import type { MeteredEndpoint } from "./Endpoints.ts"
+import { decodeJsonText, decodeValue, JsonObject } from "./Json.ts"
 import { fromEvent, quantitiesOf, type Usage } from "./Usage.ts"
 
 type Json = Record<string, unknown>
 
-const record = (value: unknown): Json | undefined =>
-  typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Json) : undefined
+const decodeObject = decodeJsonText(JsonObject)
+
+const decodeRecord = decodeValue(JsonObject)
+const record = (value: unknown): Json | undefined => Option.getOrUndefined(decodeRecord(value))
 const text = (value: unknown): string | undefined => (typeof value === "string" ? value : undefined)
 
 /** The transcription model a realtime session config names (GA `audio.input.transcription`, or beta's). */
@@ -49,12 +53,7 @@ export const sessionMeter = (
   let ended = false
 
   const onMessage = (data: string) => {
-    let event: Json | undefined
-    try {
-      event = record(JSON.parse(data))
-    } catch {
-      return []
-    }
+    const event = Option.getOrUndefined(decodeObject(data))
     if (event === undefined) return []
     const type = text(event.type)
     const session = record(event.session)
