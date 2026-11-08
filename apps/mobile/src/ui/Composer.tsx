@@ -6,15 +6,85 @@
  * - `ElseComposer`: "Something else…" in the expanded question (`.else`).
  * - `ReasonField`: why they decline an access request, in the decline sheet (no send button; the sheet sends).
  */
-import { type Ref, useEffect, useRef, useState } from "react"
+import { type Ref, useCallback, useEffect, useRef, useState } from "react"
 import { Keyboard, Pressable, StyleSheet, Text, TextInput, type TextInputInstance, View } from "react-native"
 import type { MediaId } from "@dream/domain"
+import { caretAt, insertAt, type Selection } from "../data/draft.ts"
 import { useDictation } from "../platform/dictation.ts"
 import { AttachButton, AttachmentTray, type StagedAttachments } from "./Attachments.tsx"
 import { Bars, Icon, IconButton } from "./kit.tsx"
 import { color } from "./theme.ts"
 
-const join = (current: string, heard: string) => (current.trim() ? `${current.trimEnd()} ${heard}` : heard)
+/**
+ * Dictation into a composer goes where the cursor is, as typing does: the cursor (or the selection, which it replaces)
+ * when the mic was tapped, with the cursor after what was said once the take ends. Text the field didn't type itself
+ * (a kept draft, the clear after sending) puts the remembered cursor at the end, so a stale one never sends the
+ * words to the start.
+ */
+const useDictationAtCursor = (
+  text: string,
+  setText: (update: (current: string) => string) => void,
+  sample: string | undefined,
+  externalRef?: Ref<TextInputInstance>
+) => {
+  const input = useRef<TextInputInstance | null>(null)
+  const textRef = useRef(text)
+  textRef.current = text
+  const typed = useRef(text)
+  const selection = useRef<Selection>(caretAt(text.length))
+  const anchor = useRef<Selection>(selection.current)
+  const caretAfter = useRef<number | null>(null)
+  useEffect(() => {
+    if (text !== typed.current) {
+      typed.current = text
+      selection.current = caretAt(text.length)
+    }
+  }, [text])
+  const dictation = useDictation((heard) => {
+    const placed = insertAt(textRef.current, anchor.current, heard)
+    caretAfter.current = placed.caret
+    setText(() => placed.text)
+  }, sample)
+  const wasListening = useRef(false)
+  useEffect(() => {
+    if (wasListening.current && !dictation.listening && caretAfter.current !== null) {
+      const at = caretAt(caretAfter.current)
+      caretAfter.current = null
+      requestAnimationFrame(() => {
+        selection.current = at
+        input.current?.focus()
+        input.current?.setSelection(at.start, at.end)
+      })
+    }
+    wasListening.current = dictation.listening
+  }, [dictation.listening])
+  const toggle = () => {
+    if (!dictation.listening) anchor.current = selection.current
+    dictation.toggle()
+  }
+  const ref = useCallback(
+    (node: TextInputInstance | null) => {
+      input.current = node
+      if (typeof externalRef === "function") externalRef(node)
+      else if (externalRef) (externalRef as { current: TextInputInstance | null }).current = node
+    },
+    [externalRef]
+  )
+  return {
+    dictation,
+    toggle,
+    field: {
+      ref,
+      onChangeText: (next: string) => {
+        typed.current = next
+        setText(() => next)
+      },
+      onSelectionChange: (event: { readonly nativeEvent: { readonly selection: Selection } }) => {
+        selection.current = event.nativeEvent.selection
+      }
+    }
+  }
+}
 
 function Listening(props: { readonly heard: string; readonly inset: number; readonly radius: number }) {
   return (
@@ -139,7 +209,7 @@ export function ChatComposer(props: {
 }) {
   const [text, setText] = useState("")
   useDraft(props.draft, setText)
-  const dictation = useDictation((heard) => setText((current) => join(current, heard)), props.sample)
+  const { dictation, toggle, field } = useDictationAtCursor(text, setText, props.sample, props.inputRef)
   const attachments = props.attachments
   const attached = attachments?.staged.length ?? 0
   const uploading = attachments?.uploading === true
@@ -205,9 +275,10 @@ export function ChatComposer(props: {
             />
           )}
           <TextInput
-            ref={props.inputRef}
+            ref={field.ref}
             value={text}
-            onChangeText={setText}
+            onChangeText={field.onChangeText}
+            onSelectionChange={field.onSelectionChange}
             style={{ flex: 1, color: color.t1, fontSize: 16 }}
             returnKeyType="send"
             onSubmitEditing={send}
@@ -231,7 +302,7 @@ export function ChatComposer(props: {
             icon="mic"
             tone={dictation.listening ? "need" : "quiet"}
             label={dictation.listening ? "Stop dictating" : "Dictate"}
-            onPress={dictation.toggle}
+            onPress={toggle}
           />
         ) : null}
       </View>
@@ -248,7 +319,7 @@ export function ElseComposer(props: {
 }) {
   const [text, setText] = useState("")
   useDraft(props.draft, setText)
-  const dictation = useDictation((heard) => setText((current) => join(current, heard)), props.sample)
+  const { dictation, toggle, field } = useDictationAtCursor(text, setText, props.sample)
   const { has, send } = useSend(text, setText, props.onSend, props.busy === true)
   const height = props.large ? 58 : 48
   const button = props.large ? 42 : 36
@@ -270,8 +341,10 @@ export function ElseComposer(props: {
       <View style={{ flex: 1, height: "100%" }}>
         {text ? null : <FieldPlaceholder text="Something else…" color={color.t3} fontSize={props.large ? 17 : 16} />}
         <TextInput
+          ref={field.ref}
           value={text}
-          onChangeText={setText}
+          onChangeText={field.onChangeText}
+          onSelectionChange={field.onSelectionChange}
           style={{ flex: 1, color: color.t1, fontSize: props.large ? 17 : 16 }}
           returnKeyType="send"
           onSubmitEditing={send}
@@ -297,7 +370,7 @@ export function ElseComposer(props: {
           size={button}
           tone={dictation.listening ? "need" : "plain"}
           label={dictation.listening ? "Stop dictating" : "Dictate"}
-          onPress={dictation.toggle}
+          onPress={toggle}
           style={dictation.listening ? null : { backgroundColor: color.s2 }}
         />
       ) : null}
@@ -317,7 +390,11 @@ export function ReasonField(props: {
 }) {
   const value = useRef(props.value)
   value.current = props.value
-  const dictation = useDictation((heard) => props.onChange(join(value.current, heard)), props.sample)
+  const { dictation, toggle, field } = useDictationAtCursor(
+    props.value,
+    (update) => props.onChange(update(value.current)),
+    props.sample
+  )
   return (
     <View
       style={{
@@ -340,8 +417,10 @@ export function ReasonField(props: {
           <FieldPlaceholder text={props.placeholder ?? "Something else…"} color={color.t3} fontSize={16} />
         )}
         <TextInput
+          ref={field.ref}
           value={props.value}
-          onChangeText={props.onChange}
+          onChangeText={field.onChangeText}
+          onSelectionChange={field.onSelectionChange}
           onFocus={props.onFocus}
           autoFocus={props.autoFocus}
           multiline={props.multiline}
@@ -364,7 +443,7 @@ export function ReasonField(props: {
           size={38}
           tone={dictation.listening ? "need" : "plain"}
           label={dictation.listening ? "Stop dictating" : "Dictate"}
-          onPress={dictation.toggle}
+          onPress={toggle}
           style={dictation.listening ? null : { backgroundColor: color.s3 }}
         />
       ) : null}
