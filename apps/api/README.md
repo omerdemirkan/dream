@@ -48,7 +48,9 @@ Deployed with alchemy from `infra/alchemy.run.ts`; live at `https://dream.omer.b
   runs a probe on it through Namespace's command service (`brokers/MacProbe.ts`): an open ssh session, a build tool, or
   the agent's own processes using CPU count as use, a booted simulator and `GetMac` don't. It's destroyed after 15
   minutes without use (a start, a `GetMacSsh`, a busy probe), or 3 minutes after its last use once no turn is running
-  and nothing is queued or due. Each Mac's activity goes to D1 `mac_activity` (GET `/admin/macs/activity`), and its
+  and nothing is queued or due; while something the agent left running sits quiet, or the probe fails, only after an
+  hour. On Namespace's Macs ssh commands run under Namespace's own agent (`/opt/namespace/vmguest`), not sshd, and
+  `scripts/mac-check.ts` checks all of this on a real Mac. Each Mac's activity goes to D1 `mac_activity` (GET `/admin/macs/activity`), and its
   minutes, from Namespace's `createdAt` to `destroyedAt`, to `meter_events` with `stop_reason` and `idle_ms`.
 
 ## Operating it

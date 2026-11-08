@@ -1,0 +1,9 @@
+self 763 317
+load { 54.50 12.63 4.54 }
+p 441 1 441 me 0.0 /Library/Apple/System/Library/CoreServices/XProtect.app/Contents/MacOS/XProtect
+p 696 1 696 me 0.4 /Library/Apple/System/Library/CoreServices/XProtect.app/Contents/XPCServices/XProtectPluginService.xpc/Contents/MacOS/XProtectPluginService
+p 697 317 317 me 0.0 sleep
+p 763 317 317 me 0.0 /bin/sh
+p 769 763 317 me 0.0 awk
+cpu 142.6
+sims 0

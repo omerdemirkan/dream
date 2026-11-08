@@ -152,7 +152,7 @@ Its description (32 words, in [frontmatter.yaml](skills/dream-links/frontmatter.
 | --- | --- | --- | --- |
 | 1 | [App links on their Home](skills/dream-links/links.md) | `dream link`: the row of app icons on their Home, what a tile shows, their edits, Add to Home Screen, and sharing. | 520 |
 
-### The `dream-machines` skill, 778 words
+### The `dream-machines` skill, 825 words
 
 A skill (`SKILL.md`): the harness lists its name and description on every turn, and the agent or a task's session reads the rest when it judges it needs it.
 
@@ -163,7 +163,7 @@ Its description (34 words, in [frontmatter.yaml](skills/dream-machines/frontmatt
 | 1 | [Machines](skills/dream-machines/machines.md) | What the skill covers: this machine's sizes, the browsers, and the Mac. | 35 |
 | 2 | [This machine](skills/dream-machines/machine.md) | `dream machine`: which size this is, when to move between sizes, and what a move carries over. | 201 |
 | 3 | [Browsers](skills/dream-machines/browsers.md) | The local headless Chromium and Playwright, and `dream browser` for a real Chrome in the cloud. | 147 |
-| 4 | [A Mac](skills/dream-machines/mac.md) | `dream mac`: renting a Mac with Xcode and simulators, running commands, copying files, and what's on it. | 395 |
+| 4 | [A Mac](skills/dream-machines/mac.md) | `dream mac`: renting a Mac with Xcode and simulators, running commands, copying files, and what's on it. | 442 |
 
 ### The `dream-usage` skill, 231 words
 

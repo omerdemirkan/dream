@@ -10,8 +10,11 @@ and `dream mac stop` when you're done.
 - It costs money by the minute, whether or not anything runs on it. Dream looks at what's running on it every few
   minutes: an open ssh session, a build or test, or a process you left running that uses CPU counts as use; asking
   `dream mac` doesn't, and neither does a booted simulator sitting idle. It stops after 15 minutes without use, and
-  sooner once your turn ends with nothing running on it and nothing waiting for you. Each start is a fresh Mac, so
-  nothing on it survives a stop.
+  sooner once your turn ends with nothing running on it and nothing waiting for you. Something you left running that
+  sits quiet (a script between two builds) holds it for up to an hour. Each start is a fresh Mac, so nothing on it
+  survives a stop.
+- `nohup` fails there ("can't detach from console"). To leave a job running after `dream mac ssh` returns, start it
+  with `cmd > log 2>&1 < /dev/null &`.
 - A fresh Mac boots in seconds, but its first build fetches and compiles everything again, often for minutes. So one
   Mac kept through a stretch of builds costs less than a new one for each, and stopping it once you're done, or before
   you wait on the person, costs less than leaving it.

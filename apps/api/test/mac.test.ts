@@ -20,11 +20,13 @@ import { emptySandbox } from "../src/project/Store.ts"
 import { FakeWorld, fakeServices } from "./support/Fakes.ts"
 import { makeD1, makeDoStorage } from "./support/Sqlite.ts"
 
-const quiet = "self 99\nload { 0.40 0.30 0.20 }\ncpu 3.0\nsims 0\n"
+const quiet = "self 99 98\nload { 0.40 0.30 0.20 }\ncpu 3.0\nsims 0\n"
+/** A build script between two builds: its shell and a `sleep`, left behind by an ssh command (pgid 98). */
+const between = "self 99 98\np 32000 1 98 me 0.0 /bin/sh\np 32001 32000 98 me 0.0 sleep\ncpu 2.0\nsims 0\n"
 const building = [
-  "self 99",
-  "p 31000 1 me 0.3 /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild",
-  "p 31001 31000 me 90.0 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift-frontend",
+  "self 99 98",
+  "p 31000 1 98 me 0.3 /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild",
+  "p 31001 31000 98 me 90.0 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift-frontend",
   "cpu 95.0",
   "sims 0",
   ""
@@ -160,6 +162,37 @@ describe("the Mac", () => {
       assert.strictEqual(event?.dimensions.stop_reason, "turn-ended")
       assert.strictEqual(event?.quantities.ms, 5 * 60_000)
       yield* u.close
+    })
+  )
+
+  it.effect("waits an hour, not 15 minutes, while something the agent left runs quietly, even after the turn", () =>
+    Effect.gen(function* () {
+      const t = yield* harness
+      yield* t.machines.startMac
+      yield* t.working(false)
+      t.world.macProbe = between
+      yield* t.checkFor("55 minutes")
+      assert.strictEqual((yield* t.machines.mac).state, "running")
+      yield* t.checkFor("5 minutes")
+      assert.strictEqual((yield* t.machines.mac).state, "stopped")
+      assert.strictEqual(t.metered()[0]?.dimensions.stop_reason, "idle")
+      assert.strictEqual(t.metered()[0]?.quantities.ms, 60 * 60_000)
+      yield* t.close
+    })
+  )
+
+  it.effect("doesn't stop a Mac it can't probe for being quiet, only after the hour", () =>
+    Effect.gen(function* () {
+      const t = yield* harness
+      yield* t.machines.startMac
+      yield* t.working(false)
+      t.world.macProbe = "fail"
+      yield* t.checkFor("30 minutes")
+      assert.strictEqual((yield* t.machines.mac).state, "running")
+      yield* t.checkFor("30 minutes")
+      assert.strictEqual((yield* t.machines.mac).state, "stopped")
+      assert.strictEqual(t.metered()[0]?.dimensions.stop_reason, "idle")
+      yield* t.close
     })
   )
 

@@ -9,6 +9,27 @@ declare module "node:child_process" {
       readonly env?: Record<string, string | undefined>
     }
   ): string
+
+  export interface ChildProcess {
+    readonly stdout: { on(event: "data", listener: (chunk: Uint8Array | string) => void): void }
+    readonly stderr: { on(event: "data", listener: (chunk: Uint8Array | string) => void): void }
+    on(event: "close", listener: (code: number | null) => void): void
+    kill(signal?: string): boolean
+  }
+  export function spawn(
+    command: string,
+    args: ReadonlyArray<string>,
+    options?: { readonly stdio?: "ignore" | ReadonlyArray<"ignore" | "pipe" | "inherit"> }
+  ): ChildProcess
+}
+
+declare module "node:fs" {
+  export function mkdtempSync(prefix: string): string
+  export function writeFileSync(path: string, data: string, options: { readonly mode?: number }): void
+}
+
+declare module "node:os" {
+  export function tmpdir(): string
 }
 
 declare module "node:path" {

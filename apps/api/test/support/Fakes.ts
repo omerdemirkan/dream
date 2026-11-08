@@ -72,7 +72,7 @@ export class FakeWorld {
     }
   >()
   /** What the Mac probe prints (`brokers/MacProbe.ts`); a string that starts with "fail" fails the command. */
-  macProbe = "self 99\ncpu 0.0\nsims 0\n"
+  macProbe = "self 99 98\ncpu 0.0\nsims 0\n"
   /** Namespace's cap on a Mac's deadline, from its creation (the workspace policy). */
   macMaxLifetime = Duration.hours(4)
   daemonHealthy = true

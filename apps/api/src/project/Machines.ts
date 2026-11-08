@@ -35,6 +35,11 @@ export const MacIdleTimeout = Duration.minutes(15)
 export const MacCheckEvery = Duration.minutes(5)
 /** With the turn over, nothing running on the Mac and nothing due, it stops this long after its last use. */
 export const MacTurnEndGrace = Duration.minutes(3)
+/**
+ * When the agent left something running that's quiet now (a build script between two builds, a wait loop), or the
+ * probe couldn't tell, the Mac waits this long after its last use instead: stopping one mid-build costs more.
+ */
+export const MacHeldTimeout = Duration.minutes(60)
 /** Each Mac is created with this deadline and extended while used (Namespace's policy caps its lifetime). */
 const MacLifetime = Duration.minutes(90)
 const BrowserSweepEvery = Duration.minutes(10)
@@ -417,7 +422,11 @@ export class Machines extends Context.Service<
         const probeMs = (yield* Clock.currentTimeMillis) - probeStart
         if (Result.isFailure(probed)) {
           const described = yield* namespace.describe(instanceId).pipe(Effect.option)
-          if (Option.isSome(described) && described.value.status === "DESTROYED") {
+          // Namespace says DESTROYING, then DESTROYED, and has `destroyedAt` from the start.
+          if (
+            Option.isSome(described) &&
+            (described.value.destroyedAt !== undefined || described.value.status.startsWith("DESTROY"))
+          ) {
             return yield* finishMac(record, "provider-gone")
           }
           yield* logMac(instanceId, MacActivity.cases.Probe.make({ failure: probed.failure, ms: probeMs }))
@@ -435,12 +444,14 @@ export class Machines extends Context.Service<
         const nowMs = DateTime.toEpochMillis(now)
         const lastUsedMs = current.lastUsedAt === undefined ? 0 : DateTime.toEpochMillis(current.lastUsedAt)
         const idleMs = nowMs - lastUsedMs
-        if (idleMs >= Duration.toMillis(MacIdleTimeout)) return yield* finishMac(current, "idle")
-        const quiet = Result.isSuccess(probed) && !probed.success.busy
+        const held = Result.isFailure(probed) || probed.success.lingering
+        const timeout = held ? MacHeldTimeout : MacIdleTimeout
+        if (idleMs >= Duration.toMillis(timeout)) return yield* finishMac(current, "idle")
+        const quiet = Result.isSuccess(probed) && !probed.success.busy && !probed.success.lingering
         if (quiet && idleMs >= Duration.toMillis(MacTurnEndGrace) && (yield* agentIdle(nowMs))) {
           return yield* finishMac(current, "turn-ended")
         }
-        const untilIdle = lastUsedMs + Duration.toMillis(MacIdleTimeout) - nowMs
+        const untilIdle = lastUsedMs + Duration.toMillis(timeout) - nowMs
         yield* checkMacIn(Duration.millis(Math.min(Duration.toMillis(MacCheckEvery), untilIdle)))
       }).pipe(
         Effect.withSpan("Machines.macCheck"),
