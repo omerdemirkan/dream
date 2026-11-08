@@ -14,6 +14,7 @@ import {
   dayBars,
   dollars,
   everyoneView,
+  modelParts,
   projectCostsView,
   quantityLabel
 } from "../src/data/costs.ts"
@@ -74,7 +75,7 @@ describe("projectCostsView", () => {
     assert.isUndefined(projectCostsView(costs({})))
   })
 
-  it("names the month, compares with the last, and puts a single OpenAI model in the line's title", () => {
+  it("names the month, compares with the last, and puts a single AI model in the line's title", () => {
     const view = projectCostsView(
       costs(
         {
@@ -83,7 +84,7 @@ describe("projectCostsView", () => {
             { center: "sandbox", payer: "dream", usd: 6.79, quantity: 41, unit: "hour" },
             { center: "openai", payer: "dream", usd: 0.93, quantity: 412, unit: "request" }
           ],
-          models: [{ model: "gpt-6.1-terra", payer: "dream", usd: 0.93, requests: 412 }]
+          models: [{ model: "anthropic/claude-haiku-4.5", payer: "dream", usd: 0.93, requests: 412 }]
         },
         7.42
       )
@@ -95,37 +96,45 @@ describe("projectCostsView", () => {
       view?.rows.map((r) => [r.title, r.detail, r.amount, r.models.length]),
       [
         ["Machine time", "41 hours", "$6.79", 0],
-        ["OpenAI · gpt-6.1-terra", "412 requests", "$0.93", 0]
+        ["AI models · claude-haiku-4.5", "412 requests", "$0.93", 0]
       ]
     )
-    assert.isUndefined(view?.ownKey)
   })
 
-  it("keeps what their own OpenAI key paid apart from Dream's total", () => {
+  it("lists several models by name and maker, and leaves out anything Dream didn't pay", () => {
     const view = projectCostsView(
       costs({
-        usd: 3.64,
+        usd: 6.59,
         lines: [
           { center: "sandbox", payer: "dream", usd: 3.64, quantity: 22, unit: "hour" },
-          { center: "openai", payer: "person", usd: 2.95, quantity: 496, unit: "request" }
+          { center: "openai", payer: "dream", usd: 2.95, quantity: 496, unit: "request" },
+          { center: "openai", payer: "person", usd: 9, quantity: 9, unit: "request" }
         ],
         models: [
-          { model: "gpt-image-2", payer: "person", usd: 2.94, requests: 84 },
-          { model: "text-embedding-3-small", payer: "person", usd: 0.01, requests: 412 }
+          { model: "google/gemini-2.5-flash-image", payer: "dream", usd: 2.94, requests: 84 },
+          { model: "openai/text-embedding-3-small", payer: "dream", usd: 0.01, requests: 412 },
+          { model: "openai/gpt-x", payer: "person", usd: 9, requests: 9 }
         ]
       })
     )
-    assert.strictEqual(view?.total, "$3.64")
     assert.deepStrictEqual(
       view?.rows.map((r) => r.title),
-      ["Machine time"]
+      ["Machine time", "AI models"]
     )
-    assert.strictEqual(view?.ownKey?.amount, "$2.95")
     assert.deepStrictEqual(
-      view?.ownKey?.rows[0]?.models.map((m) => m.title),
-      ["gpt-image-2", "text-embedding-3-small"]
+      view?.rows[1]?.models.map((m) => [m.title, m.detail]),
+      [
+        ["gemini-2.5-flash-image", "Google · 84 requests"],
+        ["text-embedding-3-small", "OpenAI · 412 requests"]
+      ]
     )
     assert.isUndefined(view?.lastMonth)
+  })
+
+  it("reads gateway model ids", () => {
+    assert.deepStrictEqual(modelParts("mistralai/voxtral-mini"), { model: "voxtral-mini", maker: "Mistral" })
+    assert.deepStrictEqual(modelParts("someone/model-1"), { model: "model-1", maker: "Someone" })
+    assert.deepStrictEqual(modelParts("gpt-4o"), { model: "gpt-4o" })
   })
 })
 
@@ -157,14 +166,13 @@ describe("Settings and the detail", () => {
       usd: 12.5,
       lines: [
         { center: "sandbox", payer: "dream", usd: 12, quantity: 72, unit: "hour" },
-        { center: "openai", payer: "person", usd: 1.2, quantity: 300, unit: "request" },
         { center: "browser", payer: "dream", usd: 0.5, quantity: 250, unit: "minute" }
       ]
     }),
     lastMonth: period(oct, nov, { usd: 9.85 }),
     days: [],
     projects: [
-      { projectId: Fx.liftLog.id, title: "Lift Log", icon: "dumbbell", usd: 8, personUsd: 1.2 },
+      { projectId: Fx.liftLog.id, title: "Lift Log", icon: "dumbbell", usd: 8 },
       { projectId: "prj_old" as ProjectId, title: "Old idea", usd: 2, archived: true },
       { projectId: "prj_gone1" as ProjectId, title: "Deleted project", usd: 1, archived: true },
       { projectId: "prj_gone2" as ProjectId, title: "Deleted project", usd: 0.5, archived: true }
@@ -173,11 +181,10 @@ describe("Settings and the detail", () => {
     ...over
   })
 
-  it("Settings' card: the month so far, last month, and their own key's part on its own", () => {
+  it("Settings' card: the month so far and last month", () => {
     const tile = costsTile(account())
     assert.strictEqual(tile.total, "$12.50")
     assert.strictEqual(tile.caption, "so far in November · $9.85 in October")
-    assert.strictEqual(tile.ownKey, "$1.20 more on your OpenAI key")
     assert.strictEqual(costsTile(account({ lastMonth: period(oct, nov) })).caption, "so far in November")
   })
 
@@ -186,7 +193,7 @@ describe("Settings and the detail", () => {
     assert.deepStrictEqual(
       view.projects.map((p) => [p.title, p.detail, p.amount, p.projectId, p.outside]),
       [
-        ["Lift Log", "and $1.20 on your key", "$8.00", Fx.liftLog.id, false],
+        ["Lift Log", undefined, "$8.00", Fx.liftLog.id, false],
         ["Old idea", "Archived", "$2.00", undefined, false],
         ["Deleted projects", undefined, "$1.50", undefined, false],
         ["Outside your projects", "Signing in to your plan", "$1.00", undefined, true]
@@ -198,7 +205,6 @@ describe("Settings and the detail", () => {
       view.rows.map((r) => r.title),
       ["Machine time", "Cloud browsers"]
     )
-    assert.strictEqual(view.ownKey?.amount, "$1.20")
     assert.isFalse(view.everyone)
   })
 })
@@ -249,24 +255,18 @@ describe("the fixtures' costs through the app's services", () => {
         const view = projectCostsView(lift as ProjectCosts)
         assert.deepStrictEqual(
           view?.rows.map((r) => r.title),
-          ["Machine time", "Macs", "OpenAI", "Storage"]
+          ["Machine time", "Macs", "AI models", "Storage"]
         )
       })
     )
   )
 
-  it.effect("own-key, operator and none worlds", () =>
+  it.effect("operator and none worlds", () =>
     run(
       Effect.gen(function* () {
         yield* signIn
         const reports = yield* CostReports
         const backend = yield* FakeBackend
-
-        yield* backend.scenario("costs-own-key")
-        const own = yield* reports.account()
-        assert.isTrue(own?.month.lines.some((l) => l.center === "openai" && l.payer === "person"))
-        assert.isFalse(own?.month.lines.some((l) => l.center === "openai" && l.payer === "dream"))
-        assert.isDefined(own?.projects.find((p) => p.title === "Recipe Scaler")?.personUsd)
 
         yield* backend.scenario("costs-operator")
         const operator = yield* reports.account()

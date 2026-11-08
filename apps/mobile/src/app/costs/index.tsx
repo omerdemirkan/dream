@@ -1,7 +1,7 @@
 /**
  * What Dream pays to run their projects, in full: what Settings' costs card opens. This month's total and last
- * month's, the 30 days, what it paid for (OpenAI by model), the projects largest first (each opens its usage sheet),
- * what their own OpenAI key paid, apart, and for an operator a way into everyone's. Settings' own header, so back
+ * month's, the 30 days, what it paid for (the AI models one by one), the projects largest first (each opens its
+ * usage sheet), and for an operator a way into everyone's. Settings' own header, so back
  * (or the edge swipe) returns to it.
  */
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react"
@@ -12,7 +12,7 @@ import { useEffect } from "react"
 import { ActivityIndicator, Pressable, StyleSheet, Text } from "react-native"
 import { accountCostsView } from "../../data/costs.ts"
 import { accountCostsAtom } from "../../state/atoms.ts"
-import { CostRow, costsFootnote, DayChart, OwnKey, ShareCostRow, Total } from "../../ui/Costs.tsx"
+import { CostRow, costsFootnote, DayChart, ShareCostRow, Total } from "../../ui/Costs.tsx"
 import { Icon } from "../../ui/kit.tsx"
 import { color } from "../../ui/theme.ts"
 import { Footnote, SectionHeading } from "../../ui/Usage.tsx"
@@ -59,7 +59,6 @@ export default function CostsDetail() {
               ))}
             </>
           ) : null}
-          {view.ownKey ? <OwnKey own={view.ownKey} nested /> : null}
           {view.everyone ? (
             <Pressable
               accessibilityRole="button"

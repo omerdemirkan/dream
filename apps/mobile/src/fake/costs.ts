@@ -1,7 +1,7 @@
 /**
  * The fixtures world's costs (docs/metering.md): what Dream paid this month and last to run the sample projects,
  * at the price book's list prices (a standard sandbox is about $0.17 an hour, a cloud browser $0.002 a minute, a
- * Mac $0.06 a minute). `own-key` is a world where they connected an OpenAI key, so every OpenAI call is theirs;
+ * Mac $0.06 a minute), and the AI models their apps call through Dream's gateway, named as it names them.
  * `operator` adds everyone's costs; `none` is before anything cost anything.
  */
 import type {
@@ -21,7 +21,7 @@ import type {
 import * as Fx from "@dream/domain/fixtures"
 import { DateTime } from "effect"
 
-export type CostsMode = "normal" | "own-key" | "operator" | "none"
+export type CostsMode = "normal" | "operator" | "none"
 
 interface Use {
   readonly center: CostCenter
@@ -60,7 +60,7 @@ const email = (messages: number): Use => ({
   quantity: messages,
   unit: "message"
 })
-const openai = (models: ReadonlyArray<Omit<ModelCost, "payer">>): Use => ({
+const aiModels = (models: ReadonlyArray<Omit<ModelCost, "payer">>): Use => ({
   center: "openai",
   usd: models.reduce((n, m) => n + m.usd, 0),
   quantity: models.reduce((n, m) => n + m.requests, 0),
@@ -68,17 +68,18 @@ const openai = (models: ReadonlyArray<Omit<ModelCost, "payer">>): Use => ({
 })
 
 const liftModels = [
-  { model: "gpt-realtime-2.1-mini", usd: 0.71, requests: 96 },
-  { model: "gpt-6.1-terra", usd: 0.22, requests: 316 }
+  { model: "anthropic/claude-haiku-4.5", usd: 0.62, requests: 316 },
+  { model: "mistralai/voxtral-mini", usd: 0.31, requests: 96 }
 ]
 const briefModels = [
-  { model: "gpt-4o-mini-tts", usd: 0.19, requests: 31 },
-  { model: "gpt-6-luna", usd: 0.04, requests: 186 }
+  { model: "openai/gpt-4o-mini-tts", usd: 0.19, requests: 31 },
+  { model: "google/gemini-2.5-flash", usd: 0.04, requests: 186 }
 ]
 const recipeModels = [
-  { model: "gpt-image-2", usd: 2.94, requests: 84 },
-  { model: "text-embedding-3-small", usd: 0.01, requests: 412 }
+  { model: "google/gemini-2.5-flash-image", usd: 2.94, requests: 84 },
+  { model: "openai/text-embedding-3-small", usd: 0.01, requests: 412 }
 ]
+const othersModels = [{ model: "anthropic/claude-sonnet-4.5", usd: 5.4, requests: 1840 }]
 
 /** This month so far, per project. */
 const bills: ReadonlyMap<ProjectId, Bill> = new Map<ProjectId, Bill>([
@@ -87,7 +88,7 @@ const bills: ReadonlyMap<ProjectId, Bill> = new Map<ProjectId, Bill>([
     {
       title: Fx.liftLog.title,
       ...(Fx.liftLog.icon ? { icon: Fx.liftLog.icon } : {}),
-      uses: [sandbox(41), mac(38), openai(liftModels), storage(0.4)],
+      uses: [sandbox(41), mac(38), aiModels(liftModels), storage(0.4)],
       models: liftModels,
       lastMonth: 7.42
     }
@@ -97,7 +98,7 @@ const bills: ReadonlyMap<ProjectId, Bill> = new Map<ProjectId, Bill>([
     {
       title: Fx.recipeScaler.title,
       ...(Fx.recipeScaler.icon ? { icon: Fx.recipeScaler.icon } : {}),
-      uses: [sandbox(22), openai(recipeModels), storage(1.2)],
+      uses: [sandbox(22), aiModels(recipeModels), storage(1.2)],
       models: recipeModels,
       lastMonth: 4.1
     }
@@ -117,7 +118,7 @@ const bills: ReadonlyMap<ProjectId, Bill> = new Map<ProjectId, Bill>([
     {
       title: Fx.morningBrief.title,
       ...(Fx.morningBrief.icon ? { icon: Fx.morningBrief.icon } : {}),
-      uses: [sandbox(9.5), browser(52), openai(briefModels), email(31)],
+      uses: [sandbox(9.5), browser(52), aiModels(briefModels), email(31)],
       models: briefModels,
       lastMonth: 2.64
     }
@@ -130,9 +131,6 @@ const bills: ReadonlyMap<ProjectId, Bill> = new Map<ProjectId, Bill>([
 
 /** Their plan's sign-in sandbox, which belongs to no project. */
 const unattributed = [sandbox(0.2)]
-
-const payerOf = (mode: CostsMode, center: CostCenter) =>
-  mode === "own-key" && center === "openai" ? ("person" as const) : ("dream" as const)
 
 const monthStart = (now: DateTime.Utc, back = 0) => {
   const d = DateTime.toDateUtc(now)
@@ -154,10 +152,10 @@ const period = (
   }) satisfies CostPeriod
 
 /** Lines for some uses, the same center and payer summed. */
-const linesOf = (mode: CostsMode, uses: ReadonlyArray<Use>): ReadonlyArray<CostLine> => {
+const linesOf = (uses: ReadonlyArray<Use>): ReadonlyArray<CostLine> => {
   const byKey = new Map<string, CostLine>()
   for (const use of uses) {
-    const payer = payerOf(mode, use.center)
+    const payer = "dream" as const
     const key = `${use.center}:${payer}`
     const held = byKey.get(key)
     byKey.set(key, {
@@ -171,10 +169,10 @@ const linesOf = (mode: CostsMode, uses: ReadonlyArray<Use>): ReadonlyArray<CostL
   return Array.from(byKey.values())
 }
 
-const modelsOf = (mode: CostsMode, models: ReadonlyArray<Omit<ModelCost, "payer">>): ReadonlyArray<ModelCost> => {
+const modelsOf = (models: ReadonlyArray<Omit<ModelCost, "payer">>): ReadonlyArray<ModelCost> => {
   const byKey = new Map<string, ModelCost>()
   for (const m of models) {
-    const payer = payerOf(mode, "openai")
+    const payer = "dream" as const
     const held = byKey.get(m.model)
     byKey.set(m.model, { ...m, payer, usd: (held?.usd ?? 0) + m.usd, requests: (held?.requests ?? 0) + m.requests })
   }
@@ -212,7 +210,7 @@ const emptyPeriod = (now: DateTime.Utc) => period(monthStart(now), monthStart(no
 export const projectCostsOf = (mode: CostsMode, projectId: ProjectId, now: DateTime.Utc): ProjectCosts => {
   const bill = mode === "none" ? undefined : bills.get(projectId)
   if (!bill) return { projectId, month: emptyPeriod(now), lastMonth: lastMonthOf(now, 0), days: daysOf(now, 0, 0) }
-  const month = period(monthStart(now), monthStart(now, -1), linesOf(mode, bill.uses), modelsOf(mode, bill.models))
+  const month = period(monthStart(now), monthStart(now, -1), linesOf(bill.uses), modelsOf(bill.models))
   return { projectId, month, lastMonth: lastMonthOf(now, bill.lastMonth), days: daysOf(now, month.usd, bill.lastMonth) }
 }
 
@@ -224,21 +222,13 @@ const others = [
 /** Template builds, checks and refresh donors: no one's. */
 const overhead = [sandbox(71), browser(25)]
 
-const everyoneOf = (mode: CostsMode, now: DateTime.Utc, mine: CostPeriod, myLast: number): OperatorCosts => {
-  const othersUses = [
-    sandbox(212),
-    mac(122),
-    browser(215),
-    openai([{ model: "gpt-6.1-terra", usd: 5.4, requests: 1840 }])
-  ]
+const everyoneOf = (now: DateTime.Utc, mine: CostPeriod, myLast: number): OperatorCosts => {
+  const othersUses = [sandbox(212), mac(122), browser(215), aiModels(othersModels)]
   const month = period(
     monthStart(now),
     monthStart(now, -1),
-    linesOf(mode, [...Array.from(bills.values()).flatMap((b) => b.uses), ...unattributed, ...othersUses, ...overhead]),
-    modelsOf(mode, [
-      ...Array.from(bills.values()).flatMap((b) => b.models),
-      { model: "gpt-6.1-terra", usd: 5.4, requests: 1840 }
-    ])
+    linesOf([...Array.from(bills.values()).flatMap((b) => b.uses), ...unattributed, ...othersUses, ...overhead]),
+    modelsOf([...Array.from(bills.values()).flatMap((b) => b.models), ...othersModels])
   )
   const lastMonth = myLast + 38.6 + 9.3
   return {
@@ -248,7 +238,7 @@ const everyoneOf = (mode: CostsMode, now: DateTime.Utc, mine: CostPeriod, myLast
     people: [{ userId: Fx.user.id, name: Fx.user.name ?? "You", usd: mine.usd, projects: 4 }, ...others].sort(
       (a, b) => b.usd - a.usd
     ),
-    overhead: linesOf(mode, overhead)
+    overhead: linesOf(overhead)
   }
 }
 
@@ -270,24 +260,19 @@ export const accountCostsOf = (
   const month = period(
     monthStart(now),
     monthStart(now, -1),
-    linesOf(mode, uses),
-    modelsOf(
-      mode,
-      entries.flatMap(([, b]) => b.models)
-    )
+    linesOf(uses),
+    modelsOf(entries.flatMap(([, b]) => b.models))
   )
   const lastMonth = entries.reduce((n, [, b]) => n + b.lastMonth, 0)
   const projects: Array<ProjectCost> = entries.map(([projectId, bill]) => {
-    const lines = linesOf(mode, bill.uses)
+    const lines = linesOf(bill.uses)
     const known = titles.get(projectId)
-    const personUsd = lines.filter((l) => l.payer === "person").reduce((n, l) => n + l.usd, 0)
     const icon = known?.icon ?? bill.icon
     return {
       projectId,
       title: known?.title ?? bill.title,
       ...(icon ? { icon } : {}),
       usd: lines.filter((l) => l.payer === "dream").reduce((n, l) => n + l.usd, 0),
-      ...(personUsd > 0 ? { personUsd } : {}),
       ...((known?.archived ?? bill.archived) ? { archived: true } : {})
     }
   })
@@ -296,7 +281,7 @@ export const accountCostsOf = (
     lastMonth: lastMonthOf(now, lastMonth),
     days: daysOf(now, month.usd, lastMonth),
     projects: projects.sort((a, b) => b.usd - a.usd),
-    unattributed: linesOf(mode, unattributed),
-    ...(mode === "operator" ? { everyone: everyoneOf(mode, now, month, lastMonth) } : {})
+    unattributed: linesOf(unattributed),
+    ...(mode === "operator" ? { everyone: everyoneOf(now, month, lastMonth) } : {})
   }
 }

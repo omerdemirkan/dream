@@ -142,7 +142,6 @@ export const Scenario = [
   "usage-none",
   "usage-deleted",
   "costs-normal",
-  "costs-own-key",
   "costs-operator",
   "costs-none",
   "workstreams",
@@ -1666,9 +1665,6 @@ export class FakeBackend extends Context.Service<
             return yield* setUsage("none")
           case "costs-normal":
             costsMode = "normal"
-            return
-          case "costs-own-key":
-            costsMode = "own-key"
             return
           case "costs-operator":
             costsMode = "operator"

@@ -220,15 +220,14 @@ xcrun simctl launch --terminate-running-process booted build.omer.dream \
 
 What Dream pays to run their projects (docs/metering.md, `ui/Costs.tsx`, `data/costs.ts`) is dollars, not the
 plan's percentages, and never shares a total or a row with them. The usage sheet ends with a section under a
-hairline: what Dream paid for the project this month, last month beside it, a line per thing it paid for (machine
-time, cloud browsers, Macs, OpenAI, storage, email), and what their own OpenAI key paid, apart. Settings has a "What
-Dream pays" card under the plans (this month, last month, the 30 days as small bars) whose "See more" opens
-`/costs`: the 30 days (touch a bar to read the day), what it paid for with OpenAI by model, each project largest
-first (tapping one opens its usage sheet; archived ones say so, deleted ones are one row, sign-ins are Outside your
-projects), and their own key's part. An operator (`costs-operator`) also gets "Everyone on this Dream" at the foot,
-which opens `/costs/everyone`: each person's month and the overhead no one caused. `costs-own-key` is a world where
-they connected an OpenAI key, so every OpenAI call is on it; `costs-none` is before anything cost anything (no
-section, no card); `costs-normal` goes back to the default. Against an API without the cost RPCs, nothing shows.
+hairline: what Dream paid for the project this month, last month beside it, and a line per thing it paid for
+(machine time, cloud browsers, Macs, AI models, storage, email). Settings has a "What Dream pays" card under the
+plans (this month, last month, the 30 days as small bars) whose "See more" opens `/costs`: the 30 days (touch a bar
+to read the day), what it paid for with each AI model by name and maker, each project largest first (tapping one
+opens its usage sheet; archived ones say so, deleted ones are one row, sign-ins are Outside your projects). An
+operator (`costs-operator`) also gets "Everyone on this Dream" at the foot, which opens `/costs/everyone`: each
+person's month and the overhead no one caused. `costs-none` is before anything cost anything (no section, no
+card); `costs-normal` goes back to the default. Against an API without the cost RPCs, nothing shows.
 
 ```sh
 xcrun simctl launch --terminate-running-process booted build.omer.dream \

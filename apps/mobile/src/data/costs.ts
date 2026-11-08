@@ -1,8 +1,8 @@
 /**
  * How what Dream pays to run their projects reads on screen (`packages/domain/src/Costs.ts`): a section of a
  * project's usage sheet, a tile in Settings, and the full-screen detail it opens. Never mixed with the plan's
- * percentages in `usage.ts`: these are dollars Dream pays, apart from OpenAI calls their own key paid, which always
- * show on their own. Pure, so it's tested in Node. Amounts are estimates at list prices.
+ * percentages in `usage.ts`: these are dollars Dream pays. Only Dream's lines (`payer: "dream"`) show; anything
+ * else is left out. Pure, so it's tested in Node. Amounts are estimates at list prices.
  */
 import type {
   AccountCosts,
@@ -29,7 +29,7 @@ export const centerTitle = {
   sandbox: "Machine time",
   browser: "Cloud browsers",
   mac: "Macs",
-  openai: "OpenAI",
+  openai: "AI models",
   storage: "Storage",
   email: "Email"
 } as const
@@ -73,7 +73,37 @@ export const quantityLabel = (line: Pick<CostLine, "quantity" | "unit">): string
 export const monthName = (period: Pick<CostPeriod, "from">) =>
   new Intl.DateTimeFormat("en-US", { month: "long", timeZone: "UTC" }).format(DateTime.toDateUtc(period.from))
 
-/** One row: what it paid for, how much of it, and the amount; OpenAI's models under it. */
+/**
+ * A model as Dream's gateway names it (`openai/gpt-4o-mini-tts`, `anthropic/claude-haiku-4.5`): the model, and who
+ * makes it, readably.
+ */
+export const modelParts = (id: string): { readonly model: string; readonly maker?: string } => {
+  const slash = id.indexOf("/")
+  if (slash <= 0) return { model: id }
+  const vendor = id.slice(0, slash)
+  const model = id.slice(slash + 1)
+  return { model, maker: makers[vendor] ?? vendor.charAt(0).toUpperCase() + vendor.slice(1) }
+}
+
+const makers: Record<string, string> = {
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  google: "Google",
+  mistralai: "Mistral",
+  "meta-llama": "Meta",
+  "x-ai": "xAI",
+  deepseek: "DeepSeek",
+  qwen: "Qwen",
+  cohere: "Cohere",
+  moonshotai: "Moonshot",
+  "black-forest-labs": "Black Forest Labs",
+  perplexity: "Perplexity",
+  nvidia: "NVIDIA",
+  microsoft: "Microsoft",
+  amazon: "Amazon"
+}
+
+/** One row: what it paid for, how much of it, and the amount; the AI models under their line. */
 export interface CostRowView {
   readonly key: string
   readonly title: string
@@ -82,19 +112,23 @@ export interface CostRowView {
   readonly models: ReadonlyArray<CostRowView>
 }
 
-const modelRow = (m: ModelCost): CostRowView => ({
-  key: `${m.payer}:${m.model}`,
-  title: m.model,
-  detail: count(m.requests, "request", "requests"),
-  amount: dollars(m.usd),
-  models: []
-})
+const modelRow = (m: ModelCost): CostRowView => {
+  const { model, maker } = modelParts(m.model)
+  return {
+    key: `${m.payer}:${m.model}`,
+    title: model,
+    detail: [maker, count(m.requests, "request", "requests")].filter(Boolean).join(" · "),
+    amount: dollars(m.usd),
+    models: []
+  }
+}
 
 /**
- * One payer's lines, largest first as given. OpenAI's models go under it, or into its title when there's only one
- * ("OpenAI · gpt-6.1-terra").
+ * Dream's lines, largest first as given. The AI models go under theirs, or into its title when there's only one
+ * ("AI models · claude-haiku-4.5").
  */
-const lineRows = (period: CostPeriod, payer: CostLine["payer"]): ReadonlyArray<CostRowView> => {
+const lineRows = (period: CostPeriod): ReadonlyArray<CostRowView> => {
+  const payer: CostLine["payer"] = "dream"
   const models = period.models.filter((m) => m.payer === payer)
   return period.lines
     .filter((l) => l.payer === payer)
@@ -104,26 +138,12 @@ const lineRows = (period: CostPeriod, payer: CostLine["payer"]): ReadonlyArray<C
       const only = openai && models.length === 1 ? models[0] : undefined
       return {
         key: `${payer}:${l.center}`,
-        title: only ? `OpenAI · ${only.model}` : centerTitle[l.center],
+        title: only ? `${centerTitle[l.center]} · ${modelParts(only.model).model}` : centerTitle[l.center],
         ...(detail ? { detail } : {}),
         amount: dollars(l.usd),
         models: openai && models.length > 1 ? models.map(modelRow) : []
       }
     })
-}
-
-const personTotal = (period: CostPeriod) =>
-  period.lines.filter((l) => l.payer === "person").reduce((n, l) => n + l.usd, 0)
-
-/** What their own OpenAI key paid through Dream: shown apart, never added to Dream's total. */
-export interface OwnKeyView {
-  readonly amount: string
-  readonly rows: ReadonlyArray<CostRowView>
-}
-
-const ownKey = (period: CostPeriod): OwnKeyView | undefined => {
-  const rows = lineRows(period, "person")
-  return rows.length === 0 ? undefined : { amount: dollars(personTotal(period)), rows }
 }
 
 /** "$15.10 in October", or nothing when last month cost nothing. */
@@ -139,21 +159,19 @@ export interface ProjectCostsView {
   readonly total: string
   readonly lastMonth?: string
   readonly rows: ReadonlyArray<CostRowView>
-  readonly ownKey?: OwnKeyView
 }
 
 /** Absent when the project has cost nothing this month or last (a project just started), so the sheet stays short. */
 export const projectCostsView = (costs: ProjectCosts): ProjectCostsView | undefined => {
   const { month, lastMonth } = costs
-  if (month.lines.length === 0 && lastMonth.usd <= 0 && personTotal(lastMonth) <= 0) return undefined
+  const rows = lineRows(month)
+  if (rows.length === 0 && lastMonth.usd <= 0) return undefined
   const last = lastMonthLabel(lastMonth)
-  const own = ownKey(month)
   return {
     heading: `What Dream paid in ${monthName(month)}`,
     total: dollars(month.usd),
     ...(last ? { lastMonth: last } : {}),
-    rows: lineRows(month, "dream"),
-    ...(own ? { ownKey: own } : {})
+    rows
   }
 }
 
@@ -195,18 +213,14 @@ export interface CostsTileView {
   /** "so far in November · $15.10 in October" */
   readonly caption: string
   readonly days: ReadonlyArray<DayBar>
-  /** "$1.20 more on your OpenAI key" */
-  readonly ownKey?: string
 }
 
 export const costsTile = (costs: Pick<AccountCosts, "month" | "lastMonth" | "days">): CostsTileView => {
   const last = lastMonthLabel(costs.lastMonth)
-  const own = personTotal(costs.month)
   return {
     total: dollars(costs.month.usd),
     caption: [`so far in ${monthName(costs.month)}`, last].filter(Boolean).join(" · "),
-    days: dayBars(costs.days),
-    ...(own > 0 ? { ownKey: `${dollars(own)} more on your OpenAI key` } : {})
+    days: dayBars(costs.days)
   }
 }
 
@@ -241,11 +255,7 @@ const projectShares = (projects: ReadonlyArray<ProjectCost>, unattributedUsd: nu
     key: p.projectId,
     title: p.title,
     ...(p.icon ? { icon: p.icon } : {}),
-    ...(p.archived
-      ? { detail: "Archived" }
-      : p.personUsd
-        ? { detail: `and ${dollars(p.personUsd)} on your key`, projectId: p.projectId }
-        : { projectId: p.projectId }),
+    ...(p.archived ? { detail: "Archived" } : { projectId: p.projectId }),
     amount: dollars(p.usd),
     bar: bar(p.usd),
     outside: false,
@@ -280,22 +290,19 @@ export interface AccountCostsView {
   readonly days: ReadonlyArray<DayBar>
   readonly rows: ReadonlyArray<CostRowView>
   readonly projects: ReadonlyArray<ShareView>
-  readonly ownKey?: OwnKeyView
   /** An operator's way into everyone's costs. */
   readonly everyone: boolean
 }
 
 export const accountCostsView = (costs: AccountCosts): AccountCostsView => {
   const tile = costsTile(costs)
-  const own = ownKey(costs.month)
   const unattributed = costs.unattributed.filter((l) => l.payer === "dream").reduce((n, l) => n + l.usd, 0)
   return {
     total: tile.total,
     caption: tile.caption,
     days: tile.days,
-    rows: lineRows(costs.month, "dream"),
+    rows: lineRows(costs.month),
     projects: projectShares(costs.projects, unattributed),
-    ...(own ? { ownKey: own } : {}),
     everyone: costs.everyone !== undefined
   }
 }
@@ -319,7 +326,7 @@ export const everyoneView = (everyone: OperatorCosts): EveryoneView => {
     total: tile.total,
     caption: tile.caption,
     days: tile.days,
-    rows: lineRows(everyone.month, "dream"),
+    rows: lineRows(everyone.month),
     people: everyone.people.map((p) => ({
       key: p.userId,
       title: p.name,

@@ -2,7 +2,7 @@
  * What Dream pays to run their projects (docs/metering.md, "In the app"): a section at the foot of a project's usage
  * sheet, a card in Settings, and the pieces of the full-screen detail it opens (`app/costs`). Dollars, never the
  * plan's percentages, and drawn so the two don't read as one: a section of its own under a hairline, no rings or
- * window bars, and OpenAI calls their own key paid always on their own. What it says comes from `data/costs.ts`.
+ * window bars. What it says comes from `data/costs.ts`.
  */
 import type { ProjectId } from "@dream/domain"
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react"
@@ -11,14 +11,7 @@ import { AsyncResult } from "effect/reactivity"
 import { useRouter } from "expo-router"
 import { useEffect, useState } from "react"
 import { Pressable, StyleSheet, Text, View } from "react-native"
-import {
-  type CostRowView,
-  costsTile,
-  type DayBar,
-  type OwnKeyView,
-  projectCostsView,
-  type ShareView
-} from "../data/costs.ts"
+import { type CostRowView, costsTile, type DayBar, projectCostsView, type ShareView } from "../data/costs.ts"
 import { accountCostsAtom, projectCostsAtom } from "../state/atoms.ts"
 import { Icon, Lab } from "./kit.tsx"
 import { color, tracking } from "./theme.ts"
@@ -50,7 +43,6 @@ export function ProjectCostsSection(props: { readonly projectId: ProjectId }) {
       {view.rows.map((row) => (
         <CostRow key={row.key} row={row} nested={false} />
       ))}
-      {view.ownKey ? <OwnKey own={view.ownKey} nested={false} /> : null}
       <Footnote>{costsFootnote}</Footnote>
     </View>
   )
@@ -82,7 +74,7 @@ export function Total(props: { readonly total: string; readonly aside?: string |
   )
 }
 
-/** What it paid for, how much of it, and the amount; OpenAI's models under it, quieter, when `nested`. */
+/** What it paid for, how much of it, and the amount; the AI models under theirs, quieter, when `nested`. */
 export function CostRow(props: { readonly row: CostRowView; readonly nested: boolean }) {
   const { row } = props
   return (
@@ -137,18 +129,6 @@ export function CostRow(props: { readonly row: CostRowView; readonly nested: boo
   )
 }
 
-/** OpenAI calls their own key paid through Dream: apart, with its own total, never in Dream's. */
-export function OwnKey(props: { readonly own: OwnKeyView; readonly nested: boolean }) {
-  return (
-    <>
-      <SectionHeading>{`Paid by your OpenAI key, ${props.own.amount}`}</SectionHeading>
-      {props.own.rows.map((row) => (
-        <CostRow key={row.key} row={row} nested={props.nested} />
-      ))}
-    </>
-  )
-}
-
 // ---------------------------------------------------------------------------
 // Settings' card
 // ---------------------------------------------------------------------------
@@ -196,7 +176,6 @@ export function CostsCard() {
           </View>
           <DayBars days={tile.days} height={36} width={112} />
         </View>
-        {tile.ownKey ? <Text style={{ fontSize: 13, color: color.t3, marginTop: 4 }}>{tile.ownKey}</Text> : null}
         <View
           style={{
             flexDirection: "row",
