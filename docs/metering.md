@@ -146,6 +146,8 @@ environment (its model base URL comes from the adapter's `OPENAI_BASE_URL`, whic
 get them through `shell_environment_policy.set`. Claude Code reads neither, so its process carries them to its Bash
 tool. `--run` commands get them from dreamd, and a scheduled task's session is set up like the agent's. The gateway
 also refuses any request that identifies as Codex (`originator` or `User-Agent` starting `codex`).
+`apps/api/scripts/workerd-check/` runs the gateway in workerd itself against fake-openai (outbound WebSocket
+upgrades, `WebSocketPair` and the 101, `waitUntil` while a socket is open, the sideband in a Durable Object).
 `packages/sandbox-template/scripts/gateway-check.ts` checks all of it in a sandbox of a build against a public
 fake-openai (`packages/dreamd/scripts/fake-openai.ts`).
 
