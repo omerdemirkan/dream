@@ -30,6 +30,7 @@ import { applyUpdate, runningUpdate } from "../platform/updates.ts"
 import { appConfig } from "../state/runtime.ts"
 import { useAction, useToast } from "../ui/actions.ts"
 import { integrationReach, integrationSummary } from "../ui/describe.ts"
+import { CostsCard } from "../ui/Costs.tsx"
 import { PlanCard } from "../ui/PlanCard.tsx"
 import { AddPlanTile } from "../ui/Plans.tsx"
 import { useProjectActions } from "../ui/ProjectMenu.tsx"
@@ -93,6 +94,8 @@ export default function Settings() {
           <AddPlanTile key={provider} provider={provider} />
         ))}
       </Section>
+
+      <CostsCard />
 
       <Section title="Connected services">
         {integrations.length === 0 ? (

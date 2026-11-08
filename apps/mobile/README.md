@@ -86,6 +86,7 @@ xcrun simctl launch --terminate-running-process booted build.omer.dream \
 | `/project/<id>?tab=chat&attach=sample` · `/new?attach=sample` | Chat's composer, or a new idea, with two photos and a PDF attached (uploading, then ready) |
 | `/connect` · `/settings` | Subscription connect flow; settings, with the plan card at the top |
 | `/plan/chatgpt` · `/plan/claude` | A plan's week by project, full screen (the plan card's "See more"); `/plan/claude` with `two-plans` |
+| `/costs` · `/costs/everyone` | What Dream pays, full screen (Settings' costs card's "See more"); everyone's, with `costs-operator` |
 
 Message ids: `msg_cabinrule`, `msg_cabinpick`, `msg_gcal` (Cabin), `msg_apple` (Lift Log), `msg_gmail` and
 `msg_brieftelegram` (Morning Brief; the last-resort key file card), `msg_recipewho` (Recipe Scaler), `msg_spotify`
@@ -201,7 +202,8 @@ simulated agent's turns adds a little (the header follows `ProjectEvent.Usage`).
 week: 92% used, the ring's arc and "8% left" in amber, and a line in the sheet saying what's left and until when.
 `usage-limit` gives Lift Log a limit at its share, so it's paused by it: "Paused · at its 4% limit" in the
 header, "paused" under the ring, and the sheet's callout. `usage-none` is a world where no usage is known: the header
-shows nothing, and the sheet has no ring. `usage-deleted` adds two deleted projects' shares to the plan's week. `usage-normal` goes back to the default.
+shows nothing, and the sheet has no ring. `usage-deleted` adds two deleted projects' shares to the plan's
+week. `usage-normal` goes back to the default.
 
 The plan's usage lives in Settings, not on Home (usage in Settings, option B): the connected subscription is a plan
 card with what's left of the week and the five-hour and week bars (all projects in white, everything else in grey),
@@ -214,6 +216,23 @@ amber dot, only then.
 ```sh
 xcrun simctl launch --terminate-running-process booted build.omer.dream \
   -dreamScenario signed-in,usage-near-limit -dreamRoute "/project/prj_liftlog?sheet=usage"
+```
+
+What Dream pays to run their projects (docs/metering.md, `ui/Costs.tsx`, `data/costs.ts`) is dollars, not the
+plan's percentages, and never shares a total or a row with them. The usage sheet ends with a section under a
+hairline: what Dream paid for the project this month, last month beside it, a line per thing it paid for (machine
+time, cloud browsers, Macs, OpenAI, storage, email), and what their own OpenAI key paid, apart. Settings has a "What
+Dream pays" card under the plans (this month, last month, the 30 days as small bars) whose "See more" opens
+`/costs`: the 30 days (touch a bar to read the day), what it paid for with OpenAI by model, each project largest
+first (tapping one opens its usage sheet; archived ones say so, deleted ones are one row, sign-ins are Outside your
+projects), and their own key's part. An operator (`costs-operator`) also gets "Everyone on this Dream" at the foot,
+which opens `/costs/everyone`: each person's month and the overhead no one caused. `costs-own-key` is a world where
+they connected an OpenAI key, so every OpenAI call is on it; `costs-none` is before anything cost anything (no
+section, no card); `costs-normal` goes back to the default. Against an API without the cost RPCs, nothing shows.
+
+```sh
+xcrun simctl launch --terminate-running-process booted build.omer.dream \
+  -dreamScenario signed-in,costs-operator -dreamRoute "/costs"
 ```
 
 ## Checking against a deployed API

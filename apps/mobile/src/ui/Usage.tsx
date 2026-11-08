@@ -39,6 +39,7 @@ import {
 } from "../data/usage.ts"
 import { projectUsageAtom, setUsageLimitsFn, usageGlanceAtom } from "../state/atoms.ts"
 import { useAction } from "./actions.ts"
+import { ProjectCostsSection } from "./Costs.tsx"
 import { IconButton } from "./kit.tsx"
 import { color, gutter, tracking } from "./theme.ts"
 
@@ -281,6 +282,7 @@ function Body(props: {
         onChange={(value) => change("planLeft", value)}
       />
       {view.hero ? <Footnote>Shares are estimates.</Footnote> : null}
+      <ProjectCostsSection projectId={props.projectId} />
     </>
   )
 }
@@ -587,8 +589,11 @@ export function ShareRow(props: { readonly row: ShareRowView; readonly focusColo
   )
 }
 
-/** The project's icon on a tile; Outside Dream's globe on a dashed one. */
-function ShareIcon(props: { readonly row: ShareRowView; readonly size: number }) {
+/** The project's icon on a tile; Outside Dream's globe on a dashed one (also the cost rows', in `Costs.tsx`). */
+export function ShareIcon(props: {
+  readonly row: { readonly icon?: string; readonly outside: boolean }
+  readonly size: number
+}) {
   const { row, size } = props
   const glyph = Math.round(size * 0.54)
   return (

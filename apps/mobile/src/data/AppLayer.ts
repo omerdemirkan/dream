@@ -14,6 +14,7 @@ import { AppClient } from "./AppClient.ts"
 import { AppConfig, type AppConfigShape } from "./AppConfig.ts"
 import { Answers } from "./Answers.ts"
 import { AttachmentUploads, FileTransfer } from "./AttachmentUploads.ts"
+import { CostReports } from "./CostReports.ts"
 import { LiveProjects } from "./LiveProjects.ts"
 import { ProjectArchive } from "./ProjectArchive.ts"
 import { ProjectStates } from "./ProjectStates.ts"
@@ -46,6 +47,7 @@ export const makeAppLayer = (config: AppConfigShape, platform: Platform) =>
     Answers.layer,
     ProjectUsages.layer.pipe(Layer.provideMerge(ProjectStates.layer)),
     AccountUsages.layer,
+    CostReports.layer,
     Replies.layer,
     ProjectArchive.layer,
     AttachmentUploads.layer

@@ -39,6 +39,7 @@ import { withWriteTimeout } from "../data/errors.ts"
 import { ProjectArchive } from "../data/ProjectArchive.ts"
 import { ProjectStates } from "../data/ProjectStates.ts"
 import { AccountUsages } from "../data/AccountUsages.ts"
+import { CostReports } from "../data/CostReports.ts"
 import { ProjectUsages } from "../data/ProjectUsages.ts"
 import { Replies, type Reply, type ReplyTarget } from "../data/Replies.ts"
 import { Session } from "../data/Session.ts"
@@ -253,6 +254,14 @@ export const accountUsageAtom = Atom.family((provider: ModelProvider) =>
 export const projectUsageAtom = Atom.family((projectId: ProjectId) =>
   appRuntime.atom(ProjectUsages.use((usages) => usages.sheet(projectId)))
 )
+
+/** What Dream paid to run a project, for its usage sheet; fetched when the sheet opens. */
+export const projectCostsAtom = Atom.family((projectId: ProjectId) =>
+  appRuntime.atom(CostReports.use((costs) => costs.project(projectId)))
+)
+
+/** What Dream paid across their projects, for Settings and its full-screen detail. */
+export const accountCostsAtom = appRuntime.atom(CostReports.use((costs) => costs.account()))
 
 /** Their limits on a project's usage, both at once; returns the sheet as it is now. */
 export const setUsageLimitsFn = appRuntime

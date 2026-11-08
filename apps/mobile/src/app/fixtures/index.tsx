@@ -28,6 +28,12 @@ const sections: ReadonlyArray<{ readonly title: string; readonly jumps: Readonly
         scenarios: ["reset", "two-plans", "usage-deleted"],
         to: "/plan/claude"
       },
+      { title: "Settings · what Dream pays", scenarios: ["reset"], to: "/settings" },
+      { title: "What Dream pays, in full", scenarios: ["reset"], to: "/costs" },
+      { title: "What Dream pays · their own OpenAI key", scenarios: ["reset", "costs-own-key"], to: "/costs" },
+      { title: "What Dream pays · operator", scenarios: ["reset", "costs-operator"], to: "/costs" },
+      { title: "What Dream pays · everyone", scenarios: ["reset", "costs-operator"], to: "/costs/everyone" },
+      { title: "What Dream pays · nothing yet", scenarios: ["reset", "costs-none"], to: "/costs" },
       { title: "Home · a plan removed", scenarios: ["reset", "plan-removed"], to: "/" },
       { title: "New idea · two plans", scenarios: ["reset", "two-plans"], to: "/new" },
       { title: "New idea", to: "/new" },
@@ -50,6 +56,11 @@ const sections: ReadonlyArray<{ readonly title: string; readonly jumps: Readonly
       { title: "Lift Log · now on two lines", scenarios: ["reset", "now-two-lines"], to: "/project/prj_liftlog" },
       { title: "Lift Log · now cut at two lines", scenarios: ["reset", "now-three-lines"], to: "/project/prj_liftlog" },
       { title: "Lift Log · usage sheet", scenarios: ["reset"], to: "/project/prj_liftlog?sheet=usage" },
+      {
+        title: "Recipe Scaler · usage sheet, OpenAI on their key",
+        scenarios: ["reset", "costs-own-key"],
+        to: "/project/prj_recipescaler?sheet=usage"
+      },
       {
         title: "Lift Log · usage near the limit",
         scenarios: ["reset", "usage-near-limit"],

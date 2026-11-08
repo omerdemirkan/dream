@@ -61,6 +61,7 @@ import { Context, DateTime, Duration, Effect, Layer, Option, PubSub, Redacted, S
 import { Headers } from "effect/http"
 import type { Rpc, RpcGroup } from "effect/rpc"
 import { defaultPlan } from "../data/plans.ts"
+import { accountCostsOf, type CostsMode, projectCostsOf } from "./costs.ts"
 import { TolerantMessage } from "../data/Tolerant.ts"
 import {
   type FixtureWorld,
@@ -140,6 +141,10 @@ export const Scenario = [
   "usage-limit",
   "usage-none",
   "usage-deleted",
+  "costs-normal",
+  "costs-own-key",
+  "costs-operator",
+  "costs-none",
   "workstreams",
   "workstreams-waiting",
   "workstreams-many",
@@ -261,6 +266,8 @@ export class FakeBackend extends Context.Service<
       let usage: UsageWorld = makeUsageWorld("normal")
       // Shares of projects deleted this week (`usage-deleted`), as the API names them.
       let deletedShares: ReadonlyArray<ProjectShare> = []
+      // What Dream paid to run them (`costs-*`).
+      let costsMode: CostsMode = "normal"
       // Projects' apps that notify, and what each sent (newest first).
       let appSenders = new Map<ProjectId, Array<AppSender>>()
       let appSent = new Map<ProjectId, Array<AppNotification>>()
@@ -272,6 +279,7 @@ export class FakeBackend extends Context.Service<
         links = [...world.links]
         usage = makeUsageWorld("normal")
         deletedShares = []
+        costsMode = "normal"
         connections = [...world.modelConnections]
         appSenders = new Map(world.apps.map((a) => [a.projectId, [...a.senders]]))
         appSent = new Map(world.apps.map((a) => [a.projectId, [...a.notifications]]))
@@ -833,9 +841,25 @@ export class FakeBackend extends Context.Service<
             yield* applyLimits(record)
             return projectUsage(record.project.id, yield* DateTime.now)
           }),
-        // Placeholders until the fixtures for costs land (docs/metering.md).
-        GetProjectCosts: () => Effect.die("GetProjectCosts: no fixtures yet"),
-        GetAccountCosts: () => Effect.die("GetAccountCosts: no fixtures yet"),
+        GetProjectCosts: ({ projectId }) =>
+          Effect.gen(function* () {
+            const record = yield* find(projectId)
+            return projectCostsOf(costsMode, record.project.id, yield* DateTime.now)
+          }),
+        GetAccountCosts: () =>
+          Effect.gen(function* () {
+            const titles = new Map(
+              Array.from(records.values(), (r) => [
+                r.project.id,
+                {
+                  title: r.project.title,
+                  ...(r.project.icon ? { icon: r.project.icon } : {}),
+                  archived: r.archivedAt !== undefined
+                }
+              ])
+            )
+            return accountCostsOf(costsMode, titles, yield* DateTime.now)
+          }),
         GetAccountUsage: ({ provider }) =>
           Effect.gen(function* () {
             const connected = connections.some((c) => c.status === "connected" && c.provider === provider)
@@ -1640,6 +1664,18 @@ export class FakeBackend extends Context.Service<
             return yield* setUsage("near-limit")
           case "usage-none":
             return yield* setUsage("none")
+          case "costs-normal":
+            costsMode = "normal"
+            return
+          case "costs-own-key":
+            costsMode = "own-key"
+            return
+          case "costs-operator":
+            costsMode = "operator"
+            return
+          case "costs-none":
+            costsMode = "none"
+            return
           case "usage-deleted":
             deletedShares = [
               { projectId: "prj_gone1" as ProjectId, title: "Deleted project", sharePercent: 2 },
