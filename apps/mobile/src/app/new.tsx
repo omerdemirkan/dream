@@ -13,15 +13,18 @@
  *
  * The paperclip beside the mic attaches photos and files, which wait above the
  * buttons and go with the idea as part of its first message.
+ *
+ * Advanced, beside Send, opens the project's starting settings (`ui/Advanced.tsx`): the plan when more than one is
+ * connected, the agent's model and effort, and usage limits. `/new?advanced=open` opens it on arrival.
  */
-import type { ModelConnection, ModelProvider, ProjectSummary } from "@dream/domain"
+import type { ModelConnection, ProjectSummary } from "@dream/domain"
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
 import { Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
 import { useLocalSearchParams, useRouter } from "expo-router"
 import { useEffect, useRef, useState } from "react"
 import {
-  ActionSheetIOS,
+  Keyboard,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -38,12 +41,12 @@ import { caretAt, ideaToSend, insertAt, placeTake, type Selection, wordCountLabe
 import { draftOf, type Idea, ideas } from "../data/ideas.ts"
 import { longIdea } from "../fake/fixtures.ts"
 import { useDictation } from "../platform/dictation.ts"
-import { providerName } from "../data/format.ts"
-import { connectedPlans, defaultPlan, harnessToSend } from "../data/plans.ts"
+import { advancedView, createSettings, nothingPicked, type Picked } from "../data/advanced.ts"
 import { createProjectFn, modelConnectionsAtom, projectsAtom } from "../state/atoms.ts"
 import { askPushAtom } from "../state/ui.ts"
 import { useAction, useToast } from "../ui/actions.ts"
 import { useRequestId } from "../ui/hooks.ts"
+import { AdvancedPill, AdvancedSheet } from "../ui/Advanced.tsx"
 import { Bars, Icon, IconButton } from "../ui/kit.tsx"
 import { samplesFor } from "../ui/attachmentSamples.ts"
 import { AttachmentTray, useStagedAttachments } from "../ui/Attachments.tsx"
@@ -85,7 +88,9 @@ export default function NewIdea() {
     sample?: string
     starter?: string
     attach?: string
-    /** `open`: the plan picker opens on arrival (with both plans connected). */
+    /** `open`: the Advanced sheet opens on arrival. */
+    advanced?: string
+    /** `open`, from older links to the plan picker: the same. */
     plan?: string
   }>()
   const insets = useSafeAreaInsets()
@@ -125,7 +130,7 @@ export default function NewIdea() {
   const idea = ideaToSend(text, anchor, listening ? dictation.transcript : undefined)
   const has = idea.length > 0
   const busy = create.busy || attachments.uploading
-  const plan = usePlanChoice()
+  const advanced = useAdvanced(params.advanced === "open" || params.plan === "open")
 
   useEffect(() => {
     if (params.dictate) {
@@ -198,7 +203,7 @@ export default function NewIdea() {
         idea,
         requestId: requestId.for(attached.length === 0 ? idea : `${idea}\n${attached.join(",")}`),
         ...(attached.length === 0 ? {} : { attachments: attached }),
-        ...(plan.harness === undefined ? {} : { harness: plan.harness })
+        ...advanced.settings
       },
       {
         onSuccess: (project) => {
@@ -344,14 +349,7 @@ export default function NewIdea() {
               <Text numberOfLines={1} style={{ flex: 1, fontSize: 14, color: color.t3 }}>
                 {wordCountLabel(text)}
               </Text>
-              {plan.choices.length > 1 && plan.chosen !== undefined ? (
-                <PlanPicker
-                  chosen={plan.chosen}
-                  choices={plan.choices}
-                  onChoose={plan.choose}
-                  openOnArrival={params.plan === "open"}
-                />
-              ) : null}
+              <AdvancedPill changed={advanced.view.changed} onPress={advanced.show} />
             </>
           )}
         </View>
@@ -375,15 +373,28 @@ export default function NewIdea() {
           <Icon name="up" size={22} color={has ? color.black : color.t3} weight="semibold" />
         </Pressable>
       </View>
+      <AdvancedSheet
+        open={advanced.open}
+        onClose={() => {
+          advanced.hide()
+          input.current?.focus()
+        }}
+        view={advanced.view}
+        onPlan={(provider) => advanced.pick((p) => ({ ...p, provider }))}
+        onModel={(model) => advanced.pick((p) => ({ ...p, model }))}
+        onEffort={(effort) => advanced.pick((p) => ({ ...p, effort }))}
+        onLimits={(limits) => advanced.pick((p) => ({ ...p, limits }))}
+        onReset={() => advanced.pick(() => nothingPicked)}
+      />
     </KeyboardAvoidingView>
   )
 }
 
 /**
- * Which plan the idea runs on, when both are connected: the one their newest project runs on until they pick
- * another. With one plan there's no choice, and nothing is sent, as before.
+ * The Advanced sheet's settings for this idea: what they picked over the defaults (the plan their newest project
+ * runs on, Dream's model and effort, no limits), and what of it goes with the idea.
  */
-function usePlanChoice() {
+function useAdvanced(openOnArrival: boolean) {
   const connections = Option.getOrElse(
     AsyncResult.value(useAtomValue(modelConnectionsAtom)),
     (): ReadonlyArray<ModelConnection> => []
@@ -392,62 +403,27 @@ function usePlanChoice() {
     AsyncResult.value(useAtomValue(projectsAtom)),
     (): ReadonlyArray<ProjectSummary> => []
   )
-  const [picked, setPicked] = useState<ModelProvider | undefined>(undefined)
-  const choices = connectedPlans(connections)
-  const chosen = picked !== undefined && choices.includes(picked) ? picked : defaultPlan(connections, projects)
-  return { choices, chosen, choose: setPicked, harness: harnessToSend(connections, chosen) }
-}
-
-/** A quiet pill beside Send naming the plan; a tap offers the other. */
-function PlanPicker(props: {
-  readonly chosen: ModelProvider
-  readonly choices: ReadonlyArray<ModelProvider>
-  readonly onChoose: (provider: ModelProvider) => void
-  readonly openOnArrival?: boolean
-}) {
+  const [picked, setPicked] = useState<Picked>(nothingPicked)
+  const [open, setOpen] = useState(false)
   useEffect(() => {
-    if (!props.openOnArrival) return
-    const id = setTimeout(open, 900)
+    if (!openOnArrival) return
+    const id = setTimeout(() => setOpen(true), 900)
     return () => clearTimeout(id)
     // Only on arrival.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-  const open = () =>
-    ActionSheetIOS.showActionSheetWithOptions(
-      {
-        title: "Run this idea on",
-        options: [...props.choices.map(providerName), "Cancel"],
-        cancelButtonIndex: props.choices.length,
-        userInterfaceStyle: "dark"
-      },
-      (index) => {
-        const provider = props.choices[index]
-        if (provider !== undefined) props.onChoose(provider)
-      }
-    )
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`Runs on ${providerName(props.chosen)}. Change plan`}
-      onPress={open}
-      hitSlop={6}
-      style={({ pressed }) => ({
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 5,
-        height: 34,
-        paddingLeft: 13,
-        paddingRight: 10,
-        borderRadius: 17,
-        backgroundColor: pressed ? color.s3 : color.s2,
-        borderWidth: 1,
-        borderColor: color.line2
-      })}
-    >
-      <Text style={{ fontSize: 14, fontWeight: "600", color: color.t2 }}>{providerName(props.chosen)}</Text>
-      <Icon name="chevUpDown" size={11} color={color.t3} weight="semibold" />
-    </Pressable>
-  )
+  return {
+    view: advancedView(connections, projects, picked),
+    settings: createSettings(connections, projects, picked),
+    pick: (change: (picked: Picked) => Picked) => setPicked(change),
+    open,
+    show: () => {
+      // The page's keyboard would cover the sheet.
+      Keyboard.dismiss()
+      setOpen(true)
+    },
+    hide: () => setOpen(false)
+  }
 }
 
 /**

@@ -9,7 +9,9 @@
  * Google and model sign-ins as if the person had completed them in a browser.
  */
 import {
+  agentChoice,
   harnessOf,
+  offersModel,
   providerOf,
   type AccessMessage,
   type AppLink,
@@ -687,19 +689,25 @@ export class FakeBackend extends Context.Service<
               return summaryOf(record)
             })
           ),
-        CreateProject: ({ idea, harness, attachments: attachmentIds }) =>
+        CreateProject: ({ idea, harness, attachments: attachmentIds, model, effort, limits }) =>
           stallable(
             Effect.gen(function* () {
               const attachments = yield* attached(attachmentIds)
               const now = yield* DateTime.now
               const id = nextId("prj") as ProjectId
+              const on = harness ?? harnessOf(defaultPlan(connections, active().map(summaryOf)) ?? "chatgpt")
+              if (model !== undefined && !offersModel(on, model)) {
+                return yield* new InvalidRequest({ message: "That model isn’t one Dream offers on this plan." })
+              }
+              if (limits !== undefined && Object.keys(limits).length > 0) limitsOf.set(id, limits)
               const project: Project = {
                 id,
                 ownerId: user.id,
                 title: "New idea",
                 kind: "Just now",
                 idea,
-                harness: harness ?? harnessOf(defaultPlan(connections, active().map(summaryOf)) ?? "chatgpt"),
+                harness: on,
+                ...agentChoice(on, { model, effort }),
                 phase: "new",
                 slug: `idea-${counter}`,
                 publicUrl: `https://idea-${counter}-q7x2k9.omer.build`,
@@ -858,6 +866,17 @@ export class FakeBackend extends Context.Service<
               ])
             )
             return accountCostsOf(costsMode, titles, yield* DateTime.now)
+          }),
+        SetAgentModel: ({ projectId, model, effort }) =>
+          Effect.gen(function* () {
+            const record = yield* find(projectId)
+            if (model !== undefined && !offersModel(record.project.harness, model)) {
+              return yield* new InvalidRequest({ message: "That model isn’t one Dream offers on this plan." })
+            }
+            const { agentModel: _m, agentEffort: _e, ...rest } = record.project
+            record.project = { ...rest, ...agentChoice(rest.harness, { model, effort }) }
+            yield* setProject(record, {})
+            return record.project
           }),
         GetAccountUsage: ({ provider }) =>
           Effect.gen(function* () {

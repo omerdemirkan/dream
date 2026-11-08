@@ -57,6 +57,7 @@ import { RoadmapSheet, StatusCardPin } from "../../ui/StatusCard.tsx"
 import { labelsOf } from "../../ui/statusView.ts"
 import { ProjectCostsSection } from "../../ui/Costs.tsx"
 import { UsageBadge, UsageSheet } from "../../ui/Usage.tsx"
+import { ProjectAgent } from "../../ui/Advanced.tsx"
 import { color, gutter } from "../../ui/theme.ts"
 
 const decodeProjectId = Schema.decodeUnknownOption(ProjectId)
@@ -403,6 +404,7 @@ function Project(props: {
       <UsageSheet
         projectId={props.projectId}
         title={project?.title ?? ""}
+        agent={project ? <ProjectAgent project={project} /> : null}
         open={usage}
         onClose={() => setUsage(false)}
         footer={<ProjectCostsSection projectId={props.projectId} />}

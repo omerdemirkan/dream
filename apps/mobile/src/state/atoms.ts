@@ -13,6 +13,7 @@ import {
   type AppLink,
   type LinkColor,
   type Harness,
+  type ReasoningEffort,
   type LinkIcon,
   type LinkId,
   type IntegrationId,
@@ -222,8 +223,12 @@ export const createProjectFn = appRuntime.fn(
     readonly idea: string
     readonly requestId: RequestId
     readonly attachments?: ReadonlyArray<MediaId>
-    /** Only with both plans connected: the one the new-idea picker shows. */
+    /** Only with both plans connected: the one the Advanced sheet shows. */
     readonly harness?: Harness
+    /** From the Advanced sheet, only when not Dream's default. */
+    readonly model?: string
+    readonly effort?: ReasoningEffort
+    readonly limits?: UsageLimits
   }) {
     const app = yield* AppClient
     return yield* app.CreateProject(input).pipe(withWriteTimeout)
@@ -273,6 +278,18 @@ export const setUsageLimitsFn = appRuntime
   )
   // Kept alive: a limit typed as the sheet closes is saved after it's gone.
   .pipe(Atom.keepAlive)
+
+/** The usage sheet's agent: its model and effort from the next turn (a key that's absent is Dream's default). */
+export const setAgentModelFn = appRuntime.fn(
+  Effect.fn(function* (input: {
+    readonly projectId: ProjectId
+    readonly model?: string
+    readonly effort?: ReasoningEffort
+  }) {
+    const app = yield* AppClient
+    return yield* app.SetAgentModel(input).pipe(withWriteTimeout)
+  })
+)
 
 export const loadEarlierFn = appRuntime.fn(
   Effect.fn(function* (projectId: ProjectId) {

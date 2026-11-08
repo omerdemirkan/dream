@@ -143,6 +143,8 @@ export function UsageBadge(props: {
 export function UsageSheet(props: {
   readonly projectId: ProjectId
   readonly title: string
+  /** Under the limits: the project's agent, its model and effort (`ProjectAgent` in `Advanced.tsx`). */
+  readonly agent?: ReactNode
   readonly open: boolean
   readonly onClose: () => void
   readonly footer?: ReactNode
@@ -200,6 +202,7 @@ export function UsageSheet(props: {
 function SheetContent(props: {
   readonly projectId: ProjectId
   readonly title: string
+  readonly agent?: ReactNode
   readonly onClose: () => void
   readonly bottom: number
   readonly footer?: ReactNode
@@ -246,6 +249,7 @@ function SheetContent(props: {
           usage={usage}
           projectId={props.projectId}
           title={props.title}
+          agent={props.agent}
           onSaved={setSaved}
           footer={props.footer}
         />
@@ -263,6 +267,7 @@ function Body(props: {
   readonly usage: ProjectUsage
   readonly projectId: ProjectId
   readonly title: string
+  readonly agent?: ReactNode
   readonly onSaved: (usage: ProjectUsage) => void
   readonly footer?: ReactNode
 }) {
@@ -293,6 +298,7 @@ function Body(props: {
         row={view.limits.planLeft}
         onChange={(value) => change("planLeft", value)}
       />
+      {props.agent}
       {view.hero ? <Footnote>Shares are estimates.</Footnote> : null}
       {props.footer}
     </>
@@ -354,7 +360,7 @@ function Hero(props: { readonly hero: NonNullable<SheetView["hero"]>; readonly t
  * One limit as a sentence with a field in it: "This project may use up to [25]% of the week". Empty means no limit;
  * what they type is saved when the field loses focus (tapping elsewhere, scrolling, closing the sheet).
  */
-function LimitField(props: {
+export function LimitField(props: {
   readonly before: string
   readonly after: string
   readonly label: string

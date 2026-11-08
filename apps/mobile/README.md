@@ -79,9 +79,10 @@ xcrun simctl launch --terminate-running-process booted build.omer.dream \
 | `…?tab=status` | The Status card opened over Chat (the whole roadmap); `?tab=chat` folds it |
 | `…?focus=<messageId>` · `…?land=<messageId>` | Expand a message; land on it in Chat, highlighted |
 | `/new` · `/new?sample=long` · add `dictate=1` | New idea (the page), with a long brain dump, dictating at the cursor (simulated in the Simulator) |
+| `/new?advanced=open` | New idea with its Advanced sheet open: the plan (with `two-plans`), the agent's model and effort, usage limits |
 | `/new?starter=run-club-bot` | New idea filled with a starter's draft, the cursor after it. Ids are in `src/data/ideas.ts` |
 | `/project/<id>?options=<messageId>&option=<n>` | A question's option previews full screen, at option n (from 0): `msg_cabinpick` (Cabin: phone screens, a desktop page, a recording), `msg_timersound` (Lift Log, after `options-sounds`: three sounds) |
-| `/project/<id>?sheet=usage` | The usage sheet over the project (the ring in its header opens it) |
+| `/project/<id>?sheet=usage` | The usage sheet over the project (the ring in its header opens it), with its limits and its agent's model and effort |
 | `/project/<id>?sheet=notifications` | The Notifications sheet: the project's apps that notify, their controls, what they sent (the bell opens it) |
 | `/project/<id>?tab=chat&attach=sample` · `/new?attach=sample` | Chat's composer, or a new idea, with two photos and a PDF attached (uploading, then ready) |
 | `/connect` · `/settings` | Subscription connect flow; settings, with the plan card at the top |
@@ -100,9 +101,9 @@ neutral "update Dream" row).
 Scenarios (`dream://fixtures/<name>?to=/path`, or `-dreamScenario a,b`): `signed-in`, `signed-out`, `reset`,
 `paused` (Lift Log waits for a usage reset), `all-clear`, `cabin-resolved`, `withdraw-cabin`, `no-plan`,
 `two-plans` (Claude connected next to ChatGPT, Morning Brief and Recipe Scaler on Claude: Settings shows both plan cards and New idea
-the plan picker), `plan-removed` (the same with Claude removed: those two wait for it, and Home says so; with `two-plans`,
+the plan in Advanced), `plan-removed` (the same with Claude removed: those two wait for it, and Home says so; with `two-plans`,
 `/settings?plan=menu:claude` and `?plan=remove:claude` open a plan card's menu and its Remove warning, and
-`/new?plan=open` the plan picker),
+`/new?advanced=open` the Advanced sheet with its plan switch),
 `live-activity`, `live-activity-needs` (start a Live Activity on the phone), `spotify-ask` (Lift Log asks to connect
 Spotify), `spotify-stopped` (Lift Log's Spotify connection stopped working: its card says so and connects again),
 `long-question`, `desktop-sent` and `desktop-opened` (Cabin's Google Calendar card, emailed to finish on a
