@@ -7,7 +7,7 @@
  * - `ReasonField`: why they decline an access request, in the decline sheet (no send button; the sheet sends).
  */
 import { type Ref, useEffect, useRef, useState } from "react"
-import { Pressable, StyleSheet, Text, TextInput, type TextInputInstance, View } from "react-native"
+import { Keyboard, Pressable, StyleSheet, Text, TextInput, type TextInputInstance, View } from "react-native"
 import type { MediaId } from "@dream/domain"
 import { useDictation } from "../platform/dictation.ts"
 import { AttachButton, AttachmentTray, type StagedAttachments } from "./Attachments.tsx"
@@ -64,7 +64,8 @@ type Send = (text: string, sent: () => void) => void
 
 /**
  * Sends what's in the field unless a send is already in flight; clears it on `sent` unless they've edited it since.
- * With `alsoAttached`, an empty field sends too (attachments on their own).
+ * With `alsoAttached`, an empty field sends too (attachments on their own). Sending, from the return key or the
+ * button, puts the keyboard away so they see what they sent land.
  */
 const useSend = (
   text: string,
@@ -77,6 +78,7 @@ const useSend = (
   const send = () => {
     if ((!has && !alsoAttached) || busy) return
     const sending = text.trim()
+    Keyboard.dismiss()
     onSend(sending, () => setText((current) => (current.trim() === sending ? "" : current)))
   }
   return { has, send }
@@ -209,7 +211,7 @@ export function ChatComposer(props: {
             style={{ flex: 1, color: color.t1, fontSize: 16 }}
             returnKeyType="send"
             onSubmitEditing={send}
-            submitBehavior="submit"
+            submitBehavior="blurAndSubmit"
             keyboardAppearance="dark"
             accessibilityLabel={props.placeholder ?? "Message Dream"}
           />
@@ -273,7 +275,7 @@ export function ElseComposer(props: {
           style={{ flex: 1, color: color.t1, fontSize: props.large ? 17 : 16 }}
           returnKeyType="send"
           onSubmitEditing={send}
-          submitBehavior="submit"
+          submitBehavior="blurAndSubmit"
           keyboardAppearance="dark"
           accessibilityLabel="Something else"
         />
