@@ -11,14 +11,15 @@
 import type { Element, EndTag, HTMLRewriter as Rewriter } from "@cloudflare/workers-types"
 import type { LinkId, ProjectId, UserId } from "@dream/domain"
 import { linkPath } from "@dream/domain"
-import { Clock, Effect, Option } from "effect"
+import { Clock, DateTime, Effect, Option } from "effect"
 import * as HttpServerResponse from "effect/http/HttpServerResponse"
 import { type LinkRow, Links, toAppLink } from "../db/Links.ts"
 import { Projects } from "../db/Projects.ts"
 import { HomeScreenHintParam } from "../links/AppLinks.ts"
+import { loggedPath, logRequest } from "./GatewayLog.ts"
 import { MediaStore } from "./Media.ts"
 import { ProjectClients } from "../project/Client.ts"
-import type { GatewayTarget } from "../project/ProjectRpcs.ts"
+import type { GatewayRequest, GatewayTarget } from "../project/ProjectRpcs.ts"
 import { ArchivedEntity } from "../project/SandboxManager.ts"
 
 // Per-isolate caches: hosts never move between projects; targets are rechecked every minute.
@@ -94,6 +95,18 @@ export const gateway = (host: string, raw: Request) =>
     if (incoming.pathname.startsWith(DreamAssets)) return yield* homeScreenAsset(host, owned.ownerId, incoming.pathname)
 
     const now = yield* Clock.currentTimeMillis
+    const log = (outcome: GatewayRequest["outcome"], status?: number) =>
+      Effect.gen(function* () {
+        const at = yield* DateTime.now
+        yield* logRequest(id, {
+          at,
+          method: raw.method,
+          path: loggedPath(incoming),
+          outcome,
+          ...(status === undefined ? {} : { status }),
+          ms: Math.max(0, Math.round(DateTime.toEpochMillis(at) - now))
+        })
+      })
     const cached = targetCache.get(id)
     let target: GatewayTarget
     if (cached !== undefined && now - cached.atMs < TargetTtlMs) {
@@ -101,7 +114,7 @@ export const gateway = (host: string, raw: Request) =>
     } else {
       const result = yield* clients.use(id, (client) => client.GatewayTarget()).pipe(Effect.result)
       if (result._tag === "Failure") {
-        if (result.failure._tag !== "NotFound") return waking(raw)
+        if (result.failure._tag !== "NotFound") return yield* log("no-answer").pipe(Effect.as(waking(raw)))
         if (result.failure.entity === "project") {
           // Deleted: forget the host, so this isolate asks D1 again (which knows nothing of it).
           hostCache.delete(host)
@@ -137,6 +150,7 @@ export const gateway = (host: string, raw: Request) =>
     const response = yield* Effect.tryPromise(() => fetch(forwarded)).pipe(Effect.option)
     if (Option.isNone(response)) {
       targetCache.delete(id)
+      yield* log("no-answer")
       return waking(raw)
     }
     if (response.value.status === 502 || response.value.status === 404) {
@@ -145,8 +159,10 @@ export const gateway = (host: string, raw: Request) =>
     }
     if (yield* portNotOpen(response.value)) {
       yield* Effect.promise(() => response.value.body?.cancel().catch(() => undefined) ?? Promise.resolve())
+      yield* log("not-listening")
       return waking(raw)
     }
+    yield* log("answered", response.value.status)
     return HttpServerResponse.raw(yield* withHomeScreenHead(host, owned.ownerId, incoming, response.value, hint))
   })
 

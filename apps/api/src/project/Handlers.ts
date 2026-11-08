@@ -52,6 +52,7 @@ import { Core, initialStatus } from "./Core.ts"
 import { LiveFeed } from "./Live.ts"
 import { Machines } from "./Machines.ts"
 import { Notifier } from "./Notifier.ts"
+import { ProjectLog } from "./ProjectLog.ts"
 import { ProjectRpcs } from "./ProjectRpcs.ts"
 import { Relays } from "./Relays.ts"
 import { SandboxManager } from "./SandboxManager.ts"
@@ -167,6 +168,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
     const relays = yield* Relays
     const appNotifications = yield* AppNotifications
     const limiter = yield* UsageLimiter
+    const projectLog = yield* ProjectLog
     const { placeFor } = placing(core)
 
     const findMessage = (id: Message["id"]) =>
@@ -541,6 +543,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
       CheckUsageLimits: () => limiter.check,
 
       GatewayTarget: () => sandbox.gatewayTarget,
+      LogRequests: ({ requests }) => projectLog.requests(requests),
 
       RelayDeliver: ({ relayId, deliveries }) => relays.deliver(relayId, deliveries),
       RelayCredential: ({ relayId }) => relays.credential(relayId),
@@ -648,6 +651,7 @@ export const AgentHandlers = SandboxRpcs.toLayer(
     const relays = yield* Relays
     const appNotifications = yield* AppNotifications
     const limiter = yield* UsageLimiter
+    const projectLog = yield* ProjectLog
 
     const project = core.project.pipe(Effect.orDie)
 
@@ -1138,6 +1142,7 @@ export const AgentHandlers = SandboxRpcs.toLayer(
       StayAwake: () => sandbox.stayAwake,
       Sleep: ({ reason, checkedAt }) => sandbox.sleep(reason, checkedAt),
       GetMachine: () => sandbox.machine,
+      ReadLog: (query) => Effect.map(projectLog.read(query), (entries) => ({ entries })),
       MoveMachine: ({ to, why }) => sandbox.moveMachine(to, why)
     }
   })

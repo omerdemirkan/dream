@@ -42,6 +42,7 @@ import {
 } from "../Ids.ts"
 import { AppLink, LinkColor, LinkIcon, LinkTitle, LinkUrl } from "../Links.ts"
 import { LiveActivityContent } from "../LiveActivity.ts"
+import { LogEntry, LogQuery } from "../Logs.ts"
 import { BrowserSession, MacSshAccess, MacStatus } from "../Machines.ts"
 import { MediaContentType, MediaRef, MediaUploadTarget } from "../Media.ts"
 import { AccessMessage, AccessRequest, Message, QuestionMessage, TextMessage } from "../Message.ts"
@@ -307,6 +308,18 @@ export class SandboxRpcs extends RpcGroup.make(
     payload: { port: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65535 })) },
     success: Schema.Struct({ url: Schema.String }),
     error: InvalidRequest
+  }),
+
+  // The project's log (added November 2026: an older API answers this with "Unknown request tag") ------------
+  /**
+   * `dream logs [--source …] [--since …] [--errors] [--name …] [--limit n]`: the half of the project's log Dream
+   * keeps outside the sandbox (`Logs.ts`): requests to the published app, notifications its apps sent, relay
+   * connections, refreshes and visits that never reached the app. The CLI merges it with the sandbox's half, by time,
+   * and shows the sandbox's half alone, saying so, when the API is older or out of reach.
+   */
+  Rpc.make("ReadLog", {
+    payload: LogQuery.fields,
+    success: Schema.Struct({ entries: Schema.Array(LogEntry) })
   }),
 
   // Relays ---------------------------------------------------------------------------------

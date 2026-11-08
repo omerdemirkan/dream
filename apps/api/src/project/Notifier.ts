@@ -46,7 +46,11 @@ export class Notifier extends Context.Service<
     /** Sends an alert about `message` to every device, as notification `id`. */
     readonly notify: (message: Message, id: NotificationId, category: NotificationCategory) => Effect.Effect<void>
     /** Sends one of the project's apps' notifications to every device, titled with the app's name. */
-    readonly alertApp: (sender: AppSender, notification: AppNotification) => Effect.Effect<void>
+    /** Sends one of the project's apps' notifications to their devices; how many took it, and what failed. */
+    readonly alertApp: (
+      sender: AppSender,
+      notification: AppNotification
+    ) => Effect.Effect<{ readonly devices: number; readonly failures: ReadonlyArray<string> }>
     /** Says a usage limit they set paused the project; tapping it opens the project's usage sheet. */
     readonly alertUsage: (id: NotificationId, body: string) => Effect.Effect<void>
     readonly withdraw: (ids: ReadonlyArray<NotificationId>) => Effect.Effect<void>
@@ -132,6 +136,8 @@ export class Notifier extends Context.Service<
           notification.key === undefined
             ? undefined
             : (yield* sha256Hex(`${project.id}/${sender.id}/${notification.key}`)).slice(0, 40)
+        let sent = 0
+        const failures: Array<string> = []
         for (const device of yield* devices) {
           if (device.apnsToken === undefined) continue
           const token = device.apnsToken
@@ -153,10 +159,21 @@ export class Notifier extends Context.Service<
               })
             })
             .pipe(
+              Effect.tap((result) =>
+                Effect.sync(() => {
+                  if (result === "sent") sent++
+                  else failures.push("a device that no longer takes notifications")
+                })
+              ),
               Effect.flatMap(forget(token, "apns")),
-              Effect.catch((error) => Effect.logWarning("APNs alert failed", error.message))
+              Effect.catch((error) =>
+                Effect.logWarning("APNs alert failed", error.message).pipe(
+                  Effect.andThen(Effect.sync(() => failures.push(error.message)))
+                )
+              )
             )
         }
+        return { devices: sent, failures }
       })
 
       const alertUsage = Effect.fn("Notifier.alertUsage")(function* (id: NotificationId, body: string) {

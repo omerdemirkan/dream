@@ -283,6 +283,7 @@ export const WorkerSandboxHandlers = SandboxRpcs.toLayer(
       StayAwake: (payload) => forward((c) => c.StayAwake(payload)),
       Sleep: (payload) => forward((c) => c.Sleep(payload)),
       GetMachine: () => forward((c) => c.GetMachine()),
+      ReadLog: (payload) => forward((c) => c.ReadLog(payload)),
       MoveMachine: (payload) => forward((c) => c.MoveMachine(payload))
     }
   })

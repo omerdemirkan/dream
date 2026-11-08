@@ -14,6 +14,8 @@ import {
   type IntegrationId,
   LiveActivityAttributes,
   LiveActivityContent,
+  LogEntry,
+  type LogQuery,
   MachineMove,
   Message,
   MessageId,
@@ -261,6 +263,19 @@ export const migrations = Migrator.fromRecord({
   "0006_usage_limits": Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     yield* sql`CREATE TABLE usage_limits (id INTEGER PRIMARY KEY CHECK (id = 1), json TEXT NOT NULL)`
+  }),
+  "0007_log": Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    yield* sql`CREATE TABLE log (
+      seq INTEGER PRIMARY KEY AUTOINCREMENT,
+      at_ms INTEGER NOT NULL,
+      source TEXT NOT NULL,
+      level TEXT NOT NULL,
+      name TEXT,
+      json TEXT NOT NULL
+    )`
+    yield* sql`CREATE INDEX log_at ON log (at_ms)`
+    yield* sql`CREATE TABLE trouble (id INTEGER PRIMARY KEY CHECK (id = 1), json TEXT NOT NULL)`
   })
 })
 
@@ -337,6 +352,12 @@ export class Store extends Context.Service<
     ) => Effect.Effect<ReadonlyArray<AppNotification>>
     /** Drops an app's notifications sent before `beforeMs`, and all but its newest `keep`. */
     readonly pruneAppNotifications: (app: AppId, beforeMs: number, keep: number) => Effect.Effect<void>
+
+    /** The project's log (`ProjectLog`): entries in, and the latest `limit` that match a query, oldest first. */
+    readonly appendLog: (entries: ReadonlyArray<LogEntry>) => Effect.Effect<void>
+    readonly readLog: (query: LogQuery, limit: number) => Effect.Effect<ReadonlyArray<LogEntry>>
+    /** Keeps the latest `keep` entries, and none from before `beforeMs`. */
+    readonly pruneLog: (keep: number, beforeMs: number) => Effect.Effect<void>
 
     readonly putRelay: (record: RelayRecord) => Effect.Effect<void>
     /** Oldest first. */
@@ -566,6 +587,36 @@ export class Store extends Context.Service<
               SELECT seq FROM app_notifications WHERE app_id = ${app} ORDER BY seq DESC LIMIT ${keep})`)
         })
 
+      const appendLog = (entries: ReadonlyArray<LogEntry>) =>
+        Effect.forEach(
+          entries,
+          (entry) =>
+            exec(sql`
+              INSERT INTO log (at_ms, source, level, name, json) VALUES (${DateTime.toEpochMillis(entry.at)},
+                ${entry.source}, ${entry.level}, ${entry.name ?? null}, ${encodeJson(LogEntry, entry)})`),
+          { discard: true }
+        )
+
+      const readLog = (query: LogQuery, limit: number) =>
+        Effect.gen(function* () {
+          const where = [
+            query.sources === undefined
+              ? undefined
+              : query.sources.length === 0
+                ? "0 = 1"
+                : sql.in("source", query.sources),
+            query.since === undefined ? undefined : sql`at_ms >= ${DateTime.toEpochMillis(query.since)}`,
+            query.errors === true ? "level != 'info'" : undefined,
+            query.name === undefined ? undefined : sql`name = ${query.name}`
+          ].filter((clause) => clause !== undefined)
+          const rows = yield* sql`SELECT json FROM log WHERE ${sql.and(where)}
+            ORDER BY at_ms DESC, seq DESC LIMIT ${limit}`.pipe(decodeRows(JsonRow))
+          return rows.map((row) => decodeJson(LogEntry, row.json)).reverse()
+        })
+
+      const pruneLog = (keep: number, beforeMs: number) =>
+        exec(sql`DELETE FROM log WHERE at_ms < ${beforeMs} OR seq <= (SELECT MAX(seq) FROM log) - ${keep}`)
+
       const putRelay = (record: RelayRecord) =>
         exec(sql`
           INSERT INTO relays (id, created_at, json) VALUES (${record.id}, ${encodeJson(Schema.DateTimeUtc, record.createdAt)},
@@ -629,7 +680,9 @@ export class Store extends Context.Service<
           "owner_archived",
           "relays",
           "app_senders",
-          "app_notifications"
+          "app_notifications",
+          "log",
+          "trouble"
         ],
         clearSingleton,
         { discard: true }
@@ -688,6 +741,9 @@ export class Store extends Context.Service<
         appNotification,
         appNotifications,
         pruneAppNotifications,
+        appendLog,
+        readLog,
+        pruneLog,
         putRelay,
         relays,
         deleteRelay,

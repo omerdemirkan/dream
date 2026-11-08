@@ -26,6 +26,7 @@ import {
   InvalidRequest,
   type LinkColor,
   type LinkIcon,
+  type LogLevel,
   type Message,
   NotFound,
   reachedPhone,
@@ -35,6 +36,7 @@ import { Context, DateTime, Duration, Effect, Layer, Option, Result } from "effe
 import { newEventId, newMessageId, newNotificationId } from "../lib/Ids.ts"
 import { Core } from "./Core.ts"
 import { Notifier } from "./Notifier.ts"
+import { ProjectLog } from "./ProjectLog.ts"
 import { Store } from "./Store.ts"
 
 const hourMs = Duration.toMillis(Duration.hours(1))
@@ -128,6 +130,47 @@ export interface SendRequest {
   readonly dryRun: boolean
 }
 
+/** What became of a notification an app sent, as the log says it. */
+const notifyOutcome = (
+  outcome: AppNotificationOutcome,
+  held: AppNotificationLimit | undefined,
+  delivered: { readonly devices: number; readonly failures: ReadonlyArray<string> } | undefined
+): string => {
+  const reached =
+    delivered === undefined
+      ? ""
+      : delivered.devices === 0
+        ? delivered.failures.length === 0
+          ? ", but they have no iPhone that takes notifications"
+          : `, but no iPhone took it (${delivered.failures.join("; ")})`
+        : `, to ${delivered.devices === 1 ? "their iPhone" : `${delivered.devices} iPhones`}` +
+          (delivered.failures.length === 0 ? "" : `; failed for ${delivered.failures.join("; ")}`)
+  switch (outcome) {
+    case "sent":
+      return `sent${reached}`
+    case "quiet":
+      return `sent quietly${reached}`
+    case "held":
+      return `held back: over Dream's ${held === "project" ? "daily limit for the project" : `${held ?? "hourly"} limit for the app`}`
+    case "muted":
+      return "kept in its history: they muted it"
+    case "duplicate":
+      return "not sent: the same as one it just sent"
+    case "waiting":
+      return "kept: they haven't allowed it to notify them yet"
+    case "declined":
+      return "not sent: they declined or turned off its notifications"
+  }
+}
+
+const notifyLevel = (
+  outcome: AppNotificationOutcome,
+  delivered: { readonly devices: number; readonly failures: ReadonlyArray<string> } | undefined
+): LogLevel =>
+  outcome === "held" || (delivered !== undefined && (delivered.devices === 0 || delivered.failures.length > 0))
+    ? "warn"
+    : "info"
+
 export class AppNotifications extends Context.Service<
   AppNotifications,
   {
@@ -155,6 +198,7 @@ export class AppNotifications extends Context.Service<
       const core = yield* Core
       const store = yield* Store
       const notifier = yield* Notifier
+      const projectLog = yield* ProjectLog
 
       const project = core.project.pipe(Effect.orDie)
 
@@ -312,7 +356,13 @@ export class AppNotifications extends Context.Service<
           }
         }
         yield* store.putAppNotification(notification)
-        if (reachedPhone(decided.outcome)) yield* notifier.alertApp(sender, notification)
+        const delivered = reachedPhone(decided.outcome) ? yield* notifier.alertApp(sender, notification) : undefined
+        yield* projectLog.note(
+          "notify",
+          notifyLevel(decided.outcome, delivered),
+          `${sender.name}: "${request.title === undefined ? "" : `${request.title}: `}${request.text}" ${notifyOutcome(decided.outcome, decided.held, delivered)}`,
+          { name: sender.id }
+        )
         if (decided.held !== undefined) {
           // Once a day an app: the first one held since a day ago.
           const heldBefore = recent.some((n) => n.app === sender.id && n.outcome === "held")

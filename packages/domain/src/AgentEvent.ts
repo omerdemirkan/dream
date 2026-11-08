@@ -8,6 +8,7 @@ import { DateTime, Schema } from "effect"
 import { AppNotificationLimits } from "./AppNotifications.ts"
 import { IntegrationAccess } from "./Connections.ts"
 import { AppId, EventId, LinkId, type MediaId, MessageId, WakeId } from "./Ids.ts"
+import { Trouble } from "./Logs.ts"
 import { Attachment, attachmentPath, formatBytes, isImageAttachment } from "./Media.ts"
 import { QuestionAnswer } from "./Message.ts"
 import { UsageLimits, UsageWindowName, WindowShare } from "./Usage.ts"
@@ -25,7 +26,13 @@ const EventFields = {
 export const RunResult = Schema.Struct({
   exitCode: Schema.Int,
   /** The last few KB of combined stdout and stderr. */
-  outputTail: Schema.String
+  outputTail: Schema.String,
+  /**
+   * The command failed before this, in a row, without waking the agent: Dream wakes it for a failing command once,
+   * then again only after a cool-down or a different exit code, and logs each run (`dream logs --source run`).
+   * `count` runs since `since`. Added November 2026; made and read by dreamd alone.
+   */
+  failedBefore: Schema.optionalKey(Schema.Struct({ count: Schema.Int, since: Schema.DateTimeUtc }))
 })
 export type RunResult = typeof RunResult.Type
 
@@ -94,8 +101,13 @@ export const AgentEvent = Schema.TaggedUnion({
     run: Schema.optionalKey(Schema.Struct({ command: Schema.String, result: Schema.optionalKey(RunResult) })),
     task: Schema.optionalKey(Schema.Struct({ ...WakeTask.fields, result: Schema.optionalKey(TaskFailure) }))
   },
-  /** `dream wake "why"` from anywhere in the sandbox, typically an app's error handler. */
-  Alert: { ...EventFields, reason: Schema.String },
+  /**
+   * `dream wake "why"` from anywhere in the sandbox, typically an app's error handler. With `noticed`, Dream itself
+   * noticed trouble (the published app failing, the machine short of memory or disk) and `reason` says what it saw;
+   * the ProjectDO makes the published app's, dreamd the machine's, at most once per problem. Added November 2026:
+   * older dreamd builds ignore `noticed` and render it as a `dream wake` with the reason, which still reads right.
+   */
+  Alert: { ...EventFields, reason: Schema.String, noticed: Schema.optionalKey(Trouble) },
   UsageReset: { ...EventFields, window: UsageWindowName },
   /**
    * They set, changed or cleared the usage limits on this project (`limits` as they are now, `previous` as they
@@ -194,6 +206,16 @@ export const AgentEvent = Schema.TaggedUnion({
   }
 })
 export type AgentEvent = typeof AgentEvent.Type
+
+/** Where `dream logs` shows the trouble behind an `Alert` Dream made. */
+const troubleLogs: Record<Trouble, string> = {
+  "server-errors": "dream logs --source gateway,app --errors",
+  unreachable: "dream logs --source gateway,app,dream",
+  memory: "dream logs --source machine",
+  "out-of-memory": "dream logs --source machine,app",
+  disk: "dream logs --source machine",
+  failing: "dream logs --source run --errors"
+}
 
 // ---------------------------------------------------------------------------
 // Plain-text rendering for the turn prompt
@@ -408,12 +430,23 @@ export const renderAgentEvent = (event: AgentEvent, options: RenderOptions = {})
       }
       if (run === undefined) return head
       if (run.result === undefined) return `${head} Its command was \`${run.command}\`.`
+      const before = run.result.failedBefore
+      const again =
+        before === undefined || before.count === 0
+          ? ""
+          : ` It had failed ${before.count === 1 ? "once" : `${before.count} times`} in a row before this, since ` +
+            `${formatEventTime(before.since, options)}, without waking you again; \`dream logs --source run --name ` +
+            `${wakeId}\` shows each run.`
       return (
-        `${head} It ran \`${run.command}\`, which exited with code ${run.result.exitCode}. ` +
+        `${head} It ran \`${run.command}\`, which exited with code ${run.result.exitCode}.${again} ` +
         `The end of its output:\n\`\`\`\n${run.result.outputTail}\n\`\`\``
       )
     },
-    Alert: ({ reason }) => `Something in the sandbox called \`dream wake\`:\n${quote(reason)}`,
+    Alert: ({ reason, noticed }) =>
+      noticed === undefined
+        ? `Something in the sandbox called \`dream wake\`:\n${quote(reason)}`
+        : `Dream noticed a problem:\n${quote(reason)}\n\`${troubleLogs[noticed]}\` shows what it saw. Dream says ` +
+          "this once per problem, and again only if it's still happening hours from now.",
     UsageReset: ({ window }) =>
       window === "fiveHour" ? "Their five-hour usage window has reset." : "Their weekly usage limit has reset.",
     UsageLimitsChanged: ({ limits, previous, week }) => renderUsageLimits(limits, previous, week, options),

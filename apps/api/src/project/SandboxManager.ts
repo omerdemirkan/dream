@@ -84,6 +84,7 @@ import { newEventId, randomToken } from "../lib/Ids.ts"
 import { providerFor, UsageReport } from "../usage/ProjectUsage.ts"
 import { Alarm } from "./Alarm.ts"
 import { Core } from "./Core.ts"
+import { ProjectLog } from "./ProjectLog.ts"
 import { LiveFeed } from "./Live.ts"
 import type { GatewayTarget } from "./ProjectRpcs.ts"
 import { type SandboxRecord, Singletons, Store } from "./Store.ts"
@@ -337,6 +338,7 @@ export class SandboxManager extends Context.Service<
     Effect.gen(function* () {
       const config = yield* ApiConfig
       const core = yield* Core
+      const projectLog = yield* ProjectLog
       const store = yield* Store
       const alarm = yield* Alarm
       const e2b = yield* E2B
@@ -579,6 +581,7 @@ export class SandboxManager extends Context.Service<
           })
         }))
         yield* Effect.logInfo("sandbox ready", { sandboxId: access.sandboxId })
+        yield* projectLog.note("dream", "info", `A new sandbox started (${made}), with dreamd from release ${health.release ?? "unknown"}`)
         return { access, daemonToken }
       }).pipe(
         Effect.tapError((error) => update((r) => ({ ...r, status: "failed", lastError: error.message }))),
@@ -704,6 +707,12 @@ export class SandboxManager extends Context.Service<
               rolledBack: result.failure.rolledBack,
               failures
             })
+            yield* projectLog.note(
+              "dream",
+              "warn",
+              `Dream couldn't bring the sandbox up to the template's latest build (${result.failure.step}: ${result.failure.message})` +
+                (result.failure.rolledBack ? "; it's on the build it had" : "")
+            )
             yield* update((r) => ({
               ...r,
               refreshFailure: {
@@ -728,6 +737,15 @@ export class SandboxManager extends Context.Service<
               settle(
                 Option.getOrElse(build, () => latest.build),
                 release
+              ).pipe(
+                Effect.andThen(
+                  projectLog.note(
+                    "dream",
+                    "info",
+                    `Dream refreshed the sandbox to release ${release} (new dreamd, CLI, prompt and skills; ` +
+                      "the project, ~/.dream and processes outside dreamd stayed)"
+                  )
+                )
               )
           })
         }).pipe(
@@ -1020,6 +1038,15 @@ export class SandboxManager extends Context.Service<
       const sleep = (reason: "command" | "relay" | "app", checkedAt: DateTime.Utc) =>
         pauseIfIdle(checkedAt).pipe(
           Effect.tap((outcome) => Effect.logInfo("dreamd asked to sleep", { reason, outcome })),
+          Effect.tap((outcome) =>
+            outcome === "paused"
+              ? projectLog.note(
+                  "dream",
+                  "info",
+                  `The sandbox went to sleep: the ${reason === "command" ? "scheduled command" : reason === "relay" ? "relay delivery" : "app visit"} it was awake for was done`
+                )
+              : Effect.void
+          ),
           Effect.catch((error) => Effect.logWarning("couldn't put the sandbox to sleep", String(error))),
           Effect.asVoid
         )
@@ -1030,6 +1057,13 @@ export class SandboxManager extends Context.Service<
         const sentMs = (yield* Ref.get(lastVisitMs)) ?? (yield* Clock.currentTimeMillis) - Duration.toMillis(VisitGrace)
         const outcome = yield* pauseIfIdle(DateTime.makeUnsafe(sentMs))
         yield* Effect.logInfo("a visit woke the sandbox and dreamd never served it", { outcome })
+        if (outcome === "paused") {
+          yield* projectLog.note(
+            "dream",
+            "info",
+            "A visit woke the sandbox but no request reached the app (the visitor likely gave up while it woke), so it went back to sleep"
+          )
+        }
       }).pipe(
         Effect.catch((error) => Effect.logWarning("couldn't put the sandbox to sleep after a visit", String(error))),
         Effect.withSpan("SandboxManager.visitCheck")
@@ -1486,6 +1520,11 @@ export class SandboxManager extends Context.Service<
                 seconds
               })
               yield* update(({ move: _, ...r }) => r)
+              yield* projectLog.note(
+                "dream",
+                "error",
+                `Dream couldn't move the project to the ${wanted.to} machine (${result.failure.step}: ${result.failure.message})`
+              )
               return yield* core.enqueue(
                 yield* event({
                   restarted: [],
@@ -1501,6 +1540,12 @@ export class SandboxManager extends Context.Service<
               notRestarted: result.success.restored.notRestarted.length,
               seconds
             })
+            yield* projectLog.note(
+              "dream",
+              "info",
+              `Dream moved the project from the ${from} machine to the ${wanted.to} one in ${seconds} s, restarting ` +
+                `${result.success.restored.restarted.length} servers`
+            )
             yield* core.enqueue(yield* event(result.success.restored))
           })
         )

@@ -51,6 +51,25 @@ export const GatewayTarget = Schema.Struct({
 })
 export type GatewayTarget = typeof GatewayTarget.Type
 
+/** One request to the project's published app, as the gateway saw it, for the project's log (`ProjectLog`). */
+export const GatewayRequest = Schema.Struct({
+  at: Schema.DateTimeUtc,
+  method: Schema.String,
+  /** The path and query, cut to `GatewayPathMax`. */
+  path: Schema.String,
+  /**
+   * `answered`: the app answered with `status`; `not-listening`: the sandbox was up with nothing on the published
+   * port; `no-answer`: the request to the sandbox failed (it was waking, or gone).
+   */
+  outcome: Schema.Literals(["answered", "not-listening", "no-answer"]),
+  status: Schema.optionalKey(Schema.Int),
+  /** Until the app's response headers, or the failure. */
+  ms: Schema.Int
+})
+export type GatewayRequest = typeof GatewayRequest.Type
+
+export const GatewayPathMax = 300
+
 /** A relay's key, decrypted for its RelayDO: the integration's value and how it's sent. */
 export const RelayCredential = Schema.Struct({
   key: Schema.RedactedFromValue(Schema.String),
@@ -180,6 +199,8 @@ export class ProjectRpcs extends RpcGroup.make(
   Rpc.make("CheckUsageLimits", {}),
   /** Where the gateway sends this project's public traffic. */
   Rpc.make("GatewayTarget", { success: GatewayTarget, error: Schema.Union([NotFound, UpstreamFailure]) }),
+  /** What the gateway saw of the project's public traffic, a few seconds' worth at a time: logged and watched. */
+  Rpc.make("LogRequests", { payload: { requests: Schema.NonEmptyArray(GatewayRequest) } }),
   /** Refresh their ChatGPT tokens now and push them to every sandbox of theirs. */
   Rpc.make("RefreshModelCredential", { error: UpstreamFailure }),
   /**

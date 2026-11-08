@@ -13,6 +13,7 @@ import { Core } from "./Core.ts"
 import { LiveFeed } from "./Live.ts"
 import { Machines } from "./Machines.ts"
 import { Notifier } from "./Notifier.ts"
+import { ProjectLog } from "./ProjectLog.ts"
 import { Relays } from "./Relays.ts"
 import { SandboxManager } from "./SandboxManager.ts"
 import { Scheduler } from "./Scheduler.ts"
@@ -26,7 +27,9 @@ export const projectLayer = (
   const sql = SqliteClient.layer({ storage })
   const store = Layer.mergeAll(Store.layer, Layer.effectDiscard(migrate)).pipe(Layer.provide(sql))
   const alarm = Alarm.layer.pipe(Layer.provide(nativeAlarm))
-  const core = Core.layer.pipe(Layer.provideMerge(Layer.mergeAll(LiveFeed.layer, alarm)))
+  const core = ProjectLog.layer.pipe(
+    Layer.provideMerge(Core.layer.pipe(Layer.provideMerge(Layer.mergeAll(LiveFeed.layer, alarm))))
+  )
   const sandbox = SandboxManager.layer.pipe(Layer.provide([SandboxRefresh.layer, SandboxMove.layer]))
   const domain = Layer.mergeAll(Notifier.layer, sandbox, Machines.layer).pipe(Layer.provideMerge(core))
   const limits = UsageLimiter.layer.pipe(Layer.provideMerge(domain))

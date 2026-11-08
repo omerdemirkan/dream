@@ -34,6 +34,7 @@ import { RelayClients } from "../relay/RelayClients.ts"
 import type { RelayConfig, RelayStatus } from "../relay/RelayRpcs.ts"
 import { AgentEvent } from "@dream/domain"
 import { Core } from "./Core.ts"
+import { ProjectLog } from "./ProjectLog.ts"
 import type { RelayCredential } from "./ProjectRpcs.ts"
 import { SandboxManager } from "./SandboxManager.ts"
 import { type RelayRecord, Singletons, Store } from "./Store.ts"
@@ -101,6 +102,7 @@ export class Relays extends Context.Service<
     Relays,
     Effect.gen(function* () {
       const core = yield* Core
+      const projectLog = yield* ProjectLog
       const store = yield* Store
       const sandbox = yield* SandboxManager
       const connections = yield* Connections
@@ -344,6 +346,7 @@ export class Relays extends Context.Service<
           Effect.gen(function* () {
             if (yield* held) return yield* new NotFound({ entity: "relay", id })
             yield* find(id)
+            yield* projectLog.note("relay", "error", reason, { name: id })
             yield* core.enqueue(
               AgentEvent.cases.Alert.make({ id: yield* newEventId(), at: yield* DateTime.now, reason })
             )
