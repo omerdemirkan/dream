@@ -27,6 +27,7 @@ import { SandboxAuth } from "../Auth.ts"
 import { Integration } from "../Connections.ts"
 import { EmailLimitReached, InvalidRequest, NotFound, UpstreamFailure } from "../Errors.ts"
 import { MachineInfo, SandboxSize } from "../Sandbox.ts"
+import { ProjectCosts } from "../Costs.ts"
 import {
   AppId,
   BrowserSessionId,
@@ -453,6 +454,11 @@ export class SandboxRpcs extends RpcGroup.make(
   Rpc.make("GetUsage", { success: UsageSnapshot, error: NotFound }),
   /** `dream usage`: the limits they set on this project and where it stands against them. Added November 2026. */
   Rpc.make("GetUsageLimits", { success: UsageLimitStanding }),
+  /**
+   * `dream usage`: what Dream paid to run this project, this month and last, by cost center, including the OpenAI
+   * calls its apps made through Dream's gateway. Added November 2026.
+   */
+  Rpc.make("GetProjectCosts", { success: ProjectCosts }),
   /** `dream machine`: the sandbox's size, and a move that's waiting. Added November 2026. */
   Rpc.make("GetMachine", { success: MachineInfo }),
   /**

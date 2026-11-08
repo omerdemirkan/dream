@@ -111,7 +111,13 @@ export const DaemonEnv = {
    * the line through the project's harness CLI, with the model-free line as its fallback; "model-free": only that.
    * Off unless set.
    */
-  progressLine: "DREAM_PROGRESS_LINE"
+  progressLine: "DREAM_PROGRESS_LINE",
+  /**
+   * Optional: Dream's OpenAI gateway (`OpenAIGateway`), e.g. `https://openai.<domain>/v1`, set while the gateway is
+   * on. dreamd then gives the agent's shell and the apps it starts `OPENAI_BASE_URL` (this) and `OPENAI_API_KEY`
+   * (`OpenAIGateway.placeholderKey`), never the harness's own process. Added November 2026.
+   */
+  openaiBaseUrl: "DREAM_OPENAI_BASE_URL"
 } as const
 
 export const DefaultDaemonPort = 4747
@@ -168,3 +174,21 @@ export const ModelEgress = {
   Harness,
   { readonly host: string; readonly headers: (credential: never) => Record<string, string> }
 >
+
+/**
+ * Dream's OpenAI gateway: the apps the agent builds call OpenAI's API at `https://openai.<domain>/v1`, with the same
+ * paths as `https://api.openai.com/v1`. The sandbox holds only `placeholderKey`; an E2B egress rule for the
+ * gateway's host replaces the `Authorization` header with the project's gateway credential (`headers`). The gateway
+ * checks it, calls OpenAI with the person's own OpenAI key if they connected one for api.openai.com, or Dream's
+ * otherwise, and meters what comes back. The harnesses never use it: they run on the person's subscription.
+ * Added November 2026.
+ */
+export const OpenAIGateway = {
+  host: (domain: string) => `openai.${domain}`,
+  baseUrl: (domain: string) => `https://openai.${domain}/v1`,
+  /** What apps send as their API key: any value works, since egress replaces the header. */
+  placeholderKey: "dream-openai-placeholder",
+  headers: (credential: { readonly token: string }): Record<string, string> => ({
+    Authorization: `Bearer ${credential.token}`
+  })
+} as const

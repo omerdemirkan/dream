@@ -33,6 +33,7 @@ import {
 } from "../Message.ts"
 import { Attachment, AttachmentContentType, AttachmentLimits, MediaUploadTarget } from "../Media.ts"
 import { ArchivedProject, Harness, Project, ProjectSummary } from "../Project.ts"
+import { AccountCosts, ProjectCosts } from "../Costs.ts"
 import { AccountUsage, ModelProvider, ProjectUsage, UsageLimits } from "../Usage.ts"
 import { Device, Features, TimeZone, User } from "../User.ts"
 
@@ -278,6 +279,21 @@ export class AuthedAppRpcs extends RpcGroup.make(
     success: AccountUsage,
     error: NotFound
   }),
+  /**
+   * What Dream paid to run this project, this month and last, by cost center (sandbox time, browsers, Macs, OpenAI
+   * through Dream's gateway, storage, email), and each of the last 30 days. Estimates at list prices; separate from
+   * their subscription's usage. Added November 2026.
+   */
+  Rpc.make("GetProjectCosts", {
+    payload: { projectId: ProjectId },
+    success: ProjectCosts,
+    error: NotFound
+  }),
+  /**
+   * What Dream paid for all their projects, this month and last, with each project's share; for an operator, also
+   * everyone's (`everyone`). Added November 2026.
+   */
+  Rpc.make("GetAccountCosts", { success: AccountCosts }),
   /** Older Chat history, newest first, before `before`. The live snapshot carries the recent messages. */
   Rpc.make("ListMessages", {
     payload: {
