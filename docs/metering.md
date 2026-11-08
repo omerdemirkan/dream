@@ -170,8 +170,8 @@ cross-check, rebuilt from E2B's log.
 ## In the app
 
 Costs sit beside the subscription's usage, never mixed into it: dollars here, the plan's percentages there, no
-rings or window bars for costs, and every view of them ends with "Estimates at list prices. None of this comes out
-of your plan." OpenAI calls their own key paid always show on their own, under "Paid by your OpenAI key", and never
+rings or window bars for costs, and each view of them ends with one short line, as the plan's part does with "Shares are
+estimates.": "Estimates. None of this comes out of your plan.", and nothing below it. OpenAI calls their own key paid always show on their own, under "Paid by your OpenAI key", and never
 in Dream's total. (`apps/mobile/src/ui/Costs.tsx`, `src/data/costs.ts`; fixtures `costs-*`.)
 
 - **A project:** the usage sheet ends, under a hairline, with "What Dream paid in November": the total, last month
@@ -186,7 +186,7 @@ in Dream's total. (`apps/mobile/src/ui/Costs.tsx`, `src/data/costs.ts`; fixtures
   ones say so; deleted ones are one row; `unattributed` is "Outside your projects"), and their key's part.
 - **Operators:** "Everyone on this Dream" at the foot of `/costs`, which only an operator's response makes appear,
   opens `/costs/everyone`: the month, the 30 days, what it paid for, each person's share, and the overhead no one
-  caused, with a note that Cloudflare and plan fees aren't counted.
+  caused; its line says Cloudflare and plan fees aren't counted.
 
 Calls the app makes on the API's shapes, for the Worker side to match: a deleted project comes as
 `{ title: "Deleted project", archived: true }` with no icon, as `GetAccountUsage` names one (the app folds them

@@ -24,8 +24,8 @@ import { Icon, Lab } from "./kit.tsx"
 import { color, tracking } from "./theme.ts"
 import { Footnote, SectionHeading, ShareIcon } from "./Usage.tsx"
 
-/** Under every view of costs: they're estimates, and none of it is their plan's. */
-export const costsFootnote = "Estimates at list prices. None of this comes out of your plan."
+/** The one line under each view of costs, as the plan's part has "Shares are estimates.", and nothing below it. */
+export const costsFootnote = "Estimates. None of this comes out of your plan."
 
 // ---------------------------------------------------------------------------
 // The usage sheet's section

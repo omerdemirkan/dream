@@ -60,7 +60,6 @@ export default function CostsDetail() {
             </>
           ) : null}
           {view.ownKey ? <OwnKey own={view.ownKey} nested /> : null}
-          <Footnote>{costsFootnote}</Footnote>
           {view.everyone ? (
             <Pressable
               accessibilityRole="button"
@@ -68,7 +67,7 @@ export default function CostsDetail() {
               style={({ pressed }) => ({
                 flexDirection: "row",
                 alignItems: "center",
-                marginTop: 28,
+                marginTop: 24,
                 paddingVertical: 13,
                 borderTopWidth: StyleSheet.hairlineWidth,
                 borderBottomWidth: StyleSheet.hairlineWidth,
@@ -80,6 +79,7 @@ export default function CostsDetail() {
               <Icon name="chev" size={13} color={color.t3} />
             </Pressable>
           ) : null}
+          <Footnote>{costsFootnote}</Footnote>
         </>
       ) : AsyncResult.isInitial(result) || result.waiting ? (
         <ActivityIndicator color={color.t3} style={{ marginTop: 40 }} />

@@ -35,14 +35,13 @@ export default function EveryoneCosts() {
           ))}
           {view.overhead.length > 0 ? (
             <>
-              <SectionHeading>{`No one’s, ${view.overheadTotal}`}</SectionHeading>
+              <SectionHeading>{`Builds, checks and throwaway sandboxes, ${view.overheadTotal}`}</SectionHeading>
               {view.overhead.map((row) => (
                 <CostRow key={row.key} row={row} nested={false} />
               ))}
-              <Footnote>Template builds, checks and other throwaway sandboxes.</Footnote>
             </>
           ) : null}
-          <Footnote>Estimates at list prices. Cloudflare and the providers’ plan fees aren’t counted.</Footnote>
+          <Footnote>Estimates. Cloudflare and plan fees aren’t counted.</Footnote>
         </>
       ) : AsyncResult.isInitial(result) || result.waiting ? (
         <ActivityIndicator color={color.t3} style={{ marginTop: 40 }} />
