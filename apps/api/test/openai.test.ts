@@ -13,6 +13,10 @@ import { openaiGateway, sweepBackgroundResponses } from "../src/openai/Gateway.t
 import { sessionMeter, type Socket } from "../src/openai/Realtime.ts"
 import { OpenAIUpstream, type SidebandRequest } from "../src/openai/Runtime.ts"
 import { fromEvent, fromJson } from "../src/openai/Usage.ts"
+import * as HttpServerRequest from "effect/http/HttpServerRequest"
+import { route } from "../src/http/Router.ts"
+import { utf8 } from "../src/lib/Bytes.ts"
+import { importHmacKey, signHs256 } from "../src/lib/Jwt.ts"
 import { makeCloud } from "./support/Cloud.ts"
 
 // ---------------------------------------------------------------------------
@@ -829,6 +833,101 @@ describe("the OpenAI gateway", () => {
         if (enabled) assert.include(env, "https://openai.dream.test/v1")
         yield* cloud.close
       }
+    })
+  )
+})
+
+describe("dev credentials for checking the live gateway", () => {
+  const admin = (cloud: Effect.Success<ReturnType<typeof makeCloud>>, path: string, init: RequestInit = {}) =>
+    Effect.gen(function* () {
+      const raw = new Request(`https://api.dream.test${path}`, init)
+      const response = yield* route(raw).pipe(
+        Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(raw)),
+        Effect.provide(Layer.succeedContext(cloud.workerContext)),
+        Effect.map(HttpServerResponse.toWeb)
+      )
+      return response
+    })
+  const mint = (cloud: Effect.Success<ReturnType<typeof makeCloud>>, secret = "dev-secret") =>
+    admin(cloud, "/admin/openai/dev-credential", {
+      method: "POST",
+      headers: { "x-dream-dev-secret": secret, "content-type": "application/json" },
+      body: JSON.stringify({ label: "live-check" })
+    })
+
+  it.live("are minted only with the dev secret, and meter to Dream under the pseudo-project", () =>
+    Effect.gen(function* () {
+      const { cloud, call, events } = yield* setup()
+      assert.strictEqual((yield* mint(cloud, "wrong")).status, 403)
+      const answer = yield* mint(cloud)
+      const minted = (yield* Effect.promise(() => answer.json())) as {
+        credential: string
+        projectId: string
+        enabled: boolean
+        configured: boolean
+      }
+      assert.strictEqual(minted.projectId, "prj_dev_live-check")
+      assert.isTrue(minted.enabled && minted.configured)
+      const response = yield* call("/v1/responses", {
+        ...post({ model: "gpt-6-luna", input: "hi" }),
+        auth: `Bearer ${minted.credential}`
+      })
+      assert.strictEqual(response.status, 200)
+      const metered = yield* events
+      assert.deepStrictEqual(
+        metered.map((e) => [e.owner, e.dimensions.project]),
+        [["dream", "prj_dev_live-check"]]
+      )
+      const read = yield* admin(cloud, "/admin/openai/dev-events?project=prj_dev_live-check", {
+        headers: { "x-dream-dev-secret": "dev-secret" }
+      })
+      const recorded = (yield* Effect.promise(() => read.json())) as ReadonlyArray<{ owner: string; usd: number }>
+      assert.strictEqual(recorded.length, 1)
+      assert.strictEqual(recorded[0]?.owner, "dream")
+      assert.strictEqual(
+        (yield* admin(cloud, "/admin/openai/dev-events?project=" + metered[0]!.dimensions.project, {})).status,
+        403
+      )
+      yield* cloud.close
+    })
+  )
+
+  it.live("are refused once expired, forged, or of another kind", () =>
+    Effect.gen(function* () {
+      const { cloud, call, project } = yield* setup()
+      const key = yield* importHmacKey(utf8("test-signing-key"))
+      const sign = (claims: object) => signHs256(key, claims)
+      const now = Math.floor(Date.now() / 1000)
+      const status = (token: string) => Effect.map(call("/v1/models", { auth: `Bearer ${token}` }), (r) => r.status)
+      // Expired.
+      assert.strictEqual(
+        yield* status(yield* sign({ iss: "dream", typ: "openai-dev", sub: "dream", pid: "prj_dev_x", exp: now - 1 })),
+        401
+      )
+      // Not a dev pseudo-project: a dev credential can't stand in for a real project.
+      assert.strictEqual(
+        yield* status(yield* sign({ iss: "dream", typ: "openai-dev", sub: "dream", pid: project.id, exp: now + 60 })),
+        401
+      )
+      // Another kind of token (a project token for dreamd).
+      assert.strictEqual(
+        yield* status(yield* sign({ iss: "dream", typ: "project", sub: "dream", pid: "prj_dev_x", iat: now })),
+        401
+      )
+      // Forged with another key.
+      const other = yield* importHmacKey(utf8("someone-elses-key"))
+      assert.strictEqual(
+        yield* status(
+          yield* signHs256(other, { iss: "dream", typ: "openai-dev", sub: "dream", pid: "prj_dev_x", exp: now + 60 })
+        ),
+        401
+      )
+      // And a good one works.
+      assert.strictEqual(
+        yield* status(yield* sign({ iss: "dream", typ: "openai-dev", sub: "dream", pid: "prj_dev_x", exp: now + 60 })),
+        404 // the fake has no /models; it got there
+      )
+      yield* cloud.close
     })
   )
 })

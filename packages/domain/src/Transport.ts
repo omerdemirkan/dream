@@ -68,6 +68,13 @@ export const Routes = {
   updatesStatus: "/admin/updates/status",
   /** POST: creates the signing key if there's none; responds with `UpdatesCertificate`. */
   updatesSigningKey: "/admin/updates/signing-key",
+  /**
+   * POST `{ label }` with the operator's `x-dream-dev-secret`: a short-lived AI gateway credential for a dev
+   * pseudo-project owned by Dream, for checks against the live Worker. Added November 2026.
+   */
+  openaiDevCredential: "/admin/openai/dev-credential",
+  /** GET `?project=prj_dev_…` with `x-dream-dev-secret`: what the gateway metered for that dev pseudo-project. */
+  openaiDevEvents: "/admin/openai/dev-events",
   /** POST from E2B: a sandbox lifecycle event, signed with `e2b-signature` (docs/metering.md). Added November 2026. */
   e2bWebhook: "/webhooks/e2b",
   /**

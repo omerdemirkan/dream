@@ -16,11 +16,11 @@
 import type { ProjectId, UserId } from "@dream/domain"
 import { Clock, DateTime, Duration, Effect, Option, Redacted, Schema } from "effect"
 import * as HttpServerResponse from "effect/http/HttpServerResponse"
-import { Tokens } from "../auth/Tokens.ts"
+import { DevProjectPrefix, Tokens } from "../auth/Tokens.ts"
 import { ApiConfig } from "../Config.ts"
 import { Projects } from "../db/Projects.ts"
 import { toHex, utf8 } from "../lib/Bytes.ts"
-import { Meter, type MeterEvent } from "../metering/Meter.ts"
+import { Meter, type MeterEvent, OperatorOwner } from "../metering/Meter.ts"
 import { ClientSecrets, WrappedPrefix } from "./ClientSecrets.ts"
 import { type MeteredEndpoint, type Route, routeOf } from "./Endpoints.ts"
 import { type ObjectKind, OpenAIObjects } from "./Objects.ts"
@@ -295,8 +295,9 @@ const authorize = (raw: Request, route: Route) =>
       const claims = yield* secrets
         .unwrap(bearer, yield* Clock.currentTimeMillis)
         .pipe(Effect.mapError(() => problem(401, "This client secret is invalid or expired.", "invalid_client_secret")))
-      // A deleted project's secrets stop working with it.
-      if ((yield* ownerOf(claims.projectId as ProjectId)) !== claims.userId)
+      // A deleted project's secrets stop working with it (a dev pseudo-project's expire on their own, within the hour).
+      const dev = claims.userId === OperatorOwner && claims.projectId.startsWith(DevProjectPrefix)
+      if (!dev && (yield* ownerOf(claims.projectId as ProjectId)) !== claims.userId)
         return yield* Effect.fail(problem(401, "This project no longer exists.", "project_gone"))
       return {
         caller: { projectId: claims.projectId, userId: claims.userId },
@@ -306,7 +307,8 @@ const authorize = (raw: Request, route: Route) =>
     }
 
     const claims = yield* tokens.verifyOpenAIGateway(bearer).pipe(Effect.mapError(() => noCredential))
-    if ((yield* ownerOf(claims.projectId)) !== claims.userId)
+    // A dev pseudo-project has no row; its credential is short-lived and only the operator's route mints it.
+    if (!claims.dev && (yield* ownerOf(claims.projectId)) !== claims.userId)
       return yield* Effect.fail(problem(401, "This project no longer exists.", "project_gone"))
     return {
       caller: { projectId: claims.projectId, userId: claims.userId },

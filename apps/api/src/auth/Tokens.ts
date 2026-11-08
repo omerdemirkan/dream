@@ -84,6 +84,29 @@ const OpenAIGatewayClaims = Schema.Struct({
   pid: ProjectId
 })
 
+/**
+ * A gateway credential for a dev pseudo-project (`prj_dev_<label>`, owned by `dream`): for checks against the live
+ * Worker that must not run an agent. Minted only by the operator's route, and good for an hour.
+ */
+const OpenAIDevClaims = Schema.Struct({
+  iss: Schema.Literal(issuer),
+  typ: Schema.Literal("openai-dev"),
+  sub: UserId,
+  pid: ProjectId,
+  exp: Schema.Number
+})
+
+/** The dev pseudo-projects' ids, and who they belong to. */
+export const DevProjectPrefix = "prj_dev_"
+export const DevCredentialLifetime = Duration.hours(1)
+
+export interface GatewayCaller {
+  readonly projectId: ProjectId
+  readonly userId: UserId
+  /** A dev pseudo-project: no D1 row, metered to Dream. */
+  readonly dev: boolean
+}
+
 export interface ConnectTicket {
   readonly userId: UserId
   readonly provider: ConnectLinkProvider
@@ -129,9 +152,16 @@ export class Tokens extends Context.Service<
     ) => Effect.Effect<{ readonly token: string; readonly expiresAtMs: number }>
     readonly verifyConnectTicket: (token: string) => Effect.Effect<ConnectTicket, InvalidToken>
     readonly openaiGateway: (projectId: ProjectId, userId: UserId) => Effect.Effect<Redacted.Redacted<string>>
-    readonly verifyOpenAIGateway: (
-      token: string
-    ) => Effect.Effect<{ readonly projectId: ProjectId; readonly userId: UserId }, InvalidToken>
+    readonly verifyOpenAIGateway: (token: string) => Effect.Effect<GatewayCaller, InvalidToken>
+    /** A dev pseudo-project's credential (`label`: lowercase letters, digits and dashes). */
+    readonly openaiDevGateway: (
+      label: string,
+      owner: UserId
+    ) => Effect.Effect<{
+      readonly token: Redacted.Redacted<string>
+      readonly projectId: ProjectId
+      readonly expiresAtMs: number
+    }>
   }
 >()("@dream/api/Tokens") {
   static readonly layer = Layer.effect(
@@ -222,8 +252,25 @@ export class Tokens extends Context.Service<
           Effect.map(signHs256(key, { iss: issuer, typ: "openai", sub: userId, pid: projectId }), Redacted.make),
         verifyOpenAIGateway: (token) =>
           verify(token, OpenAIGatewayClaims).pipe(
-            Effect.map((claims) => ({ projectId: claims.pid, userId: claims.sub }))
-          )
+            Effect.map((claims): GatewayCaller => ({ projectId: claims.pid, userId: claims.sub, dev: false })),
+            Effect.catch(() =>
+              verify(token, OpenAIDevClaims).pipe(
+                Effect.flatMap(notExpired),
+                Effect.flatMap((claims) =>
+                  claims.pid.startsWith(DevProjectPrefix)
+                    ? Effect.succeed<GatewayCaller>({ projectId: claims.pid, userId: claims.sub, dev: true })
+                    : Effect.fail(new InvalidToken({ reason: "not a dev project" }))
+                )
+              )
+            )
+          ),
+        openaiDevGateway: (label, owner) =>
+          Effect.gen(function* () {
+            const exp = (yield* nowSeconds) + Duration.toSeconds(DevCredentialLifetime)
+            const projectId = `${DevProjectPrefix}${label}` as ProjectId
+            const token = yield* signHs256(key, { iss: issuer, typ: "openai-dev", sub: owner, pid: projectId, exp })
+            return { token: Redacted.make(token), projectId, expiresAtMs: exp * 1000 }
+          })
       })
     })
   )

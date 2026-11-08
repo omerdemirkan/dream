@@ -21,6 +21,16 @@ const ObjectRow = Schema.Struct({
 })
 export type ObjectRow = typeof ObjectRow.Type
 
+export const RecordedEvent = Schema.Struct({
+  id: Schema.String,
+  owner: Schema.String,
+  at: Schema.String,
+  quantities_json: Schema.String,
+  dimensions_json: Schema.String,
+  cost_usd: Schema.Number
+})
+export type RecordedEvent = typeof RecordedEvent.Type
+
 export class OpenAIObjects extends Context.Service<
   OpenAIObjects,
   {
@@ -45,6 +55,8 @@ export class OpenAIObjects extends Context.Service<
     readonly due: (nowMs: number, limit: number) => Effect.Effect<ReadonlyArray<ObjectRow>>
     /** Forgets what was made before `beforeMs` (OpenAI keeps responses 30 days). */
     readonly prune: (beforeMs: number) => Effect.Effect<void>
+    /** What the ledger recorded for a project's model calls (`meter_events`), for the dev pseudo-projects' checks. */
+    readonly recorded: (projectId: string) => Effect.Effect<ReadonlyArray<RecordedEvent>>
   }
 >()("@dream/api/openai/OpenAIObjects") {
   static readonly layer = Layer.effect(
@@ -73,7 +85,11 @@ export class OpenAIObjects extends Context.Service<
             SELECT id, project_id, owner_id, kind, attempts, created_at_ms FROM openai_objects
             WHERE metered = 0 AND kind = 'response' AND next_check_ms <= ${nowMs}
             ORDER BY next_check_ms LIMIT ${limit}`.pipe(decodeRows(ObjectRow)),
-        prune: (beforeMs) => exec(sql`DELETE FROM openai_objects WHERE created_at_ms < ${beforeMs}`)
+        prune: (beforeMs) => exec(sql`DELETE FROM openai_objects WHERE created_at_ms < ${beforeMs}`),
+        recorded: (projectId) =>
+          sql`
+            SELECT id, owner, at, quantities_json, dimensions_json, cost_usd FROM meter_events
+            WHERE meter = 'model_request' AND project_id = ${projectId} ORDER BY at`.pipe(decodeRows(RecordedEvent))
       })
     })
   )

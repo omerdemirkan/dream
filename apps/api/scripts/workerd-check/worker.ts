@@ -34,7 +34,8 @@ const objects = Layer.succeed(
     giveUp: () => Effect.void,
     checkLater: () => Effect.void,
     due: () => Effect.succeed([]),
-    prune: () => Effect.void
+    prune: () => Effect.void,
+    recorded: () => Effect.succeed([])
   })
 )
 // The gateway only asks who owns the project.

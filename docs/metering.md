@@ -196,6 +196,15 @@ Not metered: a `store: false` stream the app hangs up on before its last event (
 with nothing stored the gateway can't look it up), and a sideband's call when `OpenAICallDO` restarts mid-call (a
 deploy).
 
+**Checking it live without an agent.** `POST /admin/openai/dev-credential` (behind `x-dream-dev-secret`) mints an
+hour's gateway credential for a dev pseudo-project, `prj_dev_<label>`, owned by `dream`: a token of its own kind
+(`openai-dev`, with an expiry, the Worker's signing key), which the gateway takes without a project row and meters
+to Dream's overhead under that project id. `GET /admin/openai/dev-events?project=prj_dev_…` lists what the ledger
+recorded for one. `packages/sandbox-template/scripts/gateway-live-check.ts` uses both: a throwaway sandbox with the
+credential in its egress rule makes a Responses call, a stream, a short speech and a tiny realtime exchange through
+`openai.<domain>`, checks a refused path and a refused Codex request, and prints what was metered; with the gateway
+on but no key, it checks the 503 "isn't configured".
+
 **Off by default.** `DREAM_AI_GATEWAY_ENABLED` (a plain binding from `.env`, like `DREAM_EMAIL_ENABLED`). Off, the
 host answers 404, sandboxes get neither the variables nor the egress rule, and the agent isn't told: dreamd installs
 the `dream-openai` skill (`docs/prompts/skills/dream-openai/`) only while `DREAM_OPENAI_BASE_URL` is in its env, and its listing in the

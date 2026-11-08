@@ -28,6 +28,7 @@ import {
 import { gateway } from "./Gateway.ts"
 import { receiveE2bWebhook, registerE2bWebhook } from "./Metering.ts"
 import { OpenAIGateway } from "@dream/domain"
+import { devCredential, devEvents } from "../openai/Dev.ts"
 import { openaiGateway } from "../openai/Gateway.ts"
 import { downloadAttachmentForSandbox, downloadMedia, uploadAttachment, uploadMedia } from "./Media.ts"
 import { homePage, privacyPage } from "./PublicPages.ts"
@@ -178,6 +179,15 @@ export const route = (raw: Request) =>
         Effect.map((instanceId) => HttpServerResponse.jsonUnsafe({ granted: instanceId })),
         Effect.catchTag("TestflightDenied", (e) => Effect.succeed(HttpServerResponse.text(e.reason, { status: 400 })))
       )
+    }
+    // Checks of the live AI gateway that run no agent: a dev pseudo-project's credential, and what it was metered.
+    if (path === Routes.openaiDevCredential && request.method === "POST") {
+      if (!operator()) return HttpServerResponse.text("Forbidden", { status: 403 })
+      return yield* devCredential(yield* request.json.pipe(Effect.orElseSucceed(() => null)))
+    }
+    if (path === Routes.openaiDevEvents && request.method === "GET") {
+      if (!operator()) return HttpServerResponse.text("Forbidden", { status: 403 })
+      return yield* devEvents(url.searchParams.get("project"))
     }
     if (path === Routes.testflightBuilds && request.method === "GET") {
       if (!operator()) return HttpServerResponse.text("Forbidden", { status: 403 })
