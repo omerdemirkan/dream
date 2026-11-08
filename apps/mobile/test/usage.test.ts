@@ -136,6 +136,7 @@ describe("usageSheet", () => {
       planLeft: { value: 10, note: "30% left now", reached: false }
     })
     assert.isTrue(paused.hero?.nearLimit)
+    assert.isFalse(paused.hero?.lowLeft)
     assert.deepStrictEqual(paused.callout, {
       left: "Paused at the 25% you gave it",
       rest: ". It picks up when you raise or clear the limit, or when your week resets Mon 8:00 AM."

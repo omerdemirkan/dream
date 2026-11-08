@@ -329,7 +329,7 @@ function Hero(props: { readonly hero: NonNullable<SheetView["hero"]>; readonly t
       </View>
       <View style={{ flex: 1, gap: 9, maxWidth: 190 }}>
         {row(focus, props.title, hero.share)}
-        {row(track, "Left this week", hero.left, hero.nearLimit)}
+        {row(track, "Left this week", hero.left, hero.lowLeft)}
         {hero.resets ? <Text style={{ fontSize: 12.5, color: color.t3 }}>{hero.resets}</Text> : null}
       </View>
     </View>
@@ -398,7 +398,7 @@ function LimitField(props: {
             }}
             onBlur={commit}
             onSubmitEditing={commit}
-            placeholder="—"
+            placeholder="Off"
             placeholderTextColor={color.t3}
             keyboardType="number-pad"
             returnKeyType="done"
@@ -415,7 +415,7 @@ function LimitField(props: {
               padding: 0
             }}
           />
-          <Text style={{ fontSize: 15, fontWeight: "600", color: text === "" ? color.t3 : tint }}>%</Text>
+          {text === "" ? null : <Text style={{ fontSize: 15, fontWeight: "600", color: tint }}>%</Text>}
         </View>
         <Text style={{ fontSize: 15, color: color.t1, letterSpacing: -0.15 }}> {props.after}</Text>
       </View>

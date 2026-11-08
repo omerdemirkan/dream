@@ -167,7 +167,7 @@ describe("Home (B)", () => {
       now
     })
     assert.strictEqual(dotOf(share), "paused")
-    assert.strictEqual(line(headerLine(share, context(now, []))), "Paused · used its 25% of the week")
+    assert.strictEqual(line(headerLine(share, context(now, []))), "Paused · at its 25% limit")
     const floor = presenceOf({
       activity: asleep,
       working: false,
@@ -175,7 +175,7 @@ describe("Home (B)", () => {
       pausedBy: { limit: "planLeft", percent: 10 },
       now
     })
-    assert.strictEqual(line(homeLine(floor, context(now, []))), "Paused · keeping 10% of Claude free")
+    assert.strictEqual(line(homeLine(floor, context(now, []))), "Paused · keeping 10% free")
   })
 
   it("puts working ahead of waiting and paused", () => {

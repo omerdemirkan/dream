@@ -194,7 +194,7 @@ they can set, "This project may use up to N% of the week" and "Stop when the pla
 loses focus. By default the sample world's ChatGPT Pro week is 38% used, Lift Log about 4% of it, and each of the
 simulated agent's turns adds a little (the header follows `ProjectEvent.Usage`). `usage-near-limit` is the heavy
 week: 92% used, the ring's arc and "8% left" in amber, and a line in the sheet saying what's left and until when.
-`usage-limit` gives Lift Log a limit at its share, so it's paused by it: "Paused · used its 4% of the week" in the
+`usage-limit` gives Lift Log a limit at its share, so it's paused by it: "Paused · at its 4% limit" in the
 header, "paused" under the ring, and the sheet's callout. `usage-none` is a world where no usage is known: the header
 shows nothing, and the sheet has no ring. `usage-normal` goes back to the default.
 

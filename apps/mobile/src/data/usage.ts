@@ -209,7 +209,10 @@ export interface UsageSheet {
   /** The week as a ring, absent when the week isn't known. */
   readonly hero?: {
     readonly arcs: RingArcs
+    /** Amber: near the end of the week, or paused by a limit they set. */
     readonly nearLimit: boolean
+    /** What's left is the trouble (near the end of the week), so it's amber too. */
+    readonly lowLeft: boolean
     /** This project's share: "31%". */
     readonly share: string
     /** What's left of the plan this week: "8%". */
@@ -276,6 +279,7 @@ export const usageSheet = (
           hero: {
             arcs: ringArcs(week, 0.03),
             nearLimit: nearLimit || reached !== undefined,
+            lowLeft: nearLimit,
             share: percentLabel(week.projectPercent),
             left: `${left}%`,
             ...(week.resetsAt ? { resets: `Resets ${resetLabel(week.resetsAt, now, timeZone)}` } : {})

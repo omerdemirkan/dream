@@ -162,8 +162,8 @@ const paused = (presence: Extract<Presence, { _tag: "Paused" }>, context: LineCo
     presence.by === undefined
       ? `${planName(context.harness)} usage resets ${aheadLabel(presence.until, context.now, context.timeZone)}`
       : presence.by.limit === "project"
-        ? `used its ${presence.by.percent}% of the week`
-        : `keeping ${presence.by.percent}% of ${planName(context.harness)} free`,
+        ? `at its ${presence.by.percent}% limit`
+        : `keeping ${presence.by.percent}% free`,
   strong: false
 })
 

@@ -92,8 +92,7 @@ const kill = () => run(E2B.use((e2b) => e2b.kill(sandbox.sandboxId))).catch(() =
 let written: string | undefined
 const syncEnv = (world: FakeWorld) =>
   Effect.gen(function* () {
-    const fake = [...world.sandboxes.values()][0]
-    const env = fake?.files.get(DaemonEnvFile)
+    const env = [...world.sandboxes.values()].find((s) => s.files.has(DaemonEnvFile))?.files.get(DaemonEnvFile)
     if (env === undefined || env === written) return
     written = env
     yield* Effect.promise(() => run(Envd.use((envd) => envd.writeFile(sandbox, DaemonEnvFile, env))))
@@ -148,24 +147,41 @@ const program = async () => {
       { services: (world) => Layer.merge(fakeServices(world), bridge(world)) }
     )
   )
+  let projectToken = (): string => ""
   const server = createServer(async (req, res) => {
-    const chunks: Array<Uint8Array> = []
-    for await (const chunk of req) chunks.push(chunk)
-    const body = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0))
-    chunks.reduce((offset, c) => (body.set(c, offset), offset + c.length), 0)
-    const request = new Request(`${apiUrl}${req.url}`, {
-      method: req.method ?? "GET",
-      headers: Object.entries(req.headers).flatMap(([k, v]) =>
-        typeof v === "string" ? [[k, v] as [string, string]] : []
-      ),
-      ...(req.method === "GET" || req.method === "HEAD" ? {} : { body })
-    })
-    const response =
-      new URL(request.url).pathname === "/sandbox/rpc"
-        ? await cloud.sandboxHandler(request)
-        : new Response("not here", { status: 404 })
-    res.writeHead(response.status, Object.fromEntries(response.headers))
-    res.end(new Uint8Array(await response.arrayBuffer()))
+    try {
+      const chunks: Array<Uint8Array> = []
+      for await (const chunk of req) chunks.push(chunk)
+      const body = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0))
+      chunks.reduce((offset, c) => (body.set(c, offset), offset + c.length), 0)
+      const headers = Object.entries(req.headers).flatMap(([k, v]) =>
+        typeof v === "string" && !["host", "content-length", "connection", "transfer-encoding"].includes(k)
+          ? [[k, v] as [string, string]]
+          : []
+      )
+      // E2B's port proxy drops Authorization on the way in; the project's token is the only one dreamd sends.
+      if (!headers.some(([k]) => k === "authorization")) headers.push(["authorization", `Bearer ${projectToken()}`])
+      const request = new Request(`${apiUrl}${(req.url ?? "/").replace(/\/+$/, "")}`, {
+        method: req.method ?? "GET",
+        headers,
+        ...(req.method === "GET" || req.method === "HEAD" ? {} : { body })
+      })
+      const response =
+        new URL(request.url).pathname === "/sandbox/rpc"
+          ? await cloud.sandboxHandler(request)
+          : new Response("not here", { status: 404 })
+      const out = new Uint8Array(await response.arrayBuffer())
+      if (process.env.CHECK_DEBUG)
+        say(
+          `stand-in ${req.method} ${req.url} ${body.length}B → ${response.status} ${out.length}B ${JSON.stringify(headers)} ${new TextDecoder().decode(body.slice(0, 160))}`
+        )
+      res.writeHead(response.status, { "content-type": response.headers.get("content-type") ?? "text/plain" })
+      res.end(out)
+    } catch (error) {
+      say(`stand-in failed: ${String(error)}`)
+      res.writeHead(500, { "content-type": "text/plain" })
+      res.end(new TextEncoder().encode(String(error)))
+    }
   })
   await new Promise<void>((resolve) => server.listen(port, "0.0.0.0", resolve))
   say(`stand-in API on :${port}, reachable at ${apiUrl}`)
@@ -197,6 +213,7 @@ const program = async () => {
     phone.CompleteModelConnection({ connectionId: started.connection.id, code: Redacted.make("code#state") })
   )
   const project = await Effect.runPromise(phone.CreateProject({ idea: "Say hello." }))
+  projectToken = () => envValue("DREAM_PROJECT_TOKEN")
 
   // workerd fires the ProjectDO's alarm; here a ticker does, once a second.
   let ticking = false
@@ -220,7 +237,7 @@ const program = async () => {
     say(`gave up waiting: ${what}`)
     return false
   }
-  const fake = () => [...cloud.world.sandboxes.values()][0]!
+  const fake = () => [...cloud.world.sandboxes.values()].find((s) => s.metadata.projectId === project.id)!
   const envValue = (name: string) =>
     JSON.parse(
       fake()
@@ -243,7 +260,12 @@ const program = async () => {
     )
   }
 
-  check("the first turn ran on the real dreamd", await until("the first turn", () => turns() >= 1))
+  const first = await until("the first turn", () => turns() >= 1)
+  check("the first turn ran on the real dreamd", first)
+  if (!first) {
+    say(`dreamd log:\n${await sh(sandbox, `tail -40 ${log}`)}`)
+    throw new Error("no first turn")
+  }
   await reading(20)
 
   // A turn under way when the limit is crossed finishes; nothing starts after it.
