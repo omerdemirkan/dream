@@ -50,7 +50,13 @@ const note = (projectId: string) => {
 const cf = async (path: string, init?: RequestInit): Promise<Json> => {
   const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${Account}${path}`, {
     ...init,
-    headers: { "content-type": "application/json", ...(init?.headers ?? {}) }
+    headers: {
+      "content-type": "application/json",
+      ...(process.env.CLOUDFLARE_API_TOKEN && process.env.CLOUDFLARE_API_TOKEN !== "anything"
+        ? { authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}` }
+        : {}),
+      ...(init?.headers ?? {})
+    }
   })
   const body: Json = await res.json()
   if (!body.success) throw new Error(`Cloudflare ${path}: ${JSON.stringify(body.errors)}`)

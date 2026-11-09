@@ -106,7 +106,14 @@ const readEvents = async (sinceMs: number) => {
 const cloudflare = async (path: string, init?: RequestInit): Promise<unknown> => {
   const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${Account}${path}`, {
     ...init,
-    headers: { "content-type": "application/json", ...(init?.headers ?? {}) }
+    headers: {
+      "content-type": "application/json",
+      // The workspace's connection adds the token; elsewhere it comes from the environment.
+      ...(process.env.CLOUDFLARE_API_TOKEN && process.env.CLOUDFLARE_API_TOKEN !== "anything"
+        ? { authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}` }
+        : {}),
+      ...(init?.headers ?? {})
+    }
   })
   if (!response.ok) throw new Error(`Cloudflare ${path}: HTTP ${response.status}`)
   return response.json()

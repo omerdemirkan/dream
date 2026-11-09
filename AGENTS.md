@@ -1,7 +1,7 @@
 # Dream
 
 Dream is an iPhone app where a person describes an idea and an agent builds it, over hours to weeks, in its own E2B
-sandbox. Read `docs/PLAN.md` first (architecture, data, flows), then `docs/prompts/README.md`
+sandbox. New to this environment? `docs/HANDOFF.md` covers setup, credentials and where the work stands. Read `docs/PLAN.md` first (architecture, data, flows), then `docs/prompts/README.md`
 (what the agent in the sandbox is told, section by section), `docs/research/verified-facts.md` (versions and decisions), and
 `mocks/deck-v3.html` (the locked UI).
 
@@ -263,8 +263,9 @@ the other workstreams to agree first.
 - Deploy only from `main` or a branch rebased on the latest `origin/main`: every deploy replaces the whole Worker, so
   deploying a stale branch silently rolls back other fixes. Run `bun run check` first.
 - `bun run infra:deploy` from the workspace root. The root `.env` needs `DREAM_DOMAIN=omer.build`,
-  `DREAM_R2_ENABLED=true`, `CLOUDFLARE_ACCOUNT_ID=2d98de7c4511e98d2f774c4fcc9b9b93` and `CLOUDFLARE_API_TOKEN=anything`
-  (the workspace's `cloudflare-api` connection adds the real token). Without `DREAM_R2_ENABLED=true` a deploy unbinds
+  `DREAM_R2_ENABLED=true`, `CLOUDFLARE_ACCOUNT_ID=2d98de7c4511e98d2f774c4fcc9b9b93` and `CLOUDFLARE_API_TOKEN`
+  (the real token; `anything` in the Outerloop workspace, whose `cloudflare-api` connection adds it; see
+  `docs/HANDOFF.md` for every credential a new environment needs). Without `DREAM_R2_ENABLED=true` a deploy unbinds
   media storage. D1 and R2 names are pinned in `apps/api/src/Resources.ts`, so a deploy from any machine adopts the
   live resources.
 - Worker secrets set in the dashboard or through the API survive deploys; plain vars don't.

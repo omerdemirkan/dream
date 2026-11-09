@@ -35,7 +35,10 @@ const rest: SendEmailBinding = {
   send: async (message) => {
     const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/email/sending/send`, {
       method: "POST",
-      headers: { "content-type": "application/json", authorization: "Bearer from-connection" },
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN && process.env.CLOUDFLARE_API_TOKEN !== "anything" ? process.env.CLOUDFLARE_API_TOKEN : "from-connection"}`
+      },
       body: JSON.stringify({ ...message, from: { address: message.from.email, name: message.from.name } })
     })
     const body = await response.text()

@@ -41,8 +41,27 @@ const GrowingTables = [
 ]
 const DayMs = 86_400_000
 
+/**
+ * Credentials by host, from the environment when set. In the Outerloop workspace the connections' proxy adds them and
+ * none of these are set; anywhere else, set CLOUDFLARE_API_TOKEN, E2B_API_KEY, BROWSERBASE_API_KEY and NAMESPACE_TOKEN.
+ */
+const credentials = (host: string): Record<string, string> => {
+  const env = process.env
+  const cloudflareToken =
+    env.CLOUDFLARE_API_TOKEN && env.CLOUDFLARE_API_TOKEN !== "anything" ? env.CLOUDFLARE_API_TOKEN : undefined
+  if (host === "api.cloudflare.com" && cloudflareToken) return { authorization: `Bearer ${cloudflareToken}` }
+  if (host === new URL(E2bApi).host && env.E2B_API_KEY) return { "X-API-KEY": env.E2B_API_KEY }
+  if (host === "api.browserbase.com" && env.BROWSERBASE_API_KEY) return { "X-BB-API-Key": env.BROWSERBASE_API_KEY }
+  if (host === new URL(NamespaceApi).host && env.NAMESPACE_TOKEN)
+    return { authorization: `Bearer ${env.NAMESPACE_TOKEN}` }
+  return {}
+}
+
 const getJson = async (url: string, init?: RequestInit): Promise<unknown> => {
-  const response = await fetch(url, init)
+  const response = await fetch(url, {
+    ...init,
+    headers: { ...credentials(new URL(url).host), ...((init?.headers as Record<string, string> | undefined) ?? {}) }
+  })
   if (!response.ok) throw new Error(`${new URL(url).host}${new URL(url).pathname}: HTTP ${response.status}`)
   return response.json()
 }
