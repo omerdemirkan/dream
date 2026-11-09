@@ -282,3 +282,7 @@ the other workstreams to agree first.
   person's credentials in plain text. Read only the fields you need, and never print or log the whole response.
 - The iPhone app's JavaScript: `node apps/mobile/scripts/updates.ts publish` from main (rollback and status too;
   see apps/mobile/README.md). Native changes still need a TestFlight build, and `publish` says so.
+- `main` is mirrored to the private GitHub repository `omerdemirkan/dream`: after each deploy, the deployer runs
+  `git push https://github.com/omerdemirkan/dream.git origin/main:refs/heads/main`. The workspace's `github-git`
+  connection supplies the credential, so don't add GitHub as a remote and don't put a token in a URL. A push too large
+  for the proxy fails with HTTP 413; push older first-parent commits of `main` first, then the rest.
