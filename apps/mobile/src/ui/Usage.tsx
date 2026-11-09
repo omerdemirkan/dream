@@ -3,7 +3,7 @@
  * (this project's share, everything else, what's left), and the usage sheet it opens: the week at a glance and the
  * two limits they can set. What they say comes from `data/usage.ts`; sizes and colours follow
  * mocks/screens/project-usage (screens.html, `.hr-u.ring`, `.sheet`). Its pieces (UsageRing, WindowBar, ShareRow,
- * LimitCallout, Footnote, SectionHeading) also draw Settings' plan card (`PlanCard.tsx`), each taking the colour of
+ * LimitCallout, Footnote, SectionHeading) also draw a plan's page from Settings (`app/plan/[provider].tsx`), each taking the colour of
  * what's in focus: white, or amber near the limit.
  */
 import type { ProjectId, ProjectUsage, UsageLimitReached } from "@dream/domain"

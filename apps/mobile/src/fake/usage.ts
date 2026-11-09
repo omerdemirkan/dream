@@ -141,7 +141,7 @@ const sharesOf = (world: UsageWorld, projects: ReadonlyArray<Project>): Array<Pr
 
 const sum = (values: Iterable<number>) => [...values].reduce((a, b) => a + b, 0)
 
-/** Settings' plan card (`GetAccountUsage`): the same windows, every project's part together. */
+/** Settings' plan page (`GetAccountUsage`): the same windows, every project's part together. */
 export const accountOf = (world: UsageWorld, projects: ReadonlyArray<Project>, now: DateTime.Utc): AccountUsage => {
   const spends = [...world.spend.values()]
   const known = world.mode !== "none"

@@ -1,6 +1,6 @@
 /**
- * A full-screen detail opened from Settings (the costs card's "See more"): back on the left and the title centred,
- * as Settings and the plan breakdown (`app/plan`) have, over a scrolling page.
+ * A page opened from a row in Settings (a plan, Dream usage, a service, archived projects, the account): back on the
+ * left and the title centred, as Settings has, over a scrolling page.
  */
 import { useRouter } from "expo-router"
 import type { ReactNode } from "react"

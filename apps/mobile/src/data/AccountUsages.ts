@@ -1,5 +1,5 @@
 /**
- * Settings' plan card: one subscription's windows split between their projects and the rest, and each project's
+ * Settings' plan page: one subscription's windows split between their projects and the rest, and each project's
  * share of the week (`AppRpcs.GetAccountUsage`).
  */
 import type { AccountUsage, ModelProvider } from "@dream/domain"

@@ -1,6 +1,6 @@
 /**
  * What Dream pays to run their projects (docs/metering.md, "In the app"): a section at the foot of a project's usage
- * sheet, a card in Settings, and the pieces of the full-screen detail it opens (`app/costs`). Dollars, never the
+ * sheet, and the pieces of Dream usage's page (`app/costs`), which Settings' Dream usage row opens. Dollars, never the
  * plan's percentages, and drawn so the two don't read as one: a section of its own under a hairline, no rings or
  * window bars. What it says comes from `data/costs.ts`.
  */
@@ -8,12 +8,10 @@ import type { ProjectId } from "@dream/domain"
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react"
 import { Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
-import { useRouter } from "expo-router"
 import { useEffect, useState } from "react"
 import { Pressable, StyleSheet, Text, View } from "react-native"
-import { type CostRowView, costsTile, type DayBar, projectCostsView, type ShareView } from "../data/costs.ts"
-import { accountCostsAtom, projectCostsAtom } from "../state/atoms.ts"
-import { Icon, Lab } from "./kit.tsx"
+import { type CostRowView, type DayBar, projectCostsView, type ShareView } from "../data/costs.ts"
+import { projectCostsAtom } from "../state/atoms.ts"
 import { color, tracking } from "./theme.ts"
 import { Footnote, SectionHeading, ShareIcon } from "./Usage.tsx"
 
@@ -130,78 +128,10 @@ export function CostRow(props: { readonly row: CostRowView; readonly nested: boo
 }
 
 // ---------------------------------------------------------------------------
-// Settings' card
-// ---------------------------------------------------------------------------
-
-/**
- * Settings' section: this month's total across their projects, last month's, and the last 30 days small; it opens
- * the detail. Absent
- * until something has cost anything, and against an API without costs.
- */
-export function CostsCard() {
-  const router = useRouter()
-  const result = useAtomValue(accountCostsAtom)
-  // Fetched again each time Settings opens.
-  const refresh = useAtomRefresh(accountCostsAtom)
-  useEffect(() => refresh(), [refresh])
-  const costs = Option.getOrUndefined(AsyncResult.value(result))
-  if (!costs || (costs.month.lines.length === 0 && costs.lastMonth.usd <= 0)) return null
-  const tile = costsTile(costs)
-  return (
-    // Settings' sections: a quiet label 28 points under the one before.
-    <View style={{ marginTop: 28 }}>
-      <Lab style={{ marginBottom: 4 }}>What Dream pays</Lab>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`Dream paid ${tile.total} ${tile.caption}`}
-        accessibilityHint="Shows what it paid for, project by project"
-        onPress={() => router.push("/costs")}
-        style={({ pressed }) => ({
-          marginTop: 6,
-          paddingHorizontal: 16,
-          paddingTop: 14,
-          paddingBottom: 14,
-          borderRadius: 22,
-          borderCurve: "continuous",
-          backgroundColor: color.s1,
-          borderWidth: 1,
-          borderColor: color.line,
-          opacity: pressed ? 0.7 : 1
-        })}
-      >
-        <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 16 }}>
-          <View style={{ flex: 1 }}>
-            <Total total={tile.total} size={26} />
-            <Text style={{ fontSize: 13.5, lineHeight: 19, color: color.t2 }}>{tile.month}</Text>
-            {tile.lastMonth ? (
-              <Text style={{ fontSize: 13.5, lineHeight: 19, color: color.t3 }}>{tile.lastMonth}</Text>
-            ) : null}
-          </View>
-          <DayBars days={tile.days} height={36} width={112} />
-        </View>
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            marginTop: 14,
-            paddingTop: 12,
-            borderTopWidth: StyleSheet.hairlineWidth,
-            borderColor: color.line
-          }}
-        >
-          <Text style={{ flex: 1, fontSize: 14.5, color: color.t2 }}>See more</Text>
-          <Icon name="chev" size={13} color={color.t3} />
-        </View>
-      </Pressable>
-    </View>
-  )
-}
-
-// ---------------------------------------------------------------------------
 // The 30 days
 // ---------------------------------------------------------------------------
 
-/** A bar per day, today last in white. Small and silent in Settings' card. */
+/** A bar per day, today last in white. */
 export function DayBars(props: {
   readonly days: ReadonlyArray<DayBar>
   readonly height: number

@@ -85,9 +85,11 @@ xcrun simctl launch --terminate-running-process booted build.omer.dream \
 | `/project/<id>?sheet=usage` | The usage sheet over the project (the ring in its header opens it), with its limits and its agent's model and effort |
 | `/project/<id>?sheet=notifications` | The Notifications sheet: the project's apps that notify, their controls, what they sent (the bell opens it) |
 | `/project/<id>?tab=chat&attach=sample` · `/new?attach=sample` | Chat's composer, or a new idea, with two photos and a PDF attached (uploading, then ready) |
-| `/connect` · `/settings` | Subscription connect flow; settings, with the plan card at the top |
-| `/plan/chatgpt` · `/plan/claude` | A plan's week by project, full screen (the plan card's "See more"); `/plan/claude` with `two-plans` |
-| `/costs` · `/costs/everyone` | What Dream pays, full screen (Settings' costs card's "See more"); everyone's, with `costs-operator` |
+| `/connect` · `/settings` | Subscription connect flow; Settings, the index of one-line rows (see "Settings" below) |
+| `/plan/chatgpt` · `/plan/claude` | A plan's page: what's left of the week, each project's share, Reconnect and Remove; `/plan/claude` with `two-plans`; `?show=remove` opens the Remove warning |
+| `/costs` · `/costs/everyone` | Dream usage, full screen (Settings' Dream usage row); everyone's, with `costs-operator` |
+| `/service/<id>` · `?replace=1` | A connected service's page, with the paste field open: `int_google` (Gmail), and with `services` `int_openai` (a pasted key), `int_telegram` (a key file), `int_apple`; with `spotify-stopped` `int_spotify` (stopped working) |
+| `/archived` · `/account` | Archived projects (Restore; swipe to delete), with `archived`; the account and Sign out |
 
 Message ids: `msg_cabinrule`, `msg_cabinpick`, `msg_gcal` (Cabin), `msg_apple` (Lift Log), `msg_gmail` and
 `msg_brieftelegram` (Morning Brief; the last-resort key file card), `msg_recipewho` (Recipe Scaler), `msg_spotify`
@@ -100,10 +102,12 @@ neutral "update Dream" row).
 
 Scenarios (`dream://fixtures/<name>?to=/path`, or `-dreamScenario a,b`): `signed-in`, `signed-out`, `reset`,
 `paused` (Lift Log waits for a usage reset), `all-clear`, `cabin-resolved`, `withdraw-cabin`, `no-plan`,
-`two-plans` (Claude connected next to ChatGPT, Morning Brief and Recipe Scaler on Claude: Settings shows both plan cards and New idea
+`two-plans` (Claude connected next to ChatGPT, Morning Brief and Recipe Scaler on Claude: Settings lists both plans and New idea
 the plan in Advanced), `plan-removed` (the same with Claude removed: those two wait for it, and Home says so; with `two-plans`,
-`/settings?plan=menu:claude` and `?plan=remove:claude` open a plan card's menu and its Remove warning, and
-`/new?advanced=open` the Advanced sheet with its plan switch),
+`/plan/claude?show=remove` opens a plan's Remove warning, and `/new?advanced=open` the Advanced sheet with its plan switch),
+`services` (beside Gmail, a pasted OpenAI key, Morning Brief's Telegram key file and an App Store Connect key),
+`week-unknown` (ChatGPT connected with no week known yet: "Connected", no ring), `plan-expired` and `plan-pending` (Claude's
+sign-in expired, or still finishing, beside ChatGPT), `plan-limited` (ChatGPT paused until its five hours reset),
 `live-activity`, `live-activity-needs` (start a Live Activity on the phone), `spotify-ask` (Lift Log asks to connect
 Spotify), `spotify-stopped` (Lift Log's Spotify connection stopped working: its card says so and connects again),
 `long-question`, `desktop-sent` and `desktop-opened` (Cabin's Google Calendar card, emailed to finish on a
@@ -208,13 +212,21 @@ header, "paused" under the ring, and the sheet's callout. `usage-none` is a worl
 shows nothing, and the sheet has no ring. `usage-deleted` adds two deleted projects' shares to the plan's
 week. `usage-normal` goes back to the default.
 
-The plan's usage lives in Settings, not on Home (usage in Settings, option B): the connected subscription is a plan
-card with what's left of the week and the five-hour and week bars (all projects in white, everything else in grey),
-drawn with the sheet's own pieces (`ui/Usage.tsx`). Its "See more" opens `/plan/<provider>`, each project's share of
-the week with its whole name (deleted projects together in one row), Outside Dream's, and the footnote. Its shares
-come from `GetAccountUsage`; against an API without it the card shows the connection's own windows and no shares.
-Near the limit (`usage-near-limit`) the card turns amber with the limit callout, and Home's profile button gets an
-amber dot, only then.
+Settings (direction B, mocks/screens/settings-directions; `data/settings.ts` says what every row and page says,
+`ui/Group.tsx` draws them) is an index of one-line rows, each with its answer on the right, and every row opens a
+page built the same way: the figure, the list, the actions. Subscription usage lists each plan with what's left of
+its week and a small ring (their projects in white, the rest in grey), "Connected" with no ring while Dream hasn't
+seen the week, "Paused until …", or a sign-in finishing or expired; a plan that isn't connected has a dashed tile in a
+row's shape to add it. Its page, `/plan/<provider>`, has what's left in large type, when it resets, the week's bar
+with what its two parts are, the five hours, each project's share (deleted projects together, Outside Dream's), and
+Reconnect and Remove (Remove says first what it does to the projects on it). Its shares come from `GetAccountUsage`;
+against an API without it the page shows the connection's own windows and no shares. Near the limit
+(`usage-near-limit`) the row, its group and the page turn amber with a line on what happens if the week runs out,
+and Home's profile button gets an amber dot, only then. Dream usage is this month so far, opening `/costs` (below).
+Connected services say who can use each (all projects, or one for a key file) or that it stopped working, and each
+opens `/service/<id>`: what it is and since when, who can use it in a sentence (a key file links to its project),
+Replace for a pasted key or key file, and Disconnect (Remove, for a key file), which asks first. Archived projects
+and the account open their own pages; a restart when an update waits, and the version, come last.
 
 ```sh
 xcrun simctl launch --terminate-running-process booted build.omer.dream \
@@ -224,14 +236,15 @@ xcrun simctl launch --terminate-running-process booted build.omer.dream \
 What Dream pays to run their projects (docs/metering.md, `ui/Costs.tsx`, `data/costs.ts`) is dollars, not the
 plan's percentages, and never shares a total or a row with them. The usage sheet ends with a section under a
 hairline: what Dream paid for the project this month, last month beside it, and a line per thing it paid for
-(machine time, cloud browsers, Macs, OpenAI, storage, email). Settings has a "What Dream pays" card under the
-plans (this month, last month, the 30 days as small bars) whose "See more" opens `/costs`: the 30 days (touch a bar
+(machine time, cloud browsers, Macs, OpenAI, storage, email). Settings has a Dream usage row under the plans (this
+month so far) that opens `/costs`: the 30 days (touch a bar
 to read the day), what it paid for with OpenAI by model, each project largest first (tapping one
 opens its usage sheet; archived ones say so, deleted ones are one row, sign-ins are Outside your projects). An
 operator (`costs-operator`) also gets "Everyone on this Dream" at the foot, which opens `/costs/everyone`: each
-person's month and the overhead no one caused. `costs-none` is before anything cost anything (no section, no
-card); `costs-normal` goes back to the default. Against an API without the cost RPCs, nothing shows. `screenshots/costs/` has
-each state from the Simulator.
+person's month and the overhead no one caused. `costs-none` is before anything cost anything (no section in the
+sheet; Settings' row says "Nothing yet" and opens nothing); `costs-normal` goes back to the default. Against an API without
+the cost RPCs, nothing shows. `screenshots/costs/` has each state from the Simulator, and `screenshots/settings-b/` Settings
+and its pages.
 
 ```sh
 xcrun simctl launch --terminate-running-process booted build.omer.dream \

@@ -76,7 +76,9 @@ const glyphs = {
   again: "arrow.clockwise",
   rotate: "rotate.right",
   laptop: "laptopcomputer",
-  mail: "envelope"
+  mail: "envelope",
+  apple: "apple.logo",
+  trash: "trash"
 } as const satisfies Record<string, SymbolViewProps["name"]>
 
 export type Glyph = keyof typeof glyphs

@@ -18,6 +18,7 @@ import { makeAppLayer } from "../src/data/AppLayer.ts"
 import { ProjectArchive } from "../src/data/ProjectArchive.ts"
 import { ProjectStates } from "../src/data/ProjectStates.ts"
 import { ProjectUsages } from "../src/data/ProjectUsages.ts"
+import { planRow, serviceRow } from "../src/data/settings.ts"
 import { profileHint, usageBadge } from "../src/data/usage.ts"
 import { chatRowOf, presenceOf, receiptOf } from "../src/data/presence.ts"
 import { SecureStorage } from "../src/data/SecureStorage.ts"
@@ -562,5 +563,49 @@ describe("archiving and deleting projects", () => {
         assert.strictEqual((yield* Effect.flip(app.GetLiveUrl({ projectId: brief })))._tag, "NotFound")
       })
     )
+  )
+  it.effect(
+    "Settings' scenarios: every kind of service, a week Dream hasn't seen, and plans signing in or paused",
+    () =>
+      run(
+        Effect.gen(function* () {
+          yield* signIn
+          const app = yield* AppClient
+          const accounts = yield* AccountUsages
+          const backend = yield* FakeBackend
+          const now = yield* DateTime.now
+          const rowsOf = Effect.gen(function* () {
+            const connections = yield* app.ListModelConnections()
+            return connections.map((c) => planRow(c, undefined, now).value)
+          })
+
+          yield* backend.scenario("services")
+          const services = yield* app.ListIntegrations()
+          assert.deepStrictEqual(
+            services.map((i) => [i.label, serviceRow(i).value]),
+            [
+              ["Gmail", "All projects"],
+              ["OpenAI", "All projects"],
+              ["Telegram", "One project"],
+              ["Apple Developer", "All projects"]
+            ]
+          )
+
+          yield* backend.scenario("week-unknown")
+          const chatgpt = (yield* app.ListModelConnections()).find((c) => c.provider === "chatgpt")
+          assert.isUndefined(chatgpt?.usage)
+          const plan = yield* accounts.plan("chatgpt")
+          assert.isUndefined(plan?.weekly)
+          assert.strictEqual(chatgpt && planRow(chatgpt, plan, now).value, "Connected")
+
+          yield* backend.scenario("reset")
+          yield* backend.scenario("plan-limited")
+          assert.match((yield* rowsOf)[0] ?? "", /^Paused until /)
+          yield* backend.scenario("plan-expired")
+          assert.deepStrictEqual((yield* rowsOf).slice(-1), ["Sign-in expired"])
+          yield* backend.scenario("plan-pending")
+          assert.deepStrictEqual((yield* rowsOf).slice(-1), ["Finishing sign-in"])
+        })
+      )
   )
 })

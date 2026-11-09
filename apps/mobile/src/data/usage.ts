@@ -97,7 +97,7 @@ export const usageBadge = (
 const leftPercent = (window: WindowShare) => 100 - Math.round(window.usedPercent)
 
 // ---------------------------------------------------------------------------
-// Pieces the project sheet and Settings' plan card share
+// Pieces the project sheet and Settings' plan page share
 // ---------------------------------------------------------------------------
 
 /**
@@ -224,7 +224,7 @@ const limitCallout = (
 /**
  * The usage sheet, kept to what matters at a glance: how much of the week this project used, how much of the plan
  * is left and when it resets, and the two limits they can set. Token counts, other projects and how shares are
- * estimated stay out of it (Settings' plan card has the projects).
+ * estimated stay out of it (Settings' plan page has the projects).
  */
 export interface UsageSheet {
   /** "Lift Log · ChatGPT Pro" */
@@ -353,7 +353,7 @@ export const withLimit = (
 const clamp = (fraction: number) => Math.min(1, Math.max(0, fraction))
 
 // ---------------------------------------------------------------------------
-// Settings' plan card (Deck v3, usage in Settings option B)
+// Settings' plans (Deck v3, usage in Settings option B; the page from Settings direction B)
 // ---------------------------------------------------------------------------
 
 export interface PlanCard {
@@ -366,10 +366,7 @@ export interface PlanCard {
   readonly callout?: { readonly left: string; readonly rest: string }
   /** The five hours and the week, all their projects together in white. */
   readonly windows: ReadonlyArray<WindowBarView>
-  /**
-   * Every project's share of the week, shown full screen behind the card's "See more"; empty when the API can't say
-   * (it predates `GetAccountUsage`), and then there's no "See more".
-   */
+  /** Every project's share of the week, on the plan's page; empty when the API can't say (it predates `GetAccountUsage`). */
   readonly projects: ReadonlyArray<ShareRowView>
   /** Shown with the shares, which it explains. */
   readonly footnote?: string

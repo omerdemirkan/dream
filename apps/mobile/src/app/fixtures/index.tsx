@@ -21,18 +21,6 @@ const sections: ReadonlyArray<{ readonly title: string; readonly jumps: Readonly
     jumps: [
       { title: "Projects need you", scenarios: ["reset"], to: "/" },
       { title: "Nothing waiting", scenarios: ["reset", "all-clear"], to: "/" },
-      { title: "Settings · archived projects", scenarios: ["reset", "archived"], to: "/settings" },
-      { title: "Settings · two plans", scenarios: ["reset", "two-plans"], to: "/settings" },
-      {
-        title: "A plan's week by project",
-        scenarios: ["reset", "two-plans", "usage-deleted"],
-        to: "/plan/claude"
-      },
-      { title: "Settings · what Dream pays", scenarios: ["reset"], to: "/settings" },
-      { title: "What Dream pays, in full", scenarios: ["reset"], to: "/costs" },
-      { title: "What Dream pays · operator", scenarios: ["reset", "costs-operator"], to: "/costs" },
-      { title: "What Dream pays · everyone", scenarios: ["reset", "costs-operator"], to: "/costs/everyone" },
-      { title: "What Dream pays · nothing yet", scenarios: ["reset", "costs-none"], to: "/costs" },
       { title: "Home · a plan removed", scenarios: ["reset", "plan-removed"], to: "/" },
       { title: "New idea · two plans", scenarios: ["reset", "two-plans"], to: "/new" },
       { title: "New idea", to: "/new" },
@@ -44,6 +32,52 @@ const sections: ReadonlyArray<{ readonly title: string; readonly jumps: Readonly
         title: "New idea · with attachments",
         to: "/new?attach=sample&text=A%20meal%20planner%20for%20our%20week.%20This%20is%20the%20fridge%20whiteboard%20we%20use%20now%2C%20and%20last%20month%E2%80%99s%20grocery%20list."
       }
+    ]
+  },
+  {
+    title: "Settings",
+    jumps: [
+      { title: "Settings · one plan", scenarios: ["reset"], to: "/settings" },
+      { title: "Settings · two plans", scenarios: ["reset", "two-plans"], to: "/settings" },
+      { title: "Settings · every kind of service", scenarios: ["reset", "services"], to: "/settings" },
+      { title: "Settings · a service stopped working", scenarios: ["reset", "spotify-stopped"], to: "/settings" },
+      { title: "Settings · near the limit", scenarios: ["reset", "usage-near-limit"], to: "/settings" },
+      { title: "Settings · paused at a limit", scenarios: ["reset", "plan-limited"], to: "/settings" },
+      {
+        title: "Settings · a week Dream hasn't seen",
+        scenarios: ["reset", "two-plans", "week-unknown"],
+        to: "/settings"
+      },
+      { title: "Settings · sign-in expired", scenarios: ["reset", "plan-expired"], to: "/settings" },
+      { title: "Settings · finishing sign-in", scenarios: ["reset", "plan-pending"], to: "/settings" },
+      { title: "Settings · no plan", scenarios: ["reset", "no-plan"], to: "/settings" },
+      { title: "Settings · no Dream spend yet", scenarios: ["reset", "costs-none"], to: "/settings" },
+      { title: "Settings · archived projects", scenarios: ["reset", "archived"], to: "/settings" },
+      { title: "A plan", scenarios: ["reset"], to: "/plan/chatgpt" },
+      {
+        title: "A plan · Claude, beside ChatGPT",
+        scenarios: ["reset", "two-plans", "usage-deleted"],
+        to: "/plan/claude"
+      },
+      { title: "A plan · near the limit", scenarios: ["reset", "usage-near-limit"], to: "/plan/chatgpt" },
+      { title: "A plan · paused at a limit", scenarios: ["reset", "plan-limited"], to: "/plan/chatgpt" },
+      { title: "A plan · a week Dream hasn't seen", scenarios: ["reset", "week-unknown"], to: "/plan/chatgpt" },
+      { title: "A plan · sign-in expired", scenarios: ["reset", "plan-expired"], to: "/plan/claude" },
+      { title: "A plan · finishing sign-in", scenarios: ["reset", "plan-pending"], to: "/plan/claude" },
+      { title: "A plan · removing it", scenarios: ["reset", "two-plans"], to: "/plan/claude?show=remove" },
+      { title: "Dream usage", scenarios: ["reset"], to: "/costs" },
+      { title: "Dream usage · operator", scenarios: ["reset", "costs-operator"], to: "/costs" },
+      { title: "Dream usage · everyone", scenarios: ["reset", "costs-operator"], to: "/costs/everyone" },
+      { title: "Dream usage · nothing yet", scenarios: ["reset", "costs-none"], to: "/costs" },
+      { title: "A service · a sign-in", scenarios: ["reset"], to: "/service/int_google" },
+      { title: "A service · a pasted key", scenarios: ["reset", "services"], to: "/service/int_openai" },
+      { title: "A service · replacing a key", scenarios: ["reset", "services"], to: "/service/int_openai?replace=1" },
+      { title: "A service · a key file", scenarios: ["reset", "services"], to: "/service/int_telegram" },
+      { title: "A service · App Store Connect", scenarios: ["reset", "services"], to: "/service/int_apple" },
+      { title: "A service · stopped working", scenarios: ["reset", "spotify-stopped"], to: "/service/int_spotify" },
+      { title: "Archived projects", scenarios: ["reset", "archived"], to: "/archived" },
+      { title: "Archived projects · none", scenarios: ["reset"], to: "/archived" },
+      { title: "Account", scenarios: ["reset"], to: "/account" }
     ]
   },
   {

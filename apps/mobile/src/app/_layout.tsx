@@ -81,6 +81,9 @@ function Shell() {
             <Stack.Screen name="plan/[provider]" />
             <Stack.Screen name="costs/index" />
             <Stack.Screen name="costs/everyone" />
+            <Stack.Screen name="service/[id]" />
+            <Stack.Screen name="archived" />
+            <Stack.Screen name="account" />
             <Stack.Screen name="oauth/google" options={{ animation: "none" }} />
           </Stack.Protected>
           <Stack.Screen name="fixtures/[scenario]" options={{ animation: "none" }} />

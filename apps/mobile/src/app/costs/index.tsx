@@ -1,5 +1,5 @@
 /**
- * What Dream pays to run their projects, in full: what Settings' costs card opens. This month's total and last
+ * Dream usage: what Dream pays to run their projects, in full, from its row in Settings. This month's total and last
  * month's, the 30 days, what it paid for (OpenAI by model), the projects largest first (each opens its
  * usage sheet), and for an operator a way into everyone's. Settings' own header, so back
  * (or the edge swipe) returns to it.
@@ -26,7 +26,7 @@ export default function CostsDetail() {
   const costs = Option.getOrUndefined(AsyncResult.value(result))
   const view = costs ? accountCostsView(costs) : undefined
   return (
-    <DetailScreen title="What Dream pays">
+    <DetailScreen title="Dream usage">
       {view ? (
         <>
           {view.rows.length === 0 ? (

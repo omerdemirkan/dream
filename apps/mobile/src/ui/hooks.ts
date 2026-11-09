@@ -2,7 +2,16 @@
  * Hooks shared by the screens: reading a project and its messages with held
  * answers folded in, opening the expanded view, and the current time.
  */
-import { type AskMessage, type Harness, type Message, type MessageId, type ProjectId, RequestId } from "@dream/domain"
+import {
+  type ArchivedProject,
+  type AskMessage,
+  type Harness,
+  type ProjectSummary,
+  type Message,
+  type MessageId,
+  type ProjectId,
+  RequestId
+} from "@dream/domain"
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
 import { DateTime, Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
@@ -11,7 +20,7 @@ import type { HostInstance } from "react-native"
 import type { ProjectState } from "../data/projectState.ts"
 import { planMissing } from "../data/plans.ts"
 import { randomUuid } from "../data/Session.ts"
-import { modelConnectionsAtom, projectAtom } from "../state/atoms.ts"
+import { archivedProjectsAtom, modelConnectionsAtom, projectAtom, projectsAtom } from "../state/atoms.ts"
 import { askPushAtom, focusAtom } from "../state/ui.ts"
 
 const nowUtc = () => DateTime.nowUnsafe()
@@ -92,4 +101,19 @@ export function useRequestId() {
       current.current = undefined
     }
   }
+}
+
+/** For pages that name projects (Settings' services): a project's title, archived ones included. */
+export function useProjectTitle() {
+  const projects = Option.getOrElse(
+    AsyncResult.value(useAtomValue(projectsAtom)),
+    (): ReadonlyArray<ProjectSummary> => []
+  )
+  const archived = Option.getOrElse(
+    AsyncResult.value(useAtomValue(archivedProjectsAtom)),
+    (): ReadonlyArray<ArchivedProject> => []
+  )
+  return (id: ProjectId) =>
+    (projects.find((summary) => summary.project.id === id) ?? archived.find((row) => row.project.id === id))?.project
+      .title
 }

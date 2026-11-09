@@ -29,6 +29,7 @@ import {
   type Device,
   InvalidRequest,
   type Integration,
+  type IntegrationId,
   type IntegrationAccess,
   canFinishOnDesktop,
   isOpenAsk,
@@ -66,6 +67,7 @@ import { defaultPlan } from "../data/plans.ts"
 import { Dropped, type LiveSignal } from "../data/LiveProjects.ts"
 import { accountCostsOf, type CostsMode, projectCostsOf } from "./costs.ts"
 import { TolerantMessage } from "../data/Tolerant.ts"
+import { telegramKeyFile } from "@dream/domain/fixtures"
 import {
   type FixtureWorld,
   cabinHold,
@@ -149,6 +151,11 @@ export const Scenario = [
   "costs-normal",
   "costs-operator",
   "costs-none",
+  "services",
+  "week-unknown",
+  "plan-expired",
+  "plan-pending",
+  "plan-limited",
   "workstreams",
   "workstreams-waiting",
   "workstreams-many",
@@ -1639,7 +1646,7 @@ export class FakeBackend extends Context.Service<
             const ask = lift?.messages.find((m) => m.id === "msg_spotify")
             if (!lift || ask?._tag !== "Access" || ask.request._tag !== "OAuth") return
             const integration: Integration = {
-              id: newIntegrationId(++counter),
+              id: "int_spotify" as IntegrationId,
               label: "Spotify",
               status: "failed",
               access: {
@@ -1698,6 +1705,82 @@ export class FakeBackend extends Context.Service<
             return
           case "costs-none":
             costsMode = "none"
+            return
+          case "services": {
+            // Every kind of connected service, beside Gmail: a pasted key, a key file only Morning Brief has, and an
+            // App Store Connect key.
+            const added = (id: string, label: string, access: Integration["access"], days: number): Integration => ({
+              id: id as IntegrationId,
+              label,
+              status: "connected",
+              access,
+              connectedAt: DateTime.subtract(now, { days })
+            })
+            const extra: ReadonlyArray<Integration> = [
+              added(
+                "int_openai",
+                "OpenAI",
+                {
+                  _tag: "Key",
+                  service: "OpenAI",
+                  host: "api.openai.com",
+                  header: "Authorization",
+                  format: "Bearer {key}",
+                  placeholder: "dream-placeholder-openai"
+                },
+                4
+              ),
+              { ...telegramKeyFile, connectedAt: DateTime.subtract(now, { days: 3 }) },
+              added(
+                "int_apple",
+                "Apple Developer",
+                { _tag: "Apple", issuerId: "69a6de7e-2f1b-47e3-e053-5b8c7c11a4d1", keyId: "5G566N355S" },
+                2
+              )
+            ]
+            integrations = [...integrations.filter((i) => !extra.some((e) => e.id === i.id)), ...extra]
+            return
+          }
+          case "week-unknown": {
+            // ChatGPT is connected but nothing has run on it this week, so Dream knows nothing of the week.
+            usage = makeUsageWorld("none")
+            connections = connections.map((c) =>
+              c.provider === "chatgpt" && c.status === "connected"
+                ? {
+                    id: c.id,
+                    provider: c.provider,
+                    status: c.status,
+                    ...(c.connectedAt ? { connectedAt: c.connectedAt } : {})
+                  }
+                : c
+            )
+            for (const record of records.values()) yield* emitUsage(record)
+            return
+          }
+          case "plan-expired":
+          case "plan-pending": {
+            // Claude's sign-in, beside ChatGPT: expired, or still being finished.
+            const claude: ModelConnection = {
+              id: "mcn_claude" as ModelConnectionId,
+              provider: "claude",
+              status: name === "plan-expired" ? "expired" : "pending"
+            }
+            connections = [...connections.filter((c) => c.provider !== "claude"), claude]
+            return
+          }
+          case "plan-limited":
+            // ChatGPT said its five hours ran out: nothing runs on it until they reset.
+            connections = connections.map((c) =>
+              c.provider === "chatgpt" && c.status === "connected" && c.usage
+                ? {
+                    ...c,
+                    usage: {
+                      ...c.usage,
+                      limitedUntil: { window: "fiveHour" as const, until: DateTime.add(now, { hours: 1, minutes: 28 }) }
+                    }
+                  }
+                : c
+            )
             return
           case "usage-deleted":
             deletedShares = [
