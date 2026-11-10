@@ -29,7 +29,7 @@ import type { Skill } from "./Skill.ts"
 export const Guidance = Schema.Struct({ prompt: Schema.String, skill: Schema.String })
 export type Guidance = typeof Guidance.Type
 
-export const SavedSession = Schema.Struct({
+const sessionFields = {
   harness: HarnessName,
   sessionId: Schema.String,
   resumeFrom: Schema.optionalKey(
@@ -44,6 +44,15 @@ export const SavedSession = Schema.Struct({
   guidance: Schema.optionalKey(Guidance),
   /** Said before the next turn's prompt, until a turn gets going: what changed (a note, or a handoff). */
   preamble: Schema.optionalKey(Schema.String)
+}
+
+export const SavedSession = Schema.Struct({
+  ...sessionFields,
+  /**
+   * The session on the harness the project moved from (`switchTo`), kept so that moving back before this
+   * conversation began (a move that failed and was put back, say) goes on with it as if nothing happened.
+   */
+  previous: Schema.optionalKey(Schema.Struct(sessionFields))
 })
 export type SavedSession = typeof SavedSession.Type
 
@@ -326,16 +335,15 @@ export const planHandoff = (previous: SavedSession, to: HarnessName, home: strin
 
 /**
  * The session for `harness` from the one saved, which ran on another: a new conversation, `sessionId`, that opens
- * with `handoff`.
+ * with `handoff` (and keeps the one it left). Moved back before that conversation began, it's the one it left again.
  */
-export const switched = (
-  previous: SavedSession,
+export const switchTo = <R>(
+  saved: SavedSession,
   harness: HarnessName,
   sessionId: string,
-  handoff: string
-): SavedSession => ({
-  harness,
-  sessionId,
-  // Moved back before the conversation on the other harness began: the handoff waiting has the context.
-  preamble: previous.resumeFrom === undefined && previous.preamble !== undefined ? previous.preamble : handoff
-})
+  handoff: Effect.Effect<string, never, R>
+): Effect.Effect<SavedSession, never, R> => {
+  if (saved.resumeFrom === undefined && saved.previous?.harness === harness) return Effect.succeed(saved.previous)
+  const { previous: _, ...left } = saved
+  return Effect.map(handoff, (preamble) => ({ harness, sessionId, preamble, previous: left }))
+}

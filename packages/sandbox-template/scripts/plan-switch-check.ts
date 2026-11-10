@@ -14,7 +14,9 @@
  *     one (where its log is, and how it ended: the fake recalls the words the old conversation was told to remember)
  *     and carries the `PlanSwitched` event, pointing at the handoff;
  *   - the next turn continues that conversation (it still recalls them, and what it was told since);
- *   - a handoff request left over for the harness it left is dropped, starting no turn.
+ *   - a handoff request left over for the harness it left is dropped, starting no turn;
+ *   - a move put back before the new harness ran a turn (the ProjectDO rolling back a failed one) goes on with the
+ *     conversation it had.
  */
 import { DaemonEnvFile, DefaultDaemonPort, devSandboxMetadata, type Harness, planHandoffPath } from "@dream/domain"
 import { DateTime } from "effect"
@@ -209,6 +211,20 @@ try {
   expect(
     remembered(back).has("plum") && remembered(back).has("fig"),
     "the next turn back on Claude continues its conversation"
+  )
+
+  console.log("\n== claude-code → codex, put back before a turn")
+  const putFrom = await lines(log)
+  await startOn("codex")
+  await startOn("claude-code")
+  expect(
+    (await since(log, putFrom)).includes("before its conversation on codex began; going on with the one it had"),
+    "dreamd went back to the conversation it had"
+  )
+  const resumed = await turn("claude-code", "a turn after the put-back", [message("Still there?")])
+  expect(
+    remembered(resumed).has("fig") && Number(resumed[0]?.userMessages ?? 0) > 2,
+    "it's the same conversation as before the move that didn't happen"
   )
   const inbox = await sh(sandbox, "cat /home/user/.dream/state/inbox.json")
   const entries = jsonLines(inbox.output.replace(/\n/g, ""))[0]?.entries

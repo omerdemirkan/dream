@@ -242,10 +242,24 @@ describe("the handoff to another harness", () => {
     }).pipe(Effect.provide(NodeServices.layer))
   )
 
-  it("starts a new conversation on the new harness, keeping a handoff a conversation never got to", () => {
-    const next = Session.switched(claude, "codex", "dream-prj_test-2", "HANDOFF")
-    assert.deepStrictEqual(next, { harness: "codex", sessionId: "dream-prj_test-2", preamble: "HANDOFF" })
-    const unstarted = { harness: "codex", sessionId: "s", preamble: "FIRST" } as const
-    assert.strictEqual(Session.switched(unstarted, "claude-code", "s2", "SECOND").preamble, "FIRST")
-  })
+  it.effect("starts a new conversation on the new harness, and goes back to the old one if it never began", () =>
+    Effect.gen(function* () {
+      const next = yield* Session.switchTo(claude, "codex", "dream-prj_test-2", Effect.succeed("HANDOFF"))
+      assert.deepStrictEqual(next, {
+        harness: "codex",
+        sessionId: "dream-prj_test-2",
+        preamble: "HANDOFF",
+        previous: claude
+      })
+      // Put back before Codex ran a turn (a move that failed): Claude's conversation, as it was.
+      const back = yield* Session.switchTo(next, "claude-code", "s3", Effect.die("no handoff needed"))
+      assert.deepStrictEqual(back, claude)
+      // Once the new conversation began, moving back is a move like any other.
+      const begun = { ...next, resumeFrom: resumeFrom({ threadId: "t9" }) }
+      const again = yield* Session.switchTo(begun, "claude-code", "s4", Effect.succeed("BACK"))
+      assert.strictEqual(again.preamble, "BACK")
+      assert.strictEqual(again.previous?.sessionId, "dream-prj_test-2")
+      assert.notProperty(again.previous ?? {}, "previous")
+    })
+  )
 })

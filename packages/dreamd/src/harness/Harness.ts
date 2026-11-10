@@ -277,10 +277,16 @@ const make = Effect.fnUntraced(function* ({
       session.harness === name
         ? Effect.succeed(Option.some(session))
         : Effect.gen(function* () {
-            const handoff = yield* provide(Session.planHandoff(session, name, config.home))
-            const next = Session.switched(session, name, `dream-${config.projectId}-${Date.now()}`, handoff)
+            const next = yield* Session.switchTo(
+              session,
+              name,
+              `dream-${config.projectId}-${Date.now()}`,
+              provide(Session.planHandoff(session, name, config.home))
+            )
             yield* Effect.logInfo(
-              `The project moved from ${session.harness} to ${name}; starting a new conversation with a handoff`
+              next.resumeFrom === undefined
+                ? `The project moved from ${session.harness} to ${name}; starting a new conversation with a handoff`
+                : `The project moved back to ${name} before its conversation on ${session.harness} began; going on with the one it had`
             )
             yield* provide(store.write(next)).pipe(
               Effect.catch((error) => Effect.logError("Couldn't save the harness session", { error: String(error) }))
