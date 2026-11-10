@@ -173,7 +173,13 @@ createServer((request, response) => {
     const slept = input.some((item) => item.type === "function_call" && item.name === "sleep")
     const sleep = role === "subagent" && !slept ? /SLEEP: (\d+)/.exec(prompt.join("\n")) : null
     const offered = toolNames([...(body.tools ?? []), ...input.flatMap((item) => item.tools ?? [])])
-    const run = outputs.length === 0 && role === "agent" && spawn === null ? /RUN: (.+)/.exec(prompt.join("\n")) : null
+    // `RUN:` in the turn's prompt (the latest user message), until the command's output is back. Earlier turns' prompts
+    // (a handoff quotes them) don't count.
+    const lastUserAt = input.findLastIndex((item) => item.type === "message" && item.role === "user")
+    const ranSince = input
+      .slice(lastUserAt + 1)
+      .some((item) => item.type === "function_call_output" || item.type === "custom_tool_call_output")
+    const run = !ranSince && role === "agent" && spawn === null ? /RUN: (.+)/.exec(lastUser) : null
     // Codex's code mode offers `functions.exec` (JavaScript that calls `tools.exec_command`); otherwise a shell tool.
     const shell = ["functions.exec", "exec_command", "shell_command", "shell"].find((name) => offered.includes(name))
     console.log(

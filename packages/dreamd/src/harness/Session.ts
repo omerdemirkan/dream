@@ -116,13 +116,24 @@ const decodeMessage = Schema.decodeUnknownOption(Schema.fromJsonString(RolloutMe
 
 const clip = (text: string, chars: number) => (text.length <= chars ? text : `${text.slice(0, chars).trimEnd()} […]`)
 
+/**
+ * A quoted message cut short in the middle: how it opens and, mostly, how it ends. A turn's prompt ends with what woke
+ * the agent, and the first prompt of a conversation that took over from another opens with that one's handoff, which
+ * would otherwise crowd out the rest.
+ */
+const clipMiddle = (text: string, chars: number) => {
+  if (text.length <= chars) return text
+  const head = Math.floor(chars * 0.3)
+  return `${text.slice(0, head).trimEnd()} […] ${text.slice(text.length - (chars - head)).trimStart()}`
+}
+
 /** The last of `messages` (oldest first), each cut short, within the budget. */
 const lastOf = (messages: HandoffInput["recent"]): HandoffInput["recent"] => {
   const recent: Array<HandoffInput["recent"][number]> = []
   let budget = quoted.totalChars
   for (const message of messages.slice(-quoted.messages).reverse()) {
     if (budget <= 0) break
-    const text = clip(message.text, Math.min(quoted.messageChars, budget))
+    const text = clipMiddle(message.text, Math.min(quoted.messageChars, budget))
     recent.unshift({ ...message, text })
     budget -= text.length
   }
