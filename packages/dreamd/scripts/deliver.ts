@@ -6,6 +6,8 @@
  *   node packages/dreamd/scripts/deliver.ts <daemon-url> <daemon-token> wake "why" "command"
  *   node packages/dreamd/scripts/deliver.ts <daemon-url> <daemon-token> task "why" "brief" [model] [effort]
  *   node packages/dreamd/scripts/deliver.ts <daemon-url> <daemon-token> reset fiveHour|weekly
+ *   node packages/dreamd/scripts/deliver.ts <daemon-url> <daemon-token> events '[{"_tag":"…",…},…]'
+ *     (any events, as JSON without their `id` and `at`, which are filled in)
  *   node packages/dreamd/scripts/deliver.ts <daemon-url> <daemon-token> health
  *
  * `<daemon-url>` is the origin of dreamd's port, e.g. http://127.0.0.1:4747 or
@@ -41,6 +43,20 @@ const program = Effect.gen(function* () {
   if (kind === "health") return yield* Console.log(JSON.stringify(yield* client.Health()))
   const at = yield* DateTime.now
   const n = Date.now().toString(36)
+  if (kind === "events") {
+    const given = JSON.parse(text) as ReadonlyArray<Record<string, unknown>>
+    const events = given.map((fields, i) =>
+      Schema.decodeUnknownSync(Schema.toCodecJson(AgentEvent))({
+        id: `evt_${n}_${i}`,
+        at: DateTime.formatIso(at),
+        ...fields
+      })
+    )
+    const [first, ...rest] = events
+    if (first === undefined) return yield* Console.log("no events")
+    const result = yield* client.Deliver({ events: [first, ...rest], timeZone: "America/Los_Angeles" })
+    return yield* Console.log(JSON.stringify(result))
+  }
   const event =
     kind === "reset"
       ? AgentEvent.cases.UsageReset.make({

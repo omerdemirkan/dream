@@ -85,7 +85,7 @@ types at its edge.
 | File | Contents |
 | --- | --- |
 | `Ids.ts` | Branded ids and the prefixes the API generates (`prj_…`, `msg_…`) |
-| `User.ts`, `Project.ts` | User, Device, Project (phase, headline, harness, public URL), AgentActivity (starting/working/idle, next wake), ProjectSummary |
+| `User.ts`, `Project.ts` | User, Device, Project (phase, headline, harness, public URL, a move to another plan), AgentActivity (starting/working/idle, next wake), ProjectSummary |
 | `Message.ts` | Chat messages: `Text`, `Question` (state Open/Answered/Withdrawn), `Access` (Google/Key/Apple; Open/Connected/Declined) |
 | `Status.ts` | Status card: now, justDid, next, media, milestones with pinned needs |
 | `AgentEvent.ts` | Events that wake the agent, and `renderAgentEvent` for the turn prompt |
@@ -236,6 +236,18 @@ the other workstreams to agree first.
   relays and the published port live in the ProjectDO, so they follow the record. A failure leaves the project as it
   was. Projects made before sizes stay on 4/8 (their size reads from E2B's `cpuCount`). `apps/api/scripts/
   move-check.ts` checks a move on real E2B against the fakes (about 9 s for a small project).
+- **Moving to another plan.** A project starts on the plan they pick, and someone with both connected can move it to
+  the other later (`AppRpcs.SwitchPlan`; the line under the agent in the project's usage sheet). The harnesses can't
+  share a conversation (Codex compacts on OpenAI's side into items only OpenAI reads), so the ProjectDO
+  (`project/PlanSwitch.ts`) asks the outgoing agent for a handoff file (`PlanSwitching`, a turn of its own or the end of
+  the one running, while its plan can run one) and holds everything else; once that turn ends (or after 20 minutes,
+  stopping it) it moves the project between turns: the harness, the model choice and tasks' models to their
+  counterparts (`equivalentModel`), the new plan's credential and a dreamd on the new harness
+  (`SandboxManager.applyPlan`), the old plan's usage pause ended. dreamd starts a new conversation that opens with what
+  it can read of the old one (`Session.planHandoff`), and the new agent gets `PlanSwitched` (the handoff, its model,
+  changed tasks, the latest of Chat). A failure puts the sandbox back and the project stays on its plan.
+  `packages/sandbox-template/scripts/plan-switch-check.ts` moves a project to Codex and back on real E2B against the
+  fakes.
 - **Sandbox refresh.** A sandbox keeps the template build it was created from, so the ProjectDO brings it up to the
   template's current build between turns (`apps/api/src/e2b/Refresh.ts`): before the next delivery, 20 seconds
   after each turn (holding the sandbox up while it runs), and when the published app is visited (the gateway's

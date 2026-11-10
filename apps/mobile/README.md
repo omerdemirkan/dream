@@ -82,7 +82,7 @@ xcrun simctl launch --terminate-running-process booted build.omer.dream \
 | `/new?advanced=open` | New idea with its Advanced sheet open: the plan (with `two-plans`), the agent's model and effort, usage limits |
 | `/new?starter=run-club-bot` | New idea filled with a starter's draft, the cursor after it. Ids are in `src/data/ideas.ts` |
 | `/project/<id>?options=<messageId>&option=<n>` | A question's option previews full screen, at option n (from 0): `msg_cabinpick` (Cabin: phone screens, a desktop page, a recording), `msg_timersound` (Lift Log, after `options-sounds`: three sounds) |
-| `/project/<id>?sheet=usage` | The usage sheet over the project (the ring in its header opens it), with its limits and its agent's model and effort |
+| `/project/<id>?sheet=usage` | The usage sheet over the project (the ring in its header opens it), with its limits and its agent's model and effort; with `two-plans`, the line under the agent that moves it to the other plan |
 | `/project/<id>?sheet=notifications` | The Notifications sheet: the project's apps that notify, their controls, what they sent (the bell opens it) |
 | `/project/<id>?tab=chat&attach=sample` · `/new?attach=sample` | Chat's composer, or a new idea, with two photos and a PDF attached (uploading, then ready) |
 | `/connect` · `/settings` | Subscription connect flow; Settings, the index of one-line rows (see "Settings" below) |
@@ -105,6 +105,8 @@ Scenarios (`dream://fixtures/<name>?to=/path`, or `-dreamScenario a,b`): `signed
 `two-plans` (Claude connected next to ChatGPT, Morning Brief and Recipe Scaler on Claude: Settings lists both plans and New idea
 the plan in Advanced), `plan-removed` (the same with Claude removed: those two wait for it, and Home says so; with `two-plans`,
 `/plan/claude?show=remove` opens a plan's Remove warning, and `/new?advanced=open` the Advanced sheet with its plan switch),
+`plan-moving`, `plan-moved` and `plan-move-failed` (after `two-plans`: Lift Log waiting to move from ChatGPT to Claude,
+moved, or the move not working; the usage sheet's line under the agent and Chat's line say so),
 `services` (beside Gmail, a pasted OpenAI key, Morning Brief's Telegram key file and an App Store Connect key),
 `week-unknown` (ChatGPT connected with no week known yet: "Connected", no ring), `plan-expired` and `plan-pending` (Claude's
 sign-in expired, or still finishing, beside ChatGPT), `plan-limited` (ChatGPT paused until its five hours reset),

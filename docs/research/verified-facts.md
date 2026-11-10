@@ -548,3 +548,24 @@ fake-responses.ts, in a clean environment), then in E2B (`packages/sandbox-templ
   `SSL_CERT_FILE` and `REQUESTS_CA_BUNDLE` to the system bundle for everything it starts (`agentEnv`), keeping a value
   already set. Processes started before the new dreamd (servers left running) keep their old environment until
   restarted.
+
+## Carrying a conversation to the other harness (2026-11-10, plan-switch; Claude Code 2.1.318, Codex 0.165.0)
+- Neither harness can resume the other's conversation: each keeps its own transcript format and session ids
+  (`~/.claude/projects/<cwd>/<session>.jsonl`, `~/.codex/sessions/…/rollout-…-<thread>.jsonl`), and Dream's
+  `SavedSession` is per harness. So a move to another plan always starts a new conversation.
+- Claude Code's compaction (auto, or `/compact`) writes a `compact_boundary` system line and then a user message
+  with `isCompactSummary: true` whose text is the summary in plain text ("This session is being continued from a
+  previous conversation that ran out of context. The summary below covers the earlier portion…"; the summarizing
+  prompt asks for the requests, decisions, files, errors, pending tasks and current work). Read from the 2.1.318
+  binary. A forced compaction rewrites the session the agent goes on in, so it can't be run "just in case" a move
+  happens: a move that fails would leave the agent on a summary of its own conversation.
+- Codex 0.165.0 compacts remotely for OpenAI providers (`compact_remote_v…`, `RemoteCompactionV…` in the binary):
+  the replacement history is `compaction` items with `encrypted_content`, which only OpenAI can read. A local
+  compaction writes a `compacted` rollout line whose `payload.message` is the summary; dreamd uses it when it's there
+  and non-empty. `@ai-sdk/harness-codex` 1.0.176 has no manual compaction (see "New guidance in a running session").
+- So the outgoing agent writes the handoff itself, in a turn (`PlanSwitching`): about the cost of a compaction (one
+  pass over the session plus what it writes), but harness-neutral (a markdown file in `~/.dream/handoffs/`),
+  Dream-shaped (the person, Chat, what's in flight, the decisions), and it leaves the old session as it was. When
+  the old plan can't run a turn (at a limit, disconnected), the move goes without it, and the model-free part
+  (dreamd's `Session.planHandoff`: the old log's path, a plaintext compaction summary when there is one, the last
+  exchanges; the ProjectDO's `PlanSwitched`: model, tasks, the latest of Chat) is what carries over.
