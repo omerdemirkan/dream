@@ -296,6 +296,14 @@ export const setAgentModelFn = appRuntime.fn(
   })
 )
 
+/** Moves the project to another of their plans, or (its own plan) cancels a move that waits. */
+export const switchPlanFn = appRuntime.fn(
+  Effect.fn(function* (input: { readonly projectId: ProjectId; readonly to: ModelProvider }) {
+    const app = yield* AppClient
+    return yield* app.SwitchPlan(input).pipe(withWriteTimeout)
+  })
+)
+
 export const loadEarlierFn = appRuntime.fn(
   Effect.fn(function* (projectId: ProjectId) {
     const states = yield* ProjectStates

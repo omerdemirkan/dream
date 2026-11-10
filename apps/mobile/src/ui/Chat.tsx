@@ -7,7 +7,7 @@
 import type { AskMessage, Message, MessageId, WorkstreamId } from "@dream/domain"
 import * as Haptics from "expo-haptics"
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
-import { Option } from "effect"
+import { DateTime, Option } from "effect"
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   type HostInstance,
@@ -30,6 +30,7 @@ import Animated, {
 } from "react-native-reanimated"
 import { scheduleOnRN } from "react-native-worklets"
 import { dayLabel, sameDay, timeLabel } from "../data/format.ts"
+import { chatPlanLine } from "../data/planSwitch.ts"
 import { chatRowOf, presenceOf, receiptOf } from "../data/presence.ts"
 import { chatItems, foldLine, senderName, type ThreadSummary, topLevel } from "../data/threads.ts"
 import type { ProjectState } from "../data/projectState.ts"
@@ -519,12 +520,21 @@ export function ChatTab(props: {
   const waiting = (m: Message) => m._tag !== "Text" && m.state._tag === "Open"
 
   const rows: Array<ReactNode> = []
+  // The project's latest move to another plan, where it happened, or at the end while it waits.
+  const planLine = chatPlanLine(state.project.planSwitch)
+  let planLineShown = false
+  const showPlanLine = (key: string) => {
+    if (planLine === undefined || planLineShown) return
+    planLineShown = true
+    rows.push(<Divider key={key} label={planLine.label} first={rows.length === 0} />)
+  }
   let previous: Message | undefined
   for (const item of chatItems(state.messages)) {
     const message = item._tag === "Message" ? item.message : item.reply
     if (!previous || !sameDay(previous.createdAt, message.createdAt)) {
       rows.push(<Divider key={`d-${message.id}`} label={dayLabel(message.createdAt, now)} first={!previous} />)
     }
+    if (planLine?.at !== undefined && DateTime.isLessThan(planLine.at, message.createdAt)) showPlanLine("plan-line")
     previous = message
     if (item._tag === "Echo") {
       const rootId = item.reply.replyTo
@@ -572,6 +582,7 @@ export function ChatTab(props: {
       </View>
     )
   }
+  showPlanLine("plan-line")
 
   return (
     // Lifts the messages with the keyboard, frame by frame, and follows an interactive dismiss.

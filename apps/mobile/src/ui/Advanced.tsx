@@ -2,20 +2,24 @@
  * Advanced: a project's starting settings, behind a round button beside Send on the new-idea screen. The sheet holds
  * the plan (only with more than one connected), the agent's model and reasoning effort, and the two usage limits;
  * left alone, the project starts as it always has. What it says comes from `data/advanced.ts`. The agent's part
- * (`AgentPicker`) is also the usage sheet's, where a project's model and effort can be changed later. The sheet is
- * drawn like the usage sheet (mocks/screens/project-usage, `.sheet`).
+ * (`AgentPicker`) is also the usage sheet's, where a project's model and effort can be changed later, and where
+ * someone with more than one plan can move the project to another (`PlanRow`). The sheet is drawn like the usage
+ * sheet (mocks/screens/project-usage, `.sheet`).
  */
 import type { ModelProvider, Project, ReasoningEffort, UsageLimits } from "@dream/domain"
 import { agentChoice, agentOf, ReasoningEfforts } from "@dream/domain"
+import * as Haptics from "expo-haptics"
 import { useState } from "react"
-import { Keyboard, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
+import { Alert, Keyboard, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import Animated, { Easing, SlideInDown } from "react-native-reanimated"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { type AdvancedView, agentLabel, effortAbout, effortName, type ModelRow, modelRows } from "../data/advanced.ts"
 import { providerName } from "../data/format.ts"
+import { type PlanLine, planLine } from "../data/planSwitch.ts"
 import { withLimit } from "../data/usage.ts"
-import { setAgentModelFn } from "../state/atoms.ts"
+import { setAgentModelFn, switchPlanFn } from "../state/atoms.ts"
 import { useAction } from "./actions.ts"
+import { useConnectedPlans, useNow } from "./hooks.ts"
 import { Icon, IconButton } from "./kit.tsx"
 import { color, gutter, tracking } from "./theme.ts"
 import { Footnote, LimitField, SectionHeading } from "./Usage.tsx"
@@ -328,7 +332,7 @@ function Segmented<A extends string>(props: {
  * saved at once and takes effect from the agent's next turn, in the same conversation.
  */
 export function ProjectAgent(props: {
-  readonly project: Pick<Project, "id" | "harness" | "agentModel" | "agentEffort">
+  readonly project: Pick<Project, "id" | "harness" | "agentModel" | "agentEffort" | "planSwitch">
 }) {
   const save = useAction(setAgentModelFn)
   const [open, setOpen] = useState(false)
@@ -378,6 +382,49 @@ export function ProjectAgent(props: {
         />
       ) : null}
       {changed ? <Footnote>It switches at its next turn.</Footnote> : null}
+      <PlanRow project={props.project} />
     </>
+  )
+}
+
+/**
+ * The plan the project runs on, and a move to another of theirs: one quiet line, there only for someone with more
+ * than one plan (or a move under way). The move asks first; staying, while one waits, doesn't.
+ */
+function PlanRow(props: { readonly project: Pick<Project, "id" | "harness" | "planSwitch"> }) {
+  const plans = useConnectedPlans()
+  const now = useNow(60_000)
+  const move = useAction(switchPlanFn)
+  const line = planLine(props.project, plans, now)
+  if (line === undefined) return null
+  const go = (action: NonNullable<PlanLine["action"]>) => {
+    if (move.busy) return
+    const run = () => {
+      void Haptics.selectionAsync()
+      move.run({ projectId: props.project.id, to: action.to })
+    }
+    if (action.confirm === undefined) return run()
+    Alert.alert(action.confirm.title, action.confirm.body, [
+      { text: "Cancel", style: "cancel" },
+      { text: action.confirm.button, onPress: run }
+    ])
+  }
+  return (
+    <Text style={{ fontSize: 13, lineHeight: 18, color: color.t3, marginTop: 12 }}>
+      {line.text}
+      {line.action ? (
+        <>
+          {"  "}
+          <Text
+            accessibilityRole="button"
+            suppressHighlighting={false}
+            onPress={() => line.action && go(line.action)}
+            style={{ fontWeight: "600", color: move.busy ? color.t3 : color.t2 }}
+          >
+            {line.action.label}
+          </Text>
+        </>
+      ) : null}
+    </Text>
   )
 }

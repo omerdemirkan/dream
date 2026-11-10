@@ -6,6 +6,7 @@ import {
   type ArchivedProject,
   type AskMessage,
   type Harness,
+  type ModelProvider,
   type ProjectSummary,
   type Message,
   type MessageId,
@@ -18,7 +19,7 @@ import { AsyncResult } from "effect/reactivity"
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react"
 import type { HostInstance } from "react-native"
 import type { ProjectState } from "../data/projectState.ts"
-import { planMissing } from "../data/plans.ts"
+import { connectedPlans, planMissing } from "../data/plans.ts"
 import { randomUuid } from "../data/Session.ts"
 import { archivedProjectsAtom, modelConnectionsAtom, projectAtom, projectsAtom } from "../state/atoms.ts"
 import { askPushAtom, focusAtom } from "../state/ui.ts"
@@ -26,6 +27,12 @@ import { askPushAtom, focusAtom } from "../state/ui.ts"
 const nowUtc = () => DateTime.nowUnsafe()
 
 /** The current time, ticking every `everyMs`. */
+/** The plans that work now (none until they've loaded). */
+export function useConnectedPlans(): ReadonlyArray<ModelProvider> {
+  const connections = Option.getOrUndefined(AsyncResult.value(useAtomValue(modelConnectionsAtom)))
+  return connections === undefined ? [] : connectedPlans(connections)
+}
+
 /** Whether a project on `harness` waits because its plan isn't connected. */
 export function usePlanMissing(harness: Harness | undefined): boolean {
   const connections = Option.getOrUndefined(AsyncResult.value(useAtomValue(modelConnectionsAtom)))

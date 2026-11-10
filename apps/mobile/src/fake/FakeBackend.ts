@@ -10,6 +10,7 @@
  */
 import {
   agentChoice,
+  agentChoiceOn,
   harnessOf,
   offersModel,
   providerOf,
@@ -63,6 +64,7 @@ import {
 import { Context, DateTime, Duration, Effect, Layer, Option, PubSub, Redacted, Schema, Stream } from "effect"
 import { Headers } from "effect/http"
 import type { Rpc, RpcGroup } from "effect/rpc"
+import { providerName } from "../data/format.ts"
 import { defaultPlan } from "../data/plans.ts"
 import { Dropped, type LiveSignal } from "../data/LiveProjects.ts"
 import { accountCostsOf, type CostsMode, projectCostsOf } from "./costs.ts"
@@ -112,6 +114,9 @@ export const Scenario = [
   "no-plan",
   "two-plans",
   "plan-removed",
+  "plan-moving",
+  "plan-moved",
+  "plan-move-failed",
   "signed-in",
   "signed-out",
   "spotify-ask",
@@ -495,6 +500,17 @@ export class FakeBackend extends Context.Service<
           }
           yield* setMessage(record, message)
           return message
+        })
+
+      /** The project on `to`'s plan, with its model choice's counterpart there, as `SwitchPlan` leaves it. */
+      const moveToPlan = (record: ProjectRecord, to: ModelProvider, requestedAt: DateTime.Utc) =>
+        Effect.gen(function* () {
+          const from = providerOf(record.project.harness)
+          const { agentModel: _m, agentEffort: _e, planSwitch: _p, ...rest } = record.project
+          record.project = { ...rest, ...agentChoiceOn(record.project, harnessOf(to)), harness: harnessOf(to) }
+          yield* setProject(record, {
+            planSwitch: { from, to, state: "done", requestedAt, endedAt: yield* DateTime.now }
+          })
         })
 
       /** Runs simulated agent work in the background, after `steps` of the current pace. */
@@ -890,6 +906,32 @@ export class FakeBackend extends Context.Service<
             const { agentModel: _m, agentEffort: _e, ...rest } = record.project
             record.project = { ...rest, ...agentChoice(rest.harness, { model, effort }) }
             yield* setProject(record, {})
+            return record.project
+          }),
+        SwitchPlan: ({ projectId, to }) =>
+          Effect.gen(function* () {
+            const record = yield* find(projectId)
+            const current = providerOf(record.project.harness)
+            if (to === current) {
+              if (record.project.planSwitch?.state !== "waiting") return record.project
+              const { planSwitch: _, ...rest } = record.project
+              record.project = rest
+              yield* setProject(record, {})
+              return record.project
+            }
+            if (!connections.some((c) => c.provider === to && c.status === "connected")) {
+              return yield* new InvalidRequest({ message: `Connect your ${providerName(to)} plan first.` })
+            }
+            const requestedAt = yield* DateTime.now
+            yield* setProject(record, { planSwitch: { from: current, to, state: "waiting", requestedAt } })
+            // The agent hands over in a few steps, then the project runs on the other plan.
+            yield* later(
+              4,
+              Effect.gen(function* () {
+                if (record.project.planSwitch?.state !== "waiting" || record.project.planSwitch.to !== to) return
+                yield* moveToPlan(record, to, requestedAt)
+              })
+            )
             return record.project
           }),
         GetAccountUsage: ({ provider }) =>
@@ -1632,6 +1674,28 @@ export class FakeBackend extends Context.Service<
               ...(name === "two-plans" ? [claude] : [])
             ]
             return
+          }
+          case "plan-moving":
+          case "plan-moved":
+          case "plan-move-failed": {
+            // Lift Log, on ChatGPT, moving to the Claude plan they connected (`two-plans` first).
+            const lift = Array.from(records.values()).find((r) => r.project.slug === "lift-log")
+            if (!lift) return
+            const requestedAt = DateTime.subtract(now, { minutes: 3 })
+            if (name === "plan-moved") return yield* moveToPlan(lift, "claude", requestedAt)
+            return yield* setProject(lift, {
+              planSwitch:
+                name === "plan-moving"
+                  ? { from: "chatgpt", to: "claude", state: "waiting", requestedAt }
+                  : {
+                      from: "chatgpt",
+                      to: "claude",
+                      state: "failed",
+                      requestedAt,
+                      endedAt: now,
+                      reason: "their Claude plan isn't connected"
+                    }
+            })
           }
           case "spotify-ask":
             return yield* askSpotify(now)

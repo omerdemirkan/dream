@@ -90,6 +90,31 @@ const sections: ReadonlyArray<{ readonly title: string; readonly jumps: Readonly
       { title: "Lift Log · now cut at two lines", scenarios: ["reset", "now-three-lines"], to: "/project/prj_liftlog" },
       { title: "Lift Log · usage sheet", scenarios: ["reset"], to: "/project/prj_liftlog?sheet=usage" },
       {
+        title: "Lift Log · usage sheet, two plans",
+        scenarios: ["reset", "two-plans"],
+        to: "/project/prj_liftlog?sheet=usage"
+      },
+      {
+        title: "Lift Log · moving to Claude",
+        scenarios: ["reset", "two-plans", "plan-moving"],
+        to: "/project/prj_liftlog?sheet=usage"
+      },
+      {
+        title: "Lift Log · Chat, moving to Claude",
+        scenarios: ["reset", "two-plans", "plan-moving"],
+        to: "/project/prj_liftlog?tab=chat"
+      },
+      {
+        title: "Lift Log · Chat, moved to Claude",
+        scenarios: ["reset", "two-plans", "plan-moved"],
+        to: "/project/prj_liftlog?tab=chat"
+      },
+      {
+        title: "Lift Log · the move didn’t work",
+        scenarios: ["reset", "two-plans", "plan-move-failed"],
+        to: "/project/prj_liftlog?sheet=usage"
+      },
+      {
         title: "Lift Log · usage near the limit",
         scenarios: ["reset", "usage-near-limit"],
         to: "/project/prj_liftlog"
