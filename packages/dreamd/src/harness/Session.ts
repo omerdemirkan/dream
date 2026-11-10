@@ -11,11 +11,17 @@
  *   - A Codex thread can't take them, and its adapter would start a new thread on its own when the instructions or
  *     skills change, with no word of the old one. dreamd starts it instead, with a handoff from the old thread's
  *     log: where the log is, and how the conversation ended.
+ *
+ * A project moved to another plan (`AppRpcs.SwitchPlan`) runs on another harness, which can't resume the old one's
+ * conversation at all. dreamd starts a new one there, opening with what it can read of the old without a model
+ * (`planHandoff`): where its log is, the summary the old harness wrote when it last compacted (Claude Code's is
+ * plain text; Codex's, made on OpenAI's side, usually isn't), and how it ended. The handoff the old agent wrote, and
+ * the rest, come in the turn's `PlanSwitched` event.
  */
 import { createHash } from "node:crypto"
-import { type HandoffInput, renderGuidanceNote, renderHandoff } from "@dream/agent-context"
+import { type HandoffInput, renderGuidanceNote, renderHandoff, renderPlanHandoff } from "@dream/agent-context"
 import { Harness as HarnessName } from "@dream/domain"
-import { Effect, Option, Schema } from "effect"
+import { Effect, FileSystem, Option, Path, Schema } from "effect"
 import * as Usage from "../Usage.ts"
 import type { Skill } from "./Skill.ts"
 
@@ -110,6 +116,19 @@ const decodeMessage = Schema.decodeUnknownOption(Schema.fromJsonString(RolloutMe
 
 const clip = (text: string, chars: number) => (text.length <= chars ? text : `${text.slice(0, chars).trimEnd()} […]`)
 
+/** The last of `messages` (oldest first), each cut short, within the budget. */
+const lastOf = (messages: HandoffInput["recent"]): HandoffInput["recent"] => {
+  const recent: Array<HandoffInput["recent"][number]> = []
+  let budget = quoted.totalChars
+  for (const message of messages.slice(-quoted.messages).reverse()) {
+    if (budget <= 0) break
+    const text = clip(message.text, Math.min(quoted.messageChars, budget))
+    recent.unshift({ ...message, text })
+    budget -= text.length
+  }
+  return recent
+}
+
 /** The last exchanges of a Codex rollout (or the tail of one): Dream's prompts and the agent's messages. */
 export const recentExchanges = (rollout: string): HandoffInput["recent"] => {
   const messages = rollout.split("\n").flatMap((line): HandoffInput["recent"] => {
@@ -128,15 +147,7 @@ export const recentExchanges = (rollout: string): HandoffInput["recent"] => {
     }
     return []
   })
-  const recent: Array<HandoffInput["recent"][number]> = []
-  let budget = quoted.totalChars
-  for (const message of messages.slice(-quoted.messages).reverse()) {
-    if (budget <= 0) break
-    const text = clip(message.text, Math.min(quoted.messageChars, budget))
-    recent.unshift({ ...message, text })
-    budget -= text.length
-  }
-  return recent
+  return lastOf(messages)
 }
 
 /** The handoff from the Codex thread `threadId`, from its rollout under `codexHome`, as far as it can be read. */
@@ -153,3 +164,167 @@ export const codexHandoff = (codexHome: string, threadId: Option.Option<string>)
       )
     )
   )
+
+// ---------------------------------------------------------------------------
+// The handoff to another harness
+// ---------------------------------------------------------------------------
+
+/** How much of a harness's own summary the handoff quotes. */
+const summaryChars = 24_000
+
+/** How much of the end of a Claude Code transcript is read for the handoff: its last compaction is usually in it. */
+const claudeTail = 16 * 1024 * 1024
+
+const CodexCompacted = Schema.Struct({
+  type: Schema.Literal("compacted"),
+  payload: Schema.Struct({ message: Schema.optionalKey(Schema.String) })
+})
+const decodeCompacted = Schema.decodeUnknownOption(Schema.fromJsonString(CodexCompacted))
+
+/** The summary in a Codex rollout's last compaction, when it's readable (a compaction made locally writes one). */
+export const codexSummary = (rollout: string): Option.Option<string> => {
+  let summary = Option.none<string>()
+  for (const line of rollout.split("\n")) {
+    if (!line.includes('"compacted"')) continue
+    const decoded = decodeCompacted(line)
+    if (Option.isNone(decoded)) continue
+    const message = decoded.value.payload.message?.trim() ?? ""
+    summary = message === "" ? Option.none() : Option.some(message)
+  }
+  return summary
+}
+
+const ClaudeLine = Schema.Struct({
+  type: Schema.Literals(["user", "assistant"]),
+  isCompactSummary: Schema.optionalKey(Schema.Boolean),
+  isMeta: Schema.optionalKey(Schema.Boolean),
+  isSidechain: Schema.optionalKey(Schema.Boolean),
+  message: Schema.Struct({
+    content: Schema.Union([
+      Schema.String,
+      Schema.Array(Schema.Struct({ type: Schema.String, text: Schema.optionalKey(Schema.String) }))
+    ])
+  })
+})
+const decodeClaudeLine = Schema.decodeUnknownOption(Schema.fromJsonString(ClaudeLine))
+
+/** What Claude Code adds to the conversation itself (reminders, command echoes), not said by Dream. */
+const claudeContext = ["<system-reminder>", "<command-", "<local-command-", "Caveat: "]
+
+/**
+ * A Claude Code transcript (or the tail of one), read for the handoff: its last exchanges, Dream's prompts and the
+ * agent's text, and the summary its last compaction wrote.
+ */
+export const claudeTranscript = (
+  transcript: string
+): { readonly recent: HandoffInput["recent"]; readonly summary: Option.Option<string> } => {
+  let summary = Option.none<string>()
+  const messages: Array<HandoffInput["recent"][number]> = []
+  for (const line of transcript.split("\n")) {
+    if (!line.includes('"message"')) continue
+    const decoded = decodeClaudeLine(line)
+    if (Option.isNone(decoded)) continue
+    const { type, isCompactSummary, isMeta, isSidechain, message } = decoded.value
+    if (isMeta === true || isSidechain === true) continue
+    const text = (
+      typeof message.content === "string"
+        ? message.content
+        : message.content
+            .filter((part) => part.type === "text")
+            .map((part) => part.text ?? "")
+            .join("\n")
+    ).trim()
+    if (text === "") continue
+    if (isCompactSummary === true) {
+      summary = Option.some(text)
+      // What it summarized came before; the exchanges that count are the ones after it.
+      messages.length = 0
+      continue
+    }
+    if (type === "assistant") messages.push({ from: "you", text })
+    else if (!claudeContext.some((prefix) => text.startsWith(prefix))) messages.push({ from: "dream", text })
+  }
+  return { recent: lastOf(messages), summary }
+}
+
+/** The file Claude Code keeps conversation `sessionId` in, under `home`. */
+export const findClaudeTranscript = Effect.fn("Session.findClaudeTranscript")(function* (
+  home: string,
+  sessionId: string
+) {
+  const fs = yield* FileSystem.FileSystem
+  const path = yield* Path.Path
+  const projects = path.join(home, ".claude", "projects")
+  if (!(yield* fs.exists(projects))) return Option.none<string>()
+  for (const project of yield* fs.readDirectory(projects)) {
+    const file = path.join(projects, project, `${sessionId}.jsonl`)
+    if (yield* fs.exists(file)) return Option.some(file)
+  }
+  return Option.none<string>()
+})
+
+/** A string the adapter keeps in a saved session's resume state: Codex's `threadId`, Claude Code's `claudeSessionId`. */
+export const resumeString = (session: SavedSession, key: string): Option.Option<string> => {
+  const data = session.resumeFrom?.data
+  const value = typeof data === "object" && data !== null && !Array.isArray(data) ? data[key] : undefined
+  return typeof value === "string" ? Option.some(value) : Option.none()
+}
+
+/**
+ * The handoff into a new conversation on `to` from `previous`, a session on another harness, as far as its log can
+ * be read under `home`.
+ */
+export const planHandoff = (previous: SavedSession, to: HarnessName, home: string) =>
+  Effect.gen(function* () {
+    const from = previous.harness
+    const read = Effect.gen(function* () {
+      if (from === "codex") {
+        const threadId = resumeString(previous, "threadId")
+        if (Option.isNone(threadId)) return { recent: [] }
+        const log = yield* Usage.findCodexRollout(`${home}/.codex`, threadId.value)
+        if (Option.isNone(log)) return { recent: [] }
+        const rollout = yield* Usage.readTail(log.value, claudeTail)
+        return {
+          log: log.value,
+          recent: recentExchanges(rollout),
+          summary: Option.getOrUndefined(codexSummary(rollout))
+        }
+      }
+      const sessionId = resumeString(previous, "claudeSessionId")
+      if (Option.isNone(sessionId)) return { recent: [] }
+      const log = yield* findClaudeTranscript(home, sessionId.value)
+      if (Option.isNone(log)) return { recent: [] }
+      const { recent, summary } = claudeTranscript(yield* Usage.readTail(log.value, claudeTail))
+      return { log: log.value, recent, summary: Option.getOrUndefined(summary) }
+    }).pipe(
+      Effect.catch((error) =>
+        Effect.logWarning("Couldn't read the old conversation for the handoff", { error: String(error) }).pipe(
+          Effect.as({ recent: [] })
+        )
+      )
+    )
+    const found: { log?: string; recent: HandoffInput["recent"]; summary?: string | undefined } = yield* read
+    return renderPlanHandoff({
+      from,
+      to,
+      ...(found.log === undefined ? {} : { log: found.log }),
+      ...(found.summary === undefined ? {} : { summary: clip(found.summary, summaryChars) }),
+      recent: found.recent
+    })
+  })
+
+/**
+ * The session for `harness` from the one saved, which ran on another: a new conversation, `sessionId`, that opens
+ * with `handoff`.
+ */
+export const switched = (
+  previous: SavedSession,
+  harness: HarnessName,
+  sessionId: string,
+  handoff: string
+): SavedSession => ({
+  harness,
+  sessionId,
+  // Moved back before the conversation on the other harness began: the handoff waiting has the context.
+  preamble: previous.resumeFrom === undefined && previous.preamble !== undefined ? previous.preamble : handoff
+})

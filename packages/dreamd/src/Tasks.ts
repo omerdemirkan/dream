@@ -14,7 +14,16 @@
  */
 import { HarnessAgent } from "@ai-sdk/harness/agent"
 import { renderTaskPrompt, taskPrompt } from "@dream/agent-context"
-import type { TaskFailure, TaskOutcome, TurnUsage, WakeTask, WakeId } from "@dream/domain"
+import {
+  AgentModels,
+  equivalentModel,
+  type Harness as HarnessName,
+  type TaskFailure,
+  type TaskOutcome,
+  type TurnUsage,
+  type WakeTask,
+  type WakeId
+} from "@dream/domain"
 import { Cause, Context, DateTime, Duration, Effect, Exit, FileSystem, Layer, Option, Path, Ref, Stream } from "effect"
 import { DreamdConfig } from "./Config.ts"
 import { makeAdapter } from "./harness/Harness.ts"
@@ -69,6 +78,17 @@ const noQuestions: TurnHandlers = {
     })
 }
 
+/**
+ * A task's model, on this harness: one the project's previous plan offered (a task that came due as the project moved
+ * to another plan, before Dream moved the tasks' models) gets its counterpart here; any other name goes as it is.
+ */
+export const modelHere = (harness: HarnessName, model: string): string => {
+  const other = (Object.keys(AgentModels) as ReadonlyArray<HarnessName>).find(
+    (candidate) => candidate !== harness && AgentModels[candidate].some((option) => option.id === model)
+  )
+  return other === undefined ? model : equivalentModel(other, harness, model)
+}
+
 export class Tasks extends Context.Service<
   Tasks,
   {
@@ -91,7 +111,8 @@ export class Tasks extends Context.Service<
       const spawned = makeSpawned()
       yield* Effect.addFinalizer(() => Effect.promise(() => stopAll(spawned)))
 
-      const run = Effect.fn("Tasks.run")(function* (input: TaskRunInput) {
+      const run = Effect.fn("Tasks.run")(function* (given: TaskRunInput) {
+        const input = { ...given, task: { ...given.task, model: modelHere(name, given.task.model) } }
         const startedAt = yield* DateTime.now
         const sessionId = `dream-task-${input.eventId}`
         const scratch = path.join(config.stateDir, "tasks", input.eventId)

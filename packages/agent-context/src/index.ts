@@ -5,7 +5,7 @@
  * The prompt, skill and task-prompt text is canonical in the sections in
  * docs/prompts/; `bun run sync-prompts` regenerates ./generated/prompts.ts.
  */
-import { renderAgentEvent, type AgentEvent, type MediaId } from "@dream/domain"
+import { renderAgentEvent, type AgentEvent, type Harness, type MediaId } from "@dream/domain"
 import { DateTime, Order } from "effect"
 
 export { skills, systemPrompt, taskPrompt } from "./generated/prompts.ts"
@@ -226,4 +226,47 @@ export const renderHandoff = ({ log, recent }: HandoffInput): string => {
       ? ""
       : `\n\nHow it ended:\n\n${recent.map(({ from, text }) => `[${from === "dream" ? "Dream" : "You"}]\n${text.trim()}`).join("\n\n")}`
   return `Dream started this conversation for you because its guidance for you changed; your instructions are the new version. It continues your previous conversation with this project. ${where}${exchanges}\n`
+}
+
+export interface PlanHandoffInput {
+  /** The harness the project ran on, and the one it runs on now. */
+  readonly from: Harness
+  readonly to: Harness
+  /** The previous conversation's log, if it was found. */
+  readonly log?: string | undefined
+  /** The previous harness's own summary of the conversation, from when it last compacted, if it wrote a readable one. */
+  readonly summary?: string | undefined
+  /** Its last exchanges, oldest first, as in `HandoffInput`. */
+  readonly recent: HandoffInput["recent"]
+}
+
+const harnessLabel: Record<Harness, string> = { "claude-code": "Claude Code", codex: "Codex" }
+const logLines: Record<Harness, string> = {
+  "claude-code": 'the messages are its "user" and "assistant" lines',
+  codex: 'the messages are its "response_item" lines'
+}
+
+/**
+ * Said before the turn's prompt in the new conversation of a project moved to another plan, and so to another harness
+ * (`AppRpcs.SwitchPlan`): what dreamd could read of the old conversation without a model, which reaches the new agent
+ * whether or not the old one wrote it a handoff. The turn's `PlanSwitched` event says the rest.
+ */
+export const renderPlanHandoff = ({ from, to, log, summary, recent }: PlanHandoffInput): string => {
+  const where =
+    log === undefined
+      ? "Its log wasn't found, so the project's files and git history are what you have of it."
+      : `Its log is ${log} (JSON lines; ${logLines[from]}). Read more of it when you need to.`
+  const summarized =
+    summary === undefined
+      ? ""
+      : `\n\nWhen it last compacted, ${harnessLabel[from]} summarized the conversation up to then:\n\n${summary.trim()}`
+  const exchanges =
+    recent.length === 0
+      ? ""
+      : `\n\nHow it ended:\n\n${recent.map(({ from: who, text }) => `[${who === "dream" ? "Dream" : "Its agent"}]\n${text.trim()}`).join("\n\n")}`
+  return (
+    `Until now this project's agent ran on ${harnessLabel[from]}. They moved the project to another plan, so you ` +
+    `carry on as its agent, on ${harnessLabel[to]}, in a new conversation that continues that one. ${where}` +
+    `${summarized}${exchanges}\n`
+  )
 }

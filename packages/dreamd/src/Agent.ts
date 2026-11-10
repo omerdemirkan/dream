@@ -73,12 +73,15 @@ export const backoff = (failures: number): Duration.Duration =>
 
 /**
  * Events that come from the agent's own doing rather than the person: a wake whose command it ran, a `dream wake`,
- * a check of its published URL. A turn started only by these doesn't post its final text to Chat.
+ * a check of its published URL. A turn started only by these doesn't post its final text to Chat. A move to another
+ * plan is theirs, but what the agents say about it is between them (a handoff written, a handoff read).
  */
 export const agentOnly = (event: AgentEvent): boolean =>
   event._tag === "Alert" ||
   event._tag === "PublishedUrlBroken" ||
   event._tag === "BackgroundStopped" ||
+  event._tag === "PlanSwitching" ||
+  event._tag === "PlanSwitched" ||
   (event._tag === "WakeDue" && (event.run !== undefined || event.task !== undefined))
 
 /** What the last turn used (`LastTurn` in `@dream/agent-context`), as `last-turn.json` keeps it. */
@@ -128,11 +131,22 @@ const wokenBy = (events: ReadonlyArray<AgentEvent>): string => {
     LinkEdited: "an edited app link",
     AppNotificationsChanged: "a change to an app's notifications",
     MachineMoved: "a machine move",
+    PlanSwitching: "a move to another plan",
+    PlanSwitched: "a move to another plan",
     AppNotificationsHeld: "notifications held back",
     BackgroundStopped: "stopped background work"
   }
   return [...new Set(events.map((event) => names[event._tag]))].join(", ")
 }
+
+/**
+ * A handoff asked of the agent on another harness: the project has moved since (a restart in the handoff's turn left
+ * it queued), so there's no one here to write it.
+ */
+export const staleFor =
+  (harness: string) =>
+  (event: AgentEvent): boolean =>
+    event._tag === "PlanSwitching" && event.from !== harness
 
 const hasQueued = (state: InboxState) => state.entries.some((entry) => entry.state === "queued")
 const hasQueuedReset = (state: InboxState) =>
@@ -207,6 +221,21 @@ export class Agent extends Context.Service<
           Effect.catch((error) => Effect.logError("Couldn't tell the agent its background work stopped", { error }))
         )
 
+      /** What's queued, but for handoffs asked of another harness's agent, which are dropped. */
+      const takeLive = Effect.gen(function* () {
+        const taken = yield* inbox.take
+        const stale = taken.filter(staleFor(harness.name))
+        if (stale.length === 0) return taken
+        yield* inbox.release(
+          stale.map((event) => event.id),
+          "done"
+        )
+        yield* Effect.logInfo("Dropped a handoff asked of the agent on the plan the project left", {
+          events: stale.map((event) => event.id)
+        })
+        return taken.filter((event) => !staleFor(harness.name)(event))
+      })
+
       const waitFor = (predicate: (state: InboxState) => boolean) =>
         inbox.changes.pipe(Stream.filter(predicate), Stream.take(1), Stream.runDrain)
 
@@ -235,7 +264,7 @@ export class Agent extends Context.Service<
           Stream.filter(hasQueued),
           Stream.mapEffect(() =>
             Effect.gen(function* () {
-              const events = yield* inbox.take
+              const events = yield* takeLive
               if (events.length === 0) return true
               const ids = events.map((event) => event.id)
               const missingAttachments = yield* attachments.fetch(events)
@@ -320,7 +349,7 @@ export class Agent extends Context.Service<
       const turn = Effect.gen(function* () {
         const held = yield* Ref.getAndSet(heldStop, Option.none())
         if (Option.isSome(held)) yield* inbox.deliver([held.value])
-        const events = yield* inbox.take
+        const events = yield* takeLive
         if (events.length === 0) return false
         const taken = yield* Ref.make<ReadonlyArray<EventId>>(events.map((event) => event.id))
         const fromPerson = yield* Ref.make(!events.every(agentOnly))

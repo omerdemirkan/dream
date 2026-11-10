@@ -262,14 +262,32 @@ const make = Effect.fnUntraced(function* ({
     model
   })
 
-  const saved = yield* provide(store.read).pipe(
-    Effect.map(Option.filter((session) => session.harness === name)),
+  const stored = yield* provide(store.read).pipe(
     Effect.catch((error) =>
       Effect.logWarning("Couldn't read the saved harness session; starting a new one", { error: error.message }).pipe(
         Effect.as(Option.none<SavedSession>())
       )
     )
   )
+  // A session on another harness: the project moved to another plan. Its conversation can't go on here, so a new one
+  // starts with what can be read of it.
+  const saved = yield* Option.match(stored, {
+    onNone: () => Effect.succeed(Option.none<SavedSession>()),
+    onSome: (session) =>
+      session.harness === name
+        ? Effect.succeed(Option.some(session))
+        : Effect.gen(function* () {
+            const handoff = yield* provide(Session.planHandoff(session, name, config.home))
+            const next = Session.switched(session, name, `dream-${config.projectId}-${Date.now()}`, handoff)
+            yield* Effect.logInfo(
+              `The project moved from ${session.harness} to ${name}; starting a new conversation with a handoff`
+            )
+            yield* provide(store.write(next)).pipe(
+              Effect.catch((error) => Effect.logError("Couldn't save the harness session", { error: String(error) }))
+            )
+            return Option.some(next)
+          })
+  })
   const state = yield* Ref.make<SavedSession>(
     Option.getOrElse(saved, () => ({ harness: name, sessionId: `dream-${config.projectId}` }))
   )
