@@ -413,8 +413,11 @@ export class FakeBackend extends Context.Service<
         const limits = limitsOf.get(projectId) ?? {}
         const week = sheet.weekWindow
         const reached = reachedLimit(limits, week)
+        // The figures are ChatGPT's whichever plan; a project on Claude (two-plans, a move) is named for its own.
+        const onClaude = records.get(projectId)?.project.harness === "claude-code"
         return {
           ...sheet,
+          ...(onClaude ? { provider: "claude" as const, plan: "Claude Max" } : {}),
           ...(Object.keys(limits).length === 0 ? {} : { limits }),
           ...(reached === undefined ? {} : { limitReached: reached })
         }
