@@ -24,7 +24,7 @@ import { useStagedAttachments } from "./Attachments.tsx"
 import { ChatActivity, Holdable, MessageBody } from "./Chat.tsx"
 import { ChatComposer } from "./Composer.tsx"
 import { useNow, useRequestId } from "./hooks.ts"
-import { IconButton } from "./kit.tsx"
+import { hideKeyboard, IconButton } from "./kit.tsx"
 import { color, gutter } from "./theme.ts"
 
 export function ThreadView(props: {
@@ -149,7 +149,13 @@ function ThreadLayer(
             </Text>
           </View>
           {typing ? (
-            <IconButton icon="keyboardDown" size={38} label="Hide the keyboard" onPress={() => Keyboard.dismiss()} />
+            <IconButton
+              icon="keyboardDown"
+              size={38}
+              label="Hide the keyboard"
+              onPressIn={hideKeyboard}
+              onPress={hideKeyboard}
+            />
           ) : (
             <View style={{ width: 38 }} />
           )}

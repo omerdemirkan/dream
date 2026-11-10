@@ -26,6 +26,7 @@ import Animated, {
   withSequence,
   withTiming
 } from "react-native-reanimated"
+import { KeyboardController } from "react-native-keyboard-controller"
 import Svg, { Path } from "react-native-svg"
 import { color } from "./theme.ts"
 
@@ -330,6 +331,15 @@ export function LinkButton(props: Press & { readonly title: string }) {
 }
 
 /** `.ib`: the round icon button. */
+/**
+ * Puts the keyboard down from the native side, meant for touch-down. React Native's `Keyboard.dismiss()` goes through
+ * the focused input on the JavaScript thread, and a press only fires on release, so on a busy Chat the keyboard
+ * lingered.
+ */
+export const hideKeyboard = () => {
+  void KeyboardController.dismiss()
+}
+
 export function IconButton(
   props: Press & {
     readonly icon: Glyph

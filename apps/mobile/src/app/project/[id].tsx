@@ -60,7 +60,7 @@ import { ThreadView } from "../../ui/Thread.tsx"
 import { LayerBoundary } from "../../ui/ErrorBoundary.tsx"
 import { useOpenMessage, usePlanMissing, useProject, useRequestId } from "../../ui/hooks.ts"
 import { useOpenOptions } from "../../ui/Options.tsx"
-import { IconButton } from "../../ui/kit.tsx"
+import { hideKeyboard, IconButton } from "../../ui/kit.tsx"
 import { PresenceTile, StateLineText, useTickingNow } from "../../ui/Presence.tsx"
 import { RoadmapSheet, StatusCardPin } from "../../ui/StatusCard.tsx"
 import { labelsOf } from "../../ui/statusView.ts"
@@ -374,7 +374,13 @@ function Project(props: {
           <Identity project={project} state={state} summary={summary} />
           {typing ? (
             // While they type, the keyboard's way down takes the place of the bell and the ring.
-            <IconButton icon="keyboardDown" size={38} label="Hide the keyboard" onPress={() => Keyboard.dismiss()} />
+            <IconButton
+              icon="keyboardDown"
+              size={38}
+              label="Hide the keyboard"
+              onPressIn={hideKeyboard}
+              onPress={hideKeyboard}
+            />
           ) : (
             <>
               {notifies ? (
