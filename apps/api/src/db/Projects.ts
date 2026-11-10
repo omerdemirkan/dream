@@ -353,6 +353,8 @@ export class Projects extends Context.Service<
         const statements = [
           sql`UPDATE projects SET ${sql.update({
             title: p.title,
+            // A move to another plan changes it (`SwitchPlan`), and Home's rows, the usage pages and limits follow.
+            harness: p.harness,
             kind: orNull(p.kind),
             icon: orNull(p.icon),
             phase: p.phase,

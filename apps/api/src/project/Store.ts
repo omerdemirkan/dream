@@ -11,6 +11,7 @@ import {
   AppNotification,
   AppSender,
   EventId,
+  Harness,
   type IntegrationId,
   LiveActivityAttributes,
   LiveActivityContent,
@@ -93,6 +94,22 @@ export const SandboxRecord = Schema.Struct({
   size: Schema.optionalKey(SandboxSize),
   /** A move to another size the agent asked for (`dream machine move`), done after its turn. */
   move: Schema.optionalKey(MachineMove),
+  /**
+   * A move to another plan they asked for (`SwitchPlan`; `Project.planSwitch` is what their phone sees), waiting
+   * for its handoff: the `PlanSwitching` event the agent on the old plan writes it in (none when that plan can't run
+   * a turn), and whether a turn that took it has ended. It happens then, between turns, or at `deadline` whatever
+   * runs (`PlanSwitcher`).
+   */
+  planSwitch: Schema.optionalKey(
+    Schema.Struct({
+      to: Harness,
+      requestedAt: Schema.DateTimeUtc,
+      deadline: Schema.DateTimeUtc,
+      handoffEventId: Schema.optionalKey(EventId),
+      handoff: Schema.optionalKey(Schema.String),
+      handedOff: Schema.optionalKey(Schema.Boolean)
+    })
+  ),
   /** Refreshing to `build` failed `failures` times in a row; don't try that build again before `retryAt`. */
   refreshFailure: Schema.optionalKey(
     Schema.Struct({
@@ -299,6 +316,7 @@ export type TimerName =
   | "sandbox-resume"
   | "visit-check"
   | "sandbox-move"
+  | "plan-switch"
 
 export class Store extends Context.Service<
   Store,
@@ -337,6 +355,8 @@ export class Store extends Context.Service<
     readonly markDelivered: (ids: ReadonlyArray<EventId>, at: string) => Effect.Effect<void>
     /** Events by id, delivered or not, in inbox order. Unknown ids are left out. */
     readonly events: (ids: ReadonlyArray<EventId>) => Effect.Effect<ReadonlyArray<AgentEvent>>
+    /** Takes back an event that hasn't been delivered: whether it was still waiting (and so is gone now). */
+    readonly discardPending: (id: EventId) => Effect.Effect<boolean>
 
     readonly putAppSender: (sender: AppSender) => Effect.Effect<void>
     /** Oldest first. */
@@ -531,6 +551,12 @@ export class Store extends Context.Service<
               decodeRows(JsonRow),
               Effect.map((rows) => rows.map((row) => Schema.decodeUnknownSync(jsonCodec(AgentEvent))(row.json)))
             )
+
+      const discardPending = (id: EventId) =>
+        sql`DELETE FROM events WHERE id = ${id} AND delivered_at IS NULL RETURNING id`.pipe(
+          Effect.orDie,
+          Effect.map((rows) => rows.length > 0)
+        )
 
       const putAppSender = (sender: AppSender) =>
         exec(sql`
@@ -732,6 +758,7 @@ export class Store extends Context.Service<
         enqueue,
         pendingEvents,
         markDelivered,
+        discardPending,
         events,
         putAppSender,
         appSenders,

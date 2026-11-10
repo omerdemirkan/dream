@@ -275,8 +275,15 @@ export class SandboxManager extends Context.Service<
     }) => Effect.Effect<void>
     /** A phone subscribed to the live feed, or left it: dreamd hears whether anyone is watching. */
     readonly watchersChanged: Effect.Effect<void>
-    /** A turn finished, with the tokens it used (none from older dreamd builds): recorded, and the header updated. */
-    readonly turnFinished: (usage?: TurnUsage | undefined, machine?: MachineUse | undefined) => Effect.Effect<void>
+    /**
+     * A turn finished, with the tokens it used (none from older dreamd builds) and the events it took: recorded, and
+     * the header updated. A move to another plan that waits goes once it's over.
+     */
+    readonly turnFinished: (
+      usage?: TurnUsage | undefined,
+      machine?: MachineUse | undefined,
+      eventIds?: ReadonlyArray<EventId>
+    ) => Effect.Effect<void>
     /**
      * dreamd reported where the subscription stands. Early in a turn, a reading replaces the turn's "before" when
      * that one is stale (see `freshBefore`).
@@ -324,6 +331,17 @@ export class SandboxManager extends Context.Service<
     readonly moveMachine: (to: SandboxSize, why: string) => Effect.Effect<MachineInfo, InvalidRequest>
     /** The `sandbox-move` timer: does the move the agent asked for, between turns. */
     readonly move: Effect.Effect<void>
+    /**
+     * A move to another plan (`PlanSwitcher`), between turns or past its deadline: the sandbox gets `next`'s egress
+     * rules (the new plan's credential in place of the old one's) and a dreamd on `next`'s harness, which starts a
+     * new conversation with a handoff from the old one. A turn still running stops. Says whether the outgoing agent
+     * wrote `handoff`. On a failure the sandbox goes back to the project as it is, and the failure comes back; with
+     * no sandbox there's nothing to do, since the next one is made for `next`.
+     */
+    readonly applyPlan: (
+      next: Project,
+      handoff: string | undefined
+    ) => Effect.Effect<{ readonly handoff: boolean }, UpstreamFailure>
     /** Kills the sandbox for good (retiring the project). */
     readonly destroy: Effect.Effect<void>
     /** They archived the project: stop the keepalive, refresh and delivery timers, and pause the sandbox where it is. */
@@ -432,8 +450,9 @@ export class SandboxManager extends Context.Service<
           .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
           .join("\n") + "\n"
 
-      const settingsFor = (daemonToken: string) =>
-        Effect.map(core.project.pipe(Effect.orDie), (project) => ({
+      /** dreamd's settings for the project as it is, or as it's about to be (`project`, a move to another plan). */
+      const settingsFor = (daemonToken: string, next?: Project) =>
+        Effect.map(next === undefined ? core.project.pipe(Effect.orDie) : Effect.succeed(next), (project) => ({
           project,
           settings: daemonSettings({
             apiUrl: config.apiUrl,
@@ -450,9 +469,9 @@ export class SandboxManager extends Context.Service<
         }))
 
       /** Writes dreamd's env file and records what it said (`envHash`, which dreamd reports back). */
-      const writeDaemonEnv = (access: SandboxAccess, daemonToken: string) =>
+      const writeDaemonEnv = (access: SandboxAccess, daemonToken: string, next?: Project) =>
         Effect.gen(function* () {
-          const { project, settings } = yield* settingsFor(daemonToken)
+          const { project, settings } = yield* settingsFor(daemonToken, next)
           const projectToken = yield* tokens.project(project.id, project.ownerId)
           const envHash = yield* hashSettings(settings)
           yield* envd.run(access, { command: `mkdir -p "$(dirname '${DaemonEnvFile}')"`, timeout: "20 seconds" })
@@ -473,9 +492,9 @@ export class SandboxManager extends Context.Service<
        * Writes dreamd's env file, then waits for the dreamd that read it; if the template didn't start one within
        * a while, starts it and waits again.
        */
-      const restartDaemon = (access: SandboxAccess, daemonToken: string) =>
+      const restartDaemon = (access: SandboxAccess, daemonToken: string, next?: Project) =>
         Effect.gen(function* () {
-          const envHash = yield* writeDaemonEnv(access, daemonToken)
+          const envHash = yield* writeDaemonEnv(access, daemonToken, next)
           return yield* waitForDaemon(access, daemonToken, Duration.seconds(45), envHash).pipe(
             Effect.catch(() =>
               Effect.gen(function* () {
@@ -803,15 +822,24 @@ export class SandboxManager extends Context.Service<
           return yield* alarm.reschedule
         }
         yield* store.clearTimer("deliver")
-        const pending = yield* store.pendingEvents(BatchSize)
+        const waiting = yield* store.pendingEvents(BatchSize)
         // A usage hold is over: dreamd may start what it was holding.
-        if (pending.length === 0) return yield* holdTurns(false)
+        if (waiting.length === 0) return yield* holdTurns(false)
         const project = yield* core.project.pipe(Effect.orDie)
         // The plan it runs on isn't connected (removed, or its sign-in lapsed): the agent can't work, so what
         // arrives waits, and connecting the plan again delivers it (`CredentialsChanged`).
         if (Option.isNone(yield* connections.connectedModel(project.ownerId, providerFor(project)))) {
           if ((yield* core.sandbox).startingSince !== undefined) yield* update(withoutStarting)
           return yield* Effect.logInfo("held until its plan is connected", { provider: providerFor(project) })
+        }
+        // A move to another plan waits for its handoff: only the event asking for it goes to the agent on the old
+        // plan, and the rest waits for the agent on the new one (the move delivers it).
+        const switching = (yield* core.sandbox).planSwitch
+        const pending =
+          switching === undefined ? waiting : waiting.filter((event) => event.id === switching.handoffEventId)
+        if (pending.length === 0) {
+          if ((yield* core.sandbox).startingSince !== undefined) yield* update(withoutStarting)
+          return yield* Effect.logInfo("held for the move to another plan", { to: switching?.to })
         }
         // Their messages have reached the agent's machine: they read "Seen" from here on.
         yield* core.markSeen(pending.map((event) => event.id))
@@ -872,7 +900,7 @@ export class SandboxManager extends Context.Service<
         )
         yield* update((r) => (startsNoTurn ? withoutStarting({ ...r, failures: 0 }) : { ...r, failures: 0 }))
         const rest = yield* store.pendingEvents(1)
-        if (rest.length > 0) {
+        if (rest.length > 0 && switching === undefined) {
           // More than a batch, or dreamd didn't take everything: go again soon.
           yield* store.setTimer("deliver", now + (accepted.length === pending.length ? 0 : 30_000))
           yield* alarm.reschedule
@@ -1262,13 +1290,25 @@ export class SandboxManager extends Context.Service<
           yield* live.publish(ProjectEvent.cases.Usage.make({ usage: yield* usageReport.glance(project) }))
         }).pipe(Effect.catchCause((cause) => Effect.logWarning("couldn't record the task's run", { cause })))
 
-      const turnFinished = (usage?: TurnUsage | undefined, machine?: MachineUse | undefined) =>
+      const turnFinished = (
+        usage?: TurnUsage | undefined,
+        machine?: MachineUse | undefined,
+        eventIds: ReadonlyArray<EventId> = []
+      ) =>
         Effect.gen(function* () {
           const record = yield* core.sandbox
           const now = yield* DateTime.now
           yield* update((r) => {
             const { turnStartedAt: _, turnUsageBefore: _b, progress: _p, ...rest } = withoutStarting(r)
-            return { ...rest, working: false, turnEndedAt: now, awakeUntil: DateTime.addDuration(now, TurnTail) }
+            const handedOff =
+              r.planSwitch?.handoffEventId !== undefined && eventIds.includes(r.planSwitch.handoffEventId)
+            return {
+              ...rest,
+              working: false,
+              turnEndedAt: now,
+              awakeUntil: DateTime.addDuration(now, TurnTail),
+              ...(rest.planSwitch !== undefined && handedOff ? { planSwitch: { ...rest.planSwitch, handedOff } } : {})
+            }
           })
           yield* store.clearTimer("turn-keepalive")
           if (config.sandboxRefresh) {
@@ -1280,6 +1320,10 @@ export class SandboxManager extends Context.Service<
           // A move the agent asked for in this turn goes first, before the refresh.
           if (record.move !== undefined) {
             yield* store.setTimer("sandbox-move", (yield* Clock.currentTimeMillis) + Duration.toMillis(MoveAfterTurn))
+          }
+          // So does a move to another plan, which checks whether its handoff is in.
+          if (record.planSwitch !== undefined) {
+            yield* store.setTimer("plan-switch", (yield* Clock.currentTimeMillis) + Duration.toMillis(MoveAfterTurn))
           }
           yield* alarm.reschedule
           if (record.access !== undefined) {
@@ -1297,7 +1341,8 @@ export class SandboxManager extends Context.Service<
           "sandbox-refresh",
           "sandbox-resume",
           "visit-check",
-          "sandbox-move"
+          "sandbox-move",
+          "plan-switch"
         ] as const) {
           yield* store.clearTimer(timer)
         }
@@ -1319,6 +1364,8 @@ export class SandboxManager extends Context.Service<
       const restored = Effect.gen(function* () {
         const now = yield* Clock.currentTimeMillis
         if ((yield* core.sandbox).interruptedTurn === true) yield* store.setTimer("sandbox-resume", now)
+        // A move to another plan they asked for before archiving it goes on.
+        if ((yield* core.sandbox).planSwitch !== undefined) yield* store.setTimer("plan-switch", now)
         if ((yield* store.pendingEvents(1)).length > 0) yield* store.setTimer("deliver", now)
         yield* alarm.reschedule
       })
@@ -1364,6 +1411,77 @@ export class SandboxManager extends Context.Service<
           })
         )
         .pipe(Effect.catchCause((cause) => Effect.logWarning("resuming the restored project failed", { cause })))
+
+      const applyPlan = (next: Project, handoff: string | undefined) =>
+        busy
+          .withPermits(1)(
+            Effect.gen(function* () {
+              const record = yield* core.sandbox
+              if (record.status !== "ready" || record.access === undefined || record.daemonToken === undefined) {
+                return { handoff: false }
+              }
+              const daemonToken = record.daemonToken
+              const found = yield* e2b.connect(record.access.sandboxId, Duration.toSeconds(RefreshTimeout)).pipe(
+                Effect.map(Option.some),
+                Effect.catchTag("SandboxGone", () =>
+                  // Its files went with it; the next delivery creates a sandbox on the new plan.
+                  Effect.as(
+                    update((r) => ({ ...r, status: "none", rulesDirty: false })),
+                    Option.none<SandboxAccess>()
+                  )
+                )
+              )
+              if (Option.isNone(found)) return { handoff: false }
+              const access = found.value
+              if (record.working) {
+                // Past the move's deadline: the turn stops here (dreamd restarts under it), its tokens never reported.
+                const now = yield* DateTime.now
+                yield* recordModelTurn(record, now, undefined)
+                yield* update((r) => {
+                  const { turnStartedAt: _, turnUsageBefore: _b, progress: _p, ...rest } = withoutStarting(r)
+                  return { ...rest, working: false, turnEndedAt: now }
+                })
+                yield* store.clearTimer("turn-keepalive")
+              } else {
+                // On the current Dream, whose dreamd knows how to pick up from another harness.
+                yield* refreshIfDue(access, daemonToken)
+              }
+              const written =
+                handoff === undefined
+                  ? false
+                  : yield* envd.run(access, { command: `test -s '${handoff}'`, timeout: "20 seconds" }).pipe(
+                      Effect.map((result) => result.exitCode === 0),
+                      Effect.orElseSucceed(() => false)
+                    )
+              const setRules = (project: Project) =>
+                Effect.gen(function* () {
+                  const setup = yield* credentials.setup(project.ownerId, project.harness, project.id)
+                  if (!(yield* e2b.updateRules(access.sandboxId, setup.rules))) {
+                    return yield* new UpstreamFailure({
+                      service: "E2B",
+                      message: "the egress rules couldn't be updated"
+                    })
+                  }
+                  yield* update((r) => ({ ...r, rulesHash: setup.rulesHash, rulesDirty: false }))
+                })
+              // Back to the project as it is: its plan's rules and a dreamd on its harness, in the conversation it had.
+              const rollBack = Effect.gen(function* () {
+                const current = yield* core.project.pipe(Effect.orDie)
+                yield* setRules(current).pipe(Effect.tapError(() => update((r) => ({ ...r, rulesDirty: true }))))
+                yield* restartDaemon(access, daemonToken)
+              }).pipe(
+                Effect.catch((error) => Effect.logError("couldn't put the sandbox back on its plan", error.message))
+              )
+              yield* Effect.andThen(setRules(next), restartDaemon(access, daemonToken, next)).pipe(
+                Effect.tapError(() => rollBack)
+              )
+              yield* timeouts
+                .withPermits(1)(e2b.setTimeout(access.sandboxId, Duration.toSeconds(TurnTail)))
+                .pipe(Effect.ignore)
+              return { handoff: written }
+            })
+          )
+          .pipe(Effect.withSpan("SandboxManager.applyPlan"))
 
       const destroy = Effect.gen(function* () {
         const record = yield* core.sandbox
@@ -1588,6 +1706,7 @@ export class SandboxManager extends Context.Service<
         machine,
         moveMachine,
         move,
+        applyPlan,
         destroy,
         pause,
         restored,

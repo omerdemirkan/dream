@@ -52,6 +52,7 @@ import { Core, initialStatus } from "./Core.ts"
 import { LiveFeed } from "./Live.ts"
 import { Machines } from "./Machines.ts"
 import { Notifier } from "./Notifier.ts"
+import { PlanSwitcher } from "./PlanSwitch.ts"
 import { ProjectLog } from "./ProjectLog.ts"
 import { ProjectRpcs } from "./ProjectRpcs.ts"
 import { Relays } from "./Relays.ts"
@@ -168,6 +169,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
     const relays = yield* Relays
     const appNotifications = yield* AppNotifications
     const limiter = yield* UsageLimiter
+    const plans = yield* PlanSwitcher
     const projectLog = yield* ProjectLog
     const { placeFor } = placing(core)
 
@@ -540,6 +542,7 @@ export const ProjectHandlers = ProjectRpcs.toLayer(
           })
           return next
         }),
+      SwitchPlan: ({ to }) => plans.request(to),
       CheckUsageLimits: () => limiter.check,
 
       GatewayTarget: () => sandbox.gatewayTarget,
@@ -1136,8 +1139,10 @@ export const AgentHandlers = SandboxRpcs.toLayer(
       GetProjectCosts: () => Effect.die("GetProjectCosts is served by the Worker"),
       // A finished turn or task is credited its share of the week: check before dreamd hears back and starts more.
       ReportTask: (report) => Effect.andThen(sandbox.taskFinished(report), limiter.check),
-      ReportTurn: ({ state, usage, machine }) =>
-        state === "started" ? sandbox.turnStarted : Effect.andThen(sandbox.turnFinished(usage, machine), limiter.check),
+      ReportTurn: ({ state, usage, machine, eventIds }) =>
+        state === "started"
+          ? sandbox.turnStarted
+          : Effect.andThen(sandbox.turnFinished(usage, machine, eventIds), limiter.check),
       ReportProgress: (report) => sandbox.reportProgress(report),
       StayAwake: () => sandbox.stayAwake,
       Sleep: ({ reason, checkedAt }) => sandbox.sleep(reason, checkedAt),

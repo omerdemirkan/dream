@@ -10,7 +10,8 @@ import { IntegrationAccess } from "./Connections.ts"
 import { AppId, EventId, LinkId, type MediaId, MessageId, WakeId } from "./Ids.ts"
 import { Trouble } from "./Logs.ts"
 import { Attachment, attachmentPath, formatBytes, isImageAttachment } from "./Media.ts"
-import { QuestionAnswer } from "./Message.ts"
+import { MessageAuthor, QuestionAnswer } from "./Message.ts"
+import { Harness, providerOf } from "./Project.ts"
 import { UsageLimits, UsageWindowName, WindowShare } from "./Usage.ts"
 import { TaskFailure, WakeTask } from "./Wake.ts"
 import { SandboxSize, SandboxSizes } from "./Sandbox.ts"
@@ -178,6 +179,36 @@ export const AgentEvent = Schema.TaggedUnion({
     notRestarted: Schema.Array(Schema.String),
     failure: Schema.optionalKey(Schema.String)
   },
+  /**
+   * They're moving the project to another of their plans (`AppRpcs.SwitchPlan`), so the agent on `from` hands over
+   * to one on `to`: it writes a handoff to `handoff` (a path under `PlanHandoffDir`), in a turn of its own or at the
+   * end of the one it's in. Dream moves the project when that turn ends. Sent only while `from`'s plan can run a
+   * turn. dreamd on another harness drops it (a restart can leave it queued). Added November 2026.
+   */
+  PlanSwitching: { ...EventFields, from: Harness, to: Harness, handoff: Schema.String },
+  /**
+   * How a move to another plan ended. `moved`: told to the agent on `to`, in its new conversation, with what it needs
+   * to pick up: whether the agent before it wrote `handoff`, its model now (`model`, and the choice it stands in for,
+   * `modelBefore`), the scheduled tasks whose models Dream changed (`tasks`), and the latest of Chat (`chat`, oldest
+   * first). `failed` (`reason`) or `cancelled`: told to the agent on `from`, which stays, when it had been asked for
+   * a handoff. Added November 2026.
+   */
+  PlanSwitched: {
+    ...EventFields,
+    from: Harness,
+    to: Harness,
+    outcome: Schema.Literals(["moved", "failed", "cancelled"]),
+    reason: Schema.optionalKey(Schema.String),
+    handoff: Schema.optionalKey(Schema.String),
+    model: Schema.optionalKey(Schema.String),
+    modelBefore: Schema.optionalKey(Schema.String),
+    tasks: Schema.optionalKey(
+      Schema.Array(Schema.Struct({ wakeId: WakeId, why: Schema.String, from: Schema.String, to: Schema.String }))
+    ),
+    chat: Schema.optionalKey(
+      Schema.Array(Schema.Struct({ from: MessageAuthor, text: Schema.String, at: Schema.DateTimeUtc }))
+    )
+  },
   /** One of the project's apps went over a limit, so Dream is holding back what it sends. At most once a day an app. */
   AppNotificationsHeld: {
     ...EventFields,
@@ -206,6 +237,7 @@ export const AgentEvent = Schema.TaggedUnion({
   }
 })
 export type AgentEvent = typeof AgentEvent.Type
+type PlanSwitchedEvent = typeof AgentEvent.cases.PlanSwitched.Type
 
 /** Where `dream logs` shows the trouble behind an `Alert` Dream made. */
 const troubleLogs: Record<Trouble, string> = {
@@ -387,6 +419,76 @@ const renderUsageLimits = (
   )
 }
 
+/** Where an agent leaving a project for another plan writes its handoff (`PlanSwitching.handoff`). */
+export const PlanHandoffDir = "/home/user/.dream/handoffs"
+
+/** The handoff file for a move to `to` asked for at `at`: one per move, so an old one is never taken for a new. */
+export const planHandoffPath = (at: DateTime.Utc, to: Harness): string =>
+  `${PlanHandoffDir}/${DateTime.formatIso(at).slice(0, 19).replace(/:/gu, "-")}-to-${to}.md`
+
+const harnessLabel: Record<Harness, string> = { "claude-code": "Claude Code", codex: "Codex" }
+const planLabel = (harness: Harness) => (providerOf(harness) === "chatgpt" ? "ChatGPT" : "Claude")
+
+const renderPlanSwitched = (
+  { from, to, outcome, reason, handoff, model, modelBefore, tasks = [], chat = [] }: PlanSwitchedEvent,
+  options: RenderOptions
+): string => {
+  const plans = `from their ${planLabel(from)} plan to their ${planLabel(to)} plan`
+  if (outcome === "cancelled") {
+    return (
+      `They decided to keep this project on their ${planLabel(from)} plan after all, so you stay its agent, in this ` +
+      "conversation. Carry on from where you were; the handoff you wrote can stay where it is."
+    )
+  }
+  if (outcome === "failed") {
+    return (
+      `Dream couldn't move this project ${plans}${reason === undefined ? "" : ` (${reason})`}, so you stay its ` +
+      "agent, in this conversation, with everything as it was. Carry on from where you were."
+    )
+  }
+  const intro =
+    `They moved this project ${plans}, so you're its agent now, on ${harnessLabel[to]}, taking over from the agent ` +
+    `that ran it on ${harnessLabel[from]}. This is a new conversation; the machine is as it left it: the project, ` +
+    "~/.dream, the published apps and the servers running, the scheduled wake-ups and tasks, the relays."
+  const context =
+    handoff === undefined
+      ? " It didn't get to write you a handoff, so the end of its conversation, above, " +
+        "and the project's own notes and files are what you have of its context."
+      : ` It wrote you a handoff, ${handoff}: read it before anything else. The end of its conversation, above, ` +
+        "fills in what it left out."
+  const runsOn =
+    model === undefined
+      ? ""
+      : modelBefore === undefined
+        ? ` You run on ${model}, Dream's default here.`
+        : ` You run on ${model}, which stands in for ${modelBefore}, the model they had chosen there.`
+  const moved =
+    tasks.length === 0
+      ? ""
+      : "\nYour scheduled tasks named models of the other plan, so Dream gave them their counterparts here; check " +
+        `they suit each job (\`dream wake list\`):\n` +
+        tasks.map((task) => `- ${task.wakeId} ("${task.why}"): ${task.from} → ${task.to}`).join("\n")
+  const reach =
+    `\nThis machine can use their ${planLabel(to)} plan and no longer reaches their ${planLabel(from)} one, so ` +
+    `anything here that relied on it (a script or app calling ${harnessLabel[from]} or its models) needs moving over. ` +
+    "Model names in notes and scripts from before were the other plan's."
+  const said =
+    chat.length === 0
+      ? ""
+      : "\nThe latest of Chat, as they see it:\n" +
+        chat
+          .map(
+            (line) =>
+              `[${formatEventTime(line.at, options)}] ${line.from === "user" ? "They" : "The agent"} wrote:\n` +
+              quote(line.text)
+          )
+          .join("\n")
+  return (
+    `${intro}${context}${runsOn}${moved}${reach}${said}\n` +
+    "They made the move themselves, so there's nothing to tell them about it; carry on with the work."
+  )
+}
+
 /** One event as a paragraph of the turn prompt. Message and wake ids are included so the agent can refer to them. */
 export const renderAgentEvent = (event: AgentEvent, options: RenderOptions = {}): string => {
   const time = formatEventTime(event.at, options)
@@ -531,6 +633,16 @@ export const renderAgentEvent = (event: AgentEvent, options: RenderOptions = {})
         `told them you'd come back with its results, follow through.${after}`
       )
     },
+    PlanSwitching: ({ to, handoff }) =>
+      `They're moving this project to their ${planLabel(to)} plan, so once this turn ends, an agent on ` +
+      `${harnessLabel[to]} takes over from you, in a new conversation. It gets the machine as you leave it (the ` +
+      "project, ~/.dream, the published apps, the wake-ups, tasks and relays) and the end of this conversation, but " +
+      `nothing else of it. Write it a handoff at ${handoff}, with what only you know and it needs to carry on as you ` +
+      "would: who they are and what they're after, where the work stands and what's in flight, the decisions taken " +
+      "and why, what you've told them you'd do and what you're waiting on, and what's easy to get wrong here. Point " +
+      "to files and notes rather than copy them. If you're in the middle of something, bring it to where it can be " +
+      "picked up first. They made the move themselves, so there's nothing to tell them about it.",
+    PlanSwitched: (event) => renderPlanSwitched(event, options),
     AppNotificationsHeld: ({ app, name, limit }) =>
       `${name} (${app}) went over Dream's limit of ` +
       (limit === "hour"

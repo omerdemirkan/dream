@@ -17,6 +17,7 @@ import {
   Attachment,
   DeclineReason,
   DeviceId,
+  Harness,
   NotificationId,
   Integration,
   InvalidRequest,
@@ -194,6 +195,16 @@ export class ProjectRpcs extends RpcGroup.make(
     payload: { model: Schema.optionalKey(Schema.NonEmptyString), effort: Schema.optionalKey(ReasoningEffort) },
     success: Project,
     error: NotFound
+  }),
+  /**
+   * They asked to move this project to another plan (`AppRpcs.SwitchPlan`; the Worker checked `to` is connected):
+   * the move waits for a handoff, then happens between turns (`PlanSwitcher`). `to` the harness it's on cancels a
+   * waiting move.
+   */
+  Rpc.make("SwitchPlan", {
+    payload: { to: Harness },
+    success: Project,
+    error: Schema.Union([NotFound, InvalidRequest])
   }),
   /** The plan's usage moved (a reading from another of their projects): check this project's limits. */
   Rpc.make("CheckUsageLimits", {}),

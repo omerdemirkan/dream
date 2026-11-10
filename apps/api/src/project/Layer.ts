@@ -13,6 +13,7 @@ import { Core } from "./Core.ts"
 import { LiveFeed } from "./Live.ts"
 import { Machines } from "./Machines.ts"
 import { Notifier } from "./Notifier.ts"
+import { PlanSwitcher } from "./PlanSwitch.ts"
 import { ProjectLog } from "./ProjectLog.ts"
 import { Relays } from "./Relays.ts"
 import { SandboxManager } from "./SandboxManager.ts"
@@ -33,8 +34,9 @@ export const projectLayer = (
   const sandbox = SandboxManager.layer.pipe(Layer.provide([SandboxRefresh.layer, SandboxMove.layer]))
   const domain = Layer.mergeAll(Notifier.layer, sandbox, Machines.layer).pipe(Layer.provideMerge(core))
   const limits = UsageLimiter.layer.pipe(Layer.provideMerge(domain))
+  const plans = PlanSwitcher.layer.pipe(Layer.provideMerge(limits))
   return Layer.mergeAll(Scheduler.layer, Relays.layer, AppNotifications.layer).pipe(
-    Layer.provideMerge(limits),
+    Layer.provideMerge(plans),
     Layer.provideMerge(store)
   )
 }

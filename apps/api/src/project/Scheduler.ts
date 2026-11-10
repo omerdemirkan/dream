@@ -12,6 +12,7 @@ import { Alarm } from "./Alarm.ts"
 import { Core } from "./Core.ts"
 import { nextWakeAt } from "./Handlers.ts"
 import { Machines } from "./Machines.ts"
+import { PlanSwitcher } from "./PlanSwitch.ts"
 import { SandboxManager } from "./SandboxManager.ts"
 import { Singletons, Store } from "./Store.ts"
 import { UsageLimiter } from "./UsageLimits.ts"
@@ -26,6 +27,7 @@ export class Scheduler extends Context.Service<Scheduler, { readonly run: Effect
       const core = yield* Core
       const alarm = yield* Alarm
       const sandbox = yield* SandboxManager
+      const plans = yield* PlanSwitcher
       const machines = yield* Machines
       const users = yield* Users
       const limiter = yield* UsageLimiter
@@ -105,6 +107,9 @@ export class Scheduler extends Context.Service<Scheduler, { readonly run: Effect
               break
             case "sandbox-move":
               yield* sandbox.move
+              break
+            case "plan-switch":
+              yield* plans.run
               break
             case "mac-idle":
               yield* machines.macCheck

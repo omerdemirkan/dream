@@ -71,3 +71,30 @@ export const agentChoice = (
     ? {}
     : { agentEffort: choice.effort })
 })
+
+/**
+ * The model on `to` that stands where `model` stands on `from`, for a project moving to another plan: by rank among
+ * the models offered (the most capable for the most capable, the lightest for the lightest), so a choice made for
+ * capability or for lightness on the plan keeps its intent. A model `to` offers stays; any other name (a model the agent
+ * picked for a task, say) gets `to`'s lightest, since that's what such picks are usually for. Added November 2026.
+ */
+export const equivalentModel = (from: Harness, to: Harness, model: string): string => {
+  if (offersModel(to, model)) return model
+  const offered = AgentModels[to]
+  const rank = AgentModels[from].findIndex((option) => option.id === model)
+  const at = rank === -1 ? offered.length - 1 : Math.min(rank, offered.length - 1)
+  return offered[at]!.id
+}
+
+/**
+ * The project's choice on `to`, moving from its own harness: the counterpart of its model (`equivalentModel`), and
+ * the same effort, which both harnesses take. A project on Dream's default stays on it.
+ */
+export const agentChoiceOn = (
+  project: Pick<Project, "harness" | "agentModel" | "agentEffort">,
+  to: Harness
+): Pick<Project, "agentModel" | "agentEffort"> =>
+  agentChoice(to, {
+    ...(project.agentModel === undefined ? {} : { model: equivalentModel(project.harness, to, project.agentModel) }),
+    ...(project.agentEffort === undefined ? {} : { effort: project.agentEffort })
+  })

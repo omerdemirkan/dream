@@ -1,9 +1,11 @@
 import { Schema } from "effect"
 import { ProjectId, UserId } from "./Ids.ts"
-import type { ModelProvider } from "./Usage.ts"
-import { UsageLimitReached } from "./Usage.ts"
+import { ModelProvider, UsageLimitReached } from "./Usage.ts"
 
-/** The coding agent that runs the project. Fixed when the project is created. */
+/**
+ * The coding agent that runs the project: its plan's (`harnessOf`), chosen when the project is created. They can
+ * move the project to another plan they've connected later (`AppRpcs.SwitchPlan`), which changes it.
+ */
 export const Harness = Schema.Literals(["claude-code", "codex"])
 export type Harness = typeof Harness.Type
 
@@ -29,6 +31,28 @@ export type ReasoningEffort = typeof ReasoningEffort.Type
 export const ProjectPhase = Schema.Literals(["new", "interviewing", "exploring", "building", "live"])
 export type ProjectPhase = typeof ProjectPhase.Type
 
+/**
+ * A move of the project to another of their plans (`AppRpcs.SwitchPlan`), the latest one, as the project's record
+ * carries it:
+ * - `waiting`: asked for. The agent on `from` hands over first (a turn of its own, or the end of the one running),
+ *   and messages wait for the agent on `to`. Asking for `from` again cancels it, and the record goes.
+ * - `done`: the project runs on `to`, in a new conversation that picks up from the handoff.
+ * - `failed`: it couldn't move (`reason`), and runs on `from` as before.
+ *
+ * Added November 2026; older apps ignore it.
+ */
+export const PlanSwitch = Schema.Struct({
+  from: ModelProvider,
+  to: ModelProvider,
+  state: Schema.Literals(["waiting", "done", "failed"]),
+  requestedAt: Schema.DateTimeUtc,
+  /** `done` or `failed`: when. */
+  endedAt: Schema.optionalKey(Schema.DateTimeUtc),
+  /** `failed`: why, in a few words for their phone. */
+  reason: Schema.optionalKey(Schema.String)
+})
+export type PlanSwitch = typeof PlanSwitch.Type
+
 export const Project = Schema.Struct({
   id: ProjectId,
   ownerId: UserId,
@@ -49,6 +73,11 @@ export const Project = Schema.Struct({
   agentModel: Schema.optionalKey(Schema.NonEmptyString),
   /** Its top-level agent's reasoning effort, when they chose one other than Dream's default. Added November 2026. */
   agentEffort: Schema.optionalKey(ReasoningEffort),
+  /**
+   * Its latest move to another plan, while it waits and once it's over. Like `agentModel`, only the project's own
+   * record carries it. Added November 2026.
+   */
+  planSwitch: Schema.optionalKey(PlanSwitch),
   phase: ProjectPhase,
   /** The one line Home shows under the title: the Status card's `now`, else its `justDid`. */
   headline: Schema.optionalKey(Schema.String),

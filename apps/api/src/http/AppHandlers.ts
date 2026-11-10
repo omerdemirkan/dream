@@ -10,6 +10,7 @@ import {
   AuthedAppRpcs,
   CurrentUser,
   type Harness,
+  harnessOf,
   InvalidRequest,
   NoModelConnection,
   NotFound,
@@ -341,6 +342,20 @@ export const AuthedHandlers = AuthedAppRpcs.toLayer(
               ...(effort === undefined ? {} : { effort })
             })
           )
+        }),
+      SwitchPlan: ({ projectId, to }) =>
+        Effect.gen(function* () {
+          const project = yield* owned(projectId)
+          // Moving back to the plan it's on cancels a move, which needs no connection.
+          if (
+            harnessOf(to) !== project.harness &&
+            Option.isNone(yield* connections.connectedModel(project.ownerId, to))
+          ) {
+            return yield* new InvalidRequest({
+              message: `Connect your ${to === "chatgpt" ? "ChatGPT" : "Claude"} plan first.`
+            })
+          }
+          return yield* clients.use(projectId, (client) => client.SwitchPlan({ to: harnessOf(to) }))
         }),
       GetAccountUsage: ({ provider }) => Effect.flatMap(me, (userId) => usageReport.accountUsage(userId, provider)),
       GetProjectCosts: ({ projectId }) => Effect.andThen(owned(projectId), costReport.project(projectId)),

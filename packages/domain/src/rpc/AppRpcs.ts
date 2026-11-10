@@ -291,6 +291,19 @@ export class AuthedAppRpcs extends RpcGroup.make(
     error: Schema.Union([NotFound, InvalidRequest])
   }),
   /**
+   * Move this project to another of their connected plans (`to`): its agent hands over (a turn that writes a
+   * handoff, while its plan can run one), then the project runs on `to`'s harness in a new conversation that picks
+   * up from it, keeping everything on its machine. Their model choice moves to its counterpart (`equivalentModel`).
+   * It happens between turns, so the project's `planSwitch` says `waiting` until then; asking for the plan it's on
+   * cancels a move that's waiting. `InvalidRequest` when `to` isn't connected or the project is archived. Returns
+   * the project. Added November 2026.
+   */
+  Rpc.make("SwitchPlan", {
+    payload: { projectId: ProjectId, to: ModelProvider },
+    success: Project,
+    error: Schema.Union([NotFound, InvalidRequest])
+  }),
+  /**
    * Settings' plan card: how full each window of their `provider` subscription is, about how much of it their
    * projects used together, and each project's share of the week. Fails with `NotFound` when that subscription
    * isn't connected. Phones fall back to the connection's `usage` without project shares when an API lacks it.
