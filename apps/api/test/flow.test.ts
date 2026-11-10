@@ -2068,6 +2068,41 @@ describe("moving a project to another plan", () => {
     })
   )
 
+  it.live("a handoff that takes too long: the move goes anyway, stopping the turn", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project } = yield* setup(cloud)
+      yield* connectChatGpt(cloud)
+      yield* cloud.alarm(project.id)
+      const { env } = envFileOf(cloud, project.id)
+      const dreamd = yield* cloud.sandbox(env.DREAM_PROJECT_TOKEN)
+      const idea = eventsOf(cloud.world.delivered.at(-1)).map((e) => e.id)
+      yield* dreamd.ReportTurn({ state: "started", eventIds: idea })
+      yield* dreamd.ReportTurn({ state: "finished", eventIds: idea })
+      yield* cloud.phone.SwitchPlan({ projectId: project.id, to: "chatgpt" })
+      yield* cloud.alarm(project.id)
+      const asking = eventsOf(cloud.world.delivered.at(-1))[0]!
+      yield* dreamd.ReportTurn({ state: "started", eventIds: [asking.id] })
+      // The turn runs on past the deadline.
+      const instance = yield* Effect.promise(() => cloud.project(project.id))
+      const core = Context.get(instance.context, Core)
+      const store = Context.get(instance.context, Store)
+      const record = yield* core.sandbox
+      const now = yield* DateTime.now
+      yield* core.saveSandbox({
+        ...record,
+        planSwitch: { ...record.planSwitch!, deadline: DateTime.subtract(now, { seconds: 1 }) }
+      })
+      yield* store.setTimer("plan-switch", DateTime.toEpochMillis(now))
+      yield* cloud.alarm(project.id)
+      assert.strictEqual(envFileOf(cloud, project.id).env.DREAM_HARNESS, "codex")
+      assert.isFalse((yield* core.sandbox).working)
+      const told = eventsOf(cloud.world.delivered.at(-1)).find((e) => e._tag === "PlanSwitched")
+      assert.isTrue(told?._tag === "PlanSwitched" && told.outcome === "moved" && told.handoff === undefined)
+      yield* cloud.close
+    })
+  )
+
   it.live(
     "a move that can't happen leaves the project on its plan, and the agent that stays hears why",
     () =>

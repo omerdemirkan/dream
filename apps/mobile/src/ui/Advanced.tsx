@@ -9,7 +9,7 @@
 import type { ModelProvider, Project, ReasoningEffort, UsageLimits } from "@dream/domain"
 import { agentChoice, agentOf, ReasoningEfforts } from "@dream/domain"
 import * as Haptics from "expo-haptics"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Alert, Keyboard, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import Animated, { Easing, SlideInDown } from "react-native-reanimated"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
@@ -339,6 +339,11 @@ export function ProjectAgent(props: {
   // What they chose here, ahead of the project record catching up over the live stream.
   const [chosen, setChosen] = useState<Pick<Project, "agentModel" | "agentEffort"> | undefined>(undefined)
   const [changed, setChanged] = useState(false)
+  // A move to another plan brings its own model names; what was chosen on the old one no longer applies.
+  useEffect(() => {
+    setChosen(undefined)
+    setChanged(false)
+  }, [props.project.harness])
   const current = { harness: props.project.harness, ...(chosen ?? props.project) }
   const { model, effort } = agentOf(current)
   const change = (next: { readonly model: string; readonly effort: ReasoningEffort }) => {
