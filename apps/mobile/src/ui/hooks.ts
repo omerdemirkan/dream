@@ -18,6 +18,7 @@ import { DateTime, Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react"
 import type { HostInstance } from "react-native"
+import { KeyboardController, KeyboardEvents } from "react-native-keyboard-controller"
 import type { ProjectState } from "../data/projectState.ts"
 import { connectedPlans, planMissing } from "../data/plans.ts"
 import { randomUuid } from "../data/Session.ts"
@@ -123,4 +124,26 @@ export function useProjectTitle() {
   return (id: ProjectId) =>
     (projects.find((summary) => summary.project.id === id) ?? archived.find((row) => row.project.id === id))?.project
       .title
+}
+
+/**
+ * Whether the keyboard is up, or on its way up: false as soon as it starts going down. The library's
+ * `useKeyboardState` turns `isVisible` false only once the keyboard has finished hiding, which held the header (the
+ * keyboard's button in place of the bell and ring) and the compact Status card through the whole slide down.
+ */
+export const useKeyboardShown = (): boolean => {
+  const [shown, setShown] = useState(() => KeyboardController.isVisible())
+  useEffect(() => {
+    const subscriptions = [
+      KeyboardEvents.addListener("keyboardWillShow", () => setShown(true)),
+      KeyboardEvents.addListener("keyboardWillHide", () => setShown(false)),
+      KeyboardEvents.addListener("keyboardDidHide", () => setShown(false))
+    ]
+    // An event between the first render and the listeners above would otherwise be missed.
+    setShown(KeyboardController.isVisible())
+    return () => {
+      for (const subscription of subscriptions) subscription.remove()
+    }
+  }, [])
+  return shown
 }

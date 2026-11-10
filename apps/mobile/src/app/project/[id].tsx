@@ -26,7 +26,7 @@ import { AsyncResult } from "effect/reactivity"
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Keyboard, Text, type TextInputInstance, View } from "react-native"
-import { KeyboardStickyView, useKeyboardState } from "react-native-keyboard-controller"
+import { KeyboardStickyView } from "react-native-keyboard-controller"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { dotOf, headerLine, presenceOf } from "../../data/presence.ts"
 import type { ProjectState } from "../../data/projectState.ts"
@@ -58,7 +58,7 @@ import { ChatComposer } from "../../ui/Composer.tsx"
 import { HoldMenu } from "../../ui/HoldMenu.tsx"
 import { ThreadView } from "../../ui/Thread.tsx"
 import { LayerBoundary } from "../../ui/ErrorBoundary.tsx"
-import { useOpenMessage, usePlanMissing, useProject, useRequestId } from "../../ui/hooks.ts"
+import { useKeyboardShown, useOpenMessage, usePlanMissing, useProject, useRequestId } from "../../ui/hooks.ts"
 import { useOpenOptions } from "../../ui/Options.tsx"
 import { hideKeyboard, IconButton } from "../../ui/kit.tsx"
 import { PresenceTile, StateLineText, useTickingNow } from "../../ui/Presence.tsx"
@@ -269,7 +269,7 @@ function Project(props: {
 
   // The card folds to one line while they read back through Chat, or type.
   const [away, setAway] = useState(false)
-  const typing = useKeyboardState((k) => k.isVisible)
+  const typing = useKeyboardShown()
   const [cardHeight, setCardHeight] = useState(0)
   const onCardHeight = useCallback(
     (height: number) => setCardHeight((h) => (Math.abs(h - height) > 1 ? height : h)),

@@ -10,7 +10,7 @@ import { Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
 import { useEffect, useRef, useState } from "react"
 import { Keyboard, type ScrollViewInstance, Text, type TextInputInstance, View } from "react-native"
-import { KeyboardChatScrollView, KeyboardStickyView, useKeyboardState } from "react-native-keyboard-controller"
+import { KeyboardChatScrollView, KeyboardStickyView } from "react-native-keyboard-controller"
 import Animated, { FadeOut, SlideInDown } from "react-native-reanimated"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { dayLabel, sameDay, timeLabel } from "../data/format.ts"
@@ -23,7 +23,7 @@ import { useAction } from "./actions.ts"
 import { useStagedAttachments } from "./Attachments.tsx"
 import { ChatActivity, Holdable, MessageBody } from "./Chat.tsx"
 import { ChatComposer } from "./Composer.tsx"
-import { useNow, useRequestId } from "./hooks.ts"
+import { useKeyboardShown, useNow, useRequestId } from "./hooks.ts"
 import { hideKeyboard, IconButton } from "./kit.tsx"
 import { color, gutter } from "./theme.ts"
 
@@ -63,7 +63,7 @@ function ThreadLayer(
   const scroll = useRef<ScrollViewInstance>(null)
   const { root, replies } = threadOf(state.messages, open.messageId, props.fetched)
   const [highlight, setHighlight] = useState(open.highlight)
-  const typing = useKeyboardState((k) => k.isVisible)
+  const typing = useKeyboardShown()
 
   // Reply (from a menu, or the expanded view) gives the composer the keyboard, again each time it's asked; opening it
   // otherwise (its folded line, a notification) puts away the keyboard Chat's composer had.
