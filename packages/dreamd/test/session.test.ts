@@ -167,3 +167,85 @@ describe("the Codex handoff", () => {
     }).pipe(Effect.provide(NodeServices.layer))
   )
 })
+
+describe("the handoff to another harness", () => {
+  const claudeLine = (type: "user" | "assistant", content: unknown, extra: Record<string, unknown> = {}) =>
+    JSON.stringify({ type, message: { role: type, content }, ...extra })
+
+  it("reads a Claude Code transcript: the summary it last compacted to, and the exchanges after it", () => {
+    const transcript = [
+      claudeLine("user", "It's Monday.\n\nWhat woke you:\n\nThey said: a strength log"),
+      claudeLine("assistant", [{ type: "text", text: "Starting on it." }]),
+      claudeLine("user", "This session is being continued from a previous conversation. Summary: a strength log.", {
+        isCompactSummary: true
+      }),
+      claudeLine("user", "<system-reminder>Skills changed</system-reminder>"),
+      claudeLine("user", [{ type: "tool_result", content: "ok" }]),
+      claudeLine("assistant", [
+        { type: "thinking", thinking: "hm" },
+        { type: "tool_use", name: "Bash", input: { command: "ls" } },
+        { type: "text", text: "Charts are next." }
+      ]),
+      claudeLine("assistant", [{ type: "text", text: "A helper's words" }], { isSidechain: true }),
+      JSON.stringify({ type: "system", subtype: "compact_boundary" }),
+      claudeLine("user", "It's Tuesday.\n\nWhat woke you:\n\nThey said: track sleep")
+    ].join("\n")
+    const { recent, summary } = Session.claudeTranscript(transcript)
+    assert.deepStrictEqual(Option.getOrUndefined(summary)?.endsWith("Summary: a strength log."), true)
+    assert.deepStrictEqual(recent, [
+      { from: "you", text: "Charts are next." },
+      { from: "dream", text: "It's Tuesday.\n\nWhat woke you:\n\nThey said: track sleep" }
+    ])
+  })
+
+  it("takes a Codex compaction's summary when it wrote one", () => {
+    const compacted = (message: string) => JSON.stringify({ type: "compacted", payload: { message } })
+    assert.strictEqual(Option.getOrUndefined(Session.codexSummary(compacted("Summary A"))), "Summary A")
+    // Made on OpenAI's side, a compaction leaves no text: an older summary is out of date by then.
+    assert.isTrue(Option.isNone(Session.codexSummary([compacted("Summary A"), compacted("")].join("\n"))))
+  })
+
+  it.effect("opens the new conversation with where the old one is and how it ended, either way", () =>
+    Effect.gen(function* () {
+      const home = tempDir()
+      const dir = join(home, ".claude", "projects", "-home-user-project")
+      mkdirSync(dir, { recursive: true })
+      const file = join(dir, "c1.jsonl")
+      writeFileSync(
+        file,
+        [claudeLine("user", "REMEMBER: apple"), claudeLine("assistant", [{ type: "text", text: "Remembered." }])].join(
+          "\n"
+        )
+      )
+      const toCodex = yield* Session.planHandoff(claude, "codex", home)
+      assert.include(toCodex, "ran on Claude Code")
+      assert.include(toCodex, "on Codex, in a new conversation")
+      assert.include(toCodex, `Its log is ${file}`)
+      assert.include(toCodex, "[Dream]\nREMEMBER: apple\n\n[Its agent]\nRemembered.")
+      assert.notInclude(toCodex, "summarized")
+
+      const day = join(home, ".codex", "sessions", "2026", "11", "10")
+      mkdirSync(day, { recursive: true })
+      const rollout = join(day, "rollout-2026-11-10T01-00-00-t1.jsonl")
+      writeFileSync(
+        rollout,
+        `${JSON.stringify({ type: "compacted", payload: { message: "They lift on Mondays." } })}\n${line("assistant", "Done.")}\n`
+      )
+      const toClaude = yield* Session.planHandoff(codex, "claude-code", home)
+      assert.include(toClaude, `Its log is ${rollout}`)
+      assert.include(
+        toClaude,
+        "When it last compacted, Codex summarized the conversation up to then:\n\nThey lift on Mondays."
+      )
+      const nothing = yield* Session.planHandoff({ harness: "codex", sessionId: "s" }, "claude-code", home)
+      assert.include(nothing, "Its log wasn't found")
+    }).pipe(Effect.provide(NodeServices.layer))
+  )
+
+  it("starts a new conversation on the new harness, keeping a handoff a conversation never got to", () => {
+    const next = Session.switched(claude, "codex", "dream-prj_test-2", "HANDOFF")
+    assert.deepStrictEqual(next, { harness: "codex", sessionId: "dream-prj_test-2", preamble: "HANDOFF" })
+    const unstarted = { harness: "codex", sessionId: "s", preamble: "FIRST" } as const
+    assert.strictEqual(Session.switched(unstarted, "claude-code", "s2", "SECOND").preamble, "FIRST")
+  })
+})

@@ -1878,6 +1878,233 @@ describe("two plans", () => {
   )
 })
 
+describe("moving a project to another plan", () => {
+  /** The project's own record, as its live snapshot carries it. */
+  const projectOf = (cloud: Cloud, projectId: ProjectId) =>
+    Effect.gen(function* () {
+      const core = Context.get((yield* Effect.promise(() => cloud.project(projectId))).context, Core)
+      return yield* core.project.pipe(Effect.orDie)
+    })
+  const eventsOf = (delivery: { readonly events: ReadonlyArray<unknown> } | undefined) =>
+    (delivery?.events ?? []) as ReadonlyArray<AgentEvent>
+
+  it.live(
+    "its agent hands over, then it runs on the other plan with everything it had, and back",
+    () =>
+      Effect.gen(function* () {
+        const cloud = yield* makeCloud()
+        const { project } = yield* setup(cloud)
+        yield* connectChatGpt(cloud)
+        yield* cloud.phone.SetAgentModel({ projectId: project.id, model: "sonnet", effort: "low" })
+        yield* cloud.alarm(project.id)
+        const { sandbox, env } = envFileOf(cloud, project.id)
+        const claudeD = yield* cloud.sandbox(env.DREAM_PROJECT_TOKEN)
+        const idea = eventsOf(cloud.world.delivered.at(-1)).map((e) => e.id)
+        yield* claudeD.ReportTurn({ state: "started", eventIds: idea })
+        yield* claudeD.ReportTurn({ state: "finished", eventIds: idea })
+        const digest = yield* claudeD.ScheduleWake({
+          when: { _tag: "Cron", expression: "0 7 * * 1" },
+          why: "Weekly digest",
+          task: { brief: "Write the week's digest", model: "sonnet", effort: "low" }
+        })
+
+        const asked = yield* cloud.phone.SwitchPlan({ projectId: project.id, to: "chatgpt" })
+        assert.strictEqual(asked.harness, "claude-code")
+        assert.deepStrictEqual(
+          [asked.planSwitch?.from, asked.planSwitch?.to, asked.planSwitch?.state],
+          ["claude", "chatgpt", "waiting"]
+        )
+        // The agent on Claude is asked for a handoff, alone.
+        yield* cloud.phone.SendMessage({ projectId: project.id, text: "Also track sleep" })
+        yield* cloud.alarm(project.id)
+        const asking = eventsOf(cloud.world.delivered.at(-1))
+        assert.deepStrictEqual(
+          asking.map((e) => e._tag),
+          ["PlanSwitching"]
+        )
+        const handoffEvent = asking[0]!
+        assert.isTrue(handoffEvent._tag === "PlanSwitching" && handoffEvent.from === "claude-code")
+        const handoff = handoffEvent._tag === "PlanSwitching" ? handoffEvent.handoff : ""
+        assert.match(handoff, /^\/home\/user\/\.dream\/handoffs\/.*-to-codex\.md$/)
+        assert.include(renderAgentEvent(handoffEvent), handoff)
+
+        // It writes it in a turn; their message waits for the new agent meanwhile.
+        yield* claudeD.ReportTurn({ state: "started", eventIds: [handoffEvent.id] })
+        const delivered = cloud.world.delivered.length
+        yield* cloud.alarm(project.id)
+        assert.strictEqual(cloud.world.delivered.length, delivered)
+        sandbox.files.set(handoff, "# Handoff\nThey lift on Mondays.")
+        yield* claudeD.ReportTurn({ state: "finished", eventIds: [handoffEvent.id] })
+        yield* Effect.sleep("5100 millis")
+        yield* cloud.alarm(project.id)
+
+        // The same machine, now on ChatGPT: its credential, Codex, and the counterpart of the model they chose.
+        const after = envFileOf(cloud, project.id)
+        assert.strictEqual(after.sandbox, sandbox)
+        assert.strictEqual(sandbox.state, "running")
+        assert.strictEqual(after.env.DREAM_HARNESS, "codex")
+        assert.strictEqual(after.env.DREAM_MODEL, "gpt-6-luna")
+        assert.strictEqual(after.env.DREAM_EFFORT, "low")
+        assert.include(JSON.stringify(sandbox.rules["chatgpt.com"]), chatGptToken)
+        assert.notProperty(sandbox.rules, "api.anthropic.com")
+        const moved = yield* projectOf(cloud, project.id)
+        assert.strictEqual(moved.harness, "codex")
+        assert.strictEqual(moved.agentModel, "gpt-6-luna")
+        assert.strictEqual(moved.planSwitch?.state, "done")
+        assert.strictEqual(
+          (yield* cloud.phone.ListProjects()).find((s) => s.project.id === project.id)?.project.harness,
+          "codex"
+        )
+        assert.strictEqual((yield* cloud.phone.GetProjectUsage({ projectId: project.id })).provider, "chatgpt")
+
+        // The new agent hears it with what waited: the handoff, its model, the task it changed, and the latest of Chat.
+        const told = eventsOf(cloud.world.delivered.at(-1))
+        assert.deepStrictEqual(told.map((e) => e._tag).sort(), ["PlanSwitched", "UserMessage"])
+        const switched = told.find((e) => e._tag === "PlanSwitched")!
+        assert.isTrue(switched._tag === "PlanSwitched")
+        if (switched._tag === "PlanSwitched") {
+          assert.strictEqual(switched.outcome, "moved")
+          assert.strictEqual(switched.handoff, handoff)
+          assert.deepStrictEqual([switched.model, switched.modelBefore], ["gpt-6-luna", "sonnet"])
+          assert.deepStrictEqual(switched.tasks, [
+            { wakeId: digest.id, why: "Weekly digest", from: "sonnet", to: "gpt-6-luna" }
+          ])
+          assert.deepStrictEqual(switched.chat?.map((line) => [line.from, line.text]).at(-1), [
+            "user",
+            "Also track sleep"
+          ])
+          assert.include(renderAgentEvent(switched), `read it before anything else`)
+        }
+        const codexD = yield* cloud.sandbox(after.env.DREAM_PROJECT_TOKEN)
+        const wakes = yield* codexD.ListWakes()
+        assert.strictEqual(wakes.find((w) => w.id === digest.id)?.task?.model, "gpt-6-luna")
+
+        // And back, the same way.
+        yield* codexD.ReportTurn({ state: "started", eventIds: told.map((e) => e.id) })
+        yield* codexD.ReportTurn({ state: "finished", eventIds: told.map((e) => e.id) })
+        yield* cloud.phone.SwitchPlan({ projectId: project.id, to: "claude" })
+        yield* cloud.alarm(project.id)
+        const back = eventsOf(cloud.world.delivered.at(-1))[0]!
+        assert.isTrue(back._tag === "PlanSwitching" && back.from === "codex" && back.to === "claude-code")
+        yield* codexD.ReportTurn({ state: "started", eventIds: [back.id] })
+        yield* codexD.ReportTurn({ state: "finished", eventIds: [back.id] })
+        yield* Effect.sleep("5100 millis")
+        yield* cloud.alarm(project.id)
+        const home = envFileOf(cloud, project.id)
+        assert.strictEqual(home.env.DREAM_HARNESS, "claude-code")
+        assert.strictEqual(home.env.DREAM_MODEL, "sonnet")
+        assert.property(sandbox.rules, "api.anthropic.com")
+        assert.notProperty(sandbox.rules, "chatgpt.com")
+        const again = eventsOf(cloud.world.delivered.at(-1)).find((e) => e._tag === "PlanSwitched")
+        // It wrote no handoff this time; the new agent is told so.
+        assert.isTrue(again?._tag === "PlanSwitched" && again.outcome === "moved" && again.handoff === undefined)
+        yield* cloud.close
+      }),
+    30_000
+  )
+
+  it.live("asking for the plan it's on cancels a move that waits, and the agent never hears of it", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project } = yield* setup(cloud)
+      yield* connectChatGpt(cloud)
+      yield* cloud.alarm(project.id)
+      const { env } = envFileOf(cloud, project.id)
+      const dreamd = yield* cloud.sandbox(env.DREAM_PROJECT_TOKEN)
+      const idea = eventsOf(cloud.world.delivered.at(-1)).map((e) => e.id)
+      // Mid-turn: the handoff would go to the running turn.
+      yield* dreamd.ReportTurn({ state: "started", eventIds: idea })
+      yield* cloud.phone.SwitchPlan({ projectId: project.id, to: "chatgpt" })
+      const kept = yield* cloud.phone.SwitchPlan({ projectId: project.id, to: "claude" })
+      assert.notProperty(kept, "planSwitch")
+      assert.strictEqual(kept.harness, "claude-code")
+      yield* dreamd.ReportTurn({ state: "finished", eventIds: idea })
+      const delivered = cloud.world.delivered.length
+      yield* cloud.alarm(project.id)
+      assert.strictEqual(cloud.world.delivered.length, delivered)
+      assert.strictEqual(envFileOf(cloud, project.id).env.DREAM_HARNESS, "claude-code")
+      // A plan they haven't connected is refused.
+      yield* cloud.phone.DisconnectModelConnection({
+        connectionId: (yield* cloud.phone.ListModelConnections()).find((c) => c.provider === "chatgpt")!.id
+      })
+      const refused = yield* Effect.flip(cloud.phone.SwitchPlan({ projectId: project.id, to: "chatgpt" }))
+      assert.strictEqual(refused._tag, "InvalidRequest")
+      yield* cloud.close
+    })
+  )
+
+  it.live("at its plan's limit it moves at once without a handoff, and the pause ends", () =>
+    Effect.gen(function* () {
+      const cloud = yield* makeCloud()
+      const { project } = yield* setup(cloud)
+      yield* connectChatGpt(cloud)
+      yield* cloud.alarm(project.id)
+      const { env } = envFileOf(cloud, project.id)
+      const dreamd = yield* cloud.sandbox(env.DREAM_PROJECT_TOKEN)
+      const idea = eventsOf(cloud.world.delivered.at(-1)).map((e) => e.id)
+      yield* dreamd.ReportTurn({ state: "started", eventIds: idea })
+      yield* dreamd.ReportTurn({ state: "finished", eventIds: idea })
+      const now = yield* DateTime.now
+      yield* dreamd.ReportUsage({
+        usage: {
+          provider: "claude",
+          weekly: { usedPercent: 100 },
+          limitedUntil: { window: "weekly", until: DateTime.add(now, { days: 3 }) },
+          observedAt: now
+        }
+      })
+      assert.isDefined((yield* cloud.phone.ListProjects()).find((s) => s.project.id === project.id)?.pausedUntil)
+      yield* cloud.phone.SendMessage({ projectId: project.id, text: "Carry on with the charts" })
+      yield* cloud.phone.SwitchPlan({ projectId: project.id, to: "chatgpt" })
+      yield* cloud.alarm(project.id)
+      assert.strictEqual(envFileOf(cloud, project.id).env.DREAM_HARNESS, "codex")
+      assert.isUndefined((yield* cloud.phone.ListProjects()).find((s) => s.project.id === project.id)?.pausedUntil)
+      const told = eventsOf(cloud.world.delivered.at(-1))
+      assert.deepStrictEqual(told.map((e) => e._tag).sort(), ["PlanSwitched", "UserMessage"])
+      const switched = told.find((e) => e._tag === "PlanSwitched")
+      assert.isTrue(switched?._tag === "PlanSwitched" && switched.handoff === undefined)
+      assert.include(renderAgentEvent(switched!), "didn't get to write you a handoff")
+      yield* cloud.close
+    })
+  )
+
+  it.live(
+    "a move that can't happen leaves the project on its plan, and the agent that stays hears why",
+    () =>
+      Effect.gen(function* () {
+        const cloud = yield* makeCloud()
+        const { project } = yield* setup(cloud)
+        const chatgpt = yield* connectChatGpt(cloud)
+        yield* cloud.alarm(project.id)
+        const { sandbox, env } = envFileOf(cloud, project.id)
+        const dreamd = yield* cloud.sandbox(env.DREAM_PROJECT_TOKEN)
+        const idea = eventsOf(cloud.world.delivered.at(-1)).map((e) => e.id)
+        yield* dreamd.ReportTurn({ state: "started", eventIds: idea })
+        yield* dreamd.ReportTurn({ state: "finished", eventIds: idea })
+        yield* cloud.phone.SwitchPlan({ projectId: project.id, to: "chatgpt" })
+        yield* cloud.alarm(project.id)
+        const asking = eventsOf(cloud.world.delivered.at(-1))[0]!
+        yield* dreamd.ReportTurn({ state: "started", eventIds: [asking.id] })
+        // Their ChatGPT sign-in goes while the agent writes its handoff.
+        yield* cloud.phone.DisconnectModelConnection({ connectionId: chatgpt.id })
+        yield* dreamd.ReportTurn({ state: "finished", eventIds: [asking.id] })
+        yield* Effect.sleep("5100 millis")
+        yield* cloud.alarm(project.id)
+        assert.strictEqual(envFileOf(cloud, project.id).env.DREAM_HARNESS, "claude-code")
+        assert.property(sandbox.rules, "api.anthropic.com")
+        const stayed = yield* projectOf(cloud, project.id)
+        assert.strictEqual(stayed.harness, "claude-code")
+        assert.strictEqual(stayed.planSwitch?.state, "failed")
+        assert.include(stayed.planSwitch?.reason ?? "", "isn't connected")
+        const told = eventsOf(cloud.world.delivered.at(-1)).find((e) => e._tag === "PlanSwitched")
+        assert.isTrue(told?._tag === "PlanSwitched" && told.outcome === "failed")
+        assert.include(renderAgentEvent(told!), "you stay its agent")
+        yield* cloud.close
+      }),
+    30_000
+  )
+})
+
 describe("machine size", () => {
   it.live("a new project gets the standard size, and a move to large carries its home over between turns", () =>
     Effect.gen(function* () {

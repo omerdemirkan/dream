@@ -9,7 +9,7 @@ import {
   AgentEvent,
   type Attachment,
   DaemonEnv,
-  type EventId,
+  EventId,
   type MediaId,
   type TurnUsage,
   type WakeId
@@ -17,7 +17,7 @@ import {
 import { Clock, Context, DateTime, Deferred, Duration, Effect, Layer, Option, Queue, Ref } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { TestClock } from "effect/testing"
-import { Agent, backoff } from "../src/Agent.ts"
+import { Agent, agentOnly, backoff, staleFor } from "../src/Agent.ts"
 import { Progress } from "../src/progress/Progress.ts"
 import { Summarizer } from "../src/progress/Summarizer.ts"
 import { Api, type Report } from "../src/Api.ts"
@@ -587,4 +587,19 @@ describe("Agent, when background work stops before it reports back", () => {
       assert.include(third, "- command: Start the dev server")
     }).pipe(Effect.scoped)
   )
+})
+
+describe("a handoff asked of another harness", () => {
+  it("is stale once the project has moved, and only then", () => {
+    const asked = AgentEvent.cases.PlanSwitching.make({
+      id: EventId.make("evt_handoff"),
+      at: DateTime.makeUnsafe("2026-11-10T15:00:00Z"),
+      from: "claude-code",
+      to: "codex",
+      handoff: "/home/user/.dream/handoffs/x.md"
+    })
+    assert.isTrue(staleFor("codex")(asked))
+    assert.isFalse(staleFor("claude-code")(asked))
+    assert.isTrue(agentOnly(asked))
+  })
 })

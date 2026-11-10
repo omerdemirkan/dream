@@ -46,6 +46,8 @@ Not everything the models read is written here. The turn prompt and a few notes 
 | A task's first message: the time, the agent's reason, and its brief | `renderTaskPrompt`, same file | The user message that starts a task's session (`packages/dreamd/src/Tasks.ts`) |
 | "Dream updated its guidance for you", after a prompt or skill change | `renderGuidanceNote`, same file | Before the turn prompt, once, in a Claude Code session (`Session.ts`) |
 | The handoff to a new Codex thread after a prompt or skill change | `renderHandoff`, same file | Before the turn prompt in the new thread (`Session.ts`) |
+| The handoff into a new conversation on another harness, after they move the project to another plan: the old log, the summary the old harness last compacted to, how it ended | `renderPlanHandoff`, same file | Before the turn prompt in the new conversation (`Session.ts`) |
+| The request for a handoff before that move (`PlanSwitching`), and how the move went (`PlanSwitched`: the handoff, the model, the tasks Dream changed, the latest of Chat) | `renderAgentEvent` in `packages/domain/src/AgentEvent.ts` | The outgoing agent's last turn; the new agent's first |
 | What Claude Code's `AskUserQuestion` is turned into, and the final-text rule | `packages/dreamd/src/harness/PersonChannel.ts` | Tool results in the session |
 | Each skill's name and description, which decide when it gets read | `skills/<name>/frontmatter.yaml` | The harness's list of skills, on every turn |
 | Every `dream` command's description, flags and examples | `packages/dreamd/src/Cli.ts` | What `dream <command> --help` prints |

@@ -316,6 +316,9 @@ export const fakeEnvd = (world: FakeWorld) => {
           world.processes.push({ sandboxId: sandbox.sandboxId, command: options.command, pty: false })
           for (const [key, result] of world.runResults) if (options.command.includes(key)) return result
           const files = world.sandboxes.get(sandbox.sandboxId)?.files
+          // Whether a file is there and has something in it (a handoff the agent wrote).
+          const written = /^test -s '([^']+)'$/.exec(options.command)
+          if (written !== null) return { exitCode: (files?.get(written[1]!) ?? "") === "" ? 1 : 0, output: "" }
           if (files !== undefined) emulateFileCommands(files, options.command)
           // A move, as the real scripts do it: the home directory comes over, and nothing was listening.
           const fromId = /49983-([^.]+)\./.exec(options.envs?.FROM_URL ?? "")?.[1]

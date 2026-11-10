@@ -6,7 +6,7 @@ import { Hold } from "../src/Hold.ts"
 import { Inbox } from "../src/Inbox.ts"
 import { ProjectLog } from "../src/Log.ts"
 import { Machine } from "../src/Machine.ts"
-import { type TaskRunInput, Tasks } from "../src/Tasks.ts"
+import { modelHere, type TaskRunInput, Tasks } from "../src/Tasks.ts"
 import { baseLayer, tempDir, wakeWithCommand, wakeWithTask } from "./support.ts"
 
 const setup = (
@@ -129,4 +129,13 @@ describe("scheduled tasks", () => {
       assert.isTrue(sent.some((report) => report._tag === "Usage" && report.usage.weekly?.usedPercent === 36))
     }).pipe(Effect.scoped)
   )
+})
+
+describe("a task's model after a move to another plan", () => {
+  it("is the counterpart of one the old plan offered, and otherwise as it was", () => {
+    assert.strictEqual(modelHere("codex", "sonnet"), "gpt-6-luna")
+    assert.strictEqual(modelHere("claude-code", "gpt-6-astra"), "fable")
+    assert.strictEqual(modelHere("codex", "gpt-6.1-sol"), "gpt-6.1-sol")
+    assert.strictEqual(modelHere("claude-code", "haiku"), "haiku")
+  })
 })
