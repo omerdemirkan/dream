@@ -82,7 +82,7 @@ xcrun simctl launch --terminate-running-process booted build.omer.dream \
 | `/new?advanced=open` | New idea with its Advanced sheet open: the plan (with `two-plans`), the agent's model and effort, usage limits |
 | `/new?starter=run-club-bot` | New idea filled with a starter's draft, the cursor after it. Ids are in `src/data/ideas.ts` |
 | `/project/<id>?options=<messageId>&option=<n>` | A question's option previews full screen, at option n (from 0): `msg_cabinpick` (Cabin: phone screens, a desktop page, a recording), `msg_timersound` (Lift Log, after `options-sounds`: three sounds) |
-| `/project/<id>?sheet=usage` | The usage sheet over the project (the ring in its header opens it), with its limits and its agent's model and effort; with `two-plans`, the line under the agent that moves it to the other plan |
+| `/project/<id>?sheet=usage` | The usage sheet over the project (the ring in its header opens it), with its limits and its agent's model and effort; with `two-plans`, the line under the agent that moves it to the other plan; `?sheet=plan` also asks to move it |
 | `/project/<id>?sheet=notifications` | The Notifications sheet: the project's apps that notify, their controls, what they sent (the bell opens it) |
 | `/project/<id>?tab=chat&attach=sample` · `/new?attach=sample` | Chat's composer, or a new idea, with two photos and a PDF attached (uploading, then ready) |
 | `/connect` · `/settings` | Subscription connect flow; Settings, the index of one-line rows (see "Settings" below) |

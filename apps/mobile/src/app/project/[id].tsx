@@ -4,7 +4,8 @@
  *
  * `?tab=status` opens the roadmap and `?tab=chat` folds it; `?focus=<messageId>`
  * opens that question or access request expanded (deep links and notifications
- * use these). `?sheet=usage` opens the usage sheet, as tapping the ring in the header does, and
+ * use these). `?sheet=usage` opens the usage sheet, as tapping the ring in the header does (`?sheet=plan` also asks
+ * to move the project to their other plan, as tapping the line under its agent does), and
  * `?sheet=notifications` the Notifications sheet, as the bell does (shown once one of its apps has asked to notify
  * them). `?work=<workstream id>` writes to that workstream, as tapping its row on the card does.
  * `?options=<messageId>&option=<n>` opens a question's option previews full screen at option n.
@@ -239,10 +240,14 @@ function Project(props: {
   }, [])
 
   const [usage, setUsage] = useState(false)
+  const [askToMove, setAskToMove] = useState(false)
   const openNotifications = useOpenAppNotifications()
   useEffect(() => {
     if (props.sheet === "usage") setUsage(true)
-    else if (props.sheet === "notifications") openNotifications(props.projectId)
+    else if (props.sheet === "plan") {
+      setUsage(true)
+      setAskToMove(true)
+    } else if (props.sheet === "notifications") openNotifications(props.projectId)
     else return
     router.setParams({ sheet: undefined })
   }, [props.sheet, props.projectId, router, openNotifications])
@@ -431,9 +436,12 @@ function Project(props: {
       <UsageSheet
         projectId={props.projectId}
         title={project?.title ?? ""}
-        agent={project ? <ProjectAgent project={project} /> : null}
+        agent={project ? <ProjectAgent project={project} askToMove={askToMove} /> : null}
         open={usage}
-        onClose={() => setUsage(false)}
+        onClose={() => {
+          setUsage(false)
+          setAskToMove(false)
+        }}
         footer={<ProjectCostsSection projectId={props.projectId} />}
       />
       <AppNotificationsSheet projectId={props.projectId} title={project?.title ?? ""} />

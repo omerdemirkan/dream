@@ -9,7 +9,7 @@
 import type { ModelProvider, Project, ReasoningEffort, UsageLimits } from "@dream/domain"
 import { agentChoice, agentOf, ReasoningEfforts } from "@dream/domain"
 import * as Haptics from "expo-haptics"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Alert, Keyboard, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import Animated, { Easing, SlideInDown } from "react-native-reanimated"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
@@ -333,6 +333,8 @@ function Segmented<A extends string>(props: {
  */
 export function ProjectAgent(props: {
   readonly project: Pick<Project, "id" | "harness" | "agentModel" | "agentEffort" | "planSwitch">
+  /** Ask at once whether to move it to their other plan (`?sheet=plan`). */
+  readonly askToMove?: boolean
 }) {
   const save = useAction(setAgentModelFn)
   const [open, setOpen] = useState(false)
@@ -387,7 +389,7 @@ export function ProjectAgent(props: {
         />
       ) : null}
       {changed ? <Footnote>It switches at its next turn.</Footnote> : null}
-      <PlanRow project={props.project} />
+      <PlanRow project={props.project} askToMove={props.askToMove === true} />
     </>
   )
 }
@@ -396,11 +398,25 @@ export function ProjectAgent(props: {
  * The plan the project runs on, and a move to another of theirs: one quiet line, there only for someone with more
  * than one plan (or a move under way). The move asks first; staying, while one waits, doesn't.
  */
-function PlanRow(props: { readonly project: Pick<Project, "id" | "harness" | "planSwitch"> }) {
+function PlanRow(props: {
+  readonly project: Pick<Project, "id" | "harness" | "planSwitch">
+  readonly askToMove: boolean
+}) {
   const plans = useConnectedPlans()
   const now = useNow(60_000)
   const move = useAction(switchPlanFn)
   const line = planLine(props.project, plans, now)
+  const asked = useRef(false)
+  const offer = line?.action?.confirm === undefined ? undefined : line.action
+  useEffect(() => {
+    if (!props.askToMove || asked.current || offer === undefined) return
+    // Once the sheet has slid up.
+    const timer = setTimeout(() => {
+      asked.current = true
+      go(offer)
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [props.askToMove, offer?.to])
   if (line === undefined) return null
   const go = (action: NonNullable<PlanLine["action"]>) => {
     if (move.busy) return

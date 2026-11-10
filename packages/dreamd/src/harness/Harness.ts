@@ -285,6 +285,10 @@ const make = Effect.fnUntraced(function* ({
             yield* provide(store.write(next)).pipe(
               Effect.catch((error) => Effect.logError("Couldn't save the harness session", { error: String(error) }))
             )
+            // What the last turn used was the other agent's, in a session this one doesn't have.
+            yield* fs
+              .remove(path.join(config.stateDir, "last-turn.json"), { force: true })
+              .pipe(Effect.catch(() => Effect.void))
             return Option.some(next)
           })
   })

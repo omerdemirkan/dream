@@ -95,6 +95,11 @@ const sections: ReadonlyArray<{ readonly title: string; readonly jumps: Readonly
         to: "/project/prj_liftlog?sheet=usage"
       },
       {
+        title: "Lift Log · asking to move to Claude",
+        scenarios: ["reset", "two-plans"],
+        to: "/project/prj_liftlog?sheet=plan"
+      },
+      {
         title: "Lift Log · moving to Claude",
         scenarios: ["reset", "two-plans", "plan-moving"],
         to: "/project/prj_liftlog?sheet=usage"
