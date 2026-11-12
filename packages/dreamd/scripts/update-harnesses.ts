@@ -225,11 +225,16 @@ const pin = (harness: PinnedHarness, versions: Record<string, string>) => {
   }
 }
 
-/** Installs a bridge manifest (from `from`) into `bins/<harness>`, as `dreamd bootstrap` lays it out. */
+/**
+ * Installs a bridge manifest (from `from`) into `bins/<harness>`, as `dreamd bootstrap` lays it out, with the
+ * adapter's `pnpm-workspace.yaml` (which lets Claude Code's install script run).
+ */
 const install = (from: string, bins: string, harness: PinnedHarness) => {
   const dir = join(bins, harness)
   mkdirSync(dir, { recursive: true })
   for (const file of ["package.json", "pnpm-lock.yaml"]) copyFileSync(join(from, file), join(dir, file))
+  const workspace = join(adapterBridgeDir(harness), "pnpm-workspace.yaml")
+  if (existsSync(workspace)) copyFileSync(workspace, join(dir, "pnpm-workspace.yaml"))
   run("npx", ["--yes", `pnpm@${pnpmVersion}`, "install", "--frozen-lockfile", "--silent"], { cwd: dir })
 }
 

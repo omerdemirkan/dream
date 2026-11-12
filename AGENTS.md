@@ -37,6 +37,7 @@ bun run format         # biome, TS and JSON only
 bun run sync-prompts   # rebuild the agent's prompts and their map after editing a section in docs/prompts/
 bun run infra:plan     # alchemy plan; needs Cloudflare credentials and DREAM_DOMAIN in .env
 bun run template:build # build the dream-sandbox E2B template at both sizes (~4 min), check a turn on each harness, make them current
+bun run harness:update # move to the newest Claude Code and Codex the adapters can run, and check it (see --help; --ship deploys)
 ```
 
 Run alchemy from the workspace root (the `infra:*` scripts do), because relative paths in resource props, such as D1
@@ -187,6 +188,11 @@ the other workstreams to agree first.
   The top-level agent's model and effort come from `src/harness/Fleet.ts` (each provider's flagship, effort high;
   the agent picks each subagent's model and effort itself), unless the operator overrides them for a QA run
   (`DREAM_AGENT_MODEL`, `DREAM_CODEX_AGENT_MODEL`, `DREAM_AGENT_EFFORT` Worker secrets).
+  A project's model choice is a family (`AgentModels`: Fable, Opus, Sonnet, Haiku; Astra, Sol, Terra, Luna), never a
+  version, and each turn runs on the family's newest model in the installed CLI (`src/harness/Models.ts`): Claude
+  Code takes the family's alias, and dreamd turns a Codex family into the newest slug with the multi-agent tools in
+  the installed Codex's own catalog. A Codex slug saved before families (`gpt-6-luna`) reads as its family. When a
+  turn runs on another model than the last (a CLI release moved the family), it opens with a sentence saying so.
   A changed prompt or skill reaches a running project on its next turn (`src/harness/Session.ts`): Claude Code's
   session goes on with the new prompt (its bridge is patched to render it on every request) and a note; Codex gets
   a new thread with a handoff, since a thread keeps its instructions. `scripts/prompt-refresh-check.ts` checks both.
@@ -219,12 +225,16 @@ the other workstreams to agree first.
   `packages/dreamd/scripts/fake-api.ts` and `fake-responses.ts` (exposed publicly) it runs a Codex turn there.
   `scripts/refresh-check.ts` runs a Claude Code (`fake-anthropic.ts`) or Codex project in a sandbox to check a refresh.
   Claude Code and Codex versions are Dream's, not the adapters': `src/harness/bridges/<harness>/` holds the bridge
-  manifest and lockfile `dreamd bootstrap` installs. To move to new releases, run
-  `node packages/dreamd/scripts/harness-pins.ts` (shows the pins and npm's latest), then `… harness-pins.ts latest`
-  (or `--claude-code <agent-sdk version> --codex <version>`) and build a test template
-  (`DREAM_TEMPLATE=dream-sandbox-<x> bun run template:build`), whose harness check runs a turn on each. A release can
-  break its adapter (Codex 0.166.0 did; Codex stays on 0.165.0 until the adapter catches up). Rerun the pins script
-  after bumping an adapter; a test fails until the manifests match the adapter's again.
+  manifest and lockfile `dreamd bootstrap` installs. To move to new releases, run `bun run harness:update`
+  (`packages/dreamd/scripts/update-harnesses.ts`; `status` shows what would move and changes nothing). It moves the
+  adapters to npm's newest with the AI SDK they're built on, each CLI to the newest release in the line its adapter
+  pins (a new minor of Codex broke the adapter once, 0.166.0, until the adapter moved to it), reads every family's
+  model from the new CLIs' own lists and stops if one no longer orchestrates or takes every effort, runs
+  `bun run check`, and runs a turn on each harness in a test template (`dream-sandbox-update`, deleted after), putting
+  every file back if anything fails. `--ship` then commits to main, pushes, builds the production template, deploys
+  the Worker and pushes the mirror, in that order. No model list is checked in and the app needs no update: each
+  project's next turn after the refresh runs on its family's newest model in the new CLI. A test fails until the
+  manifests match the installed adapter's.
 - **Machine sizes.** New projects get a standard sandbox (2 vCPU, 4 GB, 2 GB of swap; template `dream-sandbox`);
   the agent can ask for a large one (4 vCPU, 8 GB; `dream-sandbox-large`, from the same build) with
   `dream machine move large "<why>"`, and back (`SandboxSize` in `packages/domain/src/Sandbox.ts`). E2B can't
