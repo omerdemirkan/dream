@@ -237,7 +237,7 @@ the other workstreams to agree first.
   was. Projects made before sizes stay on 4/8 (their size reads from E2B's `cpuCount`). `apps/api/scripts/
   move-check.ts` checks a move on real E2B against the fakes (about 9 s for a small project).
 - **Moving to another plan.** A project starts on the plan they pick, and someone with both connected can move it to
-  the other later (`AppRpcs.SwitchPlan`; the plan on the usage sheet's Adjust page). The harnesses can't
+  the other later (`AppRpcs.SwitchPlan`; the usage sheet's Plan page). The harnesses can't
   share a conversation (Codex compacts on OpenAI's side into items only OpenAI reads), so the ProjectDO
   (`project/PlanSwitch.ts`) asks the outgoing agent for a handoff file (`PlanSwitching`, a turn of its own or the end of
   the one running, while its plan can run one) and holds everything else; once that turn ends (or after 20 minutes,

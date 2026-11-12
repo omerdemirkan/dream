@@ -10,14 +10,16 @@ import type {
   ProjectShare,
   ProjectUsage,
   ProjectUsageGlance,
-  UsageLimitName,
   UsageLimitReached,
   UsageLimits,
   UsageSnapshot,
   WindowShare
 } from "@dream/domain"
+import { providerOf } from "@dream/domain"
 import { DateTime } from "effect"
-import { providerName, resetLabel, type Sentence, usageDetail } from "./format.ts"
+import { providerName, resetLabel, usageDetail } from "./format.ts"
+import { connectedPlans } from "./plans.ts"
+import { planNotice } from "./planSwitch.ts"
 
 /** From this much of the week used, the ring turns amber and says what's left. */
 export const nearLimitPercent = 85
@@ -220,14 +222,15 @@ const limitCallout = (
 })
 
 // ---------------------------------------------------------------------------
-// The sheet (usage sheet direction B, "Read, then adjust": mocks/screens/usage-sheet-directions)
+// The sheet (usage sheet direction A, "Index": mocks/screens/usage-sheet-directions)
 // ---------------------------------------------------------------------------
 
 /**
- * The top of the usage sheet: where the project stands on its plan, said in a sentence beside a small ring of the
- * week, and the one thing that fixes a trouble, when a tap can. Everything they can change sits behind Adjust.
+ * The top of the usage sheet: the week as a ring with this project's share in it, one line beside it on where the
+ * project stands, and the rows that open the sheet's pages, each with its answer on the right. When something needs
+ * them, the line and the row it concerns say so in amber.
  */
-export interface UsageSummary {
+export interface UsageIndex {
   /** The week as a ring, absent when the week isn't known. */
   readonly ring?: {
     readonly arcs: RingArcs
@@ -236,19 +239,27 @@ export interface UsageSummary {
     /** Amber: near the end of the week, the week ran out, or a limit they set holds the project. */
     readonly need: boolean
   }
-  /** Where it stands; the lead is amber when something holds the project back. */
-  readonly plan: Sentence
-  /** The fix beside Adjust: clear the limit that holds it, or move it to their other plan, which has room. */
-  readonly fix?: UsageFix
-  /** Why the move is offered: "Your Claude plan has 62% of its week left…", when Dream knows how much. */
-  readonly otherPlan?: string
+  /** "62% of your week is left.", "Paused at its 4% limit." */
+  readonly lead: { readonly text: string; readonly need: boolean }
+  /** Under the lead: when it resets, or what happens next. */
+  readonly detail?: string
+  /** The Limits row's answer: "None", "Up to 25%", or "Paused at 4%" in amber. */
+  readonly limits: { readonly value: string; readonly need: boolean }
+  /** The Plan row, with more than one plan connected or a move to speak of. */
+  readonly plan?: PlanRowView
 }
 
-export type UsageFix =
-  | { readonly _tag: "ClearLimit"; readonly limit: UsageLimitName }
-  | { readonly _tag: "Move"; readonly to: ModelProvider }
+export interface PlanRowView {
+  /** "ChatGPT", "Moving to Claude", or "Didn’t move" in amber. */
+  readonly value: string
+  readonly need: boolean
+  /** A move waits: a spinner beside the value. */
+  readonly busy: boolean
+  /** Under the row's title when the plan runs low and the other has room: "Your Claude plan has 62% of its week left." */
+  readonly note?: string
+}
 
-/** Where the project stands against its limits, for their fields on the Adjust page. */
+/** Where the project stands against its limits, for their fields on the Limits page. */
 export interface LimitsView {
   readonly project: LimitRow
   readonly planLeft: LimitRow
@@ -263,38 +274,55 @@ export interface LimitRow {
   readonly reached: boolean
 }
 
-/** A share in words, for a sentence: "under 1%", "about 4%"; undefined when the project used none of it. */
-const shareWords = (percent: number) =>
-  percent <= 0 ? undefined : percent < 0.5 ? "under 1%" : `about ${Math.round(percent)}%`
-
 /** A connection's pause that still holds. */
 const pauseOf = (connection: ModelConnection | undefined, now: DateTime.Utc) => {
   const limited = connection?.usage?.limitedUntil
   return limited && DateTime.isGreaterThan(limited.until, now) ? limited : undefined
 }
 
-/** Their other connected plan, when it could take the project now: not paused, and not near the end of its week. */
-const roomyOtherPlan = (connections: ReadonlyArray<ModelConnection>, provider: ModelProvider, now: DateTime.Utc) => {
+/**
+ * Their other connected plan, when it could take the project now: not paused, and not near the end of its week.
+ * `left` only when Dream knows how much of its week is used.
+ */
+export const roomyOtherPlan = (
+  connections: ReadonlyArray<ModelConnection>,
+  provider: ModelProvider,
+  now: DateTime.Utc
+): { readonly provider: ModelProvider; readonly left?: number } | undefined => {
   const other = connections.find((c) => c.provider !== provider && c.status === "connected")
   if (other === undefined || pauseOf(other, now)) return undefined
   const week = other.usage?.weekly
   if (week !== undefined && week.usedPercent >= nearLimitPercent) return undefined
-  return { provider: other.provider, left: week === undefined ? undefined : leftOf(week.usedPercent) }
+  return { provider: other.provider, ...(week === undefined ? {} : { left: leftOf(week.usedPercent) }) }
 }
 
 const leftOf = (usedPercent: number) => 100 - Math.round(usedPercent)
 
+/** The Limits row's answer. */
+const limitsValue = (limits: UsageLimits, reached: UsageLimitReached | undefined) => {
+  if (reached)
+    return {
+      value: reached.limit === "project" ? `Paused at ${reached.percent}%` : `Paused at ${reached.percent}% left`,
+      need: true
+    }
+  const { projectWeekPercent: cap, planLeftPercent: floor } = limits
+  if (cap !== undefined && floor !== undefined) return { value: "Two set", need: false }
+  if (cap !== undefined) return { value: `Up to ${cap}%`, need: false }
+  if (floor !== undefined) return { value: `Stops at ${floor}% left`, need: false }
+  return { value: "None", need: false }
+}
+
 /**
- * The sheet's summary. `connections` are their plans (`ListModelConnections`): the project's says when the plan
- * itself paused it (its five hours or its week ran out), and the other's whether a move would help.
+ * The sheet's index. `connections` are their plans (`ListModelConnections`): the project's says when the plan itself
+ * paused it (its five hours or its week ran out), and the other's whether a move would help.
  */
-export const usageSummary = (
+export const usageIndex = (
   usage: ProjectUsage,
-  project: Pick<Project, "planSwitch">,
+  project: Pick<Project, "harness" | "planSwitch">,
   connections: ReadonlyArray<ModelConnection>,
   now: DateTime.Utc,
   timeZone?: string
-): UsageSummary => {
+): UsageIndex => {
   const name = providerName(usage.provider)
   // `weekWindow` is there whether or not this project worked this week; APIs from before it send `weekly` alone.
   const week = usage.weekWindow ?? usage.weekly
@@ -305,115 +333,89 @@ export const usageSummary = (
   )
   const nearLimit = week !== undefined && week.usedPercent >= nearLimitPercent
   const resets = week?.resetsAt ? resetLabel(week.resetsAt, now, timeZone) : undefined
-  const share = week === undefined ? undefined : shareWords(week.projectPercent)
   const left = week === undefined ? undefined : leftOf(week.usedPercent)
-  const other = project.planSwitch?.state === "waiting" ? undefined : roomyOtherPlan(connections, usage.provider, now)
-  const move = (): Pick<UsageSummary, "fix" | "otherPlan"> =>
-    other === undefined
-      ? {}
-      : {
-          fix: { _tag: "Move", to: other.provider },
-          ...(other.left === undefined
-            ? {}
-            : {
-                otherPlan: `Your ${providerName(other.provider)} plan has ${other.left}% of its week left, if you’d rather move it there.`
-              })
-        }
+  const orWhenResets = resets ? `, or when your week resets ${resets}` : ""
+
   const ring =
     week === undefined
       ? {}
       : {
           ring: {
-            arcs: ringArcs(week, 0.05),
+            arcs: ringArcs(week, 0.03),
             label: percentLabel(week.projectPercent),
             need: nearLimit || reached !== undefined || paused?.window === "weekly"
           }
         }
-  const orWhenResets = resets ? `, or when your week resets ${resets}` : ""
-
-  if (reached) {
-    return {
-      ...ring,
-      plan: [
+  const [lead, detail]: readonly [UsageIndex["lead"], string | undefined] = reached
+    ? [
         {
           text:
             reached.limit === "project"
-              ? `Paused at the ${reached.percent}% you gave it.`
+              ? `Paused at its ${reached.percent}% limit.`
               : `Paused to keep ${reached.percent}% of your week free.`,
-          tone: "need"
+          need: true
         },
-        {
-          text: ` It picks up when you ${reached.limit === "project" ? "raise" : "lower"} or clear the limit${orWhenResets}.`
-        }
-      ],
-      fix: { _tag: "ClearLimit", limit: reached.limit }
-    }
-  }
-  if (paused?.window === "fiveHour") {
-    const rest =
-      left === undefined
-        ? ""
-        : share
-          ? ` This project used ${share} of your week, and ${left}% of it is left.`
-          : ` ${left}% of your week is left.`
-    return {
-      ...ring,
-      plan: [
-        { text: "Your five hours ran out.", tone: "need" },
-        { text: ` The agent picks up on its own at ${resetLabel(paused.until, now, timeZone)}.${rest}` }
+        `It picks up when you ${reached.limit === "project" ? "raise" : "lower"} or clear the limit${orWhenResets}.`
       ]
-    }
-  }
-  if (paused?.window === "weekly") {
-    return {
-      ...ring,
-      plan: [
-        { text: "Your week ran out.", tone: "need" },
-        {
-          text: ` The agent picks up on its own when it resets ${resetLabel(paused.until, now, timeZone)}.${share ? ` This project used ${share} of it.` : ""}`
-        }
-      ],
-      ...move()
-    }
-  }
-  if (week !== undefined && nearLimit) {
-    return {
-      ...ring,
-      plan: [
-        { text: `Only ${left}% of your week is left`, tone: "need" },
-        {
-          text: `${resets ? `, until ${resets}` : ""}.${share ? ` This project used ${share} of it.` : ""} If it runs out, its work pauses and picks up on its own when the week resets.`
-        }
-      ],
-      ...move()
-    }
-  }
-  if (week !== undefined) {
-    const after = [
-      { text: `${left}%`, tone: "strong" as const },
-      { text: ` is left${resets ? `, and it resets ${resets}` : ""}.` }
-    ]
-    return {
-      ...ring,
-      plan: share
+    : paused
+      ? [
+          { text: `Paused until ${resetLabel(paused.until, now, timeZone)}.`, need: true },
+          paused.window === "fiveHour"
+            ? `Your five hours ran out.${left === undefined ? "" : ` ${left}% of your week is left.`}`
+            : "Your week ran out. It picks up on its own then."
+        ]
+      : week === undefined
         ? [
-            { text: "This project used " },
-            { text: share, tone: "strong" },
-            { text: ` of your ${name} week. ` },
-            ...after
+            {
+              text:
+                usage.billing === "apiKey"
+                  ? "It runs on an API key, so there’s no weekly limit to share."
+                  : `Dream doesn’t know yet how much of your ${name} week is used.`,
+              need: false
+            },
+            undefined
           ]
-        : [{ text: `This project hasn’t used any of your ${name} week yet. ` }, ...after]
-    }
-  }
+        : nearLimit
+          ? [
+              { text: `${left}% of your week is left.`, need: true },
+              resets
+                ? `If it runs out, its work pauses until ${resets}, then picks up on its own.`
+                : "If it runs out, its work pauses until the week resets, then picks up on its own."
+            ]
+          : [{ text: `${left}% of your week is left.`, need: false }, resets ? `It resets ${resets}.` : undefined]
+
+  // A move would help when the plan runs low or its week ran out, and the other has room.
+  const trouble = nearLimit || paused?.window === "weekly"
+  const other =
+    trouble && project.planSwitch?.state !== "waiting" ? roomyOtherPlan(connections, usage.provider, now) : undefined
+  const plan = planRow(project, connections, now, other)
   return {
-    plan: [
-      {
-        text:
-          usage.billing === "apiKey"
-            ? "It runs on an API key, so there’s no weekly limit to share."
-            : `Dream doesn’t know yet how much of your ${name} week is used.`
-      }
-    ]
+    ...ring,
+    lead,
+    ...(detail === undefined ? {} : { detail }),
+    limits: limitsValue(usage.limits ?? {}, reached),
+    ...(plan === undefined ? {} : { plan })
+  }
+}
+
+const planRow = (
+  project: Pick<Project, "harness" | "planSwitch">,
+  connections: ReadonlyArray<ModelConnection>,
+  now: DateTime.Utc,
+  other: { readonly provider: ModelProvider; readonly left?: number } | undefined
+): PlanRowView | undefined => {
+  const notice = planNotice(project, connectedPlans(connections), now)
+  const move = project.planSwitch
+  if (move?.state === "waiting") return { value: `Moving to ${providerName(move.to)}`, need: false, busy: true }
+  if (notice) return { value: "Didn’t move", need: true, busy: false }
+  if (connectedPlans(connections).length < 2) return undefined
+  return {
+    value: providerName(providerOf(project.harness)),
+    need: false,
+    busy: false,
+    ...(other?.left === undefined
+      ? {}
+      : { note: `Your ${providerName(other.provider)} plan has ${other.left}% of its week left.` })
   }
 }
 

@@ -4,7 +4,7 @@
  * adds a plan. Settings and every page it opens are built from these.
  */
 import type { ModelProvider } from "@dream/domain"
-import { Children, isValidElement, type ReactElement, type ReactNode } from "react"
+import { Children, createContext, isValidElement, type ReactElement, type ReactNode, useContext } from "react"
 import { ActivityIndicator, Pressable, Text, View } from "react-native"
 import Svg, { Path } from "react-native-svg"
 import type { ServiceIcon } from "../data/settings.ts"
@@ -16,37 +16,51 @@ const rowHeight = 52
 /** Where a row's text starts when it has an icon (14 inset + 30 tile + 12 gap): the separators start there. */
 const textInset = 56
 
-export function Group(props: { readonly children: ReactNode; readonly need?: boolean; readonly style?: object }) {
+/** What a pressed row turns: a shade lighter than its group. */
+const PressedColor = createContext<string>(color.s2)
+
+/**
+ * A rounded group of rows. `raised` lifts it a shade, for a group on a sheet (the sheet is the colour a group
+ * usually is).
+ */
+export function Group(props: {
+  readonly children: ReactNode
+  readonly need?: boolean
+  readonly raised?: boolean
+  readonly style?: object
+}) {
   const rows = Children.toArray(props.children).filter(isValidElement) as Array<ReactElement<RowProps>>
   return (
-    <View
-      style={[
-        {
-          backgroundColor: color.s1,
-          borderRadius: 20,
-          borderCurve: "continuous",
-          borderWidth: 1,
-          borderColor: props.need ? color.needLine : color.line,
-          overflow: "hidden"
-        },
-        props.style
-      ]}
-    >
-      {rows.map((row, i) => (
-        <View key={row.key ?? i}>
-          {i > 0 ? (
-            <View
-              style={{
-                height: 1,
-                backgroundColor: color.line,
-                marginLeft: row.props.icon ? textInset : 16
-              }}
-            />
-          ) : null}
-          {row}
-        </View>
-      ))}
-    </View>
+    <PressedColor.Provider value={props.raised ? color.s3 : color.s2}>
+      <View
+        style={[
+          {
+            backgroundColor: props.raised ? color.s2 : color.s1,
+            borderRadius: 20,
+            borderCurve: "continuous",
+            borderWidth: 1,
+            borderColor: props.need ? color.needLine : color.line,
+            overflow: "hidden"
+          },
+          props.style
+        ]}
+      >
+        {rows.map((row, i) => (
+          <View key={row.key ?? i}>
+            {i > 0 ? (
+              <View
+                style={{
+                  height: 1,
+                  backgroundColor: color.line,
+                  marginLeft: row.props.icon ? textInset : 16
+                }}
+              />
+            ) : null}
+            {row}
+          </View>
+        ))}
+      </View>
+    </PressedColor.Provider>
   )
 }
 
@@ -70,6 +84,7 @@ interface RowProps {
 }
 
 export function GroupRow(props: RowProps) {
+  const pressedColor = useContext(PressedColor)
   const value =
     typeof props.value === "string" ? (
       <Text
@@ -96,7 +111,7 @@ export function GroupRow(props: RowProps) {
         minHeight: rowHeight,
         paddingHorizontal: 14,
         paddingVertical: props.subtitle ? 9 : 0,
-        backgroundColor: pressed ? color.s2 : "transparent"
+        backgroundColor: pressed ? pressedColor : "transparent"
       }}
     >
       {props.icon}

@@ -14,10 +14,9 @@ import {
   dayBars,
   dollars,
   everyoneView,
-  projectCostsSummary,
+  projectCostsPage,
   quantityLabel
 } from "../src/data/costs.ts"
-import { sentenceText } from "../src/data/format.ts"
 import { SecureStorage } from "../src/data/SecureStorage.ts"
 import { Session } from "../src/data/Session.ts"
 import { FakeBackend } from "../src/fake/FakeBackend.ts"
@@ -63,126 +62,81 @@ describe("dollars and quantities", () => {
   })
 })
 
-describe("projectCostsSummary", () => {
+describe("projectCostsPage", () => {
   const costs = (month: Partial<CostPeriod>, lastUsd = 0): ProjectCosts => ({
     projectId: Fx.liftLog.id,
     month: period(nov, dec, month),
     lastMonth: period(oct, nov, { usd: lastUsd }),
     days: []
   })
-  const machine = (usd: number, hours: number) =>
-    ({ center: "sandbox", payer: "dream", usd, quantity: hours, unit: "hour" }) as const
 
   it("has nothing to say for a project that hasn't cost anything", () => {
-    assert.isUndefined(projectCostsSummary(costs({})))
+    assert.isUndefined(projectCostsPage(costs({})))
   })
 
-  it("names the only thing it paid for in the sentence, as the founder's project reads", () => {
-    const summary = projectCostsSummary(
-      costs({
-        usd: 0.41,
-        lines: [machine(0.41, 2.5), { center: "storage", payer: "dream", usd: 0, quantity: 0.01, unit: "gbMonth" }]
-      })
-    )
-    assert.strictEqual(
-      sentenceText(summary?.sentence ?? []),
-      "Dream paid $0.41 this month to keep its computer running, for 2.5 hours. None of that comes out of your plan."
-    )
-    assert.deepStrictEqual(
-      summary?.sentence.filter((p) => p.tone).map((p) => p.text),
-      ["$0.41"]
-    )
-    assert.deepStrictEqual(summary?.rows, [])
-  })
-
-  it("says what most of it went to, and opens into every line with last month under them", () => {
-    const summary = projectCostsSummary(
+  it("names the month for the row, compares with the last, and puts a single model in the line's title", () => {
+    const page = projectCostsPage(
       costs(
         {
-          usd: 10.01,
+          usd: 7.72,
           lines: [
-            machine(6.79, 41),
-            { center: "mac", payer: "dream", usd: 2.28, quantity: 38, unit: "minute" },
-            { center: "models", payer: "dream", usd: 0.93, quantity: 412, unit: "request" },
-            { center: "storage", payer: "dream", usd: 0.01, quantity: 0.4, unit: "gbMonth" }
+            { center: "sandbox", payer: "dream", usd: 6.79, quantity: 41, unit: "hour" },
+            { center: "models", payer: "dream", usd: 0.93, quantity: 412, unit: "request" }
           ],
           models: [{ model: "gpt-4o-mini-tts", payer: "dream", usd: 0.93, requests: 412 }]
         },
-        34.8
+        7.42
       )
     )
-    assert.strictEqual(
-      sentenceText(summary?.sentence ?? []),
-      "Dream paid $10.01 this month to run it, most of it for machine time. None of that comes out of your plan."
-    )
+    assert.strictEqual(page?.title, "November so far")
+    assert.strictEqual(page?.total, "$7.72")
+    assert.strictEqual(page?.lastMonth, "$7.42 in October")
+    assert.strictEqual(page?.about, "What Dream paid to run this project in November.")
     assert.deepStrictEqual(
-      summary?.rows.map((r) => [r.title, r.detail, r.amount]),
+      page?.rows.map((r) => [r.title, r.detail, r.amount, r.models.length]),
       [
-        ["Machine time", "41 hours", "$6.79"],
-        ["Macs", "38 minutes", "$2.28"],
-        ["OpenAI · gpt-4o-mini-tts", "412 requests", "$0.93"],
-        ["Storage", undefined, "$0.01"]
+        ["Machine time", "41 hours", "$6.79", 0],
+        ["OpenAI · gpt-4o-mini-tts", "412 requests", "$0.93", 0]
       ]
     )
-    assert.strictEqual(summary?.lastMonth, "$34.80 in October")
   })
 
-  it("leaves out what most of it went to when nothing is most, and anything Dream didn't pay", () => {
-    const summary = projectCostsSummary(
+  it("lists several models by name, and leaves out anything Dream didn't pay", () => {
+    const page = projectCostsPage(
       costs({
         usd: 6.59,
         lines: [
-          machine(2.6, 16),
-          { center: "models", payer: "dream", usd: 2, quantity: 496, unit: "request" },
-          { center: "browser", payer: "dream", usd: 1.99, quantity: 995, unit: "minute" },
+          { center: "sandbox", payer: "dream", usd: 3.64, quantity: 22, unit: "hour" },
+          { center: "models", payer: "dream", usd: 2.95, quantity: 496, unit: "request" },
           { center: "models", payer: "person", usd: 9, quantity: 9, unit: "request" }
         ],
         models: [
-          { model: "gpt-image-2", payer: "dream", usd: 1.99, requests: 84 },
+          { model: "gpt-image-2", payer: "dream", usd: 2.94, requests: 84 },
           { model: "text-embedding-3-small", payer: "dream", usd: 0.01, requests: 412 },
           { model: "openai/gpt-x", payer: "person", usd: 9, requests: 9 }
         ]
       })
     )
-    assert.strictEqual(
-      sentenceText(summary?.sentence ?? []),
-      "Dream paid $6.59 this month to run it. None of that comes out of your plan."
+    assert.deepStrictEqual(
+      page?.rows.map((r) => r.title),
+      ["Machine time", "OpenAI"]
     )
     assert.deepStrictEqual(
-      summary?.rows.map((r) => r.title),
-      ["Machine time", "OpenAI", "Cloud browsers"]
+      page?.rows[1]?.models.map((m) => [m.title, m.detail]),
+      [
+        ["gpt-image-2", "84 requests"],
+        ["text-embedding-3-small", "412 requests"]
+      ]
     )
-    assert.deepStrictEqual(
-      summary?.rows[1]?.models.map((m) => m.title),
-      ["gpt-image-2", "text-embedding-3-small"]
-    )
-    assert.isUndefined(summary?.lastMonth)
+    assert.isUndefined(page?.lastMonth)
   })
 
   it("says so when it hasn't cost anything yet this month, but did last month", () => {
-    const summary = projectCostsSummary(costs({}, 7.42))
-    assert.strictEqual(
-      sentenceText(summary?.sentence ?? []),
-      "Dream hasn’t paid anything to run it this month, and paid $7.42 in October. None of that comes out of your plan."
-    )
-    assert.deepStrictEqual(summary?.rows, [])
-  })
-
-  it("names other single lines in words too", () => {
-    const one = (line: CostPeriod["lines"][number]) =>
-      sentenceText(projectCostsSummary(costs({ usd: line.usd, lines: [line] }))?.sentence ?? [])
-    assert.include(
-      one({ center: "mac", payer: "dream", usd: 2.28, quantity: 38, unit: "minute" }),
-      "for 38 minutes on a Mac."
-    )
-    assert.include(
-      one({ center: "email", payer: "dream", usd: 0.01, quantity: 31, unit: "message" }),
-      "this month to send 31 emails."
-    )
-    assert.include(
-      one({ center: "storage", payer: "dream", usd: 0.02, quantity: 1.2, unit: "gbMonth" }),
-      "to store its files."
-    )
+    const page = projectCostsPage(costs({}, 7.42))
+    assert.strictEqual(page?.total, "$0")
+    assert.strictEqual(page?.lastMonth, "$7.42 in October")
+    assert.strictEqual(page?.about, "Dream hasn’t paid anything to run it in November yet.")
+    assert.deepStrictEqual(page?.rows, [])
   })
 })
 
@@ -301,7 +255,7 @@ describe("the fixtures' costs through the app's services", () => {
         assert.isDefined(lift)
         Schema.decodeUnknownSync(ProjectCostsSchema)(Schema.encodeSync(ProjectCostsSchema)(lift as ProjectCosts))
         assert.closeTo(lift?.month.usd ?? 0, account.projects[0]?.usd ?? 0, 1e-9)
-        const view = projectCostsSummary(lift as ProjectCosts)
+        const view = projectCostsPage(lift as ProjectCosts)
         assert.deepStrictEqual(
           view?.rows.map((r) => r.title),
           ["Machine time", "Macs", "OpenAI", "Storage"]
@@ -335,14 +289,15 @@ describe("the fixtures' costs through the app's services", () => {
         const none = yield* reports.account()
         assert.deepStrictEqual(none?.projects, [])
         assert.strictEqual(none?.month.usd, 0)
-        assert.isUndefined(projectCostsSummary((yield* reports.project(Fx.liftLog.id))!))
+        assert.isUndefined(projectCostsPage((yield* reports.project(Fx.liftLog.id))!))
 
         // The founder's month: only machine time.
         yield* backend.scenario("costs-machine")
-        const machine = projectCostsSummary((yield* reports.project(Fx.liftLog.id))!)
-        assert.strictEqual(
-          sentenceText(machine?.sentence ?? []),
-          "Dream paid $0.41 this month to keep its computer running, for 2.5 hours. None of that comes out of your plan."
+        const machine = projectCostsPage((yield* reports.project(Fx.liftLog.id))!)
+        assert.strictEqual(machine?.total, "$0.41")
+        assert.deepStrictEqual(
+          machine?.rows.map((r) => [r.title, r.detail]),
+          [["Machine time", "2.5 hours"]]
         )
 
         // Back to the default on reset.

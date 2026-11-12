@@ -16,7 +16,6 @@ import {
   type Project,
   type ProjectSummary,
   type ReasoningEffort,
-  type UsageLimitName,
   type UsageLimits
 } from "@dream/domain"
 import { connectedPlans, defaultPlan, harnessToSend } from "./plans.ts"
@@ -136,23 +135,8 @@ export const effortAbout: Readonly<Record<ReasoningEffort, string>> = {
   max: "Thinks as long as it takes. Uses your plan fastest."
 }
 
-/**
- * The usage sheet's quiet line on how the project is set up: "It runs GPT-6 Luna at low effort, with no limits."
- * The limit that holds the project is left out, since the sheet's first sentence already says so.
- */
-export const setupSentence = (
-  project: Pick<Project, "harness" | "agentModel" | "agentEffort">,
-  limits: UsageLimits,
-  reached?: UsageLimitName
-): string => {
-  const { model, effort } = agentOf(project)
-  const name = AgentModels[project.harness].find((option) => option.id === model)?.name ?? model
-  const runs = `It runs ${name} at ${effortName[effort].toLowerCase()} effort`
-  const cap = reached === "project" ? undefined : limits.projectWeekPercent
-  const floor = reached === "planLeft" ? undefined : limits.planLeftPercent
-  const mayUse = cap === undefined ? undefined : `may use up to ${cap}% of the week`
-  const stops = floor === undefined ? undefined : `stops when the plan has ${floor}% left`
-  if (mayUse && stops) return `${runs}. It ${mayUse}, and ${stops}.`
-  if (mayUse || stops) return `${runs}, and ${mayUse ?? stops}.`
-  return reached === undefined ? `${runs}, with no limits.` : `${runs}.`
+/** The project's model by name, for the usage sheet's Agent row: "GPT-6.1 Sol". */
+export const agentModelName = (project: Pick<Project, "harness" | "agentModel" | "agentEffort">): string => {
+  const { model } = agentOf(project)
+  return AgentModels[project.harness].find((option) => option.id === model)?.name ?? model
 }

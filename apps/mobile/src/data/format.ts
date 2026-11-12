@@ -97,15 +97,6 @@ export const usageDetail = (usage: UsageSnapshot, timeZone?: string): string | u
 export const usageLeft = (usage: UsageSnapshot) =>
   usage.weekly ? 1 - usage.weekly.usedPercent / 100 : usage.fiveHour ? 1 - usage.fiveHour.usedPercent / 100 : 1
 
-/**
- * A sentence in parts, for copy that's read rather than scanned: figures in white (`strong`), and what holds a
- * project back in amber (`need`).
- */
-export type Sentence = ReadonlyArray<{ readonly text: string; readonly tone?: "strong" | "need" }>
-
-/** A sentence as plain text, for VoiceOver and tests. */
-export const sentenceText = (sentence: Sentence) => sentence.map((part) => part.text).join("")
-
 export const providerName = (provider: ModelConnection["provider"]) => (provider === "chatgpt" ? "ChatGPT" : "Claude")
 
 /** When a usage window resets: "3:40 PM" today, else "Mon 12:00 AM". */

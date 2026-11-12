@@ -14,7 +14,7 @@ import { assert, describe, it } from "@effect/vitest"
 import { DateTime, Effect, Layer, Redacted } from "effect"
 import { Reactivity } from "effect/reactivity"
 import { Socket } from "effect/socket"
-import { advancedView, createSettings, nothingPicked, setupSentence } from "../src/data/advanced.ts"
+import { advancedView, agentModelName, createSettings, nothingPicked } from "../src/data/advanced.ts"
 import { AppClient } from "../src/data/AppClient.ts"
 import { makeAppLayer } from "../src/data/AppLayer.ts"
 import { SecureStorage } from "../src/data/SecureStorage.ts"
@@ -86,27 +86,9 @@ describe("the Advanced sheet", () => {
     assert.strictEqual(advancedView([claude], [], { provider: "chatgpt", limits: {} }).provider, "claude")
   })
 
-  it("says in the usage sheet how a project is set up: its agent and its limits", () => {
-    const luna = { harness: "codex", agentModel: "gpt-6-luna", agentEffort: "low" } as const
-    assert.strictEqual(setupSentence(luna, {}), "It runs GPT-6 Luna at low effort, with no limits.")
-    assert.strictEqual(
-      setupSentence({ harness: "claude-code" }, { projectWeekPercent: 25 }),
-      "It runs Opus 5.5 at high effort, and may use up to 25% of the week."
-    )
-    assert.strictEqual(
-      setupSentence({ ...luna, agentEffort: "xhigh" }, { planLeftPercent: 10 }),
-      "It runs GPT-6 Luna at extra high effort, and stops when the plan has 10% left."
-    )
-    assert.strictEqual(
-      setupSentence(luna, { projectWeekPercent: 25, planLeftPercent: 10 }),
-      "It runs GPT-6 Luna at low effort. It may use up to 25% of the week, and stops when the plan has 10% left."
-    )
-    // The limit that paused it is the sheet's first sentence already.
-    assert.strictEqual(setupSentence(luna, { projectWeekPercent: 5 }, "project"), "It runs GPT-6 Luna at low effort.")
-    assert.strictEqual(
-      setupSentence(luna, { projectWeekPercent: 5, planLeftPercent: 10 }, "project"),
-      "It runs GPT-6 Luna at low effort, and stops when the plan has 10% left."
-    )
+  it("names a project's model for the usage sheet's Agent row", () => {
+    assert.strictEqual(agentModelName({ harness: "claude-code" }), "Opus 5.5")
+    assert.strictEqual(agentModelName({ harness: "codex", agentModel: "gpt-6-luna", agentEffort: "low" }), "GPT-6 Luna")
   })
 })
 

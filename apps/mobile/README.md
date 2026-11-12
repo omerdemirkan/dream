@@ -82,7 +82,7 @@ xcrun simctl launch --terminate-running-process booted build.omer.dream \
 | `/new?advanced=open` | New idea with its Advanced sheet open: the plan (with `two-plans`), the agent's model and effort, usage limits |
 | `/new?starter=run-club-bot` | New idea filled with a starter's draft, the cursor after it. Ids are in `src/data/ideas.ts` |
 | `/project/<id>?options=<messageId>&option=<n>` | A question's option previews full screen, at option n (from 0): `msg_cabinpick` (Cabin: phone screens, a desktop page, a recording), `msg_timersound` (Lift Log, after `options-sounds`: three sounds) |
-| `/project/<id>?sheet=usage` | The usage sheet over the project (the ring in its header opens it): where it stands in a few sentences, and Adjust. `?sheet=costs` opens what Dream paid into its lines, `?sheet=adjust` opens Adjust (both limits, the agent's model and effort, and with `two-plans` the plan), and `?sheet=plan` opens Adjust asking to move it to the other plan |
+| `/project/<id>?sheet=usage` | The usage sheet over the project (the ring in its header opens it): the week's ring with one line beside it, then rows for Limits, Agent, Plan (with `two-plans`) and Dream usage. `?sheet=limits`, `?sheet=agent`, `?sheet=plans` and `?sheet=costs` open one of its pages, `?sheet=plan` the Plan page asking to move it to the other plan, and `?sheet=adjust` (B's page, gone) the index |
 | `/project/<id>?sheet=notifications` | The Notifications sheet: the project's apps that notify, their controls, what they sent (the bell opens it) |
 | `/project/<id>?tab=chat&attach=sample` · `/new?attach=sample` | Chat's composer, or a new idea, with two photos and a PDF attached (uploading, then ready) |
 | `/connect` · `/settings` | Subscription connect flow; Settings, the index of one-line rows (see "Settings" below) |
@@ -106,7 +106,7 @@ Scenarios (`dream://fixtures/<name>?to=/path`, or `-dreamScenario a,b`): `signed
 the plan in Advanced), `plan-removed` (the same with Claude removed: those two wait for it, and Home says so; with `two-plans`,
 `/plan/claude?show=remove` opens a plan's Remove warning, and `/new?advanced=open` the Advanced sheet with its plan switch),
 `plan-moving`, `plan-moved` and `plan-move-failed` (after `two-plans`: Lift Log waiting to move from ChatGPT to Claude,
-moved, or the move not working; the usage sheet, its Adjust page and Chat's line say so),
+moved, or the move not working; the usage sheet's Plan row and page, and Chat's line, say so),
 `services` (beside Gmail, a pasted OpenAI key, Morning Brief's Telegram key file and an App Store Connect key),
 `week-unknown` (ChatGPT connected with no week known yet: "Connected", no ring), `plan-expired` and `plan-pending` (Claude's
 sign-in expired, or still finishing, beside ChatGPT), `plan-limited` (ChatGPT paused until its five hours reset),
@@ -205,22 +205,23 @@ xcrun simctl launch --terminate-running-process booted build.omer.dream \
 
 Project usage (Deck v3 option A, the ring): the right of the project header has a ring of the subscription's week,
 this project's share in white over everything else in grey, with "4%" over "of week"; tapping it opens the usage
-sheet (`…?sheet=usage`; usage sheet direction B, "Read, then adjust", mocks/screens/usage-sheet-directions). It's
-half-height and says where things stand in a few sentences: beside a small ring of the week, what this project used
-of it, what's left and when it resets; what Dream paid to run it; and how it's set up ("It runs GPT-6 Luna at low
-effort, with no limits."). Adjust opens everything they can change: the two limits ("This project may use up to N%
-of the week", "Stop when the plan has N% left", saved as each field loses focus), the agent's model and effort, and
-with both plans connected the plan, where choosing the other asks before moving it. When something holds the project
-back and a tap would fix it, that fix sits beside Adjust. By default the sample world's ChatGPT Pro week is 38%
-used, Lift Log about 4% of it, and each of the simulated agent's turns adds a little (the header follows
-`ProjectEvent.Usage`). `usage-near-limit` is the heavy week: 92% used, the ring's arc and "8% left" in amber, and
-the sheet's first sentence in amber saying what's left until when; with `two-plans`, Move to Claude beside Adjust
-and how much of Claude's week is left. `usage-limit` gives Lift Log a limit at its share, so it's paused by it:
-"Paused · at its 4% limit" in the header, "paused" under the ring, and Clear the limit in the sheet.
-`plan-limited` with `paused` is the plan's own pause: the five hours ran out, so the sheet says when the agent picks
-up (the five hours show only then). `usage-none` is a world where no usage is known: the header shows nothing, and
-the sheet has no ring. `usage-deleted` adds two deleted projects' shares to the plan's week. `usage-normal` goes back
-to the default. `screenshots/usage-sheet-b/` has each of the sheet's states from the Simulator.
+sheet (`…?sheet=usage`; usage sheet direction A, "Index", mocks/screens/usage-sheet-directions). It shows the week as
+a ring with this project's share in it and one line beside it ("62% of your week is left." over when it resets),
+then rows laid out like Settings: Limits ("None", "Up to 25%"), Agent (the model), Plan (with both plans connected,
+or a move to speak of) and, under Dream usage, this month so far. Each row opens a page of its own in the sheet:
+the two limits ("This project may use up to N% of the week", "Stop when the plan has N% left", saved as each field
+loses focus); the agent's model and effort; both plans with what's left of each and the move between them (asking
+first); and the lines Dream paid for. By default the sample world's ChatGPT Pro week is 38% used, Lift Log about 4%
+of it, and each of the simulated agent's turns adds a little (the header follows `ProjectEvent.Usage`).
+`usage-near-limit` is the heavy week: 92% used, the ring's arc and "8% left" in amber, and the sheet's line in amber
+saying what happens if it runs out; with `two-plans`, the Plan row says how much of Claude's week is left.
+`usage-limit` gives Lift Log a limit at its share, so it's paused by it: "Paused · at its 4% limit" in the header,
+"paused" under the ring, the sheet's line and Limits row in amber, and Clear the limit on the Limits page.
+`plan-limited` with `paused` is the plan's own pause: the five hours ran out, so the line says until when (the five
+hours show only then), and `plan-week-out` the same for the week. `usage-none` is a world where no usage is known:
+the header shows nothing, and the sheet has no ring. `usage-deleted` adds two deleted projects' shares to the plan's
+week. `usage-normal` goes back to the default. `screenshots/usage-sheet-a/` has each of the sheet's states and pages
+from the Simulator.
 
 Settings (direction B, mocks/screens/settings-directions; `data/settings.ts` says what every row and page says,
 `ui/Group.tsx` draws them) is an index of one-line rows, each with its answer on the right, and every row opens a
@@ -244,16 +245,15 @@ xcrun simctl launch --terminate-running-process booted build.omer.dream \
 ```
 
 What Dream pays to run their projects (docs/metering.md, `ui/Costs.tsx`, `data/costs.ts`) is dollars, not the
-plan's percentages, and never shares a total or a row with them. The usage sheet says in a sentence what Dream paid
-for the project this month ("Dream paid $0.41 this month to keep its computer running, for 2.5 hours"), and when it
-paid for more than one thing the sentence opens into a line for each (machine time, cloud browsers, Macs, OpenAI,
-storage, email) with last month under them. Settings has a Dream usage row under the plans (this
+plan's percentages, and never shares a total or a row with them. The usage sheet has a Dream usage row with
+this month so far, which opens a page with the total, last month beside it, and a line for each thing it paid for
+(machine time, cloud browsers, Macs, OpenAI with its models, storage, email). Settings has a Dream usage row under the plans (this
 month so far) that opens `/costs`: the 30 days (touch a bar
 to read the day), what it paid for with OpenAI by model, each project largest first (tapping one
 opens its usage sheet; archived ones say so, deleted ones are one row, sign-ins are Outside your projects). An
 operator (`costs-operator`) also gets "Everyone on this Dream" at the foot, which opens `/costs/everyone`: each
-person's month and the overhead no one caused. `costs-none` is before anything cost anything (no sentence in the
-sheet; `costs-machine` is a month where each project only ran its computer, 2.5 hours; Settings' row says "Nothing yet" and opens nothing); `costs-normal` goes back to the default. Against an API without
+person's month and the overhead no one caused. `costs-none` is before anything cost anything (no Dream usage row in
+the sheet; `costs-machine` is a month where each project only ran its computer, 2.5 hours; Settings' row says "Nothing yet" and opens nothing); `costs-normal` goes back to the default. Against an API without
 the cost RPCs, nothing shows. `screenshots/costs/` has each state from the Simulator, and `screenshots/settings-b/` Settings
 and its pages.
 

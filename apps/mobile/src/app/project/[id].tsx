@@ -4,9 +4,9 @@
  *
  * `?tab=status` opens the roadmap and `?tab=chat` folds it; `?focus=<messageId>`
  * opens that question or access request expanded (deep links and notifications
- * use these). `?sheet=usage` opens the usage sheet, as tapping the ring in the header does (`?sheet=costs` with
- * what Dream paid opened, `?sheet=adjust` at its Adjust page, `?sheet=plan` there asking to move the project to
- * their other plan), and
+ * use these). `?sheet=usage` opens the usage sheet, as tapping the ring in the header does (`?sheet=limits`,
+ * `?sheet=agent`, `?sheet=plans` and `?sheet=costs` at one of its pages, `?sheet=plan` at its Plan page asking to
+ * move the project to their other plan), and
  * `?sheet=notifications` the Notifications sheet, as the bell does (shown once one of its apps has asked to notify
  * them). `?work=<workstream id>` writes to that workstream, as tapping its row on the card does.
  * `?options=<messageId>&option=<n>` opens a question's option previews full screen at option n.
@@ -77,12 +77,15 @@ const decodeMessageId = Schema.decodeUnknownOption(MessageId)
 const header = 48
 /** Between the header and the card, and between the card and Chat's first message. */
 const gap = 8
-/** `?sheet=` values that open the usage sheet, and where. */
+/** `?sheet=` values that open the usage sheet, and where. `adjust` (a page that's gone) opens the index it was split into. */
 const usageStarts: Readonly<Record<string, UsageSheetStart>> = {
-  usage: "summary",
-  costs: "costs",
-  adjust: "adjust",
-  plan: "move"
+  usage: "index",
+  adjust: "index",
+  limits: "limits",
+  agent: "agent",
+  plans: "plan",
+  plan: "move",
+  costs: "dream"
 }
 
 export default function ProjectScreen() {
@@ -247,7 +250,7 @@ function Project(props: {
   }, [])
 
   const [usage, setUsage] = useState(false)
-  const [usageStart, setUsageStart] = useState<UsageSheetStart>("summary")
+  const [usageStart, setUsageStart] = useState<UsageSheetStart>("index")
   const openNotifications = useOpenAppNotifications()
   useEffect(() => {
     const start = usageStarts[props.sheet ?? ""]
@@ -454,7 +457,7 @@ function Project(props: {
         start={usageStart}
         onClose={() => {
           setUsage(false)
-          setUsageStart("summary")
+          setUsageStart("index")
         }}
       />
       <AppNotificationsSheet projectId={props.projectId} title={project?.title ?? ""} />

@@ -124,6 +124,8 @@ export function LimitField(props: {
   readonly after: string
   readonly label: string
   readonly row: LimitRow
+  /** What the limit does, under where the project stands. */
+  readonly help?: string
   readonly onChange: (value: number | undefined) => void
 }) {
   const { row } = props
@@ -200,6 +202,9 @@ export function LimitField(props: {
       </View>
       {row.note ? (
         <Text style={{ fontSize: 13, color: row.reached ? color.need : color.t3, marginTop: 5 }}>{row.note}</Text>
+      ) : null}
+      {props.help ? (
+        <Text style={{ fontSize: 13, lineHeight: 18, color: color.t3, marginTop: row.note ? 2 : 5 }}>{props.help}</Text>
       ) : null}
     </View>
   )
