@@ -8,18 +8,27 @@ import type {
 } from "@dream/domain"
 import * as Fx from "@dream/domain/fixtures"
 import { assert, describe, it } from "@effect/vitest"
-import { DateTime, Effect, Layer } from "effect"
+import { DateTime, Effect, Layer, Redacted } from "effect"
+import { Reactivity } from "effect/reactivity"
+import { Socket } from "effect/socket"
 import { AccountUsages } from "../src/data/AccountUsages.ts"
 import { AppClient, type AppRpcClient } from "../src/data/AppClient.ts"
+import { makeAppLayer } from "../src/data/AppLayer.ts"
+import { ProjectUsages } from "../src/data/ProjectUsages.ts"
+import { SecureStorage } from "../src/data/SecureStorage.ts"
+import { Session } from "../src/data/Session.ts"
+import { FakeBackend, type Scenario } from "../src/fake/FakeBackend.ts"
+import { sentenceText } from "../src/data/format.ts"
 import {
   latestGlance,
+  limitsView,
   parseLimit,
   percentLabel,
   planCard,
   profileHint,
   ringArcs,
   usageBadge,
-  usageSheet,
+  usageSummary,
   withLimit
 } from "../src/data/usage.ts"
 
@@ -91,73 +100,185 @@ describe("latestGlance", () => {
   })
 })
 
-describe("usageSheet", () => {
-  const sheet = usageSheet(Fx.liftLogUsage, "Lift Log", now, la)
+describe("usageSummary", () => {
   const resets = DateTime.makeUnsafe("2026-11-09T16:00:00Z")
-
-  it("shows what this project used of the week, what's left and when it resets, and no limits yet", () => {
-    assert.strictEqual(sheet.subtitle, "Lift Log · ChatGPT Pro")
-    assert.deepStrictEqual(
-      [sheet.hero?.share, sheet.hero?.left, sheet.hero?.resets],
-      ["4%", "62%", "Resets Mon 12:00 AM"]
-    )
-    assert.isUndefined(sheet.callout)
-    assert.deepStrictEqual(sheet.limits, {
-      project: { value: undefined, reached: false },
-      planLeft: { value: undefined, reached: false }
-    })
-    const claude = usageSheet({ ...Fx.liftLogUsage, provider: "claude", plan: "Claude Max" }, "Lift Log", now, la)
-    assert.strictEqual(claude.subtitle, "Lift Log · Claude Max")
+  const chatgpt = (usage?: ModelConnection["usage"]): ModelConnection => ({
+    id: "mcn_chatgpt" as ModelConnectionId,
+    provider: "chatgpt",
+    status: "connected",
+    ...(usage ? { usage } : {})
   })
-
-  it("prefers the week as a whole, which an API sends even when this project didn't work in it", () => {
-    const { weekly: _, ...rest } = Fx.liftLogUsage
-    const idle = usageSheet({ ...rest, weekWindow: { usedPercent: 50, projectPercent: 0 } }, "Lift Log", now, la)
-    assert.deepStrictEqual([idle.hero?.share, idle.hero?.left], ["<1%", "50%"])
-  })
-
-  it("near the limit, says what's left and until when", () => {
-    const usage: ProjectUsage = {
-      ...Fx.liftLogUsage,
-      weekly: { usedPercent: 92, projectPercent: 31, resetsAt: resets }
+  const claude = (weeklyUsed?: number, limited = false): ModelConnection => ({
+    id: "mcn_claude" as ModelConnectionId,
+    provider: "claude",
+    status: "connected",
+    usage: {
+      provider: "claude",
+      ...(weeklyUsed === undefined ? {} : { weekly: { usedPercent: weeklyUsed } }),
+      ...(limited ? { limitedUntil: { window: "fiveHour" as const, until: DateTime.add(now, { hours: 1 }) } } : {}),
+      observedAt: now
     }
-    const near = usageSheet(usage, "Lift Log", now, la)
-    assert.isTrue(near.hero?.nearLimit)
-    assert.strictEqual(near.hero?.left, "8%")
-    assert.strictEqual(near.callout?.left, "8% of your week is left")
-    assert.isTrue(near.callout?.rest.startsWith(", until Mon 8:00 AM."))
+  })
+  const summary = (usage: ProjectUsage, connections: ReadonlyArray<ModelConnection> = [chatgpt()], project = {}) =>
+    usageSummary(usage, project, connections, now, la)
+  const week = (usedPercent: number, projectPercent: number) => ({ usedPercent, projectPercent, resetsAt: resets })
+
+  it("says what this project used of the week, what's left and when it resets, beside the week's ring", () => {
+    const view = summary(Fx.liftLogUsage)
+    assert.strictEqual(
+      sentenceText(view.plan),
+      "This project used about 4% of your ChatGPT week. 62% is left, and it resets Mon 12:00 AM."
+    )
+    assert.deepStrictEqual(
+      view.plan.filter((p) => p.tone).map((p) => [p.text, p.tone]),
+      [
+        ["about 4%", "strong"],
+        ["62%", "strong"]
+      ]
+    )
+    assert.strictEqual(view.ring?.label, "4%")
+    assert.isFalse(view.ring?.need)
+    assert.isUndefined(view.fix)
   })
 
-  it("shows each limit with where the project stands, and says which one paused it", () => {
-    const week = { usedPercent: 70, projectPercent: 25, resetsAt: resets }
-    const usage: ProjectUsage = {
+  it("reads a share too small to round as under 1%, and one of nothing as none yet", () => {
+    const tiny = summary({ ...Fx.liftLogUsage, weekly: week(1, 0.3) })
+    assert.strictEqual(
+      sentenceText(tiny.plan),
+      "This project used under 1% of your ChatGPT week. 99% is left, and it resets Mon 8:00 AM."
+    )
+    assert.strictEqual(tiny.ring?.label, "<1%")
+    const { weekly: _, ...rest } = Fx.liftLogUsage
+    const idle = summary({ ...rest, weekWindow: { usedPercent: 50, projectPercent: 0 } })
+    assert.strictEqual(sentenceText(idle.plan), "This project hasn’t used any of your ChatGPT week yet. 50% is left.")
+  })
+
+  it("near the end of the week, leads with what's left in amber, and offers their other plan when it has room", () => {
+    const near: ProjectUsage = { ...Fx.liftLogUsage, weekly: week(92, 31) }
+    const view = summary(near, [chatgpt(), claude(38)])
+    assert.strictEqual(
+      sentenceText(view.plan),
+      "Only 8% of your week is left, until Mon 8:00 AM. This project used about 31% of it. If it runs out, its work pauses and picks up on its own when the week resets."
+    )
+    assert.deepStrictEqual(view.plan[0], { text: "Only 8% of your week is left", tone: "need" })
+    assert.isTrue(view.ring?.need)
+    assert.deepStrictEqual(view.fix, { _tag: "Move", to: "claude" })
+    assert.strictEqual(view.otherPlan, "Your Claude plan has 62% of its week left, if you’d rather move it there.")
+  })
+
+  it("offers the move without a figure when Dream doesn't know the other plan's week, and not at all without room", () => {
+    const near: ProjectUsage = { ...Fx.liftLogUsage, weekly: week(92, 31) }
+    const unknown = summary(near, [chatgpt(), claude()])
+    assert.deepStrictEqual(unknown.fix, { _tag: "Move", to: "claude" })
+    assert.isUndefined(unknown.otherPlan)
+    assert.isUndefined(summary(near, [chatgpt(), claude(90)]).fix)
+    assert.isUndefined(summary(near, [chatgpt(), claude(10, true)]).fix)
+    assert.isUndefined(summary(near, [chatgpt()]).fix)
+    const moving = summary(near, [chatgpt(), claude(38)], {
+      planSwitch: { from: "chatgpt", to: "claude", state: "waiting", requestedAt: now }
+    })
+    assert.isUndefined(moving.fix)
+  })
+
+  it("paused at a limit they set, says which and offers to clear it", () => {
+    const paused: ProjectUsage = {
       ...Fx.liftLogUsage,
-      weekly: week,
-      weekWindow: week,
+      weekly: week(70, 25),
+      weekWindow: week(70, 25),
       limits: { projectWeekPercent: 25, planLeftPercent: 10 },
       limitReached: { limit: "project", percent: 25 }
     }
-    const paused = usageSheet(usage, "Lift Log", now, la)
-    assert.deepStrictEqual(paused.limits, {
+    const view = summary(paused, [chatgpt(), claude(38)])
+    assert.strictEqual(
+      sentenceText(view.plan),
+      "Paused at the 25% you gave it. It picks up when you raise or clear the limit, or when your week resets Mon 8:00 AM."
+    )
+    assert.strictEqual(view.plan[0]?.tone, "need")
+    assert.isTrue(view.ring?.need)
+    assert.deepStrictEqual(view.fix, { _tag: "ClearLimit", limit: "project" })
+    const floor = summary({ ...paused, limitReached: { limit: "planLeft", percent: 10 } })
+    assert.include(
+      sentenceText(floor.plan),
+      "Paused to keep 10% of your week free. It picks up when you lower or clear"
+    )
+    assert.deepStrictEqual(floor.fix, { _tag: "ClearLimit", limit: "planLeft" })
+  })
+
+  it("says the five hours ran out only when they're what pauses it, with no fix: it picks up on its own", () => {
+    const until = DateTime.makeUnsafe("2026-11-05T00:10:00Z")
+    const limited = chatgpt({
+      provider: "chatgpt",
+      fiveHour: { usedPercent: 100, resetsAt: until },
+      limitedUntil: { window: "fiveHour", until },
+      observedAt: now
+    })
+    const usage: ProjectUsage = { ...Fx.liftLogUsage, weekly: week(36, 0.3) }
+    const view = summary(usage, [limited, claude(38)])
+    assert.strictEqual(
+      sentenceText(view.plan),
+      "Your five hours ran out. The agent picks up on its own at 4:10 PM. This project used under 1% of your week, and 64% of it is left."
+    )
+    assert.isFalse(view.ring?.need)
+    assert.isUndefined(view.fix)
+    // Over: back to the week.
+    const later = usageSummary(usage, {}, [limited], DateTime.add(until, { minutes: 1 }), la)
+    assert.include(sentenceText(later.plan), "This project used under 1% of your ChatGPT week.")
+    // The window alone, nearly full, isn't a pause.
+    const busy = chatgpt({ provider: "chatgpt", fiveHour: { usedPercent: 97 }, observedAt: now })
+    assert.include(sentenceText(summary(usage, [busy]).plan), "This project used under 1%")
+  })
+
+  it("when the week ran out, says when it picks up, and offers the other plan", () => {
+    const limited = chatgpt({
+      provider: "chatgpt",
+      limitedUntil: { window: "weekly", until: resets },
+      observedAt: now
+    })
+    const view = summary({ ...Fx.liftLogUsage, weekly: week(100, 31) }, [limited, claude(38)])
+    assert.strictEqual(
+      sentenceText(view.plan),
+      "Your week ran out. The agent picks up on its own when it resets Mon 8:00 AM. This project used about 31% of it."
+    )
+    assert.isTrue(view.ring?.need)
+    assert.deepStrictEqual(view.fix, { _tag: "Move", to: "claude" })
+  })
+
+  it("without the week, has no ring and says Dream doesn't know yet", () => {
+    const { weekly: _, fiveHourWindow: __, ...rest } = Fx.liftLogUsage
+    const view = summary(rest)
+    assert.isUndefined(view.ring)
+    assert.strictEqual(sentenceText(view.plan), "Dream doesn’t know yet how much of your ChatGPT week is used.")
+    assert.strictEqual(
+      sentenceText(summary({ ...rest, billing: "apiKey" }).plan),
+      "It runs on an API key, so there’s no weekly limit to share."
+    )
+  })
+})
+
+describe("limitsView", () => {
+  it("shows each limit with where the project stands, and which one paused it", () => {
+    const usage: ProjectUsage = {
+      ...Fx.liftLogUsage,
+      weekly: { usedPercent: 70, projectPercent: 25 },
+      limits: { projectWeekPercent: 25, planLeftPercent: 10 },
+      limitReached: { limit: "project", percent: 25 }
+    }
+    assert.deepStrictEqual(limitsView(usage), {
       project: { value: 25, note: "About 25% used so far", reached: true },
       planLeft: { value: 10, note: "30% left now", reached: false }
     })
-    assert.isTrue(paused.hero?.nearLimit)
-    assert.isFalse(paused.hero?.lowLeft)
-    assert.deepStrictEqual(paused.callout, {
-      left: "Paused at the 25% you gave it",
-      rest: ". It picks up when you raise or clear the limit, or when your week resets Mon 8:00 AM."
+    assert.deepStrictEqual(limitsView(Fx.liftLogUsage), {
+      project: { value: undefined, reached: false },
+      planLeft: { value: undefined, reached: false }
     })
-    const floor = usageSheet({ ...usage, limitReached: { limit: "planLeft", percent: 10 } }, "Lift Log", now, la)
-    assert.strictEqual(floor.callout?.left, "Paused to keep 10% of your week free")
-    assert.include(floor.callout?.rest, "when you lower or clear the limit")
   })
 
-  it("without the week, has no ring, and the limits still show", () => {
-    const { weekly: _, fiveHourWindow: __, ...rest } = Fx.liftLogUsage
-    const unknown = usageSheet({ ...rest, limits: { planLeftPercent: 20 } }, "Lift Log", now, la)
-    assert.isUndefined(unknown.hero)
-    assert.deepStrictEqual(unknown.limits.planLeft, { value: 20, reached: false })
+  it("without the week, still shows the limits, without notes", () => {
+    const { weekly: _, ...rest } = Fx.liftLogUsage
+    assert.deepStrictEqual(limitsView({ ...rest, limits: { planLeftPercent: 20 } }).planLeft, {
+      value: 20,
+      reached: false
+    })
   })
 })
 
@@ -312,6 +433,59 @@ describe("Settings' plan card", () => {
           )
         )
       )
+    )
+  )
+})
+
+describe("the usage sheet in the fixtures world", () => {
+  const appLayer = makeAppLayer(
+    { apiUrl: "https://dream.test", backend: "fixtures" },
+    { storage: SecureStorage.layerMemory(), webSocket: Socket.layerWebSocketConstructorGlobal, fetch: globalThis.fetch }
+  ).pipe(Layer.provideMerge(Reactivity.layer))
+  const signIn = Effect.gen(function* () {
+    const app = yield* AppClient
+    const session = yield* Session
+    const result = yield* app.DevSignIn({ email: "ada@example.com", secret: Redacted.make("fixtures") })
+    yield* session.signIn({ token: result.sessionToken, user: result.user })
+  })
+  // The fixtures backend is in the app's layer when it's built for fixtures, which its type can't say.
+  const run = <A, E>(effect: Effect.Effect<A, E, any>) => effect.pipe(Effect.provide(appLayer)) as Effect.Effect<A, E>
+  const sheetIn = (...scenarios: ReadonlyArray<Scenario>) =>
+    Effect.gen(function* () {
+      const backend = yield* FakeBackend
+      for (const scenario of ["reset", ...scenarios] as const) yield* backend.scenario(scenario)
+      const app = yield* AppClient
+      const usage = yield* (yield* ProjectUsages).sheet(Fx.liftLog.id)
+      const connections = yield* app.ListModelConnections()
+      return usageSummary(usage, {}, connections, yield* DateTime.now)
+    })
+
+  it.effect("reaches every state the sheet has", () =>
+    run(
+      Effect.gen(function* () {
+        yield* signIn
+        assert.match(sentenceText((yield* sheetIn()).plan), /^This project used about \d+% of your ChatGPT week\./)
+
+        const near = yield* sheetIn("usage-near-limit", "two-plans")
+        assert.match(sentenceText(near.plan), /^Only 8% of your week is left/)
+        assert.deepStrictEqual(near.fix, { _tag: "Move", to: "claude" })
+        assert.strictEqual(near.otherPlan, "Your Claude plan has 62% of its week left, if you’d rather move it there.")
+
+        const paused = yield* sheetIn("usage-limit")
+        assert.match(sentenceText(paused.plan), /^Paused at the \d+% you gave it\./)
+        assert.strictEqual(paused.fix?._tag, "ClearLimit")
+
+        const five = yield* sheetIn("plan-limited", "paused")
+        assert.match(sentenceText(five.plan), /^Your five hours ran out\. The agent picks up on its own at /)
+        assert.isUndefined(five.fix)
+
+        const week = yield* sheetIn("usage-near-limit", "two-plans", "plan-week-out")
+        assert.match(sentenceText(week.plan), /^Your week ran out\./)
+        assert.deepStrictEqual(week.fix, { _tag: "Move", to: "claude" })
+
+        const unknown = yield* sheetIn("usage-none")
+        assert.isUndefined(unknown.ring)
+      })
     )
   )
 })

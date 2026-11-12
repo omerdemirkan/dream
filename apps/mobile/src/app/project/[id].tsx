@@ -4,8 +4,9 @@
  *
  * `?tab=status` opens the roadmap and `?tab=chat` folds it; `?focus=<messageId>`
  * opens that question or access request expanded (deep links and notifications
- * use these). `?sheet=usage` opens the usage sheet, as tapping the ring in the header does (`?sheet=plan` also asks
- * to move the project to their other plan, as tapping the line under its agent does), and
+ * use these). `?sheet=usage` opens the usage sheet, as tapping the ring in the header does (`?sheet=costs` with
+ * what Dream paid opened, `?sheet=adjust` at its Adjust page, `?sheet=plan` there asking to move the project to
+ * their other plan), and
  * `?sheet=notifications` the Notifications sheet, as the bell does (shown once one of its apps has asked to notify
  * them). `?work=<workstream id>` writes to that workstream, as tapping its row on the card does.
  * `?options=<messageId>&option=<n>` opens a question's option previews full screen at option n.
@@ -64,10 +65,9 @@ import { hideKeyboard, IconButton } from "../../ui/kit.tsx"
 import { PresenceTile, StateLineText, useTickingNow } from "../../ui/Presence.tsx"
 import { RoadmapSheet, StatusCardPin } from "../../ui/StatusCard.tsx"
 import { labelsOf } from "../../ui/statusView.ts"
-import { ProjectCostsSection } from "../../ui/Costs.tsx"
-import { UsageBadge, UsageSheet } from "../../ui/Usage.tsx"
+import { UsageBadge } from "../../ui/Usage.tsx"
+import { UsageSheet, type UsageSheetStart } from "../../ui/UsageSheet.tsx"
 import { WaitingCard, WaitingLine } from "../../ui/Waiting.tsx"
-import { ProjectAgent } from "../../ui/Advanced.tsx"
 import { color, gutter } from "../../ui/theme.ts"
 
 const decodeProjectId = Schema.decodeUnknownOption(ProjectId)
@@ -77,6 +77,13 @@ const decodeMessageId = Schema.decodeUnknownOption(MessageId)
 const header = 48
 /** Between the header and the card, and between the card and Chat's first message. */
 const gap = 8
+/** `?sheet=` values that open the usage sheet, and where. */
+const usageStarts: Readonly<Record<string, UsageSheetStart>> = {
+  usage: "summary",
+  costs: "costs",
+  adjust: "adjust",
+  plan: "move"
+}
 
 export default function ProjectScreen() {
   const params = useLocalSearchParams<{
@@ -240,13 +247,13 @@ function Project(props: {
   }, [])
 
   const [usage, setUsage] = useState(false)
-  const [askToMove, setAskToMove] = useState(false)
+  const [usageStart, setUsageStart] = useState<UsageSheetStart>("summary")
   const openNotifications = useOpenAppNotifications()
   useEffect(() => {
-    if (props.sheet === "usage") setUsage(true)
-    else if (props.sheet === "plan") {
+    const start = usageStarts[props.sheet ?? ""]
+    if (start) {
+      setUsageStart(start)
       setUsage(true)
-      setAskToMove(true)
     } else if (props.sheet === "notifications") openNotifications(props.projectId)
     else return
     router.setParams({ sheet: undefined })
@@ -442,13 +449,13 @@ function Project(props: {
       <UsageSheet
         projectId={props.projectId}
         title={project?.title ?? ""}
-        agent={project ? <ProjectAgent project={project} askToMove={askToMove} /> : null}
+        project={project}
         open={usage}
+        start={usageStart}
         onClose={() => {
           setUsage(false)
-          setAskToMove(false)
+          setUsageStart("summary")
         }}
-        footer={<ProjectCostsSection projectId={props.projectId} />}
       />
       <AppNotificationsSheet projectId={props.projectId} title={project?.title ?? ""} />
       {state && thread ? (

@@ -6,16 +6,18 @@ import type {
   AccountUsage,
   ModelConnection,
   ModelProvider,
+  Project,
   ProjectShare,
   ProjectUsage,
   ProjectUsageGlance,
+  UsageLimitName,
   UsageLimitReached,
   UsageLimits,
   UsageSnapshot,
   WindowShare
 } from "@dream/domain"
 import { DateTime } from "effect"
-import { providerName, resetLabel, usageDetail } from "./format.ts"
+import { providerName, resetLabel, type Sentence, usageDetail } from "./format.ts"
 
 /** From this much of the week used, the ring turns amber and says what's left. */
 export const nearLimitPercent = 85
@@ -218,37 +220,35 @@ const limitCallout = (
 })
 
 // ---------------------------------------------------------------------------
-// The sheet
+// The sheet (usage sheet direction B, "Read, then adjust": mocks/screens/usage-sheet-directions)
 // ---------------------------------------------------------------------------
 
 /**
- * The usage sheet, kept to what matters at a glance: how much of the week this project used, how much of the plan
- * is left and when it resets, and the two limits they can set. Token counts, other projects and how shares are
- * estimated stay out of it (Settings' plan page has the projects).
+ * The top of the usage sheet: where the project stands on its plan, said in a sentence beside a small ring of the
+ * week, and the one thing that fixes a trouble, when a tap can. Everything they can change sits behind Adjust.
  */
-export interface UsageSheet {
-  /** "Lift Log · ChatGPT Pro" */
-  readonly subtitle: string
+export interface UsageSummary {
   /** The week as a ring, absent when the week isn't known. */
-  readonly hero?: {
+  readonly ring?: {
     readonly arcs: RingArcs
-    /** Amber: near the end of the week, or paused by a limit they set. */
-    readonly nearLimit: boolean
-    /** What's left is the trouble (near the end of the week), so it's amber too. */
-    readonly lowLeft: boolean
-    /** This project's share: "31%". */
-    readonly share: string
-    /** What's left of the plan this week: "8%". */
-    readonly left: string
-    /** "Resets Mon 8:00 AM" */
-    readonly resets?: string
+    /** This project's share: "4%". */
+    readonly label: string
+    /** Amber: near the end of the week, the week ran out, or a limit they set holds the project. */
+    readonly need: boolean
   }
-  /** Paused by a limit they set, or near the end of the week: in amber. */
-  readonly callout?: { readonly left: string; readonly rest: string }
-  readonly limits: LimitsView
+  /** Where it stands; the lead is amber when something holds the project back. */
+  readonly plan: Sentence
+  /** The fix beside Adjust: clear the limit that holds it, or move it to their other plan, which has room. */
+  readonly fix?: UsageFix
+  /** Why the move is offered: "Your Claude plan has 62% of its week left…", when Dream knows how much. */
+  readonly otherPlan?: string
 }
 
-/** The two limits, each as its field shows it, and a quiet line on where the project stands against it. */
+export type UsageFix =
+  | { readonly _tag: "ClearLimit"; readonly limit: UsageLimitName }
+  | { readonly _tag: "Move"; readonly to: ModelProvider }
+
+/** Where the project stands against its limits, for their fields on the Adjust page. */
 export interface LimitsView {
   readonly project: LimitRow
   readonly planLeft: LimitRow
@@ -263,70 +263,177 @@ export interface LimitRow {
   readonly reached: boolean
 }
 
-const planName = (provider: ModelProvider, plan: string | undefined) =>
-  plan ?? (provider === "chatgpt" ? "ChatGPT plan" : "Claude plan")
+/** A share in words, for a sentence: "under 1%", "about 4%"; undefined when the project used none of it. */
+const shareWords = (percent: number) =>
+  percent <= 0 ? undefined : percent < 0.5 ? "under 1%" : `about ${Math.round(percent)}%`
 
-/** Why a limit they set paused the project, in the sheet's callout. */
-const pausedCallout = (
-  reached: UsageLimitReached,
-  resetsAt: DateTime.Utc | undefined,
-  now: DateTime.Utc,
-  timeZone?: string
-) => ({
-  left:
-    reached.limit === "project"
-      ? `Paused at the ${reached.percent}% you gave it`
-      : `Paused to keep ${reached.percent}% of your week free`,
-  rest: `. It picks up when you ${reached.limit === "project" ? "raise" : "lower"} or clear the limit${
-    resetsAt ? `, or when your week resets ${resetLabel(resetsAt, now, timeZone)}` : ""
-  }.`
-})
+/** A connection's pause that still holds. */
+const pauseOf = (connection: ModelConnection | undefined, now: DateTime.Utc) => {
+  const limited = connection?.usage?.limitedUntil
+  return limited && DateTime.isGreaterThan(limited.until, now) ? limited : undefined
+}
 
-export const usageSheet = (
+/** Their other connected plan, when it could take the project now: not paused, and not near the end of its week. */
+const roomyOtherPlan = (connections: ReadonlyArray<ModelConnection>, provider: ModelProvider, now: DateTime.Utc) => {
+  const other = connections.find((c) => c.provider !== provider && c.status === "connected")
+  if (other === undefined || pauseOf(other, now)) return undefined
+  const week = other.usage?.weekly
+  if (week !== undefined && week.usedPercent >= nearLimitPercent) return undefined
+  return { provider: other.provider, left: week === undefined ? undefined : leftOf(week.usedPercent) }
+}
+
+const leftOf = (usedPercent: number) => 100 - Math.round(usedPercent)
+
+/**
+ * The sheet's summary. `connections` are their plans (`ListModelConnections`): the project's says when the plan
+ * itself paused it (its five hours or its week ran out), and the other's whether a move would help.
+ */
+export const usageSummary = (
   usage: ProjectUsage,
-  projectTitle: string,
+  project: Pick<Project, "planSwitch">,
+  connections: ReadonlyArray<ModelConnection>,
   now: DateTime.Utc,
   timeZone?: string
-): UsageSheet => {
-  const plan = planName(usage.provider, usage.plan)
+): UsageSummary => {
+  const name = providerName(usage.provider)
   // `weekWindow` is there whether or not this project worked this week; APIs from before it send `weekly` alone.
   const week = usage.weekWindow ?? usage.weekly
-  const nearLimit = week !== undefined && week.usedPercent >= nearLimitPercent
   const reached = usage.limitReached
-  const limits = usage.limits ?? {}
-  const left = week === undefined ? undefined : leftPercent(week)
-  return {
-    subtitle: `${projectTitle} · ${usage.billing === "apiKey" ? "API key" : plan}`,
-    ...(week
-      ? {
-          hero: {
-            arcs: ringArcs(week, 0.03),
-            nearLimit: nearLimit || reached !== undefined,
-            lowLeft: nearLimit,
-            share: percentLabel(week.projectPercent),
-            left: `${left}%`,
-            ...(week.resetsAt ? { resets: `Resets ${resetLabel(week.resetsAt, now, timeZone)}` } : {})
+  const paused = pauseOf(
+    connections.find((c) => c.provider === usage.provider && c.status === "connected"),
+    now
+  )
+  const nearLimit = week !== undefined && week.usedPercent >= nearLimitPercent
+  const resets = week?.resetsAt ? resetLabel(week.resetsAt, now, timeZone) : undefined
+  const share = week === undefined ? undefined : shareWords(week.projectPercent)
+  const left = week === undefined ? undefined : leftOf(week.usedPercent)
+  const other = project.planSwitch?.state === "waiting" ? undefined : roomyOtherPlan(connections, usage.provider, now)
+  const move = (): Pick<UsageSummary, "fix" | "otherPlan"> =>
+    other === undefined
+      ? {}
+      : {
+          fix: { _tag: "Move", to: other.provider },
+          ...(other.left === undefined
+            ? {}
+            : {
+                otherPlan: `Your ${providerName(other.provider)} plan has ${other.left}% of its week left, if you’d rather move it there.`
+              })
+        }
+  const ring =
+    week === undefined
+      ? {}
+      : {
+          ring: {
+            arcs: ringArcs(week, 0.05),
+            label: percentLabel(week.projectPercent),
+            need: nearLimit || reached !== undefined || paused?.window === "weekly"
           }
         }
-      : {}),
-    ...(reached
-      ? { callout: pausedCallout(reached, week?.resetsAt, now, timeZone) }
-      : week && nearLimit
-        ? { callout: limitCallout(week.usedPercent, week.resetsAt, now, timeZone) }
-        : {}),
-    limits: {
-      project: {
-        value: limits.projectWeekPercent,
-        ...(week && limits.projectWeekPercent !== undefined
-          ? { note: `About ${percentLabel(week.projectPercent)} used so far` }
-          : {}),
-        reached: reached?.limit === "project"
-      },
-      planLeft: {
-        value: limits.planLeftPercent,
-        ...(week && limits.planLeftPercent !== undefined ? { note: `${left}% left now` } : {}),
-        reached: reached?.limit === "planLeft"
+  const orWhenResets = resets ? `, or when your week resets ${resets}` : ""
+
+  if (reached) {
+    return {
+      ...ring,
+      plan: [
+        {
+          text:
+            reached.limit === "project"
+              ? `Paused at the ${reached.percent}% you gave it.`
+              : `Paused to keep ${reached.percent}% of your week free.`,
+          tone: "need"
+        },
+        {
+          text: ` It picks up when you ${reached.limit === "project" ? "raise" : "lower"} or clear the limit${orWhenResets}.`
+        }
+      ],
+      fix: { _tag: "ClearLimit", limit: reached.limit }
+    }
+  }
+  if (paused?.window === "fiveHour") {
+    const rest =
+      left === undefined
+        ? ""
+        : share
+          ? ` This project used ${share} of your week, and ${left}% of it is left.`
+          : ` ${left}% of your week is left.`
+    return {
+      ...ring,
+      plan: [
+        { text: "Your five hours ran out.", tone: "need" },
+        { text: ` The agent picks up on its own at ${resetLabel(paused.until, now, timeZone)}.${rest}` }
+      ]
+    }
+  }
+  if (paused?.window === "weekly") {
+    return {
+      ...ring,
+      plan: [
+        { text: "Your week ran out.", tone: "need" },
+        {
+          text: ` The agent picks up on its own when it resets ${resetLabel(paused.until, now, timeZone)}.${share ? ` This project used ${share} of it.` : ""}`
+        }
+      ],
+      ...move()
+    }
+  }
+  if (week !== undefined && nearLimit) {
+    return {
+      ...ring,
+      plan: [
+        { text: `Only ${left}% of your week is left`, tone: "need" },
+        {
+          text: `${resets ? `, until ${resets}` : ""}.${share ? ` This project used ${share} of it.` : ""} If it runs out, its work pauses and picks up on its own when the week resets.`
+        }
+      ],
+      ...move()
+    }
+  }
+  if (week !== undefined) {
+    const after = [
+      { text: `${left}%`, tone: "strong" as const },
+      { text: ` is left${resets ? `, and it resets ${resets}` : ""}.` }
+    ]
+    return {
+      ...ring,
+      plan: share
+        ? [
+            { text: "This project used " },
+            { text: share, tone: "strong" },
+            { text: ` of your ${name} week. ` },
+            ...after
+          ]
+        : [{ text: `This project hasn’t used any of your ${name} week yet. ` }, ...after]
+    }
+  }
+  return {
+    plan: [
+      {
+        text:
+          usage.billing === "apiKey"
+            ? "It runs on an API key, so there’s no weekly limit to share."
+            : `Dream doesn’t know yet how much of your ${name} week is used.`
       }
+    ]
+  }
+}
+
+/** Each limit as its field shows it, with a quiet line on where the project stands against it. */
+export const limitsView = (usage: ProjectUsage): LimitsView => {
+  const week = usage.weekWindow ?? usage.weekly
+  const limits = usage.limits ?? {}
+  const reached = usage.limitReached
+  return {
+    project: {
+      value: limits.projectWeekPercent,
+      ...(week && limits.projectWeekPercent !== undefined
+        ? { note: `About ${percentLabel(week.projectPercent)} used so far` }
+        : {}),
+      reached: reached?.limit === "project"
+    },
+    planLeft: {
+      value: limits.planLeftPercent,
+      ...(week && limits.planLeftPercent !== undefined ? { note: `${leftOf(week.usedPercent)}% left now` } : {}),
+      reached: reached?.limit === "planLeft"
     }
   }
 }

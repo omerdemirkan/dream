@@ -1,50 +1,17 @@
 /**
- * What Dream pays to run their projects (docs/metering.md, "In the app"): a section at the foot of a project's usage
- * sheet, and the pieces of Dream usage's page (`app/costs`), which Settings' Dream usage row opens. Dollars, never the
- * plan's percentages, and drawn so the two don't read as one: a section of its own under a hairline, no rings or
- * window bars. What it says comes from `data/costs.ts`.
+ * What Dream pays to run their projects (docs/metering.md, "In the app"): the pieces of Dream usage's page
+ * (`app/costs`), which Settings' Dream usage row opens, and the lines under the usage sheet's sentence about it.
+ * Dollars, never the plan's percentages, and drawn so the two don't read as one: no rings or window bars. What it
+ * says comes from `data/costs.ts`.
  */
-import type { ProjectId } from "@dream/domain"
-import { useAtomRefresh, useAtomValue } from "@effect/atom-react"
-import { Option } from "effect"
-import { AsyncResult } from "effect/reactivity"
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { Pressable, StyleSheet, Text, View } from "react-native"
-import { type CostRowView, type DayBar, projectCostsView, type ShareView } from "../data/costs.ts"
-import { projectCostsAtom } from "../state/atoms.ts"
+import type { CostRowView, DayBar, ShareView } from "../data/costs.ts"
 import { color, tracking } from "./theme.ts"
-import { Footnote, SectionHeading, ShareIcon } from "./Usage.tsx"
+import { ShareIcon } from "./Usage.tsx"
 
 /** The one line under each view of costs, as the plan's part has "Shares are estimates.", and nothing below it. */
 export const costsFootnote = "Estimates. None of this comes out of your plan."
-
-// ---------------------------------------------------------------------------
-// The usage sheet's section
-// ---------------------------------------------------------------------------
-
-/**
- * What Dream paid for this project this month, under the plan's part of the sheet. Fetched when the sheet opens;
- * nothing at all while it loads, if the API can't say, or for a project that hasn't cost anything yet.
- */
-export function ProjectCostsSection(props: { readonly projectId: ProjectId }) {
-  const atom = projectCostsAtom(props.projectId)
-  const result = useAtomValue(atom)
-  const refresh = useAtomRefresh(atom)
-  useEffect(() => refresh(), [refresh])
-  const costs = result.waiting ? undefined : Option.getOrUndefined(AsyncResult.value(result))
-  const view = costs ? projectCostsView(costs) : undefined
-  if (!view) return null
-  return (
-    <View style={{ marginTop: 26, borderTopWidth: StyleSheet.hairlineWidth, borderColor: color.line2 }}>
-      <SectionHeading>{view.heading}</SectionHeading>
-      <Total total={view.total} aside={view.lastMonth} />
-      {view.rows.map((row) => (
-        <CostRow key={row.key} row={row} nested={false} />
-      ))}
-      <Footnote>{costsFootnote}</Footnote>
-    </View>
-  )
-}
 
 /** A big total, with last month beside it. */
 export function Total(props: { readonly total: string; readonly aside?: string | undefined; readonly size?: number }) {

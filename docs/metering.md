@@ -250,9 +250,11 @@ are estimates.": "Estimates. None of this comes out of your plan.", and nothing 
 has no person-paid part, and ignores one if it appears. (`apps/mobile/src/ui/Costs.tsx`, `src/data/costs.ts`;
 fixtures `costs-*`.)
 
-- **A project:** the usage sheet ends, under a hairline, with "What Dream paid in November": the total, last month
-  beside it, and a line per cost center with what it bought ("Machine time · 41 hours", "Cloud browsers · 52
-  minutes", "OpenAI · 412 requests"; a single model goes in the line's title). Nothing at all for a project
+- **A project:** the usage sheet says it in a sentence under the plan's: "Dream paid $0.41 this month to keep its
+  computer running, for 2.5 hours. None of that comes out of your plan." When Dream paid for more than one thing,
+  the sentence says what most of it went to and opens into a line per cost center with what it bought ("Machine
+  time · 41 hours", "Cloud browsers · 52 minutes", "OpenAI · 412 requests"; a single model goes in the line's
+  title), and last month under them. Nothing at all for a project
   that hasn't cost anything this month or last, or against an API without costs. Storage shows no quantity, since
   GB-months so far this month don't read as anything.
 - **All projects:** Settings has a "What Dream pays" card under the plans (this month, last month, the 30 days as

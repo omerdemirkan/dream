@@ -275,11 +275,12 @@ export function Button(
     readonly title: string
     readonly variant?: "white" | "ghost" | "need"
     readonly busy?: boolean
+    readonly leading?: Glyph
     readonly trailing?: Glyph
     readonly style?: StyleProp<ViewStyle>
   }
 ) {
-  const { title, variant = "white", busy, trailing, style, disabled, ...rest } = props
+  const { title, variant = "white", busy, leading, trailing, style, disabled, ...rest } = props
   const off = disabled === true
   const bg = off ? color.s2 : variant === "ghost" ? color.s2 : variant === "need" ? color.need : color.t1
   const fg = off ? color.t3 : variant === "ghost" ? color.t1 : variant === "need" ? color.needInk : color.black
@@ -308,6 +309,7 @@ export function Button(
         <ActivityIndicator color={fg} />
       ) : (
         <>
+          {leading ? <Icon name={leading} size={17} color={fg} weight="medium" /> : null}
           <Text style={{ color: fg, fontSize: 16, fontWeight: "600", letterSpacing: -0.16 }}>{title}</Text>
           {trailing ? <Icon name={trailing} size={16} color={fg} weight="semibold" /> : null}
         </>

@@ -1,46 +1,29 @@
 /**
  * Project usage, Deck v3 option A: a small ring of the subscription's week on the right of the project header
- * (this project's share, everything else, what's left), and the usage sheet it opens: the week at a glance and the
- * two limits they can set. What they say comes from `data/usage.ts`; sizes and colours follow
- * mocks/screens/project-usage (screens.html, `.hr-u.ring`, `.sheet`). Its pieces (UsageRing, WindowBar, ShareRow,
- * LimitCallout, Footnote, SectionHeading) also draw a plan's page from Settings (`app/plan/[provider].tsx`), each taking the colour of
- * what's in focus: white, or amber near the limit.
+ * (this project's share, everything else, what's left), which opens the usage sheet (`UsageSheet.tsx`). What they
+ * say comes from `data/usage.ts`; sizes and colours follow mocks/screens/project-usage (`.hr-u.ring`). Its pieces
+ * (UsageRing, LimitField, WindowBar, ShareRow, LimitCallout, Footnote, SectionHeading) also draw the sheet and a
+ * plan's page from Settings (`app/plan/[provider].tsx`), each taking the colour of what's in focus: white, or amber
+ * near the limit.
  */
-import type { ProjectId, ProjectUsage, UsageLimitReached } from "@dream/domain"
-import { useAtomRefresh, useAtomValue } from "@effect/atom-react"
-import { type ReactNode, useEffect, useRef, useState } from "react"
-import { DateTime, Option } from "effect"
+import type { ProjectId, UsageLimitReached } from "@dream/domain"
+import { useAtomValue } from "@effect/atom-react"
+import { useEffect, useRef, useState } from "react"
+import { Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
 import { SymbolView, type SymbolViewProps } from "expo-symbols"
-import {
-  ActivityIndicator,
-  Keyboard,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View
-} from "react-native"
-import Animated, { Easing, SlideInDown } from "react-native-reanimated"
-import { useSafeAreaInsets } from "react-native-safe-area-context"
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native"
 import Svg, { Circle, G } from "react-native-svg"
 import {
   type LimitRow,
   parseLimit,
   type RingArcs,
   type ShareRowView,
-  type UsageSheet as SheetView,
   usageBadge,
-  usageSheet,
-  type WindowBarView,
-  withLimit
+  type WindowBarView
 } from "../data/usage.ts"
-import { projectUsageAtom, setUsageLimitsFn, usageGlanceAtom } from "../state/atoms.ts"
-import { useAction } from "./actions.ts"
-import { IconButton } from "./kit.tsx"
-import { color, gutter, tracking } from "./theme.ts"
+import { usageGlanceAtom } from "../state/atoms.ts"
+import { color, tracking } from "./theme.ts"
 
 const others = "rgba(255,255,255,0.34)"
 const track = "rgba(255,255,255,0.12)"
@@ -129,230 +112,6 @@ export function UsageBadge(props: {
         <Text style={{ fontSize: 12, lineHeight: 14, color: color.t3 }}>{badge.caption}</Text>
       </View>
     </Pressable>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// The sheet
-// ---------------------------------------------------------------------------
-
-/**
- * Opens over the project, below its header. Fetches fresh each time it opens. `footer` goes under the plan's part,
- * once it's loaded: what Dream paid for the project (`Costs.tsx`).
- */
-export function UsageSheet(props: {
-  readonly projectId: ProjectId
-  readonly title: string
-  /** Under the limits: the project's agent, its model and effort (`ProjectAgent` in `Advanced.tsx`). */
-  readonly agent?: ReactNode
-  readonly open: boolean
-  readonly onClose: () => void
-  readonly footer?: ReactNode
-}) {
-  const insets = useSafeAreaInsets()
-  return (
-    <Modal visible={props.open} transparent animationType="fade" onRequestClose={props.onClose} statusBarTranslucent>
-      <View style={{ flex: 1 }}>
-        <Pressable
-          accessibilityLabel="Close"
-          onPress={() => {
-            Keyboard.dismiss()
-            props.onClose()
-          }}
-          style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(0,0,0,0.58)" }]}
-        />
-        {props.open ? (
-          <Animated.View
-            entering={SlideInDown.duration(340).easing(Easing.bezier(0.2, 0.8, 0.2, 1))}
-            style={{
-              position: "absolute",
-              left: 0,
-              right: 0,
-              bottom: 0,
-              top: insets.top + 50,
-              backgroundColor: color.s1,
-              borderTopLeftRadius: 30,
-              borderTopRightRadius: 30,
-              borderCurve: "continuous",
-              borderWidth: 1,
-              borderBottomWidth: 0,
-              borderColor: color.line2,
-              overflow: "hidden"
-            }}
-          >
-            <View
-              style={{
-                alignSelf: "center",
-                width: 36,
-                height: 5,
-                borderRadius: 3,
-                backgroundColor: "rgba(255,255,255,0.22)",
-                marginTop: 10,
-                marginBottom: 14
-              }}
-            />
-            <SheetContent {...props} bottom={Math.max(insets.bottom, 16) + 12} />
-          </Animated.View>
-        ) : null}
-      </View>
-    </Modal>
-  )
-}
-
-function SheetContent(props: {
-  readonly projectId: ProjectId
-  readonly title: string
-  readonly agent?: ReactNode
-  readonly onClose: () => void
-  readonly bottom: number
-  readonly footer?: ReactNode
-}) {
-  const result = useAtomValue(projectUsageAtom(props.projectId))
-  // The family keeps the last fetch, so opening the sheet fetches again, and shows the spinner rather than the
-  // figures from the last time it was open.
-  const refresh = useAtomRefresh(projectUsageAtom(props.projectId))
-  useEffect(() => refresh(), [refresh])
-  // What saving a limit returned, newer than the fetch.
-  const [saved, setSaved] = useState<ProjectUsage | undefined>(undefined)
-  const fetched = result.waiting ? undefined : Option.getOrUndefined(AsyncResult.value(result))
-  const usage = saved ?? fetched
-  const view = usage ? usageSheet(usage, props.title, DateTime.nowUnsafe()) : undefined
-  return (
-    <ScrollView
-      contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: props.bottom }}
-      showsVerticalScrollIndicator={false}
-      keyboardDismissMode="on-drag"
-    >
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 20, fontWeight: "700", letterSpacing: tracking(-0.035, 20), color: color.t1 }}>
-            Usage
-          </Text>
-          <Text numberOfLines={1} style={{ fontSize: 13.5, color: color.t3, marginTop: 1 }}>
-            {view?.subtitle ?? props.title}
-          </Text>
-        </View>
-        <IconButton
-          icon="close"
-          size={32}
-          tone="quiet"
-          label="Close"
-          onPress={() => {
-            Keyboard.dismiss()
-            props.onClose()
-          }}
-        />
-      </View>
-      {view && usage ? (
-        <Body
-          view={view}
-          usage={usage}
-          projectId={props.projectId}
-          title={props.title}
-          agent={props.agent}
-          onSaved={setSaved}
-          footer={props.footer}
-        />
-      ) : AsyncResult.isFailure(result) ? (
-        <Text style={{ fontSize: 14.5, color: color.t2, marginTop: 24 }}>Usage isn’t available right now.</Text>
-      ) : (
-        <ActivityIndicator color={color.t3} style={{ marginTop: 40 }} />
-      )}
-    </ScrollView>
-  )
-}
-
-function Body(props: {
-  readonly view: SheetView
-  readonly usage: ProjectUsage
-  readonly projectId: ProjectId
-  readonly title: string
-  readonly agent?: ReactNode
-  readonly onSaved: (usage: ProjectUsage) => void
-  readonly footer?: ReactNode
-}) {
-  const { view } = props
-  const save = useAction(setUsageLimitsFn)
-  const limits = props.usage.limits ?? {}
-  const change = (which: "project" | "planLeft", value: number | undefined) => {
-    const next = withLimit(limits, which, value)
-    if (next.projectWeekPercent === limits.projectWeekPercent && next.planLeftPercent === limits.planLeftPercent) return
-    save.run({ projectId: props.projectId, limits: next }, { onSuccess: props.onSaved })
-  }
-  return (
-    <>
-      {view.hero ? <Hero hero={view.hero} title={props.title} /> : null}
-      {view.callout ? <LimitCallout callout={view.callout} /> : null}
-      <SectionHeading>Limits</SectionHeading>
-      <LimitField
-        before="This project may use up to"
-        after="of the week"
-        label="Most of the week this project may use, in percent"
-        row={view.limits.project}
-        onChange={(value) => change("project", value)}
-      />
-      <LimitField
-        before="Stop when the plan has"
-        after="left"
-        label="Pause when this much of the plan is left, in percent"
-        row={view.limits.planLeft}
-        onChange={(value) => change("planLeft", value)}
-      />
-      {props.agent}
-      {view.hero ? <Footnote>Shares are estimates.</Footnote> : null}
-      {props.footer}
-    </>
-  )
-}
-
-function Hero(props: { readonly hero: NonNullable<SheetView["hero"]>; readonly title: string }) {
-  const { hero } = props
-  const focus = hero.nearLimit ? color.need : color.t1
-  const row = (swatch: string, label: string, value: string, warn = false) => (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-      <View style={{ width: 9, height: 9, borderRadius: 3, backgroundColor: swatch }} />
-      <Text numberOfLines={1} style={{ flex: 1, fontSize: 14, color: color.t2 }}>
-        {label}
-      </Text>
-      <Text
-        style={{
-          fontSize: 14,
-          fontWeight: "600",
-          color: warn ? color.need : color.t1,
-          paddingLeft: 14,
-          fontVariant: ["tabular-nums"]
-        }}
-      >
-        {value}
-      </Text>
-    </View>
-  )
-  return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 20, marginTop: 16, marginBottom: 2 }}>
-      <View style={{ width: 118, height: 118 }}>
-        <UsageRing size={118} stroke={14} arcs={hero.arcs} focusColor={focus} />
-        <View style={[StyleSheet.absoluteFill, { alignItems: "center", justifyContent: "center" }]}>
-          <Text
-            style={{
-              fontSize: 28,
-              lineHeight: 30,
-              fontWeight: "700",
-              letterSpacing: tracking(-0.04, 28),
-              color: color.t1,
-              fontVariant: ["tabular-nums"]
-            }}
-          >
-            {hero.share}
-          </Text>
-          <Text style={{ fontSize: 12, color: color.t3, marginTop: 3 }}>of your week</Text>
-        </View>
-      </View>
-      <View style={{ flex: 1, gap: 9, maxWidth: 190 }}>
-        {row(focus, props.title, hero.share)}
-        {row(track, "Left this week", hero.left, hero.lowLeft)}
-        {hero.resets ? <Text style={{ fontSize: 12.5, color: color.t3 }}>{hero.resets}</Text> : null}
-      </View>
-    </View>
   )
 }
 

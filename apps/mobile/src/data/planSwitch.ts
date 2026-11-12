@@ -1,21 +1,27 @@
 /**
- * Moving a project to another of their plans (`SwitchPlan`): a rare thing, so it's one quiet line under the agent in
- * the project's usage sheet, shown only to someone with more than one plan connected (or with a move under way),
- * and one line in Chat where it happened, drawn like the day dividers.
+ * Moving a project to another of their plans (`SwitchPlan`): a rare thing, so it lives on the usage sheet's Adjust
+ * page (and beside Adjust when the plan it's on runs low and the other has room). The sheet says so while a move
+ * waits or after one didn't work, and Chat has one line where it happened, drawn like the day dividers.
  */
 import type { ModelProvider, PlanSwitch, Project } from "@dream/domain"
 import { providerOf } from "@dream/domain"
 import { DateTime } from "effect"
 import { providerName } from "./format.ts"
 
-/** How long a move that didn't work is mentioned under the agent. */
+/** How long a move that didn't work is mentioned in the sheet. */
 const FailedShownFor = { hours: 24 }
 
 export interface PlanLine {
-  /** Where the project stands. */
+  /** Where the move stands. */
   readonly text: string
-  /** What they can do about it: move to `to` (or, while a move waits, stay with the plan it's on). */
-  readonly action?: { readonly label: string; readonly to: ModelProvider; readonly confirm?: PlanConfirm }
+  /** What they can do about it: try `to` again (or, while a move waits, stay with the plan it's on). */
+  readonly action?: PlanAction
+}
+
+export interface PlanAction {
+  readonly label: string
+  readonly to: ModelProvider
+  readonly confirm?: PlanConfirm
 }
 
 /** The question asked before a move: it's a real change, though nothing in the project is lost. */
@@ -25,7 +31,7 @@ export interface PlanConfirm {
   readonly button: string
 }
 
-const confirmMove = (to: ModelProvider): PlanConfirm => ({
+export const confirmMove = (to: ModelProvider): PlanConfirm => ({
   title: `Move to your ${providerName(to)} plan?`,
   body:
     `The agent hands its work to one on ${providerName(to)}, which picks up where it left off. The project, its ` +
@@ -33,11 +39,18 @@ const confirmMove = (to: ModelProvider): PlanConfirm => ({
   button: "Move"
 })
 
+/** A move to `to`, asking first. */
+export const moveAction = (to: ModelProvider): PlanAction => ({
+  label: `Move to ${providerName(to)}`,
+  to,
+  confirm: confirmMove(to)
+})
+
 /**
- * The line under the agent: the plan it runs on, and a move to another of theirs. `connected` is the plans that work
- * now; with one, there's nothing to say unless a move is under way.
+ * What the sheet says about a move: one waiting for the agent's handoff (they can stay), or one that didn't work
+ * in the last day (they can try again, while that plan is still connected). Nothing otherwise.
  */
-export const planLine = (
+export const planNotice = (
   project: Pick<Project, "harness" | "planSwitch">,
   connected: ReadonlyArray<ModelProvider>,
   now: DateTime.Utc
@@ -50,22 +63,16 @@ export const planLine = (
       action: { label: `Stay on ${providerName(current)}`, to: current }
     }
   }
-  const other = connected.find((provider) => provider !== current)
-  if (other === undefined) return undefined
   const failedLately =
     move?.state === "failed" &&
-    move.to === other &&
+    move.to !== current &&
     move.endedAt !== undefined &&
     DateTime.isGreaterThan(DateTime.add(move.endedAt, FailedShownFor), now)
-  return failedLately
-    ? {
-        text: `The move to ${providerName(other)} didn’t work, so it stays on ${providerName(current)}.`,
-        action: { label: "Try again", to: other, confirm: confirmMove(other) }
-      }
-    : {
-        text: `Runs on your ${providerName(current)} plan.`,
-        action: { label: `Move to ${providerName(other)}`, to: other, confirm: confirmMove(other) }
-      }
+  if (!failedLately) return undefined
+  return {
+    text: `The move to ${providerName(move.to)} didn’t work, so it stays on ${providerName(current)}.`,
+    ...(connected.includes(move.to) ? { action: { ...moveAction(move.to), label: "Try again" } } : {})
+  }
 }
 
 /** The line Chat shows for the latest move: where it happened (`at`), or at the end while it waits. */

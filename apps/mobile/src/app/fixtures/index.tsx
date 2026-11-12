@@ -90,9 +90,66 @@ const sections: ReadonlyArray<{ readonly title: string; readonly jumps: Readonly
       { title: "Lift Log · now cut at two lines", scenarios: ["reset", "now-three-lines"], to: "/project/prj_liftlog" },
       { title: "Lift Log · usage sheet", scenarios: ["reset"], to: "/project/prj_liftlog?sheet=usage" },
       {
+        title: "Lift Log · usage sheet, what Dream paid opened",
+        scenarios: ["reset"],
+        to: "/project/prj_liftlog?sheet=costs"
+      },
+      {
+        title: "Lift Log · usage sheet, only machine time paid",
+        scenarios: ["reset", "costs-machine"],
+        to: "/project/prj_liftlog?sheet=usage"
+      },
+      {
+        title: "Lift Log · usage sheet, one plan, nothing paid yet",
+        scenarios: ["reset", "costs-none"],
+        to: "/project/prj_liftlog?sheet=usage"
+      },
+      {
         title: "Lift Log · usage sheet, two plans",
         scenarios: ["reset", "two-plans"],
         to: "/project/prj_liftlog?sheet=usage"
+      },
+      {
+        title: "Lift Log · usage near the limit",
+        scenarios: ["reset", "usage-near-limit"],
+        to: "/project/prj_liftlog"
+      },
+      {
+        title: "Lift Log · usage sheet, near the limit",
+        scenarios: ["reset", "usage-near-limit"],
+        to: "/project/prj_liftlog?sheet=usage"
+      },
+      {
+        title: "Lift Log · usage sheet, near the limit, Claude has room",
+        scenarios: ["reset", "usage-near-limit", "two-plans"],
+        to: "/project/prj_liftlog?sheet=usage"
+      },
+      {
+        title: "Lift Log · paused at its usage limit",
+        scenarios: ["reset", "usage-limit"],
+        to: "/project/prj_liftlog?sheet=usage"
+      },
+      {
+        title: "Lift Log · usage sheet, five hours ran out",
+        scenarios: ["reset", "plan-limited", "paused"],
+        to: "/project/prj_liftlog?sheet=usage"
+      },
+      {
+        title: "Lift Log · usage sheet, the week ran out",
+        scenarios: ["reset", "usage-near-limit", "two-plans", "plan-week-out"],
+        to: "/project/prj_liftlog?sheet=usage"
+      },
+      {
+        title: "Lift Log · usage sheet, no usage known",
+        scenarios: ["reset", "usage-none"],
+        to: "/project/prj_liftlog?sheet=usage"
+      },
+      { title: "Lift Log · no usage known", scenarios: ["reset", "usage-none"], to: "/project/prj_liftlog" },
+      { title: "Lift Log · Adjust", scenarios: ["reset"], to: "/project/prj_liftlog?sheet=adjust" },
+      {
+        title: "Lift Log · Adjust, two plans",
+        scenarios: ["reset", "two-plans"],
+        to: "/project/prj_liftlog?sheet=adjust"
       },
       {
         title: "Lift Log · asking to move to Claude",
@@ -103,6 +160,11 @@ const sections: ReadonlyArray<{ readonly title: string; readonly jumps: Readonly
         title: "Lift Log · moving to Claude",
         scenarios: ["reset", "two-plans", "plan-moving"],
         to: "/project/prj_liftlog?sheet=usage"
+      },
+      {
+        title: "Lift Log · Adjust, moving to Claude",
+        scenarios: ["reset", "two-plans", "plan-moving"],
+        to: "/project/prj_liftlog?sheet=adjust"
       },
       {
         title: "Lift Log · Chat, moving to Claude",
@@ -117,17 +179,6 @@ const sections: ReadonlyArray<{ readonly title: string; readonly jumps: Readonly
       {
         title: "Lift Log · the move didn’t work",
         scenarios: ["reset", "two-plans", "plan-move-failed"],
-        to: "/project/prj_liftlog?sheet=usage"
-      },
-      {
-        title: "Lift Log · usage near the limit",
-        scenarios: ["reset", "usage-near-limit"],
-        to: "/project/prj_liftlog"
-      },
-      { title: "Lift Log · no usage known", scenarios: ["reset", "usage-none"], to: "/project/prj_liftlog" },
-      {
-        title: "Lift Log · paused at its usage limit",
-        scenarios: ["reset", "usage-limit"],
         to: "/project/prj_liftlog?sheet=usage"
       },
       {

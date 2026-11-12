@@ -15,6 +15,7 @@ import type {
   ProjectCosts
 } from "@dream/domain"
 import { DateTime } from "effect"
+import type { Sentence } from "./format.ts"
 
 /** "$18.42", "$1,240", "<$0.01" for a cost too small to show in cents, "$0" for nothing. */
 export const dollars = (usd: number): string => {
@@ -120,25 +121,78 @@ const lastMonthLabel = (last: CostPeriod) => (last.usd > 0 ? `${dollars(last.usd
 // A project's usage sheet
 // ---------------------------------------------------------------------------
 
-export interface ProjectCostsView {
-  /** "What Dream paid in November" */
-  readonly heading: string
-  readonly total: string
-  readonly lastMonth?: string
+/**
+ * What Dream paid for the project this month, said in a sentence under the plan's in the usage sheet, and, when it
+ * paid for more than one thing, the lines it paid for, which the sentence opens into.
+ */
+export interface ProjectCostsSummary {
+  readonly sentence: Sentence
+  /** Every line Dream paid this month, largest first; empty when the sentence already names the only one. */
   readonly rows: ReadonlyArray<CostRowView>
+  /** "$34.80 in October", under the lines. */
+  readonly lastMonth?: string
 }
 
+/** What one line bought, finishing "Dream paid $0.41 this month …". */
+const boughtWith: Record<CostLine["center"], (quantity: string | undefined) => string> = {
+  sandbox: (q) => `to keep its computer running${q ? `, for ${q}` : ""}`,
+  browser: (q) => (q ? `for ${q} of cloud browsers` : "for cloud browsers"),
+  mac: (q) => (q ? `for ${q} on a Mac` : "for a Mac"),
+  models: (q) => (q ? `for ${q} its apps made to OpenAI` : "for what its apps asked of OpenAI"),
+  storage: () => "to store its files",
+  email: (q) => (q ? `to send ${q}` : "to send its email")
+}
+
+/** What most of a month went to, finishing "…, most of it for machine time." */
+const mostlyFor: Record<CostLine["center"], string> = {
+  sandbox: "machine time",
+  browser: "cloud browsers",
+  mac: "Macs",
+  models: "OpenAI",
+  storage: "storage",
+  email: "email"
+}
+
+const notYourPlan = " None of that comes out of your plan."
+
 /** Absent when the project has cost nothing this month or last (a project just started), so the sheet stays short. */
-export const projectCostsView = (costs: ProjectCosts): ProjectCostsView | undefined => {
+export const projectCostsSummary = (costs: ProjectCosts): ProjectCostsSummary | undefined => {
   const { month, lastMonth } = costs
   const rows = lineRows(month)
   if (rows.length === 0 && lastMonth.usd <= 0) return undefined
   const last = lastMonthLabel(lastMonth)
+  const paid = month.lines.filter((l) => l.payer === "dream" && dollars(l.usd) !== "$0")
+  const only = paid.length === 1 ? paid[0] : undefined
+  if (month.usd <= 0 || paid.length === 0)
+    return {
+      sentence: [
+        {
+          text: `Dream hasn’t paid anything to run it this month${last ? `, and paid ${last}` : ""}.${last ? notYourPlan : ""}`
+        }
+      ],
+      rows: []
+    }
+  if (only)
+    return {
+      sentence: [
+        { text: "Dream paid " },
+        { text: dollars(month.usd), tone: "strong" },
+        { text: ` this month ${boughtWith[only.center](quantityLabel(only))}.${notYourPlan}` }
+      ],
+      rows: [],
+      ...(last ? { lastMonth: last } : {})
+    }
+  const largest = paid.reduce((a, b) => (b.usd > a.usd ? b : a))
   return {
-    heading: `What Dream paid in ${monthName(month)}`,
-    total: dollars(month.usd),
-    ...(last ? { lastMonth: last } : {}),
-    rows
+    sentence: [
+      { text: "Dream paid " },
+      { text: dollars(month.usd), tone: "strong" },
+      {
+        text: ` this month to run it${largest.usd > month.usd / 2 ? `, most of it for ${mostlyFor[largest.center]}` : ""}.${notYourPlan}`
+      }
+    ],
+    rows,
+    ...(last ? { lastMonth: last } : {})
   }
 }
 

@@ -2,7 +2,8 @@
  * The fixtures world's costs (docs/metering.md): what Dream paid this month and last to run the sample projects,
  * at the price book's list prices (a standard sandbox is about $0.17 an hour, a cloud browser $0.002 a minute, a
  * Mac $0.06 a minute), and the OpenAI calls their apps make through Dream's gateway.
- * `operator` adds everyone's costs; `none` is before anything cost anything.
+ * `operator` adds everyone's costs; `none` is before anything cost anything; `machine` is a month where each
+ * project only ran its computer, 2.5 hours ($0.41), as the founder's Arabic conversation partner did.
  */
 import type {
   AccountCosts,
@@ -21,7 +22,7 @@ import type {
 import * as Fx from "@dream/domain/fixtures"
 import { DateTime } from "effect"
 
-export type CostsMode = "normal" | "operator" | "none"
+export type CostsMode = "normal" | "operator" | "none" | "machine"
 
 interface Use {
   readonly center: CostCenter
@@ -129,6 +130,12 @@ const bills: ReadonlyMap<ProjectId, Bill> = new Map<ProjectId, Bill>([
   ]
 ])
 
+/** This month's bills in a world: in `machine`, each project only ran its computer, 2.5 hours. */
+const billsIn = (mode: CostsMode): ReadonlyMap<ProjectId, Bill> =>
+  mode === "machine"
+    ? new Map(Array.from(bills, ([id, bill]) => [id, { ...bill, uses: [sandbox(2.5)], models: [], lastMonth: 0 }]))
+    : bills
+
 /** Their plan's sign-in sandbox, which belongs to no project. */
 const unattributed = [sandbox(0.2)]
 
@@ -208,7 +215,7 @@ const daysOf = (now: DateTime.Utc, month: number, lastMonth: number): ReadonlyAr
 const emptyPeriod = (now: DateTime.Utc) => period(monthStart(now), monthStart(now, -1), [], [])
 
 export const projectCostsOf = (mode: CostsMode, projectId: ProjectId, now: DateTime.Utc): ProjectCosts => {
-  const bill = mode === "none" ? undefined : bills.get(projectId)
+  const bill = mode === "none" ? undefined : billsIn(mode).get(projectId)
   if (!bill) return { projectId, month: emptyPeriod(now), lastMonth: lastMonthOf(now, 0), days: daysOf(now, 0, 0) }
   const month = period(monthStart(now), monthStart(now, -1), linesOf(bill.uses), modelsOf(bill.models))
   return { projectId, month, lastMonth: lastMonthOf(now, bill.lastMonth), days: daysOf(now, month.usd, bill.lastMonth) }
@@ -255,7 +262,7 @@ export const accountCostsOf = (
       projects: [],
       unattributed: []
     }
-  const entries = Array.from(bills.entries())
+  const entries = Array.from(billsIn(mode).entries())
   const uses = [...entries.flatMap(([, b]) => b.uses), ...unattributed]
   const month = period(
     monthStart(now),

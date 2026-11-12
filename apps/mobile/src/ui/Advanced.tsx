@@ -1,25 +1,24 @@
 /**
  * Advanced: a project's starting settings, behind a round button beside Send on the new-idea screen. The sheet holds
  * the plan (only with more than one connected), the agent's model and reasoning effort, and the two usage limits;
- * left alone, the project starts as it always has. What it says comes from `data/advanced.ts`. The agent's part
- * (`AgentPicker`) is also the usage sheet's, where a project's model and effort can be changed later, and where
- * someone with more than one plan can move the project to another (`PlanRow`). The sheet is drawn like the usage
- * sheet (mocks/screens/project-usage, `.sheet`).
+ * left alone, the project starts as it always has. What it says comes from `data/advanced.ts`. Its pieces
+ * (`AgentPicker`, `Segmented`) are also the usage sheet's Adjust page, where a project's model and effort can be
+ * changed later and someone with more than one plan can move the project to another (`useAgentChoice`,
+ * `usePlanMove`). The sheet is drawn like the usage sheet.
  */
-import type { ModelProvider, Project, ReasoningEffort, UsageLimits } from "@dream/domain"
+import type { ModelProvider, Project, ProjectId, ReasoningEffort, UsageLimits } from "@dream/domain"
 import { agentChoice, agentOf, ReasoningEfforts } from "@dream/domain"
 import * as Haptics from "expo-haptics"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
 import { Alert, Keyboard, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import Animated, { Easing, SlideInDown } from "react-native-reanimated"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
-import { type AdvancedView, agentLabel, effortAbout, effortName, type ModelRow, modelRows } from "../data/advanced.ts"
+import { type AdvancedView, effortAbout, effortName, type ModelRow } from "../data/advanced.ts"
 import { providerName } from "../data/format.ts"
-import { type PlanLine, planLine } from "../data/planSwitch.ts"
+import type { PlanAction } from "../data/planSwitch.ts"
 import { withLimit } from "../data/usage.ts"
 import { setAgentModelFn, switchPlanFn } from "../state/atoms.ts"
 import { useAction } from "./actions.ts"
-import { useConnectedPlans, useNow } from "./hooks.ts"
 import { Icon, IconButton } from "./kit.tsx"
 import { color, gutter, tracking } from "./theme.ts"
 import { Footnote, LimitField, SectionHeading } from "./Usage.tsx"
@@ -281,7 +280,7 @@ function EffortPicker(props: {
   )
 }
 
-function Segmented<A extends string>(props: {
+export function Segmented<A extends string>(props: {
   readonly options: ReadonlyArray<{ readonly value: A; readonly label: string }>
   readonly chosen: A
   readonly onChoose: (value: A) => void
@@ -328,16 +327,11 @@ function Segmented<A extends string>(props: {
 }
 
 /**
- * The usage sheet's Agent: the project's model and effort on one line, which opens into the picker. A change is
- * saved at once and takes effect from the agent's next turn, in the same conversation.
+ * The project's model and effort, for the usage sheet's Adjust page. A change is saved at once and takes effect from
+ * the agent's next turn, in the same conversation; what they chose shows at once, ahead of the project record.
  */
-export function ProjectAgent(props: {
-  readonly project: Pick<Project, "id" | "harness" | "agentModel" | "agentEffort" | "planSwitch">
-  /** Ask at once whether to move it to their other plan (`?sheet=plan`). */
-  readonly askToMove?: boolean
-}) {
+export function useAgentChoice(project: Pick<Project, "id" | "harness" | "agentModel" | "agentEffort">) {
   const save = useAction(setAgentModelFn)
-  const [open, setOpen] = useState(false)
   // What they chose here, ahead of the project record catching up over the live stream.
   const [chosen, setChosen] = useState<Pick<Project, "agentModel" | "agentEffort"> | undefined>(undefined)
   const [changed, setChanged] = useState(false)
@@ -345,84 +339,28 @@ export function ProjectAgent(props: {
   useEffect(() => {
     setChosen(undefined)
     setChanged(false)
-  }, [props.project.harness])
-  const current = { harness: props.project.harness, ...(chosen ?? props.project) }
-  const { model, effort } = agentOf(current)
+  }, [project.harness])
+  const { model, effort } = agentOf({ harness: project.harness, ...(chosen ?? project) })
   const change = (next: { readonly model: string; readonly effort: ReasoningEffort }) => {
     if (next.model === model && next.effort === effort) return
-    const choice = agentChoice(props.project.harness, next)
-    setChosen(choice)
+    setChosen(agentChoice(project.harness, next))
     setChanged(true)
     save.run(
-      { projectId: props.project.id, model: next.model, effort: next.effort },
+      { projectId: project.id, model: next.model, effort: next.effort },
       { onFailure: () => setChosen(undefined) }
     )
   }
-  return (
-    <>
-      <SectionHeading>Agent</SectionHeading>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityState={{ expanded: open }}
-        accessibilityLabel={`${agentLabel(current)}. ${open ? "Hide choices" : "Change"}`}
-        onPress={() => setOpen((o) => !o)}
-        style={({ pressed }) => ({
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 10,
-          paddingVertical: 12,
-          borderBottomWidth: StyleSheet.hairlineWidth,
-          borderColor: color.line,
-          opacity: pressed ? 0.6 : 1
-        })}
-      >
-        <Text style={{ flex: 1, fontSize: 15, color: color.t1, letterSpacing: -0.15 }}>{agentLabel(current)}</Text>
-        <Icon name={open ? "chevUp" : "chevDown"} size={13} color={color.t3} weight="semibold" />
-      </Pressable>
-      {open ? (
-        <AgentPicker
-          heading={false}
-          models={modelRows(props.project.harness, model)}
-          effort={effort}
-          onModel={(m) => change({ model: m, effort })}
-          onEffort={(e) => change({ model, effort: e })}
-        />
-      ) : null}
-      {changed ? <Footnote>It switches at its next turn.</Footnote> : null}
-      <PlanRow project={props.project} askToMove={props.askToMove === true} />
-    </>
-  )
+  return { model, effort, change, changed }
 }
 
-/**
- * The plan the project runs on, and a move to another of theirs: one quiet line, there only for someone with more
- * than one plan (or a move under way). The move asks first; staying, while one waits, doesn't.
- */
-function PlanRow(props: {
-  readonly project: Pick<Project, "id" | "harness" | "planSwitch">
-  readonly askToMove: boolean
-}) {
-  const plans = useConnectedPlans()
-  const now = useNow(60_000)
+/** Moving the project to another plan, or staying while a move waits: asks first when the action says to. */
+export function usePlanMove(projectId: ProjectId) {
   const move = useAction(switchPlanFn)
-  const line = planLine(props.project, plans, now)
-  const asked = useRef(false)
-  const offer = line?.action?.confirm === undefined ? undefined : line.action
-  useEffect(() => {
-    if (!props.askToMove || asked.current || offer === undefined) return
-    // Once the sheet has slid up.
-    const timer = setTimeout(() => {
-      asked.current = true
-      go(offer)
-    }, 500)
-    return () => clearTimeout(timer)
-  }, [props.askToMove, offer?.to])
-  if (line === undefined) return null
-  const go = (action: NonNullable<PlanLine["action"]>) => {
+  const go = (action: PlanAction) => {
     if (move.busy) return
     const run = () => {
       void Haptics.selectionAsync()
-      move.run({ projectId: props.project.id, to: action.to })
+      move.run({ projectId, to: action.to })
     }
     if (action.confirm === undefined) return run()
     Alert.alert(action.confirm.title, action.confirm.body, [
@@ -430,22 +368,5 @@ function PlanRow(props: {
       { text: action.confirm.button, onPress: run }
     ])
   }
-  return (
-    <Text style={{ fontSize: 13, lineHeight: 18, color: color.t3, marginTop: 12 }}>
-      {line.text}
-      {line.action ? (
-        <>
-          {"  "}
-          <Text
-            accessibilityRole="button"
-            suppressHighlighting={false}
-            onPress={() => line.action && go(line.action)}
-            style={{ fontWeight: "600", color: move.busy ? color.t3 : color.t2 }}
-          >
-            {line.action.label}
-          </Text>
-        </>
-      ) : null}
-    </Text>
-  )
+  return { go, busy: move.busy }
 }

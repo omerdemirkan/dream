@@ -156,11 +156,13 @@ export const Scenario = [
   "costs-normal",
   "costs-operator",
   "costs-none",
+  "costs-machine",
   "services",
   "week-unknown",
   "plan-expired",
   "plan-pending",
   "plan-limited",
+  "plan-week-out",
   "workstreams",
   "workstreams-waiting",
   "workstreams-many",
@@ -1514,6 +1516,7 @@ export class FakeBackend extends Context.Service<
           case "reset":
             stallNextWrite = false
             liveFault = "none"
+            limitsOf.clear()
             return yield* load(makeWorld(now))
           case "links-empty":
             links = []
@@ -1773,6 +1776,9 @@ export class FakeBackend extends Context.Service<
           case "costs-none":
             costsMode = "none"
             return
+          case "costs-machine":
+            costsMode = "machine"
+            return
           case "services": {
             // Every kind of connected service, beside Gmail: a pasted key, a key file only Morning Brief has, and an
             // App Store Connect key.
@@ -1844,6 +1850,23 @@ export class FakeBackend extends Context.Service<
                     usage: {
                       ...c.usage,
                       limitedUntil: { window: "fiveHour" as const, until: DateTime.add(now, { hours: 1, minutes: 28 }) }
+                    }
+                  }
+                : c
+            )
+            return
+          case "plan-week-out":
+            // ChatGPT said the week ran out: nothing runs on it until the week resets (`usage-near-limit` first).
+            connections = connections.map((c) =>
+              c.provider === "chatgpt" && c.status === "connected" && c.usage
+                ? {
+                    ...c,
+                    usage: {
+                      ...c.usage,
+                      limitedUntil: {
+                        window: "weekly" as const,
+                        until: c.usage.weekly?.resetsAt ?? DateTime.add(now, { days: 3 })
+                      }
                     }
                   }
                 : c
