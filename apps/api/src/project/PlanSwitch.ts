@@ -290,7 +290,7 @@ export class PlanSwitcher extends Context.Service<
               outcome: "moved",
               ...(applied.success.handoff && waiting.handoff !== undefined ? { handoff: waiting.handoff } : {}),
               model: agentOf(next).model,
-              ...(project.agentModel === undefined ? {} : { modelBefore: project.agentModel }),
+              ...(project.agentModel === undefined ? {} : { modelBefore: agentOf(project).model }),
               ...(tasks.length === 0 ? {} : { tasks }),
               chat: chatLines(recent.messages)
             })

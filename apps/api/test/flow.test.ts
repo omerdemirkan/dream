@@ -307,6 +307,9 @@ describe("a project, end to end", () => {
       // A model the harness doesn't offer is refused, at creation and later.
       const wrong = yield* Effect.flip(cloud.phone.SetAgentModel({ projectId: project.id, model: "gpt-6.1-sol" }))
       assert.strictEqual(wrong._tag, "InvalidRequest")
+      // A Claude id is no family, so it isn't offered either.
+      const pinned = yield* Effect.flip(cloud.phone.SetAgentModel({ projectId: project.id, model: "claude-fable-5-1" }))
+      assert.strictEqual(pinned._tag, "InvalidRequest")
       const refused = yield* Effect.flip(cloud.phone.CreateProject({ idea: "Another", model: "gpt-5.5" }))
       assert.strictEqual(refused._tag, "InvalidRequest")
       // Without any of it, as older builds create projects: Dream's default, and no limits.
@@ -1943,13 +1946,13 @@ describe("moving a project to another plan", () => {
         assert.strictEqual(after.sandbox, sandbox)
         assert.strictEqual(sandbox.state, "running")
         assert.strictEqual(after.env.DREAM_HARNESS, "codex")
-        assert.strictEqual(after.env.DREAM_MODEL, "gpt-6-luna")
+        assert.strictEqual(after.env.DREAM_MODEL, "terra")
         assert.strictEqual(after.env.DREAM_EFFORT, "low")
         assert.include(JSON.stringify(sandbox.rules["chatgpt.com"]), chatGptToken)
         assert.notProperty(sandbox.rules, "api.anthropic.com")
         const moved = yield* projectOf(cloud, project.id)
         assert.strictEqual(moved.harness, "codex")
-        assert.strictEqual(moved.agentModel, "gpt-6-luna")
+        assert.strictEqual(moved.agentModel, "terra")
         assert.strictEqual(moved.planSwitch?.state, "done")
         assert.strictEqual(
           (yield* cloud.phone.ListProjects()).find((s) => s.project.id === project.id)?.project.harness,
@@ -1965,9 +1968,9 @@ describe("moving a project to another plan", () => {
         if (switched._tag === "PlanSwitched") {
           assert.strictEqual(switched.outcome, "moved")
           assert.strictEqual(switched.handoff, handoff)
-          assert.deepStrictEqual([switched.model, switched.modelBefore], ["gpt-6-luna", "sonnet"])
+          assert.deepStrictEqual([switched.model, switched.modelBefore], ["terra", "sonnet"])
           assert.deepStrictEqual(switched.tasks, [
-            { wakeId: digest.id, why: "Weekly digest", from: "sonnet", to: "gpt-6-luna" }
+            { wakeId: digest.id, why: "Weekly digest", from: "sonnet", to: "terra" }
           ])
           assert.deepStrictEqual(switched.chat?.map((line) => [line.from, line.text]).at(-1), [
             "user",
@@ -1977,7 +1980,7 @@ describe("moving a project to another plan", () => {
         }
         const codexD = yield* cloud.sandbox(after.env.DREAM_PROJECT_TOKEN)
         const wakes = yield* codexD.ListWakes()
-        assert.strictEqual(wakes.find((w) => w.id === digest.id)?.task?.model, "gpt-6-luna")
+        assert.strictEqual(wakes.find((w) => w.id === digest.id)?.task?.model, "terra")
 
         // And back, the same way.
         yield* codexD.ReportTurn({ state: "started", eventIds: told.map((e) => e.id) })

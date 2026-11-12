@@ -131,11 +131,18 @@ describe("scheduled tasks", () => {
   )
 })
 
-describe("a task's model after a move to another plan", () => {
-  it("is the counterpart of one the old plan offered, and otherwise as it was", () => {
-    assert.strictEqual(modelHere("codex", "sonnet"), "gpt-6-luna")
+describe("a task's model", () => {
+  it("after a move to another plan, is the counterpart of one the old plan offered", () => {
+    assert.strictEqual(modelHere("codex", "sonnet"), "terra")
     assert.strictEqual(modelHere("claude-code", "gpt-6-astra"), "fable")
-    assert.strictEqual(modelHere("codex", "gpt-6.1-sol"), "gpt-6.1-sol")
+    assert.strictEqual(modelHere("claude-code", "luna"), "haiku")
+  })
+
+  it("is a family, which runs as its newest model, and any other name as it was", () => {
+    assert.strictEqual(modelHere("codex", "gpt-6.1-sol"), "sol")
+    assert.strictEqual(modelHere("codex", "gpt-6-sol"), "sol")
     assert.strictEqual(modelHere("claude-code", "haiku"), "haiku")
+    assert.strictEqual(modelHere("claude-code", "claude-fable-5-1"), "claude-fable-5-1")
+    assert.strictEqual(modelHere("codex", "gpt-5.5"), "gpt-5.5")
   })
 })

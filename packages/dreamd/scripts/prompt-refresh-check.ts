@@ -19,6 +19,7 @@
  */
 import { type ChildProcess, execFileSync, spawn } from "node:child_process"
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs"
+import { homedir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { systemPrompt } from "@dream/agent-context"
@@ -27,6 +28,7 @@ import { NodeServices } from "@effect/platform-node"
 import { Effect, Layer } from "effect"
 import { DreamdConfig } from "../src/Config.ts"
 import { Harness } from "../src/harness/Harness.ts"
+import { Models } from "../src/harness/Models.ts"
 import * as Skill from "../src/harness/Skill.ts"
 
 const scripts = fileURLToPath(new URL(".", import.meta.url))
@@ -40,7 +42,7 @@ const turn = async (harness: HarnessName, version: string, prompt: string) => {
     instructions: `${systemPrompt}\n\nPROMPT-MARK: v${version}`,
     skills: skills.map((skill) => ({ ...skill, content: `${skill.content}\n\nSKILL-MARK: v${version}` }))
   }
-  const config = DreamdConfig.layerFromRecord({
+  const settings = {
     HOME: home,
     DREAM_STATE_DIR: join(home, ".dream", "state"),
     DREAM_WORKDIR: join(home, "project"),
@@ -51,14 +53,26 @@ const turn = async (harness: HarnessName, version: string, prompt: string) => {
     [DaemonEnv.harness]: harness,
     [DaemonEnv.socket]: join(home, "dreamd.sock"),
     DREAM_CODEX_BASE_URL: `http://127.0.0.1:${ports.responses}/v1`
-  })
+  }
+  const config = DreamdConfig.layerFromRecord(settings)
+  // The model lists come from the CLIs the template installed, not the check's own home, where the harness installs
+  // its bridge only once the session starts.
+  const models = Models.layer.pipe(
+    Layer.provide(DreamdConfig.layerFromRecord({ ...settings, HOME: homedir() })),
+    Layer.provide(NodeServices.layer)
+  )
   const result = await Effect.runPromise(
     Effect.gen(function* () {
       const agent = yield* Harness
       return yield* agent.turn(prompt, { ask: () => Effect.die(new Error("The check asks no questions")) })
     }).pipe(
       Effect.scoped,
-      Effect.provide(Harness.layerWith(guidance).pipe(Layer.provideMerge(Layer.mergeAll(config, NodeServices.layer))))
+      Effect.provide(
+        Harness.layerWith(guidance).pipe(
+          Layer.provide(models),
+          Layer.provideMerge(Layer.mergeAll(config, NodeServices.layer))
+        )
+      )
     )
   )
   console.log(JSON.stringify({ outcome: result.outcome._tag, finalText: result.finalText }))

@@ -57,7 +57,7 @@ describe("the top-level agent", () => {
     Effect.gen(function* () {
       const config = yield* read({})
       assert.deepStrictEqual(topLevel("claude-code", config), { model: "opus", effort: "high" })
-      assert.deepStrictEqual(topLevel("codex", config), { model: "gpt-6.1-sol", effort: "high" })
+      assert.deepStrictEqual(topLevel("codex", config), { model: "sol", effort: "high" })
     })
   )
 

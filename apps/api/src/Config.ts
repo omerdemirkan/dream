@@ -62,10 +62,10 @@ export const ApiConfigSchema = Config.all({
    * Operator overrides of the fleet, for QA and calibration runs: without them every project's top-level agent
    * runs on its provider's flagship at high effort (dreamd's `harness/Fleet.ts`). Each is written to dreamd's env.
    *
-   * - `DREAM_AGENT_MODEL`: Claude Code projects' model, as `DREAM_MODEL` (an id or alias `claude --model`
-   *   accepts, e.g. "haiku" or "claude-haiku-4-5-20251001").
-   * - `DREAM_CODEX_AGENT_MODEL`: Codex projects' model, as `DREAM_MODEL` (a slug in Codex's catalog, e.g.
-   *   "gpt-6-luna").
+   * - `DREAM_AGENT_MODEL`: Claude Code projects' model, as `DREAM_MODEL` (an alias, which follows its family, or an
+   *   id, which pins a model: "haiku" or "claude-haiku-4-5-20251001").
+   * - `DREAM_CODEX_AGENT_MODEL`: Codex projects' model, as `DREAM_MODEL` (a family, e.g. "luna", which dreamd runs
+   *   as its newest slug in the installed Codex; a slug of a family reads as the family, any other slug as it is).
    * - `DREAM_AGENT_EFFORT`: every project's reasoning effort, as `DREAM_EFFORT` (low, medium, high, xhigh, max).
    */
   agentModel: optionalString("DREAM_AGENT_MODEL"),

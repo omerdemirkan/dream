@@ -7,6 +7,7 @@ import { assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Option, Ref, Stream } from "effect"
 import { claudeAutoCompactWindow } from "../src/harness/Fleet.ts"
 import { Harness } from "../src/harness/Harness.ts"
+import { Models } from "../src/harness/Models.ts"
 import {
   claudeSettings,
   type DreamQuestion,
@@ -249,7 +250,14 @@ describe("Claude Code's built-ins", () => {
   it.effect("are written to ~/.claude/settings.json when the Claude Code harness starts", () =>
     Effect.gen(function* () {
       const dir = tempDir()
-      yield* Effect.scoped(Layer.build(Harness.layer.pipe(Layer.provide(baseLayer(dir)))))
+      yield* Effect.scoped(
+        Layer.build(
+          Harness.layer.pipe(
+            Layer.provide(Models.layerTest("claude-code", Option.none())),
+            Layer.provide(baseLayer(dir))
+          )
+        )
+      )
       const written = JSON.parse(readFileSync(join(dir, ".claude", "settings.json"), "utf8"))
       assert.deepStrictEqual(written, claudeSettings(undefined))
     })

@@ -5,7 +5,7 @@
  * The prompt, skill and task-prompt text is canonical in the sections in
  * docs/prompts/; `bun run sync-prompts` regenerates ./generated/prompts.ts.
  */
-import { renderAgentEvent, type AgentEvent, type Harness, type MediaId } from "@dream/domain"
+import { renderAgentEvent, type AgentEvent, familyOf, type Harness, type MediaId, modelName } from "@dream/domain"
 import { DateTime, Order } from "effect"
 
 export { skills, systemPrompt, taskPrompt } from "./generated/prompts.ts"
@@ -203,6 +203,28 @@ export const renderGuidanceNote = ({ prompt, skill }: GuidanceChange): string =>
       : [])
   ]
   return `Dream updated its guidance for you since your last turn: ${changed.join(", and ")}.\n`
+}
+
+export interface ModelChange {
+  readonly harness: Harness
+  /** The concrete model the turn runs on, e.g. `claude-fable-5-2`. */
+  readonly model: string
+  /** The one the conversation's last turn ran on. */
+  readonly was: string
+}
+
+/**
+ * Said before the turn's prompt when it runs on another model than the last turn did: a project chooses a family, and
+ * each turn runs on its newest model, so a CLI release can move it (or they chose another family).
+ */
+export const renderModelNote = ({ harness, model, was }: ModelChange): string => {
+  // A concrete model's family: Claude's ids name it (`claude-fable-5-2`), as Codex's slugs do.
+  const of = (id: string) =>
+    familyOf(harness, harness === "claude-code" ? (/^claude-([a-z]+)-/.exec(id)?.[1] ?? id) : id)
+  const family = of(model)
+  return family !== undefined && family === of(was)
+    ? `Since your last turn you run on the newest ${modelName(harness, family)}, ${model}; your last turn ran on ${was}.\n`
+    : `Since your last turn you run on another model, ${model}; your last turn ran on ${was}.\n`
 }
 
 export interface HandoffInput {

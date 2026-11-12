@@ -8,7 +8,7 @@
  * Dream also edits the bridge code where an adapter has no setting for what it needs (`bridgePatches`), and adds
  * files of its own beside it (`bridgeExtras`).
  *
- * `scripts/harness-pins.ts` writes the manifests; `test/bridges.test.ts` checks they still match the installed
+ * `scripts/update-harnesses.ts` (`bun run harness:update`) writes the manifests; `test/bridges.test.ts` checks they still match the installed
  * adapters' apart from the CLIs, and that every patch still applies.
  */
 import { readFile } from "node:fs/promises"
@@ -26,6 +26,9 @@ export const cliPackages: Readonly<Record<PinnedHarness, ReadonlyArray<string>>>
 }
 
 export const bridgesDir = fileURLToPath(new URL("./bridges/", import.meta.url))
+
+/** Where `dreamd bootstrap` installs the pinned CLIs, each bridge in a directory named for its harness. */
+export const binDir = (home: string) => join(home, ".ai-sdk-harness", ".harness-bootstrap")
 
 const adapterPackage: Readonly<Record<PinnedHarness, string>> = {
   "claude-code": "@ai-sdk/harness-claude-code",

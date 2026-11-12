@@ -134,7 +134,8 @@ export class AuthedAppRpcs extends RpcGroup.make(
    * uploads from `CreateAttachmentUpload` that go with the idea.
    *
    * Added November 2026, from the new-idea screen's Advanced sheet: `model` and `effort` for the project's agent
-   * (one of `AgentModels` for the harness, else `InvalidRequest`; absent: Dream's default), and `limits`, set as if
+   * (a family of `AgentModels` for the harness, or on Codex a slug of one, which is stored as its family; else
+   * `InvalidRequest`; absent: Dream's default), and `limits`, set as if
    * by `SetUsageLimits` right after.
    */
   Rpc.make("CreateProject", {
@@ -278,8 +279,9 @@ export class AuthedAppRpcs extends RpcGroup.make(
   }),
   /**
    * Choose the model and reasoning effort of this project's agent, both at once: a key that's absent means Dream's
-   * default. The model must be one of `AgentModels` for the project's harness (`InvalidRequest` otherwise). It takes
-   * effect from the next turn, in the same conversation. Returns the project. Added November 2026.
+   * default. The model must be a family of `AgentModels` for the project's harness, or on Codex a slug of one
+   * (builds from before families send `gpt-6.1-sol`), which is stored as its family (`InvalidRequest` otherwise). It
+   * takes effect from the next turn, in the same conversation. Returns the project. Added November 2026.
    */
   Rpc.make("SetAgentModel", {
     payload: {

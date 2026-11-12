@@ -17,6 +17,7 @@ import { renderTaskPrompt, taskPrompt } from "@dream/agent-context"
 import {
   AgentModels,
   equivalentModel,
+  offersModel,
   type Harness as HarnessName,
   type TaskFailure,
   type TaskOutcome,
@@ -27,6 +28,7 @@ import {
 import { Cause, Context, DateTime, Duration, Effect, Exit, FileSystem, Layer, Option, Path, Ref, Stream } from "effect"
 import { DreamdConfig } from "./Config.ts"
 import { makeAdapter } from "./harness/Harness.ts"
+import { Models } from "./harness/Models.ts"
 import { sessionEnv } from "./harness/HarnessEnv.ts"
 import { makeLocalSandboxSession, makeSpawned, stopAll } from "./harness/LocalSandbox.ts"
 import * as Skill from "./harness/Skill.ts"
@@ -79,12 +81,14 @@ const noQuestions: TurnHandlers = {
 }
 
 /**
- * A task's model, on this harness: one the project's previous plan offered (a task that came due as the project moved
- * to another plan, before Dream moved the tasks' models) gets its counterpart here; any other name goes as it is.
+ * A task's model, on this harness: a family of the project's previous plan, or a slug of one (a task that came due as
+ * the project moved to another plan, before Dream moved the tasks' models), gets its counterpart here; a Codex slug of
+ * a family here reads as the family, which `Models` runs as its newest model; any other name goes as it is.
  */
 export const modelHere = (harness: HarnessName, model: string): string => {
+  if (offersModel(harness, model)) return equivalentModel(harness, harness, model)
   const other = (Object.keys(AgentModels) as ReadonlyArray<HarnessName>).find(
-    (candidate) => candidate !== harness && AgentModels[candidate].some((option) => option.id === model)
+    (candidate) => candidate !== harness && offersModel(candidate, model)
   )
   return other === undefined ? model : equivalentModel(other, harness, model)
 }
@@ -100,6 +104,7 @@ export class Tasks extends Context.Service<
     Tasks,
     Effect.gen(function* () {
       const config = yield* DreamdConfig
+      const models = yield* Models
       const fs = yield* FileSystem.FileSystem
       const path = yield* Path.Path
       const skills = Skill.offered(yield* Skill.all, config)
@@ -112,8 +117,22 @@ export class Tasks extends Context.Service<
       yield* Effect.addFinalizer(() => Effect.promise(() => stopAll(spawned)))
 
       const run = Effect.fn("Tasks.run")(function* (given: TaskRunInput) {
-        const input = { ...given, task: { ...given.task, model: modelHere(name, given.task.model) } }
         const startedAt = yield* DateTime.now
+        // A family runs as its newest model in the installed CLI, as the agent's own session does.
+        const resolved = yield* models.resolve(modelHere(name, given.task.model)).pipe(Effect.result)
+        if (resolved._tag === "Failure") {
+          yield* Effect.logWarning("A scheduled task has no model", {
+            wake: given.wakeId,
+            error: resolved.failure.message
+          })
+          return {
+            outcome: "failed",
+            failure: { reason: `its model didn't resolve: ${resolved.failure.message}` },
+            startedAt,
+            endedAt: yield* DateTime.now
+          } satisfies TaskRunResult
+        }
+        const input = { ...given, task: { ...given.task, model: resolved.success.model } }
         const sessionId = `dream-task-${input.eventId}`
         const scratch = path.join(config.stateDir, "tasks", input.eventId)
         yield* Effect.logInfo("Running a scheduled task", {

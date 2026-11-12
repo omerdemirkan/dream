@@ -8,11 +8,12 @@ import {
   AgentModels,
   agentOf,
   DefaultAgent,
+  familyOf,
   type Harness,
   harnessOf,
   type ModelConnection,
   type ModelProvider,
-  offersModel,
+  modelName,
   type Project,
   type ProjectSummary,
   type ReasoningEffort,
@@ -54,6 +55,13 @@ export interface AdvancedView {
 const hasLimits = (limits: UsageLimits) =>
   limits.projectWeekPercent !== undefined || limits.planLeftPercent !== undefined
 
+/**
+ * Under the models: each row is a family, which moves to its newest model as it comes out (`AgentModels`), so a turn
+ * on a newer model than the last is no surprise.
+ */
+export const latestNote = "Always the newest version of each."
+
+/** The families offered, by name: each runs on its newest model, so a row never names a version. */
 export const modelRows = (harness: Harness, model: string): ReadonlyArray<ModelRow> =>
   AgentModels[harness].map((option) => ({
     ...option,
@@ -77,9 +85,7 @@ export const advancedView = (
   const model =
     harness === undefined
       ? undefined
-      : picked.model !== undefined && offersModel(harness, picked.model)
-        ? picked.model
-        : DefaultAgent[harness].model
+      : ((picked.model === undefined ? undefined : familyOf(harness, picked.model)) ?? DefaultAgent[harness].model)
   const effort = picked.effort ?? (harness === undefined ? DefaultAgent["claude-code"] : DefaultAgent[harness]).effort
   return {
     plans: plans.length > 1 ? plans : [],
@@ -135,8 +141,6 @@ export const effortAbout: Readonly<Record<ReasoningEffort, string>> = {
   max: "Thinks as long as it takes. Uses your plan fastest."
 }
 
-/** The project's model by name, for the usage sheet's Agent row: "GPT-6.1 Sol". */
-export const agentModelName = (project: Pick<Project, "harness" | "agentModel" | "agentEffort">): string => {
-  const { model } = agentOf(project)
-  return AgentModels[project.harness].find((option) => option.id === model)?.name ?? model
-}
+/** The project's model family by name, for the usage sheet's Agent row: "Sol". */
+export const agentModelName = (project: Pick<Project, "harness" | "agentModel" | "agentEffort">): string =>
+  modelName(project.harness, agentOf(project).model)

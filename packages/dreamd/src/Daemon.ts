@@ -23,6 +23,7 @@ import { PageCheck } from "./cli/PageCheck.ts"
 import { Commands } from "./Commands.ts"
 import { DreamdConfig } from "./Config.ts"
 import { Harness } from "./harness/Harness.ts"
+import { Models } from "./harness/Models.ts"
 import { Tasks } from "./Tasks.ts"
 import { Inbox } from "./Inbox.ts"
 import * as Lifecycle from "./Lifecycle.ts"
@@ -153,7 +154,7 @@ export const layerWithoutConfig = layerWith(
         return (yield* DreamdConfig).progressModel ? CliSummarizer.layer : Summarizer.modelFree
       })
     )
-  )
+  ).pipe(Layer.provide(Models.layer))
 )
 
 export const layer = layerWithoutConfig.pipe(

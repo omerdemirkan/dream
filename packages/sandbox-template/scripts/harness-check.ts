@@ -2,8 +2,9 @@
  * Runs one turn on each harness in a sandbox of a template build, against fakes for the Worker and both models
  * (packages/dreamd/scripts/fake-api.ts, fake-anthropic.ts and fake-responses.ts, as shipped in the build), so a
  * Claude Code or Codex release that breaks its adapter is caught before any project gets it. The turn also checks
- * the fleet: the top-level agent asks for the model and effort dreamd says it runs on, and starts a subagent on a
- * model and effort of its choosing (Claude Code's `Agent` tool, Codex's `spawn_agent`), which the subagent's own
+ * the fleet: each turn runs on a family other than the harness's default (`checkFamily`), and the top-level agent
+ * asks for the concrete model dreamd resolved it to from the installed CLI's own list (Fable's newest on Claude
+ * Code, Terra's on Codex) at the effort dreamd says, and starts a subagent on a model and effort of its choosing (Claude Code's `Agent` tool, Codex's `spawn_agent`), which the subagent's own
  * requests carry, and that the harness installed every one of Dream's skills where it reads them. `build.ts` runs it on every build before tagging the build `default`; on its own:
  *
  *   node scripts/harness-check.ts [template[:tag]]     (default: the current dream-sandbox build)
@@ -41,6 +42,9 @@ const sh = async (sandbox: Sandbox, command: string, timeoutMs = 120_000, retry 
 
 const background = (command: string, out: string) => `setsid nohup ${command} > ${out} 2>&1 < /dev/null &`
 
+/** The family each turn runs on: not the default, so a family a project chose resolves as the default's does. */
+export const checkFamily = { "claude-code": "fable", codex: "terra" } as const
+
 /** One turn on `harness`: restart dreamd on it, deliver a message, and wait for the turn to finish or fail. */
 const turn = async (sandbox: Sandbox, harness: HarnessResult["harness"]): Promise<HarnessResult> => {
   const started = Number((await sh(sandbox, `grep -c "dreamd started" ${log} || true`)).output)
@@ -52,6 +56,7 @@ const turn = async (sandbox: Sandbox, harness: HarnessResult["harness"]): Promis
       "DREAM_PROJECT_TOKEN=dev-project-token",
       `DREAM_DAEMON_TOKEN=${daemonToken}`,
       `DREAM_HARNESS=${harness}`,
+      `DREAM_MODEL=${checkFamily[harness]}`,
       "DREAM_CODEX_BASE_URL=http://127.0.0.1:18788/backend-api/codex",
       ""
     ].join("\n")
@@ -164,21 +169,28 @@ const fleetProblems = (
   dreamdLog: string,
   requests: ReadonlyArray<FakeRequest>
 ): ReadonlyArray<string> => {
-  const runsOn = /The agent runs on \S+, model (\S+), effort (\S+)/.exec(dreamdLog)
+  // "model fable, effort high (claude-fable-5-2)": what the harness is given, and the model dreamd read it stands for.
+  const runsOn = /The agent runs on \S+, model (\S+), effort (\S+)(?: \((\S+)\))?/.exec(dreamdLog)
   if (runsOn === null) return ["dreamd didn't say which model the agent runs on"]
-  const [, model, effort] = runsOn as unknown as [string, string, string]
-  const top = requests.filter((r) => r.did?.startsWith(harness === "claude-code" ? "agent:" : "spawn:"))
-  // Claude Code resolves an alias (`opus`) to an id of that family.
-  const isTop = (r: FakeRequest) =>
-    harness === "claude-code" && !model.startsWith("claude-") ? r.model?.includes(`-${model}-`) : r.model === model
+  const [, model, effort, resolved] = runsOn as unknown as [string, string, string, string | undefined]
+  const concrete = resolved ?? model
   const problems: Array<string> = []
+  const family = checkFamily[harness]
+  const ofFamily =
+    harness === "claude-code" ? concrete.startsWith(`claude-${family}-`) : concrete.endsWith(`-${family}`)
+  if (!ofFamily) problems.push(`dreamd resolved ${family} to ${concrete}, not a model of that family`)
+  if (harness === "claude-code" && resolved === undefined)
+    problems.push("dreamd couldn't read Claude Code's model list")
+  const top = requests.filter((r) => r.did?.startsWith(harness === "claude-code" ? "agent:" : "spawn:"))
   if (top.length === 0) problems.push("the agent didn't start a subagent")
-  if (!top.every((r) => isTop(r) && r.effort === effort))
-    problems.push(`the top-level agent didn't ask for ${model}/${effort}`)
+  if (!top.every((r) => r.model === concrete && r.effort === effort))
+    problems.push(
+      `the top-level agent didn't ask for ${concrete}/${effort} (it asked for ${[...new Set(top.map((r) => `${r.model}/${r.effort}`))].join(", ")})`
+    )
   const sub =
     harness === "claude-code"
       ? requests.filter((r) => r.model?.includes("-haiku-") && r.effort === "low")
-      : requests.filter((r) => r.model === model && r.effort === "low")
+      : requests.filter((r) => r.model === concrete && r.effort === "low")
   if (sub.length === 0) problems.push("no request from a subagent on the model and effort it was given")
   return problems
 }

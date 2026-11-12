@@ -39,6 +39,7 @@ import { withPinnedCli } from "./Bridges.ts"
 import { codexContextWindow, topLevel } from "./Fleet.ts"
 import { gatewayEnv, harnessAuth, sessionEnv } from "./HarnessEnv.ts"
 import { killAllNow, makeLocalSandboxSession, makeSpawned, stopAll } from "./LocalSandbox.ts"
+import { Models } from "./Models.ts"
 import { claudeSettings } from "./PersonChannel.ts"
 import * as Session from "./Session.ts"
 import { SavedSession } from "./Session.ts"
@@ -217,6 +218,11 @@ export const makeAdapter = (
       )
 }
 
+/** Of what the last turn used (`last-turn.json`, written by `Agent.ts`), the model each session's steps were on. */
+const LastTurnModel = Schema.Struct({
+  sessions: Schema.Array(Schema.Struct({ own: Schema.Boolean, model: Schema.optionalKey(Schema.String) }))
+})
+
 /** How long detaching from the session may take. */
 const detachTimeout = Duration.seconds(5)
 
@@ -250,17 +256,18 @@ const make = Effect.fnUntraced(function* ({
   if (name === "claude-code") yield* provide(writeClaudeSettings(path.join(config.home, ".claude", "settings.json")))
   const env = sessionEnv(name, process.env, config)
   const offered = Skill.offered(skills, config)
-  const { model, effort } = topLevel(name, config)
-  yield* Effect.logInfo(`The agent runs on ${name}, model ${model}, effort ${effort}`)
-
-  const agent = new HarnessAgent({
-    harness: makeAdapter(name, config, effort),
-    instructions,
-    skills: offered,
-    sandboxConfig: { workDir: "." },
-    permissionMode: "allow-all",
-    model
-  })
+  const models = yield* Models
+  const { model: chosen, effort } = topLevel(name, config)
+  const makeAgent = (model: string) =>
+    new HarnessAgent({
+      harness: makeAdapter(name, config, effort),
+      instructions,
+      skills: offered,
+      sandboxConfig: { workDir: "." },
+      permissionMode: "allow-all",
+      model
+    })
+  type Agent = ReturnType<typeof makeAgent>
 
   const stored = yield* provide(store.read).pipe(
     Effect.catch((error) =>
@@ -308,7 +315,7 @@ const make = Effect.fnUntraced(function* ({
     )
   const active = yield* Ref.make<Option.Option<HarnessAgentSession>>(Option.none())
 
-  const open = Effect.fn("Harness.open")(function* () {
+  const open = Effect.fn("Harness.open")(function* (agent: Agent) {
     const current = yield* Ref.get(state)
     const sandboxSession = yield* Effect.promise(() =>
       makeLocalSandboxSession({ id: `dream-${config.projectId}`, cwd: config.workDir, env, spawned })
@@ -461,12 +468,53 @@ const make = Effect.fnUntraced(function* ({
   if (Option.isNone(savedBackground) || Option.isSome(stoppedBefore)) yield* persistBackground([])
   const stopped = yield* Ref.make(stoppedBefore)
 
+  // The model is the family's newest in the installed CLI, known once its list is read (`Models.ts`), before the first
+  // turn; a choice Codex can't resolve fails that turn and is tried again with the next.
+  const lastTurnStore = JsonFile.make(LastTurnModel, path.join(config.stateDir, "last-turn.json"))
+  const resolved = yield* Ref.make(Option.none<Agent>())
+  const ready = Effect.gen(function* () {
+    const existing = yield* Ref.get(resolved)
+    if (Option.isSome(existing)) return existing.value
+    const { model, concrete } = yield* models
+      .resolve(chosen)
+      .pipe(Effect.mapError((error) => new HarnessError({ message: error.message, cause: error })))
+    yield* Effect.logInfo(
+      `The agent runs on ${name}, model ${model}, effort ${effort}${Option.match(concrete, {
+        onNone: () => "",
+        onSome: (entry) => (entry.id === model ? "" : ` (${entry.id})`)
+      })}`,
+      { choice: chosen }
+    )
+    if (Option.isSome(concrete)) {
+      // What the last turn's own steps ran on, for a session saved before dreamd kept its model.
+      const lastTurn = yield* provide(lastTurnStore.read).pipe(Effect.orElseSucceed(() => Option.none()))
+      const was = Option.getOrUndefined(
+        Option.flatMap(lastTurn, (turn) => Option.fromUndefinedOr(turn.sessions.find((s) => s.own)?.model))
+      )
+      const current = yield* Ref.get(state)
+      const next = Session.onModel(current, name, concrete.value.id, was)
+      if (Option.isSome(next)) {
+        if (next.value.preamble !== current.preamble) {
+          yield* Effect.logInfo("The agent's model changed since its last turn; it will be told", {
+            model: concrete.value.id,
+            was: current.model ?? was
+          })
+        }
+        yield* save(next.value)
+      }
+    }
+    const agent = makeAgent(model)
+    yield* Ref.set(resolved, Option.some(agent))
+    return agent
+  })
+
   const turn = Effect.fn("Harness.turn")(function* (prompt: string, handlers: TurnHandlers) {
     const startedAt = yield* DateTime.now
+    const agent = yield* ready
     const before = yield* Ref.get(state)
     const resumed = before.resumeFrom !== undefined
     const preamble = before.preamble
-    const session = yield* open()
+    const session = yield* open(agent)
     const usage = yield* Ref.make<Usage.UsageReading>({})
     const tally = yield* Ref.make(Tokens.emptyTally)
     const lastError = yield* Ref.make<Option.Option<string>>(Option.none())
@@ -483,7 +531,7 @@ const make = Effect.fnUntraced(function* ({
         yield* Effect.forkDetach(handlers.firstUsage(reading))
       })
 
-    const streamOf = (start: () => ReturnType<typeof agent.stream>) =>
+    const streamOf = (start: () => ReturnType<Agent["stream"]>) =>
       Stream.unwrap(
         Effect.tryPromise(start).pipe(
           Effect.tap(() => Ref.set(active, Option.some(session))),
@@ -627,9 +675,12 @@ const make = Effect.fnUntraced(function* ({
 
   const steer = Effect.fn("Harness.steer")(function* (text: string) {
     const session = yield* Ref.get(active)
-    if (Option.isNone(session)) return yield* new SteerUnavailable({ message: "There's no running turn." })
+    const agent = yield* Ref.get(resolved)
+    if (Option.isNone(session) || Option.isNone(agent)) {
+      return yield* new SteerUnavailable({ message: "There's no running turn." })
+    }
     yield* Effect.tryPromise({
-      try: () => agent.experimental_steer({ session: session.value, text }),
+      try: () => agent.value.experimental_steer({ session: session.value, text }),
       catch: (cause) => new SteerUnavailable({ message: String(cause) })
     })
   })

@@ -42,7 +42,7 @@ interface Choice {
 /** Two choices per harness, neither Dream's default, and neither at medium (Claude Code's side requests use it). */
 const plans: ReadonlyArray<{ readonly harness: Harness; readonly first: Choice; readonly then: Choice }> = [
   { harness: "claude-code", first: { model: "sonnet", effort: "xhigh" }, then: { model: "fable", effort: "low" } },
-  { harness: "codex", first: { model: "gpt-6-luna", effort: "low" }, then: { model: "gpt-6-astra", effort: "max" } }
+  { harness: "codex", first: { model: "luna", effort: "low" }, then: { model: "astra", effort: "max" } }
 ]
 
 const config = ApiConfig.layerTest({
@@ -64,9 +64,10 @@ interface FakeRequest {
   readonly did?: string
 }
 
-/** Claude Code sends the alias's model id (`sonnet` → claude-sonnet-5-5); Codex the slug itself. */
-const onModel = (harness: Harness, model: string) => (request: FakeRequest) =>
-  harness === "claude-code" ? request.model?.includes(`-${model}-`) === true : request.model === model
+/** A family's model: Claude Code sends the alias's id (`sonnet` → claude-sonnet-5-5), dreamd gives Codex the newest slug. */
+const ofFamily = (harness: Harness, family: string, model: string | undefined) =>
+  harness === "claude-code" ? model?.includes(`-${family}-`) === true : model?.endsWith(`-${family}`) === true
+const onModel = (harness: Harness, family: string) => (request: FakeRequest) => ofFamily(harness, family, request.model)
 
 const runHarness = (plan: (typeof plans)[number]) =>
   Effect.gen(function* () {
@@ -182,13 +183,17 @@ const runHarness = (plan: (typeof plans)[number]) =>
     const before = yield* sessionId
 
     yield* writeEnv(plan.then)
+    const second = yield* turn("Say hello again.")
+    // dreamd resolves the family before the restarted session's first turn.
     const runsOn = yield* sh(sandbox, `grep "The agent runs on" ${log} | tail -1 | cut -c1-200`)
+    const logged = /model (\S+), effort (\S+)/.exec(runsOn)
     check(
       `${harness}: dreamd restarted on the new choice`,
-      runsOn.includes(`model ${plan.then.model}, effort ${plan.then.effort}`),
+      logged !== null &&
+        (harness === "claude-code" ? logged[1] === plan.then.model : ofFamily(harness, plan.then.model, logged[1])) &&
+        logged[2] === plan.then.effort,
       runsOn
     )
-    const second = yield* turn("Say hello again.")
     verify("second turn", plan.then, second)
     const after = yield* sessionId
     const resumeFailed = yield* sh(sandbox, `grep -c "Couldn't resume" ${log} || true`)

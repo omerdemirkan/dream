@@ -119,7 +119,8 @@ export const DaemonEnv = {
   socket: "DREAM_SOCKET",
   /**
    * Optional: the model the top-level agent runs on instead of the fleet's flagship: the operator's override (e.g. a
-   * cheap model for QA) or else the project's choice (`Project.agentModel`); a name the project's harness accepts.
+   * cheap model for QA) or else the project's choice (`Project.agentModel`, a family). dreamd runs a family, or a
+   * Codex slug of one, on the family's newest model in the installed CLI, and passes any other name as it is.
    */
   model: "DREAM_MODEL",
   /** Optional: the top-level agent's `ReasoningEffort` instead of the fleet's ("high"), chosen the same way. */

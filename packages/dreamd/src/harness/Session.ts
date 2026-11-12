@@ -17,9 +17,19 @@
  * (`planHandoff`): where its log is, the summary the old harness wrote when it last compacted (Claude Code's is
  * plain text; Codex's, made on OpenAI's side, usually isn't), and how it ended. The handoff the old agent wrote, and
  * the rest, come in the turn's `PlanSwitched` event.
+ *
+ * The session also keeps the concrete model its turns run on. A project's choice is a family, so a CLI release can
+ * move it to a newer model between turns (Fable 5.1 to 5.2), and so can their choosing another; either way the next
+ * turn opens with a sentence saying so (`onModel`).
  */
 import { createHash } from "node:crypto"
-import { type HandoffInput, renderGuidanceNote, renderHandoff, renderPlanHandoff } from "@dream/agent-context"
+import {
+  type HandoffInput,
+  renderGuidanceNote,
+  renderHandoff,
+  renderModelNote,
+  renderPlanHandoff
+} from "@dream/agent-context"
 import { Harness as HarnessName } from "@dream/domain"
 import { Effect, FileSystem, Option, Path, Schema } from "effect"
 import * as Usage from "../Usage.ts"
@@ -43,7 +53,12 @@ const sessionFields = {
   /** The guidance the conversation runs on; missing in a session saved before dreamd kept it. */
   guidance: Schema.optionalKey(Guidance),
   /** Said before the next turn's prompt, until a turn gets going: what changed (a note, or a handoff). */
-  preamble: Schema.optionalKey(Schema.String)
+  preamble: Schema.optionalKey(Schema.String),
+  /**
+   * The concrete model the conversation's turns run on (`claude-fable-5-2`), as the installed CLI's list says
+   * (`Models.ts`); missing in a session saved before dreamd kept it.
+   */
+  model: Schema.optionalKey(Schema.String)
 }
 
 export const SavedSession = Schema.Struct({
@@ -68,8 +83,31 @@ export const restart = (session: SavedSession, sessionId: string): SavedSession 
   harness: session.harness,
   sessionId,
   ...(session.guidance === undefined ? {} : { guidance: session.guidance }),
-  ...(session.preamble === undefined ? {} : { preamble: session.preamble })
+  ...(session.preamble === undefined ? {} : { preamble: session.preamble }),
+  ...(session.model === undefined ? {} : { model: session.model })
 })
+
+/**
+ * The session running on `model` (a concrete id), and if that's a change from what it ran on (`was`, for a session
+ * saved before dreamd kept its model: what the last turn's own steps were on), a note before the next turn's prompt.
+ * A project's choice is a family, so this is usually a CLI release moving the family to a newer model.
+ */
+export const onModel = (
+  session: SavedSession,
+  harness: HarnessName,
+  model: string,
+  was: string | undefined
+): Option.Option<SavedSession> => {
+  const before = session.model ?? was
+  if (session.model === model) return Option.none()
+  if (before === undefined || before === model) return Option.some({ ...session, model })
+  const note = renderModelNote({ harness, model, was: before })
+  return Option.some({
+    ...session,
+    model,
+    preamble: session.preamble === undefined ? note : `${session.preamble}\n${note}`
+  })
+}
 
 /** The session once a turn got going: nothing left to say first. */
 export const delivered = (session: SavedSession): SavedSession => {

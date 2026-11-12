@@ -3,10 +3,12 @@ import { join } from "node:path"
 import { assert, describe, it } from "@effect/vitest"
 import { DaemonEnv } from "@dream/domain"
 import { Effect, Layer, Option } from "effect"
+import { Models } from "../src/harness/Models.ts"
 import * as Cli from "../src/progress/CliSummarizer.ts"
 import { marker, system } from "../src/progress/Prompt.ts"
 import * as Steps from "../src/progress/Steps.ts"
 import { Summarizer, type SummaryInput } from "../src/progress/Summarizer.ts"
+import { claudeCatalog, codexCatalog } from "./models.ts"
 import { baseLayer, tempDir } from "./support.ts"
 
 /**
@@ -77,6 +79,7 @@ const summarizer = (home: string, harness: "claude-code" | "codex") =>
       return yield* Summarizer
     }),
     Cli.layer.pipe(
+      Layer.provide(Models.layerTest(harness, Option.some(harness === "codex" ? codexCatalog : claudeCatalog))),
       Layer.provideMerge(baseLayer(home, { [DaemonEnv.harness]: harness, [DaemonEnv.progressLine]: "on" }))
     )
   )
@@ -103,7 +106,7 @@ describe("the CLI summariser", () => {
     })
   )
 
-  it.effect("asks Codex's luna, with Dream's prompt as its instructions and its optional tools off", () =>
+  it.effect("asks Codex's newest luna, with Dream's prompt as its instructions and its optional tools off", () =>
     Effect.gen(function* () {
       const home = tempDir()
       const call = fakeCli(home, "codex", codexAnswer("Checking the intro's font"))

@@ -13,7 +13,7 @@ import { useEffect, useState } from "react"
 import { Alert, Keyboard, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import Animated, { Easing, SlideInDown } from "react-native-reanimated"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
-import { type AdvancedView, effortAbout, effortName, type ModelRow } from "../data/advanced.ts"
+import { type AdvancedView, effortAbout, effortName, latestNote, type ModelRow } from "../data/advanced.ts"
 import { providerName } from "../data/format.ts"
 import type { PlanAction } from "../data/planSwitch.ts"
 import { withLimit } from "../data/usage.ts"
@@ -224,6 +224,7 @@ export function AgentPicker(props: {
           {model.chosen ? <Icon name="check" size={15} color={color.t1} weight="semibold" /> : null}
         </Pressable>
       ))}
+      <Text style={{ fontSize: 13, color: color.t3, marginTop: 8 }}>{latestNote}</Text>
       <EffortPicker effort={props.effort} onEffort={props.onEffort} />
     </>
   )

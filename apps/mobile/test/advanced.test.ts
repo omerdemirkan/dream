@@ -14,7 +14,7 @@ import { assert, describe, it } from "@effect/vitest"
 import { DateTime, Effect, Layer, Redacted } from "effect"
 import { Reactivity } from "effect/reactivity"
 import { Socket } from "effect/socket"
-import { advancedView, agentModelName, createSettings, nothingPicked } from "../src/data/advanced.ts"
+import { advancedView, agentModelName, createSettings, latestNote, nothingPicked } from "../src/data/advanced.ts"
 import { AppClient } from "../src/data/AppClient.ts"
 import { makeAppLayer } from "../src/data/AppLayer.ts"
 import { SecureStorage } from "../src/data/SecureStorage.ts"
@@ -42,9 +42,10 @@ describe("the Advanced sheet", () => {
     assert.deepStrictEqual(
       one.models.map((m) => [m.id, m.chosen, m.isDefault]),
       [
-        ["gpt-6-astra", false, false],
-        ["gpt-6.1-sol", true, true],
-        ["gpt-6-luna", false, false]
+        ["astra", false, false],
+        ["sol", true, true],
+        ["terra", false, false],
+        ["luna", false, false]
       ]
     )
     assert.strictEqual(one.effort, "high")
@@ -73,7 +74,7 @@ describe("the Advanced sheet", () => {
     // Switching to ChatGPT drops a Claude model for ChatGPT's default; the effort carries over.
     const switched = { ...picked, provider: "chatgpt" as const }
     const view = advancedView([claude, chatgpt], [onClaude], switched)
-    assert.strictEqual(view.models.find((m) => m.chosen)?.id, "gpt-6.1-sol")
+    assert.strictEqual(view.models.find((m) => m.chosen)?.id, "sol")
     assert.deepStrictEqual(createSettings([claude, chatgpt], [onClaude], switched), {
       harness: "codex",
       effort: "medium",
@@ -86,9 +87,12 @@ describe("the Advanced sheet", () => {
     assert.strictEqual(advancedView([claude], [], { provider: "chatgpt", limits: {} }).provider, "claude")
   })
 
-  it("names a project's model for the usage sheet's Agent row", () => {
-    assert.strictEqual(agentModelName({ harness: "claude-code" }), "Opus 5.5")
-    assert.strictEqual(agentModelName({ harness: "codex", agentModel: "gpt-6-luna", agentEffort: "low" }), "GPT-6 Luna")
+  it("names a project's model family for the usage sheet's Agent row, never a version", () => {
+    assert.strictEqual(agentModelName({ harness: "claude-code" }), "Opus")
+    assert.strictEqual(agentModelName({ harness: "claude-code", agentModel: "fable" }), "Fable")
+    // Saved before families, as the founder's Arabic project is.
+    assert.strictEqual(agentModelName({ harness: "codex", agentModel: "gpt-6-luna", agentEffort: "low" }), "Luna")
+    assert.notMatch(latestNote, /\d/)
   })
 })
 
@@ -111,10 +115,11 @@ describe("the fixtures backend", () => {
         effort: "low",
         limits: { planLeftPercent: 10 }
       })
-      assert.strictEqual(project.agentModel, "gpt-6-luna")
+      // A slug, as builds from before families send one, is kept as its family.
+      assert.strictEqual(project.agentModel, "luna")
       assert.strictEqual(project.agentEffort, "low")
       assert.deepStrictEqual((yield* app.GetProjectUsage({ projectId: project.id })).limits, { planLeftPercent: 10 })
-      const changed = yield* app.SetAgentModel({ projectId: project.id, model: "gpt-6.1-sol", effort: "max" })
+      const changed = yield* app.SetAgentModel({ projectId: project.id, model: "sol", effort: "max" })
       assert.notProperty(changed, "agentModel")
       assert.strictEqual(changed.agentEffort, "max")
       const refused = yield* Effect.flip(app.SetAgentModel({ projectId: project.id, model: "opus" }))

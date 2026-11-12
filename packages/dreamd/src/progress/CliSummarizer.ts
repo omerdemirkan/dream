@@ -1,6 +1,6 @@
 /**
  * The progress line from a small model, through the project's own harness CLI on the login the agent already uses:
- * `claude -p --model haiku` on Claude Code, `codex exec -m gpt-6-luna` on Codex, with the same placeholder
+ * `claude -p --model haiku` on Claude Code, `codex exec -m <the newest luna>` on Codex, with the same placeholder
  * credential the agent has (E2B's egress rule puts the real one in, `HarnessEnv.ts`). Nothing in dreamd calls a
  * provider's API itself (docs/proposals/sidecar-terms.html).
  *
@@ -22,18 +22,21 @@ import type { Harness } from "@dream/domain"
 import { Clock, Duration, Effect, FileSystem, Layer, Option, Ref, Schema, Stream } from "effect"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
 import { DreamdConfig } from "../Config.ts"
+import { binDir } from "../harness/Bridges.ts"
 import { agentEnv, chatgptCodexBaseUrl, harnessAuth } from "../harness/HarnessEnv.ts"
+import { Models } from "../harness/Models.ts"
 import { type Derived, derive, fitted } from "./Derive.ts"
 import { system } from "./Prompt.ts"
 import { Summarizer, type SummaryInput } from "./Summarizer.ts"
 import { render } from "./Window.ts"
 
-/** The cheapest current model of each provider, as the pinned CLI names it. */
+/**
+ * Each provider's lightest family, which runs as its newest model in the installed CLI (`harness/Models.ts`): Claude
+ * Code's alias (claude-haiku-5-5 in 2.1.322), and the newest Luna in Codex's catalog (gpt-6-luna in 0.167.2).
+ */
 export const lineModel: Readonly<Record<Harness, string>> = {
-  // Claude Code 2.1.318's alias for claude-haiku-5-5; it moves when the CLI does.
   "claude-code": "haiku",
-  // The newest luna in Codex 0.165.0's catalog (and 0.167.0's).
-  codex: "gpt-6-luna"
+  codex: "luna"
 }
 
 export const modelEvery = Duration.minutes(2)
@@ -41,8 +44,7 @@ export const callTimeout = Duration.seconds(25)
 /** What a model line is worth against the model-free sources (`Derive.ts`): above all but the plan's step. */
 export const modelScore = 3.5
 
-/** Where `dreamd bootstrap` installs the pinned CLIs. */
-export const binDir = (home: string) => join(home, ".ai-sdk-harness", ".harness-bootstrap")
+export { binDir }
 
 /** Codex features that add tools or instructions a one-line summary doesn't need. */
 const codexFeaturesOff = [
@@ -82,6 +84,8 @@ export const invocation = (
     readonly home: string
     readonly bins: string
     readonly env: Readonly<Record<string, string>>
+    /** What the CLI is given for `lineModel` (`Models.resolve`): the alias on Claude Code, the newest slug on Codex. */
+    readonly model: string
     /** Codex only: Dream's prompt as a file (`model_instructions_file`), and a home of its own. */
     readonly instructionsFile: string
     readonly codexHome: string
@@ -95,7 +99,7 @@ export const invocation = (
         args: [
           "-p",
           "--model",
-          lineModel["claude-code"],
+          options.model,
           "--effort",
           "low",
           "--system-prompt",
@@ -131,7 +135,7 @@ export const invocation = (
           "read-only",
           "--json",
           "--model",
-          lineModel.codex,
+          options.model,
           ...codexFeaturesOff.flatMap((feature) => ["--disable", feature]),
           "-c",
           'model_reasoning_effort="low"',
@@ -275,7 +279,17 @@ export const layer = Layer.effect(
       Effect.map(Option.flatMap((settings) => Option.fromNullishOr(settings.env?.ANTHROPIC_BASE_URL))),
       Effect.orElseSucceed(() => Option.none<string>())
     )
+    // A model list that can't be read leaves the family's name, which Codex refuses: then the model-free line stands.
+    const model = yield* (yield* Models).resolve(lineModel[config.harness]).pipe(
+      Effect.map((resolved) => resolved.model),
+      Effect.catch((error) =>
+        Effect.logWarning("No model for the progress line", { error: error.message }).pipe(
+          Effect.as(lineModel[config.harness])
+        )
+      )
+    )
     const call = invocation(config.harness, {
+      model,
       home: config.home,
       bins: binDir(config.home),
       env: agentEnv(process.env, config),
@@ -316,7 +330,7 @@ export const layer = Layer.effect(
       )
 
     return Summarizer.of({
-      name: `${config.harness} ${lineModel[config.harness]}`,
+      name: `${config.harness} ${model}`,
       summarize: (input) =>
         Effect.gen(function* () {
           const last = yield* Ref.get(lastCallAt)
@@ -336,7 +350,7 @@ export const layer = Layer.effect(
           )
           const line = Option.flatMap(answer, (a) => Option.fromNullishOr(lineFrom(a.text, input)))
           yield* Effect.logInfo("Progress summary", {
-            model: lineModel[config.harness],
+            model,
             ms: (yield* Clock.currentTimeMillis) - started,
             used: Option.isSome(line),
             ...Option.match(answer, {

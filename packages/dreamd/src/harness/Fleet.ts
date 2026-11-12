@@ -1,17 +1,16 @@
 /**
- * The model and reasoning effort each harness's top-level agent runs on. A subscription fixes the fleet: the
- * top-level agent is always its provider's latest flagship, reasoning high, and it picks a model and effort for
- * each subagent it starts (Claude Code's `Agent` tool takes `model` and `effort`, Codex's `spawn_agent` takes
- * `model` and `reasoning_effort`; see docs/research/verified-facts.md).
+ * The model family and reasoning effort each harness's top-level agent runs on. A subscription fixes the fleet: the
+ * top-level agent is its provider's flagship family, reasoning high, unless they chose another, and it picks a model
+ * and effort for each subagent it starts (Claude Code's `Agent` tool takes `model` and `effort`, Codex's
+ * `spawn_agent` takes `model` and `reasoning_effort`; see docs/research/verified-facts.md).
  *
- * - Claude Code: the `opus` alias, which each Claude Code release points at the latest Opus (2.1.318:
- *   claude-opus-5-5), so moving the pinned CLI moves the model.
- * - Codex has no alias that tracks a family, so the model is pinned here: the newest Sol in the pinned Codex's
- *   catalog (0.165.0: gpt-6.1-sol). When Codex moves, check `codex debug models --bundled` in the new build.
- *   Only models with Codex's multi-agent tools can start subagents (gpt-6.1-sol has them; gpt-5.5, the
- *   adapter's default, doesn't), and a thread keeps the tools it started with.
+ * - Claude Code: `opus`, an alias each Claude Code release points at the newest Opus (2.1.322: claude-opus-5-5).
+ * - Codex: `sol`, which runs as the newest Sol in the installed Codex's catalog (0.167.2: gpt-6.1-sol). Codex has no
+ *   aliases, so `Models.ts` picks the slug, from the models with Codex's multi-agent tools (gpt-5.5, the adapter's
+ *   default, has none, and a thread keeps the tools it started with).
  *
- * The flagship is the domain's `DefaultAgent`, beside the models a project may choose instead (`AgentModels`).
+ * So moving the pinned CLIs (`scripts/update-harnesses.ts`) moves every project to its family's newest model.
+ * The flagship is the domain's `DefaultAgent`, beside the families a project may choose instead (`AgentModels`).
  * dreamd's env says which it runs on (`DaemonEnv.model`, `DaemonEnv.effort`): the Worker writes the operator's QA
  * override if there is one, else the project's choice, and nothing for Dream's default (`daemonSettings` in the
  * ProjectDO's `SandboxManager.ts`). A changed choice rewrites the env file between turns, which restarts dreamd on
@@ -29,7 +28,7 @@ export const flagship: Readonly<Record<Harness, TopLevel>> = DefaultAgent
 
 /**
  * Codex's context window, as `model_context_window` in its config: the most any model allows. Codex clamps it to
- * the model's `max_context_window` (gpt-6.1-sol in 0.165.0's catalog: 872,000, of which it uses 95%), raises the
+ * the model's `max_context_window` (gpt-6.1-sol in 0.167.2's catalog: 872,000, of which it uses 95%), raises the
  * auto-compact limit with it, and applies it to subagents too, whatever model they're on.
  */
 export const codexContextWindow = 1_000_000

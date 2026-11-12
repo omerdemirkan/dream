@@ -11,7 +11,9 @@ import {
   agentOf,
   AppRpcs,
   DefaultAgent,
+  familyOf,
   type Harness,
+  modelName,
   offersModel,
   Project,
   ReasoningEffort,
@@ -46,13 +48,50 @@ describe("the agent's model", () => {
     }
   })
 
+  it("offers families, not versions", () => {
+    assert.deepStrictEqual(
+      AgentModels["claude-code"].map((m) => m.name),
+      ["Fable", "Opus", "Sonnet", "Haiku"]
+    )
+    assert.deepStrictEqual(
+      AgentModels.codex.map((m) => m.id),
+      ["astra", "sol", "terra", "luna"]
+    )
+    for (const harness of harnesses) {
+      for (const option of AgentModels[harness]) assert.notMatch(option.name, /\d/)
+    }
+  })
+
+  it("reads a Codex slug, as builds and projects from before families name one, as its family", () => {
+    assert.strictEqual(familyOf("codex", "gpt-6.1-sol"), "sol")
+    assert.strictEqual(familyOf("codex", "gpt-6-luna"), "luna")
+    assert.strictEqual(familyOf("codex", "gpt-6.1-terra"), "terra")
+    assert.strictEqual(familyOf("codex", "gpt-6-astra"), "astra")
+    assert.strictEqual(familyOf("codex", "sol"), "sol")
+    assert.strictEqual(familyOf("claude-code", "fable"), "fable")
+    // A Claude id pins a model; only its alias follows the family.
+    assert.isUndefined(familyOf("claude-code", "claude-fable-5-1"))
+    assert.isUndefined(familyOf("codex", "gpt-5.5"))
+    assert.isUndefined(familyOf("codex", "gpt-daybreak-blue-latest"))
+    assert.isUndefined(familyOf("codex", "codex-auto-review"))
+    assert.isUndefined(familyOf("claude-code", "sol"))
+    // What TestFlight build 26858598 sends.
+    assert.isTrue(offersModel("codex", "gpt-6.1-sol"))
+    assert.strictEqual(modelName("codex", "gpt-6-luna"), "Luna")
+    assert.strictEqual(modelName("codex", "gpt-5.5"), "gpt-5.5")
+  })
+
   it("resolves a project's choice over Dream's default, and keeps only what differs from it", () => {
     const project = Fixtures.liftLog
     assert.deepStrictEqual(agentOf({ harness: "claude-code" }), { model: "opus", effort: "high" })
     assert.deepStrictEqual(agentOf({ ...project, harness: "codex", agentEffort: "max" }), {
-      model: "gpt-6.1-sol",
+      model: "sol",
       effort: "max"
     })
+    // The founder's Arabic project, saved on a slug, runs on its family.
+    assert.strictEqual(agentOf({ harness: "codex", agentModel: "gpt-6-luna" }).model, "luna")
+    assert.deepStrictEqual(agentChoice("codex", { model: "gpt-6-luna" }), { agentModel: "luna" })
+    assert.deepStrictEqual(agentChoice("codex", { model: "gpt-6.1-sol" }), {})
     assert.deepStrictEqual(agentChoice("claude-code", { model: "opus", effort: "high" }), {})
     assert.deepStrictEqual(agentChoice("claude-code", { model: "sonnet", effort: "high" }), { agentModel: "sonnet" })
     assert.deepStrictEqual(agentChoice("codex", { effort: "low" }), { agentEffort: "low" })

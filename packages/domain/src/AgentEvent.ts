@@ -5,6 +5,7 @@
  * plain-text rendering of the events that woke it (see `renderAgentEvent`).
  */
 import { DateTime, Schema } from "effect"
+import { familyOf, modelName } from "./Agent.ts"
 import { AppNotificationLimits } from "./AppNotifications.ts"
 import { IntegrationAccess } from "./Connections.ts"
 import { AppId, EventId, LinkId, type MediaId, MessageId, WakeId } from "./Ids.ts"
@@ -429,6 +430,10 @@ export const planHandoffPath = (at: DateTime.Utc, to: Harness): string =>
 const harnessLabel: Record<Harness, string> = { "claude-code": "Claude Code", codex: "Codex" }
 const planLabel = (harness: Harness) => (providerOf(harness) === "chatgpt" ? "ChatGPT" : "Claude")
 
+/** A model choice as the agent reads it: "the newest Sol (`sol`)" for a family, else the model as it's named. */
+const familyLabel = (harness: Harness, model: string) =>
+  familyOf(harness, model) === model ? `the newest ${modelName(harness, model)} (\`${model}\`)` : model
+
 const renderPlanSwitched = (
   { from, to, outcome, reason, handoff, model, modelBefore, tasks = [], chat = [] }: PlanSwitchedEvent,
   options: RenderOptions
@@ -460,8 +465,8 @@ const renderPlanSwitched = (
     model === undefined
       ? ""
       : modelBefore === undefined
-        ? ` You run on ${model}, Dream's default here.`
-        : ` You run on ${model}, which stands in for ${modelBefore}, the model they had chosen there.`
+        ? ` You run on ${familyLabel(to, model)}, Dream's default here.`
+        : ` You run on ${familyLabel(to, model)}, which stands in for ${familyLabel(from, modelBefore)}, the model they had chosen there.`
   const moved =
     tasks.length === 0
       ? ""

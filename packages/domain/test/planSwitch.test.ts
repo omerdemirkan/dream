@@ -25,18 +25,26 @@ const at = DateTime.makeUnsafe("2026-11-10T15:04:05Z")
 const OldProject = Project.mapFields(({ planSwitch: _, ...rest }) => rest)
 
 describe("the model on the other plan", () => {
-  it("stands where the old one stood, by rank, either way", () => {
-    assert.strictEqual(equivalentModel("claude-code", "codex", "fable"), "gpt-6-astra")
-    assert.strictEqual(equivalentModel("claude-code", "codex", "opus"), "gpt-6.1-sol")
-    assert.strictEqual(equivalentModel("claude-code", "codex", "sonnet"), "gpt-6-luna")
-    assert.strictEqual(equivalentModel("codex", "claude-code", "gpt-6-astra"), "fable")
-    assert.strictEqual(equivalentModel("codex", "claude-code", "gpt-6-luna"), "sonnet")
+  it("stands where the old one stood, by rank, either way, as a family", () => {
+    assert.strictEqual(equivalentModel("claude-code", "codex", "fable"), "astra")
+    assert.strictEqual(equivalentModel("claude-code", "codex", "opus"), "sol")
+    assert.strictEqual(equivalentModel("claude-code", "codex", "sonnet"), "terra")
+    assert.strictEqual(equivalentModel("claude-code", "codex", "haiku"), "luna")
+    assert.strictEqual(equivalentModel("codex", "claude-code", "astra"), "fable")
+    assert.strictEqual(equivalentModel("codex", "claude-code", "luna"), "haiku")
   })
 
-  it("keeps a model the new plan offers, and gives any other name its lightest", () => {
-    assert.strictEqual(equivalentModel("claude-code", "codex", "gpt-6.1-sol"), "gpt-6.1-sol")
-    assert.strictEqual(equivalentModel("claude-code", "codex", "haiku"), "gpt-6-luna")
-    assert.strictEqual(equivalentModel("codex", "claude-code", "gpt-5.5"), "sonnet")
+  it("reads a model saved before families as its family", () => {
+    assert.strictEqual(equivalentModel("codex", "claude-code", "gpt-6-astra"), "fable")
+    assert.strictEqual(equivalentModel("codex", "claude-code", "gpt-6-luna"), "haiku")
+    assert.strictEqual(equivalentModel("codex", "claude-code", "gpt-6.1-terra"), "sonnet")
+  })
+
+  it("keeps a family the new plan offers, and gives any other name its lightest", () => {
+    assert.strictEqual(equivalentModel("claude-code", "codex", "sol"), "sol")
+    assert.strictEqual(equivalentModel("claude-code", "codex", "gpt-6.1-sol"), "sol")
+    assert.strictEqual(equivalentModel("codex", "claude-code", "gpt-5.5"), "haiku")
+    assert.strictEqual(equivalentModel("claude-code", "codex", "claude-3-7-sonnet-latest"), "luna")
   })
 
   it("moves the project's choice over, and leaves Dream's default as the default", () => {
@@ -44,13 +52,19 @@ describe("the model on the other plan", () => {
     assert.deepStrictEqual(
       agentChoiceOn({ harness: "claude-code", agentModel: "sonnet", agentEffort: "low" }, "codex"),
       {
-        agentModel: "gpt-6-luna",
+        agentModel: "terra",
         agentEffort: "low"
       }
     )
     assert.deepStrictEqual(agentChoiceOn({ harness: "codex", agentEffort: "max" }, "claude-code"), {
       agentEffort: "max"
     })
+    // The founder's project on Luna, saved before families, moves to Haiku.
+    assert.deepStrictEqual(agentChoiceOn({ harness: "codex", agentModel: "gpt-6-luna" }, "claude-code"), {
+      agentModel: "haiku"
+    })
+    // Opus stands where Sol does, which is Codex's default.
+    assert.deepStrictEqual(agentChoiceOn({ harness: "claude-code", agentModel: "opus" }, "codex"), {})
   })
 })
 
@@ -90,8 +104,8 @@ describe("what the agents are told", () => {
         to: "claude-code",
         outcome: "moved",
         handoff: "/home/user/.dream/handoffs/x.md",
-        model: "sonnet",
-        modelBefore: "gpt-6-luna",
+        model: "haiku",
+        modelBefore: "luna",
         tasks: [{ wakeId: WakeId.make("wak_1"), why: "Weekly digest", from: "gpt-6-luna", to: "sonnet" }],
         chat: [{ from: "user", text: "Also track sleep", at }]
       })
@@ -99,7 +113,7 @@ describe("what the agents are told", () => {
     assert.include(full, "from their ChatGPT plan to their Claude plan")
     assert.include(full, "on Claude Code, taking over from the agent that ran it on Codex")
     assert.include(full, "It wrote you a handoff, /home/user/.dream/handoffs/x.md: read it before anything else")
-    assert.include(full, "You run on sonnet, which stands in for gpt-6-luna")
+    assert.include(full, "You run on the newest Haiku (`haiku`), which stands in for the newest Luna (`luna`)")
     assert.include(full, '- wak_1 ("Weekly digest"): gpt-6-luna → sonnet')
     assert.include(full, "They wrote:\n> Also track sleep")
     assert.notInclude(full, "undefined")

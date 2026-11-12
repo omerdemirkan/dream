@@ -24,7 +24,10 @@ export type WakeWhen = typeof WakeWhen.Type
 export const WakeTask = Schema.Struct({
   /** Everything the task's session is told about the job: it knows nothing else of the project. */
   brief: Schema.NonEmptyString,
-  /** As the harness names models: Claude Code's `sonnet`, `haiku`, `opus`; a Codex catalog slug. */
+  /**
+   * As the harness names models: Claude Code's `sonnet`, `haiku`, `opus`; a Codex catalog slug. A family of
+   * Dream's (`AgentModels`), or a Codex slug of one, runs as that family's newest model when the task comes due.
+   */
   model: Schema.NonEmptyString,
   effort: ReasoningEffort
 })

@@ -7,6 +7,7 @@
  *   node packages/dreamd/scripts/progress-eval/cli-replay.ts [--harness claude-code|codex] [--bins <dir>]
  *        [--max-calls <n>] [--windows <file>] [--answers <file>] [--out <file>]
  *
+ * --model      what the CLI is given (default: the newest of `lineModel`'s family in the CLI's own list)
  * --bins       where the CLIs are, laid out as `dreamd bootstrap` leaves them (default ~/.ai-sdk-harness/.harness-bootstrap)
  * --max-calls  stop calling after n calls (later picks stay model-free)
  * --windows    instead of calling, write the windows a call would get (for running them elsewhere)
@@ -16,7 +17,7 @@
  * DREAM_CODEX_BASE_URL (Codex) point it at the fake servers in `scripts/`; unset, it goes to the real provider on the
  * placeholder credential, which only E2B's egress rule makes real. Never run it with a real token in the environment.
  */
-import { spawnSync } from "node:child_process"
+import { execFileSync, spawnSync } from "node:child_process"
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
@@ -27,11 +28,13 @@ import {
   binDir,
   invocation,
   lineFrom,
+  lineModel,
   modelEvery,
   parseClaude,
   parseCodex
 } from "../../src/progress/CliSummarizer.ts"
 import { type Derived, derive, type Shown } from "../../src/progress/Derive.ts"
+import { catalogCommand, newestOf, parseClaudeModels, parseCodexCatalog } from "../../src/harness/Models.ts"
 import { system } from "../../src/progress/Prompt.ts"
 import * as Steps from "../../src/progress/Steps.ts"
 import { render } from "../../src/progress/Window.ts"
@@ -52,7 +55,23 @@ const out = arg("--out")
 const work = join(tmpdir(), "dream-progress-replay")
 mkdirSync(join(work, "codex-home"), { recursive: true })
 writeFileSync(join(work, "instructions.md"), system)
+const catalog = (() => {
+  const { command, args, stdin, env } = catalogCommand(harness, bins, work)
+  const stdout = execFileSync(command, args, {
+    input: stdin,
+    env: { PATH: process.env.PATH, ...env },
+    encoding: "utf8"
+  })
+  return Option.getOrElse(harness === "claude-code" ? parseClaudeModels(stdout) : parseCodexCatalog(stdout), () => [])
+})()
+const model =
+  arg("--model") ??
+  (harness === "claude-code"
+    ? lineModel[harness]
+    : Option.getOrThrow(newestOf(harness, catalog, lineModel[harness])).id)
+
 const call = invocation(harness, {
+  model,
   home: homedir(),
   bins,
   env: Object.fromEntries(

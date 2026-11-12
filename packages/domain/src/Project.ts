@@ -66,9 +66,10 @@ export const Project = Schema.Struct({
   idea: Schema.String,
   harness: Harness,
   /**
-   * The model its top-level agent runs on, when they chose one other than Dream's default (`agentOf` in `Agent.ts`
-   * resolves either). Only the project's own record carries it (`GetProject`, the live snapshot); Home's rows leave
-   * it out. Added November 2026.
+   * The model family its top-level agent runs on (`fable`, `sol`; each turn runs on the family's newest model), when
+   * they chose one other than Dream's default (`agentOf` in `Agent.ts` resolves either, and reads a Codex slug saved
+   * before families as its family). Only the project's own record carries it (`GetProject`, the live snapshot);
+   * Home's rows leave it out. Added November 2026.
    */
   agentModel: Schema.optionalKey(Schema.NonEmptyString),
   /** Its top-level agent's reasoning effort, when they chose one other than Dream's default. Added November 2026. */

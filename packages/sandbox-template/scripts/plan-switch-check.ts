@@ -152,7 +152,7 @@ const move = async (from: Harness, to: Harness, remember: string) => {
   )
 
   const first = await turn(to, "the first turn on the new plan", [
-    { _tag: "PlanSwitched", from, to, outcome: "moved", handoff, model: to === "codex" ? "gpt-6.1-sol" : "opus" },
+    { _tag: "PlanSwitched", from, to, outcome: "moved", handoff, model: to === "codex" ? "sol" : "opus" },
     message(`REMEMBER: ${remember}. How's it going?`)
   ])
   const opening = String(first[0]?.opening ?? "")

@@ -15,6 +15,7 @@
     "check": "bun run format:check && bun run typecheck && bun run test",
     "sync-prompts": "bun run --filter @dream/agent-context sync",
     "template:build": "bun run --filter @dream/sandbox-template build",
+    "harness:update": "node packages/dreamd/scripts/update-harnesses.ts",
     "infra:plan": "infra/node_modules/.bin/alchemy plan infra/alchemy.run.ts --stage prod",
     "infra:dev": "infra/node_modules/.bin/alchemy dev infra/alchemy.run.ts --stage dev",
     "infra:deploy": "infra/node_modules/.bin/alchemy deploy infra/alchemy.run.ts --stage prod --yes --adopt",
