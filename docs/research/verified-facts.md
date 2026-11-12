@@ -309,6 +309,44 @@
   simulator (`ol simulator`) has only Expo Go and no app install, so Dream's screens are checked on the Namespace Mac
   (simctl, `axe` from Homebrew for taps and typing; type in short chunks, fast input drops characters).
 
+## Model families (2026-11-12, model-families; Claude Code 2.1.322 / agent SDK 0.3.322, Codex 0.167.1)
+A project's model choice is a family (`AgentModels`), and each turn runs on the family's newest model in the
+installed CLI (`packages/dreamd/src/harness/Models.ts`). Checked against the CLIs themselves (`bun run harness:update`
+reads both lists from the pinned binaries, and `packages/dreamd/test/models.test.ts` runs on them when
+`DREAM_HARNESS_BINS` is set), against fake Messages/Responses servers, and in a test template's harness check. No
+real subscription was used.
+- Claude Code 2.1.322 resolves `fable` to claude-fable-5-2 (2.1.318: claude-fable-5-1); `opus`, `sonnet` and `haiku`
+  stay claude-opus-5-5, claude-sonnet-5-5 and claude-haiku-5-5. Seen in the requests (`claude -p --model fable` against
+  a fake Messages API sends `model: "claude-fable-5-2"`) and in the CLI's own model list.
+- Claude Code's model list comes from its `initialize` control request, answered before any model call and with no
+  login: `claude --input-format stream-json --output-format stream-json --verbose` with
+  `{"type":"control_request","request_id":…,"request":{"subtype":"initialize"}}` on stdin answers a
+  `control_response` whose `models` are `{value, resolvedModel, displayName, description, supportedEffortLevels, …}`
+  (value `default` is the account's default, not a family), then exits at EOF. About 0.8 s. dreamd runs it with its
+  own `CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` and a dead `ANTHROPIC_BASE_URL`, so nothing of the
+  agent's is read and nothing goes out. The Agent SDK's `query().initializationResult()` returns the same.
+- Haiku orchestrates: its `supportedEffortLevels` are low, medium, high, xhigh, max (the same as Fable, Opus and
+  Sonnet), and the CLI sends each as `output_config.effort` with adaptive thinking. The CLI gates effort per model,
+  so this is a real capability: for claude-haiku-4-5 it sends no effort at all, and for claude-opus-4-5 it clamps
+  xhigh and max to high. The Agent tool is in every model's tool list (12 tools in `-p` mode for each).
+- Codex 0.167.1's and 0.167.2's bundled catalogs (`codex debug models --bundled`, about 20 ms, 745 KB of JSON) list
+  the same models as 0.165.0's. Newest listed slug with `multi_agent_version` v2 per family: astra gpt-6-astra, sol gpt-6.1-sol,
+  terra gpt-6.1-terra, luna gpt-6-luna. gpt-5.6-luna has only v1; gpt-5.5 has none. All four take low…max (all but
+  Luna also take ultra, which Dream doesn't offer). gpt-6.1-terra: "GPT-6.1 Terra Codex model", context window 500k,
+  priority 7; gpt-5.6-terra is "Older balanced model for straightforward work". So Terra orchestrates and goes in the
+  picker, between Sol and Luna.
+- harness-codex 1.0.183 (on @ai-sdk/harness 1.0.181, `ai` 7.0.170, provider-utils 5.0.79) pins Codex 0.167.0 and
+  passes `model_provider`/`model_providers` as CLI overrides (`-c`) instead of per-thread config, which is what
+  0.166.0 rejected ("This chat uses agent_bridge_openai, but your current provider is openai"). So Codex moved with
+  that adapter, to 0.167.1: pnpm 12 (the template's) refuses anything published less than a day ago
+  (`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`; 0.167.2 was 21 hours old), and `harness:update` now pins nothing newer. harness-claude-code 1.0.185 pins Claude Code 2.1.319. All of Dream's bridge patches apply
+  to both new adapters unchanged. pnpm 12 refuses `@anthropic-ai/claude-code`'s install script unless the adapter's
+  `pnpm-workspace.yaml` (`allowBuilds`) sits beside the manifest.
+- Dream's families rank 1:1 across plans for `equivalentModel`: fable/astra, opus/sol, sonnet/terra, haiku/luna.
+- A Codex slug saved before families (`gpt-6-luna`, the founder's Arabic project) reads as its family; a Claude id
+  (`claude-haiku-4-5-20251001`) doesn't, since Claude Code itself distinguishes an alias (follows the family) from an
+  id (pins a model), and Dream only ever stored aliases.
+
 ## Agent fleet (2026-11-05, feat/agent-fleet; Claude Code 2.1.318 / agent SDK 0.3.318, Codex 0.165.0)
 Checked against the CLIs' own requests (fake Messages/Responses servers that log them), through the adapters in a
 test template (`dream-sandbox-fleet`, whose `harness-check` now asserts all of this), and on the founder's Claude
@@ -316,7 +354,8 @@ subscription with real models. No ChatGPT account is connected, so nothing on Co
 - Top level, as dreamd sets it (`packages/dreamd/src/harness/Fleet.ts`): `HarnessAgent({ model })` plus
   `createClaudeCode({ effort })` / `createCodex({ reasoningEffort })`. Both adapters take low|medium|high|xhigh|max.
   - Claude Code: model `opus`, effort `high`. Aliases in 2.1.318: `opus` → claude-opus-5-5, `fable` →
-    claude-fable-5-1, `sonnet` → claude-sonnet-5-5, `haiku` → claude-haiku-5-5; all four ran on the founder's
+    claude-fable-5-1 (claude-fable-5-2 in 2.1.322; see Model families), `sonnet` → claude-sonnet-5-5, `haiku` →
+    claude-haiku-5-5; all four ran on the founder's
     subscription (Opus 5.5 reports a 1M context window). An alias moves when the CLI does, so no model pin to bump.
     Without a model or effort the CLI defaults to claude-sonnet-5-5 at effort medium. The requests carry
     `output_config.effort` and `thinking: {type: "adaptive"}`. Fable 5.1 is a tier above Opus (newest model in the

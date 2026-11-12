@@ -228,9 +228,9 @@ the other workstreams to agree first.
   manifest and lockfile `dreamd bootstrap` installs. To move to new releases, run `bun run harness:update`
   (`packages/dreamd/scripts/update-harnesses.ts`; `status` shows what would move and changes nothing). It moves the
   adapters to npm's newest with the AI SDK they're built on, each CLI to the newest release in the line its adapter
-  pins (a new minor of Codex broke the adapter once, 0.166.0, until the adapter moved to it), reads every family's
-  model from the new CLIs' own lists and stops if one no longer orchestrates or takes every effort, runs
-  `bun run check`, and runs a turn on each harness in a test template (`dream-sandbox-update`, deleted after), putting
+  pins (a new minor of Codex broke the adapter once, 0.166.0, until the adapter moved to it) that's at least a day old
+  (the template's pnpm installs nothing newer), reads every family's model from the new CLIs' own lists and stops if
+  one no longer orchestrates or takes every effort, runs `bun run check`, and runs a turn on each harness in a test template (`dream-sandbox-update`, deleted after), putting
   every file back if anything fails. `--ship` then commits to main, pushes, builds the production template, deploys
   the Worker and pushes the mirror, in that order. No model list is checked in and the app needs no update: each
   project's next turn after the refresh runs on its family's newest model in the new CLI. A test fails until the
