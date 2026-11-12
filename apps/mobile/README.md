@@ -220,7 +220,7 @@ and how much of Claude's week is left. `usage-limit` gives Lift Log a limit at i
 `plan-limited` with `paused` is the plan's own pause: the five hours ran out, so the sheet says when the agent picks
 up (the five hours show only then). `usage-none` is a world where no usage is known: the header shows nothing, and
 the sheet has no ring. `usage-deleted` adds two deleted projects' shares to the plan's week. `usage-normal` goes back
-to the default.
+to the default. `screenshots/usage-sheet-b/` has each of the sheet's states from the Simulator.
 
 Settings (direction B, mocks/screens/settings-directions; `data/settings.ts` says what every row and page says,
 `ui/Group.tsx` draws them) is an index of one-line rows, each with its answer on the right, and every row opens a
