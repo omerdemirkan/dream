@@ -58,6 +58,16 @@ const testTemplate = "dream-sandbox-update"
 const adapters = ["@ai-sdk/harness", "@ai-sdk/harness-claude-code", "@ai-sdk/harness-codex"] as const
 /** What `@ai-sdk/harness` is built on, which the packages that use its types must match. */
 const sdkPackages = ["ai", "@ai-sdk/provider-utils", "@ai-sdk/provider"] as const
+/** Every workspace package, in the order HANDOFF.md typechecks them one at a time. */
+const typechecked = [
+  "packages/domain",
+  "packages/agent-context",
+  "packages/sandbox-template",
+  "packages/dreamd",
+  "apps/api",
+  "infra",
+  "apps/mobile"
+]
 const workspaces = [
   "packages/dreamd",
   "packages/domain",
@@ -365,7 +375,10 @@ const update = (flags: ReadonlySet<string>, option: (name: string) => string | u
     }
     console.log(`What each family runs as:\n${changes.join("\n")}\n`)
 
-    run("bun", ["run", "check"], { env: { ...process.env, DREAM_HARNESS_BINS: bins.after } })
+    // `bun run check`, one package's typecheck at a time (all at once runs small machines out of memory).
+    run("bun", ["run", "format:check"])
+    for (const dir of typechecked) run("bun", ["run", "typecheck"], { cwd: join(root, dir) })
+    run("bun", ["run", "test"], { env: { ...process.env, DREAM_HARNESS_BINS: bins.after } })
     if (!flags.has("--no-template")) {
       try {
         buildTemplate({ DREAM_TEMPLATE: testTemplate })
