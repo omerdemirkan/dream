@@ -16,7 +16,8 @@
  * 1. The adapters (`@ai-sdk/harness`, `-claude-code`, `-codex`) move to npm's newest, together, with the `ai` and
  *    `@ai-sdk/provider-utils` versions `@ai-sdk/harness` is built on, wherever a workspace package declares them.
  * 2. Each CLI moves to the newest release in the line its adapter pins (Codex 0.167.x when the adapter pins 0.167.0;
- *    a new minor of Codex has broken the adapter before, and the adapter moves to it when it's ready). Claude Code is
+ *    a new minor of Codex has broken the adapter before, and the adapter moves to it when it's ready) that's at least
+ *    a day old, since the template's pnpm installs nothing newer. Claude Code is
  *    pinned by its Agent SDK, which says which Claude Code it carries. The bridge manifests and lockfiles in
  *    `src/harness/bridges/<harness>/` are rewritten from the adapter's own, with only the CLIs changed.
  * 3. Both the old and the new CLIs are installed in a scratch directory, and each one's own model list is read the way
@@ -107,15 +108,33 @@ const compare = (a: string, b: string) => {
   return 0
 }
 
-/** The newest stable release of `name` in `pinned`'s line (same major and minor), and never older than `pinned`. */
-export const newestInLine = (versions: ReadonlyArray<string>, pinned: string): string => {
+/**
+ * The stable releases in `pinned`'s line (same major and minor) that `released` allows, newest first, never older
+ * than `pinned`, which comes last.
+ */
+export const inLine = (
+  versions: ReadonlyArray<string>,
+  pinned: string,
+  released: (version: string) => boolean = () => true
+): ReadonlyArray<string> => {
   const [major, minor] = parts(pinned)
   const line = versions.filter((version) => {
-    if (!/^\d+\.\d+\.\d+$/.test(version)) return false
+    if (!/^\d+\.\d+\.\d+$/.test(version) || version === pinned || !released(version)) return false
     const [a, b] = parts(version)
-    return a === major && b === minor && compare(version, pinned) >= 0
+    return a === major && b === minor && compare(version, pinned) > 0
   })
-  return line.reduce((best, version) => (compare(version, best) > 0 ? version : best), pinned)
+  return [...line.sort((a, b) => compare(b, a)), pinned]
+}
+
+/**
+ * pnpm 12 installs nothing published less than a day ago (its default `minimumReleaseAge`, which the template's
+ * bootstrap enforces), so a release isn't pinned before then either.
+ */
+const minimumReleaseAgeMs = 24 * 60 * 60_000
+const releasedADayAgo = (name: string) => {
+  const times = npmJson<Record<string, string>>(name, "time")
+  const cutoff = Date.now() - minimumReleaseAgeMs
+  return (version: string) => times[version] !== undefined && Date.parse(times[version]) <= cutoff
 }
 
 const dependencies = (manifest: Manifest) => ({ ...manifest.devDependencies, ...manifest.dependencies })
@@ -143,7 +162,15 @@ const leadPackage: Record<PinnedHarness, string> = {
 /** The newest CLI the installed adapter can run: the newest release in the line of the CLI it pins itself. */
 const safeVersion = (harness: PinnedHarness): string => {
   const adapterPin = pinsOf(adapterBridgeDir(harness), harness)[leadPackage[harness]]!
-  return newestInLine(npmJson<ReadonlyArray<string>>(leadPackage[harness], "versions"), adapterPin)
+  const candidates = inLine(
+    npmJson<ReadonlyArray<string>>(leadPackage[harness], "versions"),
+    adapterPin,
+    releasedADayAgo(leadPackage[harness])
+  )
+  if (harness === "codex") return candidates[0]!
+  // The Agent SDK's Claude Code has to be a day old too.
+  const cliReleased = releasedADayAgo("@anthropic-ai/claude-code")
+  return candidates.find((sdk) => cliReleased(cliVersions(harness, sdk)["@anthropic-ai/claude-code"]!)) ?? adapterPin
 }
 
 // ---------------------------------------------------------------------------

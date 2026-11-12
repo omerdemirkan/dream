@@ -14,7 +14,7 @@ import {
   patchBridge,
   withPinnedCli
 } from "../src/harness/Bridges.ts"
-import { newestInLine } from "../scripts/update-harnesses.ts"
+import { inLine } from "../scripts/update-harnesses.ts"
 
 const dependencies = (file: string): Record<string, string> =>
   (JSON.parse(readFileSync(file, "utf8")) as { dependencies: Record<string, string> }).dependencies
@@ -119,10 +119,14 @@ describe("Dream's bridge manifests", () => {
 })
 
 describe("the newest CLI an adapter can run", () => {
-  it("is the newest stable release in the line of the one it pins, never older", () => {
+  it("is the newest stable release in the line of the one it pins that's old enough, never older", () => {
     const versions = ["0.165.0", "0.166.0", "0.167.0", "0.167.1-alpha.1", "0.167.2", "0.168.0", "0.167.10"]
-    assert.strictEqual(newestInLine(versions, "0.167.0"), "0.167.10")
-    assert.strictEqual(newestInLine(versions, "0.165.0"), "0.165.0")
-    assert.strictEqual(newestInLine(["2.1.1"], "2.1.3"), "2.1.3")
+    assert.deepStrictEqual(inLine(versions, "0.167.0"), ["0.167.10", "0.167.2", "0.167.0"])
+    assert.deepStrictEqual(
+      inLine(versions, "0.167.0", (version) => version !== "0.167.10"),
+      ["0.167.2", "0.167.0"]
+    )
+    assert.deepStrictEqual(inLine(versions, "0.165.0"), ["0.165.0"])
+    assert.deepStrictEqual(inLine(["2.1.1"], "2.1.3"), ["2.1.3"])
   })
 })
